@@ -1,0 +1,183 @@
+/* assets/css/common.css 예시 */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Noto Sans KR', sans-serif;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.spacer {
+    flex-grow: 1;
+}
+
+/* === 기본 페이지 및 제목 스타일 === */
+.page-header {
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 20px;
+}
+.page-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+/* === 검색 및 버튼 패널 === */
+.search-panel {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background-color: #f9fafb;
+    padding: 15px 20px;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid #e5e7eb;
+    border-bottom: none;
+}
+.input-group {
+    display: flex;
+    align-items: center;
+}
+.input-label {
+    margin-right: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #4b5563;
+    white-space: nowrap;
+}
+.input-text, .input-select {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: border-color 0.2s;
+}
+.input-select:focus {
+    border-color: #3b82f6;
+    outline: none;
+}
+
+.search-term-group { gap: 8px; }
+/*
+.btn {
+    padding: 8px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+}
+.btn-primary {
+    background-color: #3b82f6;
+    color: white;
+}
+.btn-primary:hover {
+    background-color: #2563eb;
+}
+.btn-info {
+    background-color: #60a5fa;
+    color: white;
+    padding: 6px 10px;
+    font-weight: 500;
+}
+.btn-info:hover {
+    background-color: #3b82f6;
+}
+.btn-sm {
+    font-size: 0.8rem;
+}
+.btn-success {
+    background-color: #10b981;
+    color: white;
+}
+.btn-success:hover {
+    background-color: #059669;
+}
+.btn-danger { background-color: #ef4444; color: white; margin-left: 5px; }
+*/
+
+
+/* 툴팁을 감싸는 부모 */
+.tooltip-container {
+    position: relative; /* 자식의 절대 위치 기준점 */
+    cursor: help;
+}
+
+/* 툴팁 본문 (평소엔 숨김) */
+.tooltip-text {
+    visibility: hidden;
+    width: 140px;
+    background-color: #333;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px 0;
+    position: absolute;
+    z-index: 10; /* 테이블 위로 뜨게 설정 */
+    bottom: 125%; /* 뱃지 바로 위에 위치 */
+    left: 50%;
+    margin-left: -70px; /* 가운데 정렬 보정 */
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 0.75rem;
+    font-weight: normal;
+    line-height: 1.4;
+}
+
+/* 화살표 모양 (선택사항) */
+.tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #333 transparent transparent transparent;
+}
+
+/* 마우스 올렸을 때 보이기 */
+.tooltip-container:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
+
+.text-danger {
+    color: #ef4444; /* 빨간색 */
+    font-weight: bold;
+}
+
+/* 테이블 CSS */
+.table-container {
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    overflow-x: auto; /* 가로 스크롤 필수 */
+    max-width: 100%;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1400px; /* 테이블 최소 너비를 늘려서 내용이 찌그러지지 않게 함 */
+}
+
+.data-table th, .data-table td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    font-size: 0.85rem;
+    white-space: nowrap; /* 내용 줄바꿈 방지 */
+}
+
+.data-table th { background-color: #f9fafb; color: #1f2937; font-weight: 600; text-align: center;}
+.data-table td { vertical-align: middle; text-align: center; } /* 데이터 가운데 정렬 */
+
+/* text 공통 CSS */
+.text-center { text-align: center; }
+.text-center-none { text-align: center; padding: 30px !important; color: #9ca3af; }
+.text-gray { color: #9ca3af; font-size: 0.8rem; }
+.fw-bold { font-weight: 600; }
