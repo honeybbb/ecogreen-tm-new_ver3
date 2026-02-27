@@ -85,49 +85,60 @@ const toggleSort = (key) => {
 
 // 6. 필터링 + 정렬된 결과 계산 (핵심 로직)
 const filteredMembers = computed(() => {
-  // A. 먼저 검색어와 선택된 현장으로 필터링
+  // 1. 필터링
   let result = members.value.filter(member => {
     const siteMatch = selectedSite.value === '전체' || member.sIdx === selectedSite.value;
     const searchMatch = member.name.toLowerCase().includes(searchTerm.value.toLowerCase());
     const typeMatch = selectedType.value === '전체' || member.type === selectedType.value;
 
-    // 추가 토글 필터 1: 65세 이상
     let ageMatch = true;
     if (filterOver65.value) {
       ageMatch = calculateAge(member.birthDt) >= 65;
     }
 
-    // 추가 토글 필터 2: 장애 여부 (Y 또는 true 체크)
     let disabilityMatch = true;
     if (filterDisability.value) {
       disabilityMatch = member.disability === 'Y' || member.disability === true;
     }
 
-    // 추가 토글 필터 3: 외국인 여부 (Y 또는 true 체크)
     let foreignerMatch = true;
     if (filterForeigner.value) {
       foreignerMatch = member.foreigner === 'Y' || member.foreigner === true;
     }
 
-    // 모든 조건이 만족되어야 함
     return siteMatch && searchMatch && typeMatch && ageMatch && disabilityMatch && foreignerMatch;
   });
 
-  // B. 필터링된 결과에 대해 정렬 수행
+  // 2. 항상 기본 정렬 (idx 오름차순 → sIdx 내림차순) 먼저 적용
   result.sort((a, b) => {
-    let modifier = sortOrder.value === 'asc' ? 1 : -1;
-    let valA = a[sortKey.value];
-    let valB = b[sortKey.value];
-
-    // 숫자형 데이터와 문자열 데이터 구분 처리
-    if (typeof valA === 'string') {
-      return valA.localeCompare(valB) * modifier;
+    // 1차: idx 오름차순
+    if (a.idx !== b.idx) {
+      return a.idx - b.idx;           // 숫자 오름차순
     }
-
-    if (valA < valB) return -1 * modifier;
-    if (valA > valB) return 1 * modifier;
+    // 2차: 같은 idx면 sIdx 내림차순
+    if (a.sIdx !== b.sIdx) {
+      return b.sIdx - a.sIdx;         // 숫자 내림차순 (b - a)
+    }
     return 0;
   });
+
+  // 3. 사용자가 정렬 기준을 바꿨을 때만 추가 정렬
+  if (sortKey.value !== 'id') {
+    result.sort((a, b) => {
+      let modifier = sortOrder.value === 'asc' ? 1 : -1;
+      let valA = a[sortKey.value];
+      let valB = b[sortKey.value];
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return valA.localeCompare(valB) * modifier;
+      }
+
+      // 숫자 또는 날짜 등 비교
+      if (valA < valB) return -1 * modifier;
+      if (valA > valB) return  1 * modifier;
+      return 0;
+    });
+  }
 
   return result;
 });
@@ -341,6 +352,7 @@ onMounted(() => {
     </div>
   </div>
 </template>
+<style scoped src="/assets/css/member.css"></style>
 <style scoped>
 /* 추가된 뱃지 스타일 */
 .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
@@ -372,4 +384,37 @@ onMounted(() => {
   font-size: 0.7rem;
   color: #ffa39e;
 }
+
+/* 토글 CSS */
+.filter-toggles {
+  /*display: flex;*/
+  gap: 12px;
+  padding-left: 15px;
+  border-left: 1px solid #e5e7eb;
+  margin-left: 5px;
+}
+
+.toggle-item {
+  /*display: flex;*/
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b7280;
+  user-select: none;
+}
+
+.toggle-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+/* 활성화 시 색상 강조 */
+.text-red { color: #ef4444; }      /* 65세 이상 강조 */
+.text-purple { color: #8b5cf6; }   /* 장애 강조 */
+.text-yellow { color: #d97706; }   /* 외국인 강조 */
+
+.spacer { flex: 1; }
 </style>
