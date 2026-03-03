@@ -7,6 +7,7 @@ const cIdx = 1;
 // 1. 주요 현황 데이터 (KPI)
 const stats = ref([
   {
+    id:'site',
     title: '총 관리 현장',
     value: 12,
     unit: '개소',
@@ -17,6 +18,7 @@ const stats = ref([
     bgColor: 'rgba(102, 126, 234, 0.1)'
   },
   {
+    id:'member',
     title: '총 근무 인원',
     value: 145,
     unit: '명',
@@ -27,6 +29,7 @@ const stats = ref([
     bgColor: 'rgba(16, 185, 129, 0.1)'
   },
   {
+    id:'payroll',
     title: '이번달 급여 총액',
     value: '3.5억',
     unit: '원',
@@ -37,6 +40,7 @@ const stats = ref([
     bgColor: 'rgba(245, 158, 11, 0.1)'
   },
   {
+    id:'request',
     title: '승인 대기',
     value: 5,
     unit: '건',
@@ -50,10 +54,12 @@ const stats = ref([
 
 // 2. 공지사항 (최신순)
 const notices = ref([
-  { id: 1, category: '인사', title: '5월 근무 스케줄 확정 안내', date: '2025-05-02', author: '인사팀', isNew: true },
-  { id: 2, category: '시스템', title: 'ERP 서버 정기 점검 안내', date: '2025-05-01', author: '관리자', isNew: false },
-  { id: 3, category: '공지', title: '하절기 복장 착용 규정', date: '2025-04-28', author: '총무팀', isNew: false },
-  { id: 4, category: '교육', title: '안전교육 일정 안내', date: '2025-04-25', author: '안전팀', isNew: false },
+    /*
+  { id: 1, type: '인사', title: '5월 근무 스케줄 확정 안내', date: '2025-05-02', author: '인사팀', isNew: true },
+  { id: 2, type: '시스템', title: 'ERP 서버 정기 점검 안내', date: '2025-05-01', author: '관리자', isNew: false },
+  { id: 3, type: '공지', title: '하절기 복장 착용 규정', date: '2025-04-28', author: '총무팀', isNew: false },
+  { id: 4, type: '교육', title: '안전교육 일정 안내', date: '2025-04-25', author: '안전팀', isNew: false },
+     */
 ]);
 
 // 3. 결재/승인 대기 현황
@@ -127,7 +133,7 @@ const getBadgeClass = (category) => {
     '인사': 'badge-blue',
     '시스템': 'badge-red',
     '공지': 'badge-gray',
-    '교육': 'badge-green'
+    '교육': 'badge-green',
   };
   return classes[category] || 'badge-gray';
 };
@@ -142,9 +148,9 @@ const getTypeTagClass = (type) => {
 };
 
 const getProgressColor = (progress) => {
-  if (progress >= 80) return '#10b981';
+  if (progress >= 80) return '#ef4444';
   if (progress >= 50) return '#f59e0b';
-  return '#ef4444';
+  return '#10b981';
 };
 
 // 데이터 가공 로직
@@ -185,9 +191,10 @@ const calculateProcessed = (data) => {
 };
 
 // API 호출
-const getSiteData = () => {
-  axios.get(`/api/v1/site/list/${cIdx}`)
+const getSiteData = async () => {
+  await axios.get(`/api/v1/site/list/${cIdx}`)
       .then(res => {
+        stats.value[0].value = res.data.data.length;
         const processedData = calculateProcessed(res.data.data);
         siteStatus.value = processedData;
       })
@@ -196,8 +203,26 @@ const getSiteData = () => {
       });
 }
 
+const getMemberData = async () => {
+  await axios.get(`/api/v1/member/list`)
+  .then(res => {
+    stats.value[1].value = res.data.data.length;
+  })
+}
+
+const fetchNotices = () => {
+  // alert(`검색: [${searchType.value}] ${searchQuery.value}`);
+  axios.get('/api/v1/notice/list')
+      .then(res => {
+        // console.log(res.data.data, 'notices');
+        notices.value = res.data.data;
+      })
+};
+
 onMounted(() => {
   getSiteData();
+  fetchNotices();
+  getMemberData();
 })
 
 // 현재 시간
@@ -321,12 +346,12 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
             <div class="notice-list">
               <div
                   v-for="notice in notices"
-                  :key="notice.id"
+                  :key="notice.idx"
                   class="notice-item"
               >
                 <div class="notice-header">
-                  <span :class="['badge', getBadgeClass(notice.category)]">
-                    {{ notice.category }}
+                  <span :class="['badge', getBadgeClass(notice.type)]">
+                    {{ notice.type }}
                   </span>
                   <span v-if="notice.isNew" class="new-badge">NEW</span>
                 </div>
@@ -347,7 +372,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
         </div>
 
         <!-- 최근 활동 -->
-        <div class="card">
+        <!--div class="card">
           <div class="card-header">
             <div class="card-title-group">
               <i class="mdi mdi-history card-icon"></i>
@@ -371,7 +396,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
               </div>
             </div>
           </div>
-        </div>
+        </div-->
       </div>
 
       <!-- 오른쪽 컬럼 -->

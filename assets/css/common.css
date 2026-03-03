@@ -156,33 +156,6 @@ a {
     font-weight: bold;
 }
 
-/* 테이블 CSS */
-.table-container {
-    background-color: #ffffff;
-    border: 1px solid #e5e7eb;
-    /*border-radius: 8px;*/
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    overflow-x: auto; /* 가로 스크롤 필수 */
-    max-width: 100%;
-}
-
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 1400px; /* 테이블 최소 너비를 늘려서 내용이 찌그러지지 않게 함 */
-}
-
-.data-table th, .data-table td {
-    padding: 12px 10px;
-    border-bottom: 1px solid #e5e7eb;
-    text-align: left;
-    font-size: 0.85rem;
-    white-space: nowrap; /* 내용 줄바꿈 방지 */
-}
-
-.data-table th { background-color: #f9fafb; color: #1f2937; font-weight: 600; text-align: center;}
-.data-table td { vertical-align: middle; text-align: center; } /* 데이터 가운데 정렬 */
-
 /* text 공통 CSS */
 .text-center { text-align: center; }
 .text-center-none { text-align: center; padding: 30px !important; color: #9ca3af; }

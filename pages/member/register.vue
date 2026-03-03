@@ -2,15 +2,21 @@
 import {onMounted, ref, watch} from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from 'axios';
+import {useAuthStore} from "~/stores/auth.js";
 
+const authStore = useAuthStore();
 const router = useRouter();
 const {
+  bankOptions,
   siteOptions,
   typeOptions,
   positionOptions,
+  disabledOptions,
+  fetchBankOption,
   fetchSiteOptions,
   fetchTypeOptions,
-  fetchPositionOptions
+  fetchPositionOptions,
+  fetchDisabledOptions,
 } = useApi();
 
 // 1. 폼 데이터 모델
@@ -55,7 +61,6 @@ const employee = ref({
 const showModal = ref(false); // 모달 상태 관리 변수
 const items = ref([])
 // 2. 드롭다운 옵션
-const bankOptions = ref([]);
 const contractYear = computed(() => {
   if (employee.value.joinDate) {
     return String(employee.value.joinDate).slice(0, 4)
@@ -192,9 +197,9 @@ const handleCancel = () => {
 
 //지급항목
 const getWageCode = async function () {
-  const cIdx = 1;
+  const cIdx = authStore.user?.cIdx;
   try {
-    const res = await axios.get(`/api/v1/config/code/${cIdx}`);
+    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     // 받아온 데이터가 있으면 필터링, 없으면 빈 배열
     const rawData = res.data.data || [];
 
@@ -265,20 +270,13 @@ const isValidDate = (dateString) => {
   return d.toISOString().slice(0, 10) === dateString;
 };
 
-const getBanks = async function () {
-  const groupCd = '02001'
-  axios.get(`/api/v1/code/${groupCd}`).then(res => {
-    console.log(res.data.data, 'getBanks');
-    bankOptions.value = res.data.data
-  })
-}
-
 onMounted(() => {
   fetchSiteOptions()
   fetchTypeOptions()
   fetchPositionOptions()
+  fetchDisabledOptions()
+  fetchBankOption();
   getWageCode();
-  getBanks();
 });
 </script>
 
@@ -410,12 +408,16 @@ onMounted(() => {
           <div v-if="employee.disability === 'Y'">
             <div class="input-field">
               <label>장애등급</label>
-              <input
+              <!--input
                   class="input-text"
                   type="text"
                   v-model="employee.disability_grade"
                   placeholder="예: 1급 / 경증 / 중증"
-              />
+              /-->
+              <select id="position" v-model="employee.disability_grade" required class="input-select">
+                <option value="" disabled>장애등급을 선택하세요</option>
+                <option v-for="item in disabledOptions" :key="item" :value="item.itemCd">{{ item.itemNm }}</option>
+              </select>
             </div>
           </div>
 

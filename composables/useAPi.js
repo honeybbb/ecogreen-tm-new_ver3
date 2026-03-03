@@ -7,14 +7,15 @@ export const useApi = () => {
     const siteOptions = ref([]);
     const typeOptions = ref([]);
     const positionOptions = ref([]);
+    const disabledOptions = ref([]);
     // const categoryOptions = ref([]);
     // const directWages  = ref([]);
 
     //은행 코드 가져오기
     const fetchBankOption = async (groupCd = '02001') => {
         try {
-            axios.get(`/api/v1/code/${groupCd}`).then(res => {
-                // console.log(res.data.data, 'getBanks');
+            axios.get(`/api/v1/code/group/${groupCd}`).then(res => {
+                console.log(res.data.data, 'getBanks');
                 bankOptions.value = res.data.data
             })
         } catch (e) {
@@ -35,7 +36,7 @@ export const useApi = () => {
     // 공통 코드 타입 목록 가져오기
     const fetchTypeOptions = async (groupCd = '01001') => {
         try {
-            const res = await axios.get(`/api/v1/code/${groupCd}`);
+            const res = await axios.get(`/api/v1/code/group/${groupCd}`);
             typeOptions.value = res.data.data || [];
         } catch (e) {
             console.error(`구분 목록(${groupCd}) 로드 실패:`, e);
@@ -45,7 +46,7 @@ export const useApi = () => {
     //공통 코드 직책 목록 가져오기
     const fetchPositionOptions = async (groupCd = '01002') => {
         try{
-            const res = await axios.get(`/api/v1/code/${groupCd}`);
+            const res = await axios.get(`/api/v1/code/group/${groupCd}`);
             positionOptions.value = res.data.data;
         }catch(e){
             console.error(`직책 목록(${groupCd}) 로드 실패:`, e);
@@ -64,16 +65,28 @@ export const useApi = () => {
 
      */
 
+    const fetchDisabledOptions = async (groupCd = '02002') => {
+        try {
+            axios.get(`/api/v1/code/group/${groupCd}`).then(res => {
+                disabledOptions.value = res.data.data
+            })
+        } catch (e) {
+            console.error("장애등급 목록 로드 실패:", e);
+        }
+    }
+
     return {
         bankOptions,
         siteOptions,
         typeOptions,
         positionOptions,
+        disabledOptions,
         // directWages,
         fetchBankOption,
         fetchSiteOptions,
         fetchTypeOptions,
         fetchPositionOptions,
+        fetchDisabledOptions
         // fetchDirectWages
     };
 };

@@ -9,6 +9,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 
 // === 1. 상태 및 반응성 변수 ===
+const isProfileOpen = ref(false); // 프로필 드롭다운 상태
 const miniVariant = ref(false);
 const title = ref('에코그린티엠');
 const activeGroup = ref(null);
@@ -117,8 +118,8 @@ const systemItems = ref([
     title: '시스템설정',
     group: true,
     child: [
-      { title: '기본설정', to: '/settings/config', icon: 'mdi-cog-outline' },
-      { title: '권한관리', to: '/settings/permission', icon: 'mdi-shield-account' },
+      { title: '기본설정', to: '/system/settings', icon: 'mdi-cog-outline' },
+      { title: '권한관리', to: '/system/permission', icon: 'mdi-shield-account' },
     ]
   },
 ]);
@@ -131,6 +132,10 @@ const isActive = (item) => {
   const to = item?.to || '';
   if (to === '/') return path === '/';
   return path.startsWith(to.replace(/\/+$/, ''));
+};
+
+const toggleProfile = () => {
+  isProfileOpen.value = !isProfileOpen.value;
 };
 
 // 그룹 메뉴 토글
@@ -209,11 +214,25 @@ const buildMenuTree = (flatList) => {
 
 const getMenus = () => {
   const companyNo = authStore.user?.cIdx;
+  const params = { isMaster: authStore.user?.isMaster };
 
-  axios.get(`/api/v1/menu/${companyNo}`)
+  axios.get(`/api/v1/menu/${companyNo}`, { params })
       .then(res => {
-        items.value = buildMenuTree(res.data.data)
+        // 1. 먼저 전체 메뉴 트리를 빌드합니다.
+        const fullTree = buildMenuTree(res.data.data);
+
+        // 2. id가 'system'인 것만 골라 systemItems에 넣습니다.
+        systemItems.value = fullTree.filter(item => item.id === 'system');
+
+        // 3. id가 'system'이 아닌 나머지를 items에 넣습니다.
+        items.value = fullTree.filter(item => item.id !== 'system');
+
+        console.log('일반 메뉴:', items.value);
+        console.log('시스템 메뉴:', systemItems.value);
       })
+      .catch(err => {
+        console.error("메뉴 로딩 실패:", err);
+      });
 }
 
 onMounted(() => {
@@ -368,14 +387,15 @@ onMounted(() => {
 
         <!-- 프로필 메뉴 -->
         <div class="eg-profile-menu">
-          <button class="eg-profile-btn">
+          <button class="eg-profile-btn" @click.stop="toggleProfile">
             <div class="eg-avatar">
               <i class="mdi mdi-account"></i>
             </div>
             <span class="eg-profile-name">{{ myManagerNm }}</span>
-            <i class="mdi mdi-chevron-down"></i>
+            <i class="mdi" :class="isProfileOpen ? 'mdi-chevron-up' : 'mdi-chevron-down'"></i>
           </button>
-          <div class="eg-dropdown-content">
+
+          <div class="eg-dropdown-content" v-show="isProfileOpen">
             <div class="eg-dropdown-header">
               <div class="eg-avatar-large">
                 <i class="mdi mdi-account"></i>
@@ -386,11 +406,11 @@ onMounted(() => {
               </div>
             </div>
             <div class="eg-dropdown-divider"></div>
-            <NuxtLink to="/mypage" class="eg-dropdown-item">
+            <NuxtLink to="/mypage" class="eg-dropdown-item" @click="isProfileOpen = false">
               <i class="mdi mdi-account-circle"></i>
               <span>내 정보</span>
             </NuxtLink>
-            <NuxtLink to="/settings" class="eg-dropdown-item">
+            <NuxtLink to="/system/settings" class="eg-dropdown-item" @click="isProfileOpen = false">
               <i class="mdi mdi-cog"></i>
               <span>환경설정</span>
             </NuxtLink>
@@ -805,7 +825,7 @@ onMounted(() => {
 
 /* 드롭다운 */
 .eg-dropdown-content {
-  display: none;
+  display: block;
   position: absolute;
   right: 0;
   top: calc(100% + 8px);
@@ -815,11 +835,6 @@ onMounted(() => {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
   z-index: 100;
   overflow: hidden;
-}
-
-.eg-profile-menu:hover .eg-dropdown-content {
-  display: block;
-  animation: dropdownFadeIn 0.2s ease;
 }
 
 @keyframes dropdownFadeIn {
