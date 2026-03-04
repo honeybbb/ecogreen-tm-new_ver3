@@ -491,7 +491,7 @@ onMounted(() => {
                       :class="['toggle-use', parent.useFl === 'Y' ? 'active' : 'inactive']"
                   >
                     <i :class="['mdi', parent.useFl === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
-                    <span>{{ parent.useFl === 'Y' ? '사용' : '중지' }}</span>
+                    <span>{{ parent.useFl === 'Y' ? '사용' : '사용안함' }}</span>
                   </button>
                 </td>
 
@@ -581,7 +581,7 @@ onMounted(() => {
                         :class="['toggle-use', child.useFl === 'Y' ? 'active' : 'inactive']"
                     >
                       <i :class="['mdi', child.useFl === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
-                      <span>{{ child.useFl === 'Y' ? '사용' : '중지' }}</span>
+                      <span>{{ child.useFl === 'Y' ? '사용' : '사용안함' }}</span>
                     </button>
                   </td>
 

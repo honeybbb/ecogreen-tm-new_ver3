@@ -1,212 +1,388 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import axios from 'axios';
 
-// 1. 상태 및 데이터
-const searchTerm = ref(''); // 현장명 검색
+// 1. 상태 관리
+const searchTerm = ref('');
 const selectedStatus = ref('전체');
-const statusOptions = ref(['전체', '신청 완료', '배송 중', '수령 완료']);
+const statusOptions = ['전체', '신청 완료', '배송 중', '수령 완료'];
+const rawOrders = ref([]);
+const isLoading = ref(false);
 
-const orders = ref([
-  {
-    orderNo: 'REQ-240201-01', date: '2026-02-01', siteName: 'LH 위례 6단지', applicant: '김철수',
-    summary: '락스 외 4건', totalAmount: 125000, status: '신청 완료',
-    items: [ // 상세 품목 데이터
-      { name: '락스(18L)', qty: 2, unit: '통', price: 25000 },
-      { name: '고무장갑(L)', qty: 10, unit: '켤레', price: 1500 },
-      { name: '대형 빗자루', qty: 5, unit: '개', price: 8000 }
-    ]
-  },
-  {
-    orderNo: 'REQ-240201-02', date: '2026-02-01', siteName: '강서 대명 강동', applicant: '이영희',
-    summary: '쓰레기봉투(100L)', totalAmount: 50000, status: '배송 중',
-    items: [
-      { name: '쓰레기봉투(100L)', qty: 20, unit: '묶음', price: 2500 }
-    ]
-  },
-]);
+// 2. 통계 데이터 계산
+const stats = computed(() => {
+  const total = rawOrders.value.length;
+  const pending = rawOrders.value.filter(o => o.status === 0).length;
+  const shipping = rawOrders.value.filter(o => o.status === 1).length;
+  const completed = rawOrders.value.filter(o => o.status === 2).length;
+  const totalAmount = rawOrders.value.reduce((acc, cur) => acc + (Number(cur.totalAmount) || 0), 0);
 
-// 2. 모달 관련 상태
-const isModalOpen = ref(false);
-const selectedOrder = ref({});
+  return { total, pending, shipping, completed, totalAmount };
+});
 
-// 3. 필터링 로직
+// 3. 필터링 및 검색 로직
 const filteredOrders = computed(() => {
-  return orders.value.filter(order => {
-    const statusMatch = selectedStatus.value === '전체' || order.status === selectedStatus.value;
-    const searchMatch = order.siteName.includes(searchTerm.value);
+  return rawOrders.value.filter(order => {
+    const statusText = getStatusText(order.status);
+    const statusMatch = selectedStatus.value === '전체' || statusText === selectedStatus.value;
+    const searchMatch = order.siteName.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
+        order.applicant.includes(searchTerm.value);
     return statusMatch && searchMatch;
   });
 });
 
-// 4. 모달 열기/닫기
+// 4. API 호출
+const fetchOrders = async () => {
+  isLoading.value = true;
+  try {
+    const res = await axios.get('/api/v1/code/item/order');
+    if (res.data.result) {
+      rawOrders.value = res.data.data;
+    }
+  } catch (err) {
+    console.error('데이터 로드 에러:', err);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// 5. 유틸리티 함수
+const getStatusText = (status) => {
+  if (status === 0) return '신청 완료';
+  if (status === 1) return '배송 중';
+  return '수령 완료';
+};
+
+const formatPrice = (price) => (Number(price) || 0).toLocaleString() + '원';
+
+// 6. 모달 로직 및 상태 변경
+const isModalOpen = ref(false);
+const selectedOrder = ref({});
+
 const openModal = (order) => {
   selectedOrder.value = order;
   isModalOpen.value = true;
 };
+
 const closeModal = () => {
   isModalOpen.value = false;
   selectedOrder.value = {};
 };
 
-// 5. 금액 포맷팅
-const formatPrice = (price) => price.toLocaleString() + '원';
+const processOrder = async (nextStatus) => {
+  const statusLabel = nextStatus === 1 ? '배송 중' : '수령 완료';
+  if (!confirm(`해당 신청 건을 '${statusLabel}' 상태로 변경하시겠습니까?`)) return;
 
-// 6. 상태 변경 (더미)
-const processOrder = (status) => {
-  alert(`'${status}' 상태로 변경하시겠습니까? (API 호출)`);
-  closeModal();
+  try {
+    const idxs = selectedOrder.value.items.map(i => i.idx);
+    const res = await axios.put('/api/v1/order/status', { idxs, status: nextStatus });
+    if (res.data.result) {
+      alert('상태가 성공적으로 변경되었습니다.');
+      fetchOrders();
+      closeModal();
+    }
+  } catch (err) {
+    alert('오류가 발생했습니다.');
+  }
 };
+
+onMounted(fetchOrders);
 </script>
 
 <template>
-  <div class="site-list-page">
+  <div class="order-management-page">
     <div class="page-header">
-      <h2 class="page-title">용품 신청 관리</h2>
+      <div class="header-left">
+        <h1 class="page-title">
+          <i class="mdi mdi-cart-check"></i>
+          용품 신청 관리
+        </h1>
+        <p class="page-subtitle">현장별 청소용품 신청 현황을 관리하고 승인합니다</p>
+      </div>
+      <div class="header-actions">
+        <button @click="fetchOrders" class="btn-refresh">
+          <i class="mdi mdi-refresh"></i>
+          <span>새로고침</span>
+        </button>
+      </div>
     </div>
 
-    <div class="search-panel">
-      <div class="input-group">
-        <label class="input-label">상태:</label>
-        <select v-model="selectedStatus" class="input-select">
-          <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
-        </select>
+    <div class="stats-grid">
+      <div class="stat-card" style="--card-color: #667eea;">
+        <div class="stat-icon"><i class="mdi mdi-clipboard-text-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">누적 신청</span>
+          <span class="stat-value">{{ stats.total }}건</span>
+        </div>
       </div>
-      <div class="input-group search-term-group">
-        <input type="text" v-model="searchTerm" placeholder="현장명 검색..." class="input-text">
-        <button class="btn btn-primary">검색</button>
+      <div class="stat-card" style="--card-color: #f59e0b;">
+        <div class="stat-icon"><i class="mdi mdi-clock-alert-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">대기 중</span>
+          <span class="stat-value">{{ stats.pending }}건</span>
+        </div>
+      </div>
+      <div class="stat-card" style="--card-color: #3b82f6;">
+        <div class="stat-icon"><i class="mdi mdi-truck-delivery-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">배송 중</span>
+          <span class="stat-value">{{ stats.shipping }}건</span>
+        </div>
+      </div>
+      <div class="stat-card" style="--card-color: #10b981;">
+        <div class="stat-icon"><i class="mdi mdi-check-decagram-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">완료</span>
+          <span class="stat-value">{{ stats.completed }}건</span>
+        </div>
+      </div>
+      <div class="stat-card" style="--card-color: #8b5cf6;">
+        <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">총 신청 금액</span>
+          <span class="stat-value" style="font-size: 16px;">{{ formatPrice(stats.totalAmount) }}</span>
+        </div>
       </div>
     </div>
 
-    <div class="table-container">
-      <table class="data-table">
-        <thead>
-        <tr>
-          <th>신청번호</th>
-          <th>신청일</th>
-          <th>현장명</th>
-          <th>신청자</th>
-          <th>품목 요약</th>
-          <th class="text-right">총 금액</th>
-          <th>상태</th>
-          <th class="text-center">상세</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr v-for="order in filteredOrders" :key="order.orderNo">
-          <td>{{ order.orderNo }}</td>
-          <td>{{ order.date }}</td>
-          <td>{{ order.siteName }}</td>
-          <td>{{ order.applicant }}</td>
-          <td>{{ order.summary }}</td>
-          <td class="text-right font-bold">{{ formatPrice(order.totalAmount) }}</td>
-          <td>
-            <span :class="['status-chip', `status-${order.status.replace(/\s/g, '')}`]">
-              {{ order.status }}
-            </span>
-          </td>
-          <td class="text-center">
-            <button @click="openModal(order)" class="btn btn-sm btn-info">보기</button>
-          </td>
-        </tr>
-        </tbody>
-      </table>
+    <div class="filter-panel">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-filter-variant"></i>상태 구분</label>
+          <select v-model="selectedStatus" class="filter-select">
+            <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
+          </select>
+        </div>
+
+        <div class="search-group">
+          <div class="search-box">
+            <i class="mdi mdi-magnify"></i>
+            <input
+                type="text"
+                v-model="searchTerm"
+                placeholder="현장명 또는 신청자 검색..."
+                class="search-input"
+            />
+            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+              <i class="mdi mdi-close"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <div class="table-title">
+          <i class="mdi mdi-format-list-bulleted"></i>
+          <span>신청 목록 ({{ filteredOrders.length }}건)</span>
+        </div>
+      </div>
+
+      <div class="table-scroll-container">
+        <table class="data-table">
+          <thead>
+          <tr>
+            <th>신청일시</th>
+            <th>현장명</th>
+            <th>신청자</th>
+            <th>품목 요약</th>
+            <th class="text-right">총 금액</th>
+            <th class="text-center">상태</th>
+            <th class="text-center sticky-col">관리</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr v-for="order in filteredOrders" :key="order.regDt + order.mIdx" class="data-row">
+            <td class="text-gray">{{ order.regDt }}</td>
+            <td class="font-bold">{{ order.siteName }}</td>
+            <td>{{ order.applicant }}</td>
+            <td class="text-blue">{{ order.summary }}</td>
+            <td class="text-right font-bold">{{ formatPrice(order.totalAmount) }}</td>
+            <td class="text-center">
+                <span :class="['status-badge', order.status === 0 ? 'status-pending' : order.status === 1 ? 'status-shipping' : 'status-completed']">
+                  {{ getStatusText(order.status) }}
+                </span>
+            </td>
+            <td class="text-center sticky-col">
+              <button @click="openModal(order)" class="btn-detail">
+                <i class="mdi mdi-eye"></i>
+                <span>상세보기</span>
+              </button>
+            </td>
+          </tr>
+          <tr v-if="filteredOrders.length === 0">
+            <td colspan="7">
+              <div class="empty-state">
+                <i class="mdi mdi-package-variant"></i>
+                <p>조회된 신청 내역이 없습니다</p>
+              </div>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div v-if="isModalOpen" class="modal-overlay" @click.self="closeModal">
-      <div class="modal-content">
+      <div class="modal-card">
         <div class="modal-header">
-          <h3>신청 상세 ({{ selectedOrder.orderNo }})</h3>
-          <button @click="closeModal" class="close-btn">&times;</button>
+          <div class="modal-title">
+            <i class="mdi mdi-clipboard-text-search"></i>
+            <span>신청 상세 내역</span>
+          </div>
+          <button @click="closeModal" class="btn-close">&times;</button>
         </div>
 
         <div class="modal-body">
-          <div class="info-row">
-            <span><strong>현장명:</strong> {{ selectedOrder.siteName }}</span>
-            <span><strong>신청자:</strong> {{ selectedOrder.applicant }}</span>
+          <div class="order-info-summary">
+            <div class="info-item">
+              <span class="label">현장명</span>
+              <span class="value">{{ selectedOrder.siteName }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">신청자</span>
+              <span class="value">{{ selectedOrder.applicant }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">신청일시</span>
+              <span class="value">{{ selectedOrder.regDt }}</span>
+            </div>
           </div>
 
-          <table class="data-table modal-table">
-            <thead>
-            <tr>
-              <th>품목명</th>
-              <th class="text-center">단위</th>
-              <th class="text-center">수량</th>
-              <th class="text-right">단가</th>
-              <th class="text-right">금액</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr v-for="item in selectedOrder.items" :key="item.name">
-              <td>{{ item.name }}</td>
-              <td class="text-center">{{ item.unit }}</td>
-              <td class="text-center">{{ item.qty }}</td>
-              <td class="text-right">{{ formatPrice(item.price) }}</td>
-              <td class="text-right">{{ formatPrice(item.price * item.qty) }}</td>
-            </tr>
-            </tbody>
-            <tfoot>
-            <tr>
-              <td colspan="4" class="text-right font-bold">합계</td>
-              <td class="text-right font-bold text-blue">{{ formatPrice(selectedOrder.totalAmount) }}</td>
-            </tr>
-            </tfoot>
-          </table>
+          <div class="item-table-wrapper">
+            <table class="item-table">
+              <thead>
+              <tr>
+                <th>품목명</th>
+                <th class="text-center">수량</th>
+                <th class="text-right">단가</th>
+                <th class="text-right">소계</th>
+              </tr>
+              </thead>
+              <tbody>
+              <tr v-for="item in selectedOrder.items" :key="item.idx">
+                <td class="font-medium">{{ item.itemName }}</td>
+                <td class="text-center">{{ item.qty }}개</td>
+                <td class="text-right text-gray">{{ formatPrice(item.price) }}</td>
+                <td class="text-right font-bold">{{ formatPrice(item.price * item.qty) }}</td>
+              </tr>
+              </tbody>
+              <tfoot>
+              <tr>
+                <td colspan="3" class="text-right font-bold">최종 합계 금액</td>
+                <td class="text-right font-extrabold text-blue">{{ formatPrice(selectedOrder.totalAmount) }}</td>
+              </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
 
         <div class="modal-footer">
-          <template v-if="selectedOrder.status === '신청 완료'">
-            <button @click="processOrder('배송 중')" class="btn btn-success">승인 및 발주</button>
-            <button class="btn btn-danger">반려</button>
-          </template>
-          <button @click="closeModal" class="btn btn-gray">닫기</button>
+          <button
+              v-if="selectedOrder.status === 0"
+              @click="processOrder(1)"
+              class="btn-approve"
+          >
+            <i class="mdi mdi-truck-delivery"></i>
+            승인 및 배송시작
+          </button>
+          <button
+              v-if="selectedOrder.status === 1"
+              @click="processOrder(2)"
+              class="btn-complete"
+          >
+            <i class="mdi mdi-check-all"></i>
+            수령 완료 처리
+          </button>
+          <button @click="closeModal" class="btn-close-modal">닫기</button>
         </div>
       </div>
     </div>
-
   </div>
 </template>
 
 <style scoped>
-.page-header { margin-bottom: 20px; }
-.page-title { font-size: 1.5rem; font-weight: 700; color: #1f2937; }
-.search-panel { display: flex; align-items: center; gap: 15px; background-color: #ffffff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 20px; }
-.input-group { display: flex; align-items: center; }
-.input-label { margin-right: 8px; font-size: 0.9rem; font-weight: 500; color: #4b5563; white-space: nowrap; }
-.input-text, .input-select { padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.9rem; }
-.search-term-group { gap: 8px; }
-.btn { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; transition: background-color 0.2s; white-space: nowrap; }
-.btn-primary { background-color: #3b82f6; color: white; }
-.btn-success { background-color: #10b981; color: white; }
-.btn-info { background-color: #60a5fa; color: white; padding: 6px 10px; font-weight: 500; }
-.btn-danger { background-color: #ef4444; color: white; }
-.btn-gray { background-color: #9ca3af; color: white; }
-.btn-sm { padding: 5px 10px; font-size: 0.85rem; }
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
 
-.table-container { background-color: #ffffff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow-x: auto; }
-.data-table { width: 100%; border-collapse: collapse; /*min-width: 900px;*/ }
-.data-table th, .data-table td { padding: 12px 15px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 0.9rem; }
-.data-table th { background-color: #f9fafb; color: #1f2937; font-weight: 600; text-transform: uppercase; }
+.order-management-page { padding: 0; }
+
+/* 헤더 & 통계 */
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+.page-title { font-size: 28px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 12px; }
+.page-title i { color: #3b82f6; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 5px 0 0 0; }
+.btn-refresh { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: white; border: 1px solid #e2e8f0; border-radius: 10px; font-weight: 600; cursor: pointer; transition: 0.3s; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 28px; }
+.stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 16px; position: relative; }
+.stat-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--card-color); }
+.stat-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--card-color); opacity: 0.1; display: flex; align-items: center; justify-content: center; position: relative; }
+.stat-icon i { font-size: 22px; color: var(--card-color); position: absolute; }
+.stat-label { font-size: 11px; color: #64748b; font-weight: 600; }
+.stat-value { font-size: 18px; font-weight: 800; color: #1e293b; }
+
+/* 필터 패널 */
+.filter-panel { background: white; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.filter-row { display: flex; align-items: flex-end; gap: 16px; }
+.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
+.filter-label { font-size: 12px; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 4px; }
+.filter-select { padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; background: #fff; }
+.search-group { flex: 1; }
+.search-box { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }
+.search-input { border: none; background: transparent; outline: none; width: 100%; font-size: 14px; }
+
+/* 테이블 */
+.table-card { background: white; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden; }
+.table-header { padding: 18px 24px; border-bottom: 1px solid #f1f5f9; }
+.table-title { font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px; }
+.data-table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+.data-table thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.data-table th { padding: 14px 18px; color: white; text-align: left; font-size: 12px; }
+.data-table td { padding: 14px 18px; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #334155; }
+.status-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.status-pending { background: #fef3c7; color: #92400e; }
+.status-shipping { background: #dbeafe; color: #1e40af; }
+.status-completed { background: #d1fae5; color: #065f46; }
+
+/* Sticky 컬럼 */
+.sticky-col { position: sticky; right: 0; background: #fff; box-shadow: -4px 0 8px rgba(0,0,0,0.05); }
+.data-row:hover .sticky-col { background: #f8fafc; }
+
+/* 버튼 스타일 */
+.btn-detail { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: #3b82f6; border: none; border-radius: 6px; color: white; font-size: 11px; font-weight: 600; cursor: pointer; }
 .text-right { text-align: right; }
 .text-center { text-align: center; }
-.font-bold { font-weight: bold; }
-.text-blue { color: #2563eb; }
+.text-gray { color: #94a3b8; }
+.text-blue { color: #2563eb; font-weight: 600; }
 
-/* 상태 칩 */
-.status-chip { padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; display: inline-block; }
-.status-신청완료 { background-color: #fef3c7; color: #b45309; }
-.status-배송중 { background-color: #dbeafe; color: #1e40af; }
-.status-수령완료 { background-color: #d1fae5; color: #065f46; }
+/* === 모달 스타일 === */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modal-card { background: white; border-radius: 20px; width: 100%; max-width: 700px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); overflow: hidden; animation: slideUp 0.3s ease; }
 
-/* === 모달 스타일 (추가) === */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-content { background: white; padding: 25px; border-radius: 8px; width: 600px; max-width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-.modal-header h3 { margin: 0; font-size: 1.2rem; font-weight: 700; color: #1f2937; }
-.close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #666; }
-.modal-body { margin-bottom: 20px; }
-.info-row { display: flex; gap: 20px; margin-bottom: 15px; background: #f9fafb; padding: 10px; border-radius: 4px; }
-.modal-table th { background-color: #f3f4f6; font-size: 0.85rem; padding: 8px; }
-.modal-table td { padding: 8px; font-size: 0.9rem; border-bottom: 1px solid #eee; }
-.modal-table tfoot td { padding-top: 15px; border-top: 2px solid #e5e7eb; font-size: 1rem; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.modal-header { padding: 20px 24px; background: #f8fafc; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+.modal-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; color: #1e293b; }
+.modal-title i { color: #3b82f6; }
+.btn-close { background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer; }
+
+.modal-body { padding: 24px; }
+.order-info-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; background: #f1f5f9; padding: 16px; border-radius: 12px; margin-bottom: 24px; }
+.info-item { display: flex; flex-direction: column; gap: 4px; }
+.info-item .label { font-size: 11px; color: #64748b; font-weight: 600; }
+.info-item .value { font-size: 14px; color: #1e293b; font-weight: 700; }
+
+.item-table { width: 100%; border-collapse: collapse; }
+.item-table th { padding: 12px; text-align: left; font-size: 12px; color: #64748b; border-bottom: 2px solid #f1f5f9; }
+.item-table td { padding: 14px 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+.item-table tfoot td { padding-top: 20px; border-top: 2px solid #e2e8f0; font-size: 15px; }
+
+.modal-footer { padding: 20px 24px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 12px; }
+.btn-approve { padding: 12px 24px; background: #10b981; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.btn-complete { padding: 12px 24px; background: #3b82f6; color: white; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.btn-close-modal { padding: 12px 24px; background: #f1f5f9; color: #64748b; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
+
+.empty-state { text-align: center; padding: 60px; color: #cbd5e1; }
+.empty-state i { font-size: 48px; margin-bottom: 10px; }
 </style>

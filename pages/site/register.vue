@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
-import axios from "axios";
+import axios from 'axios';
 
 const router = useRouter();
 const route = useRoute();
+
 const {
   positionOptions,
   typeOptions,
@@ -12,7 +13,24 @@ const {
   fetchTypeOptions
 } = useApi();
 
-// 1. [공통] 현장 기본 정보 (변하지 않는 전역 정보)
+// 현재 단계
+const currentStep = ref(1);
+const totalSteps = 4;
+
+// 진행도
+const progressPercentage = computed(() => {
+  return (currentStep.value / totalSteps) * 100;
+});
+
+// 단계별 정보
+const steps = [
+  { number: 1, title: '기본 정보', icon: 'mdi-office-building' },
+  { number: 2, title: '주소 정보', icon: 'mdi-map-marker' },
+  { number: 3, title: '계약 정보', icon: 'mdi-file-document' },
+  { number: 4, title: '담당자 정보', icon: 'mdi-account-tie' }
+];
+
+// 현장 기본 정보
 const site = ref({
   siteName: '',
   siteId: '',
@@ -20,74 +38,60 @@ const site = ref({
   postalCode: '',
   addressMain: '',
   addressDetail: '',
-
-  latitude: '',   // ✅ 위도
-  longitude: '',  // ✅ 경도
-
-  // 관리 면적 및 규모
+  latitude: '',
+  longitude: '',
   area: '',
-  is_vat: false,//135㎡ 초과 여부 추가 (기본값 false)
+  is_vat: false,
   building_su: '',
   unit_su: '',
-
-  // 담당자 정보 (현장 전체 총괄)
-  managerName: '',      // 본사 담당자
+  managerName: '',
   managerContact: '',
-  director: '',         // 관리 소장
+  director: '',
   directorContact: '',
-
   memo: '',
   status: '준비 중',
-  payment_day: '',//급여일
+  payment_day: '',
+  bigo: ''
 });
 
-// 2. [핵심] 다중 계약 관리 배열
-// 구조: [{ category: '경비', contractStart: '...', totalCost: 100, staffList: [], ... }]
+// 계약 그룹
 const contractGroups = ref([]);
 
-// 3. 옵션 데이터
+// 옵션 데이터
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const statusOptions = ref(['준비 중', '운영 중', '계약 종료']);
-// const categoryOptions = ref(['경비', '미화', /*'시설', '관리', '기타'*/]); // 계약 분야
-// const positionOptions = ref([]); // 직책 리스트 (API 로드)
 
+// 비고 히스토리
 const bigoHistory = ref([]);
 
-// 주소 포커싱용
+// 주소 입력 ref
 const detailInput = ref(null);
 
-// ==========================================
-// 로직 1. 계약 그룹(카드) 추가/삭제
-// ==========================================
-
+// 계약 그룹 추가
 const addContractGroup = (category) => {
   contractGroups.value.push({
-    category: category.itemNm,        // 분야 (경비, 미화 등)
-    type: category.itemCd,        // 분야 (경비, 미화 등)
-    contractStart: '',         // 시작일
-    contractEnd: '',           // 종료일
-    totalCost: 0,              // 도급비
-    workDays: '',              // 근무 일수
-    workSchedule: '',          // 근무 형태
-    breakTime: '',             // 휴게 시간
-    staffList: [],             // 해당 계약의 투입 인원 리스트
-
-    // [UI 제어용 임시 변수]
+    category: category.itemNm,
+    type: category.itemCd,
+    contractStart: '',
+    contractEnd: '',
+    totalCost: 0,
+    workDays: '',
+    workSchedule: '',
+    breakTime: '',
+    staffList: [],
     tempJobCode: '',
     tempCount: 1
   });
 };
 
+// 계약 그룹 삭제
 const removeContractGroup = (index) => {
   if(confirm('해당 계약 정보를 삭제하시겠습니까?')) {
     contractGroups.value.splice(index, 1);
   }
 };
 
-// ==========================================
-// 로직 2. 각 계약 내 인원 추가/삭제
-// ==========================================
-
+// 인원 추가
 const addStaffToGroup = (groupIndex) => {
   const group = contractGroups.value[groupIndex];
 
@@ -100,85 +104,76 @@ const addStaffToGroup = (groupIndex) => {
     return;
   }
 
-  // 직책명 찾기
   const jobInfo = positionOptions.value.find(p => p.itemCd === group.tempJobCode);
 
-  console.log(jobInfo, group.staffList, 'd')
-
-  // 해당 그룹의 staffList에 추가
   group.staffList.push({
     code: jobInfo.itemCd,
     name: jobInfo.itemNm,
     count: Number(group.tempCount)
   });
 
-  // 입력창 초기화
   group.tempJobCode = '';
   group.tempCount = 1;
 };
 
+// 인원 삭제
 const removeStaffFromGroup = (groupIndex, staffIndex) => {
   contractGroups.value[groupIndex].staffList.splice(staffIndex, 1);
 };
 
-// 그룹별 인원 합계 계산
+// 그룹별 인원 합계
 const getGroupStaffTotal = (group) => {
   return group.staffList.reduce((sum, item) => sum + item.count, 0);
 };
 
-// ==========================================
-// 로직 3. API 통신
-// ==========================================
-/*
-const getPositionOptions = async () => {
-  try {
-    const groupCd = '01002';
-    const res = await axios.get(`/api/v1/code/${groupCd}`);
-    positionOptions.value = res.data.data;
-  } catch (err) {
-    console.error(err);
+// 계약 기간 계산
+const getContractDuration = (group) => {
+  if (!group.contractStart || !group.contractEnd) return '';
+
+  const start = new Date(group.contractStart);
+  const end = new Date(group.contractEnd);
+  const diffTime = Math.abs(end - start);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const months = Math.floor(diffDays / 30);
+  const years = Math.floor(months / 12);
+
+  if (years > 0) {
+    const remainMonths = months % 12;
+    return remainMonths > 0 ? `${years}년 ${remainMonths}개월` : `${years}년`;
   }
+  return `${months}개월`;
 };
 
- */
-
+// 폼 제출
 const handleSubmit = () => {
-  // 계약 정보를 JSON 문자열로 변환
   const contractsJson = JSON.stringify(contractGroups.value);
 
-  console.log('전송 데이터:', site.value, contractsJson);
-
   let params = {
-    cIdx : 1,
+    cIdx: 1,
     sIdx: route.query.idx || '',
     sType: site.value.siteType,
-    // 기본 정보
     name: site.value.siteName,
     site_id: site.value.siteId,
     status: site.value.status,
     area: site.value.area,
-    is_vat: site.value.is_vat ? 'Y':'N',
+    is_vat: site.value.is_vat ? 'Y' : 'N',
     building_su: site.value.building_su,
     unit_su: site.value.unit_su,
     address: site.value.addressMain,
     addressDetail: site.value.addressDetail,
     payment_day: site.value.payment_day,
-
-    // 담당자 정보
     manager: site.value.managerName,
     phone: site.value.managerContact,
     director: site.value.director,
     directorContact: site.value.directorContact,
     bigo: site.value.bigo,
-
-    // [핵심] 상세 계약 정보 (JSON String)
     contract_details: contractsJson
-  }
+  };
 
   axios.post(`/api/v1/site/register`, params)
       .then(res => {
         alert(`${site.value.siteName} 현장이 등록되었습니다.`);
-        //router.push('/site');
+        router.push('/site');
       })
       .catch(err => {
         console.error(err);
@@ -186,18 +181,19 @@ const handleSubmit = () => {
       });
 };
 
+// 데이터 로드
 const getSiteData = async () => {
   const sIdx = route.query.idx;
   if (!sIdx) return;
+
   axios.get(`/api/v1/site/data/${sIdx}`)
       .then(res => {
-        console.log(res.data.data)
         let result = res.data.data[0];
         if(result) {
           site.value.siteName = result.name;
           site.value.siteId = result.site_id;
           site.value.siteType = result.sType;
-          site.value.status = result.status == 'Y'?'운영 중':'계약 종료';
+          site.value.status = result.status == 'Y' ? '운영 중' : '계약 종료';
           site.value.area = result.area;
           site.value.is_vat = result.is_vat;
           site.value.addressMain = result.address;
@@ -210,7 +206,6 @@ const getSiteData = async () => {
           site.value.directorContact = result.director_phone;
           site.value.payment_day = result.payment_day;
 
-          //계약관련
           const contract = JSON.parse(result.contractList);
           const arr = [];
           contract.forEach((item) => {
@@ -226,34 +221,29 @@ const getSiteData = async () => {
               staffList: item.staffList,
               tempJobCode: "",
               tempCount: 1,
-            })
-          })
+            });
+          });
           contractGroups.value = arr;
 
-          //비고관련
           if (result.bigoList) {
             try {
-              // DB에서 가져온 JSON 문자열 파싱 -> 히스토리 배열에 저장
               bigoHistory.value = JSON.parse(result.bigoList);
-              console.log(JSON.parse(result.bigoList));
-
-              // 날짜(regDt) 기준 내림차순 정렬 (최신순)
               bigoHistory.value.sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
             } catch (e) {
               bigoHistory.value = [];
             }
           }
           site.value.bigo = '';
-
         }
-      })
-}
+      });
+};
 
 // 주소 검색
 const loadDaumPostcodeScript = () => {
   return new Promise((resolve) => {
     if (window.kakao && window.kakao.Postcode) {
-      resolve(window.kakao.Postcode); return;
+      resolve(window.kakao.Postcode);
+      return;
     }
     const script = document.createElement('script');
     script.src = '//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js';
@@ -261,6 +251,7 @@ const loadDaumPostcodeScript = () => {
     document.head.appendChild(script);
   });
 };
+
 const searchAddress = async () => {
   await loadDaumPostcodeScript();
   new window.kakao.Postcode({
@@ -269,7 +260,9 @@ const searchAddress = async () => {
       if (data.userSelectedType === 'R') {
         let extraAddr = '';
         if (data.bname !== '' && /[동|로|가]$/g.test(data.bname)) extraAddr += data.bname;
-        if (data.buildingName !== '' && data.apartment === 'Y') extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName);
+        if (data.buildingName !== '' && data.apartment === 'Y') {
+          extraAddr += (extraAddr !== '' ? ', ' + data.buildingName : data.buildingName);
+        }
         if (extraAddr !== '') addr += ' (' + extraAddr + ')';
       }
       site.value.postalCode = data.zonecode;
@@ -280,9 +273,25 @@ const searchAddress = async () => {
   }).open();
 };
 
+// 취소
 const handleCancel = () => {
   if (confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) {
     router.push('/site');
+  }
+};
+
+// 단계 이동
+const nextStep = () => {
+  if (currentStep.value < totalSteps) {
+    currentStep.value++;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+const prevStep = () => {
+  if (currentStep.value > 1) {
+    currentStep.value--;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 };
 
@@ -295,565 +304,1362 @@ onMounted(() => {
 
 <template>
   <div class="site-register-page">
+    <!-- 페이지 헤더 -->
     <div class="page-header">
-      <h2 class="page-title">현장 등록</h2>
+      <div class="header-left">
+        <!--button @click="handleCancel" class="btn-back">
+          <i class="mdi mdi-arrow-left"></i>
+        </button-->
+        <div>
+          <h1 class="page-title">
+            <i class="mdi mdi-office-building-plus"></i>
+            현장 등록
+          </h1>
+          <p class="page-subtitle">새로운 현장 정보를 등록합니다</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button @click="handleCancel" class="btn-cancel">
+          <i class="mdi mdi-close"></i>
+          <span>취소</span>
+        </button>
+      </div>
     </div>
 
-    <form @submit.prevent="handleSubmit" class="register-form">
+    <!-- 진행 단계 -->
+    <div class="steps-container">
+      <div class="steps-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: progressPercentage + '%' }"></div>
+        </div>
+      </div>
 
-      <section class="form-section">
-        <h3 class="section-title">현장 기본 정보</h3>
-        <div class="form-grid">
-          <div class="input-field required">
-            <label for="siteName">현장명</label>
-            <input id="siteName" type="text" v-model="site.siteName" required class="input-text" />
+      <div class="steps-list">
+        <div
+            v-for="step in steps"
+            :key="step.number"
+            :class="['step-item', {
+            active: currentStep === step.number,
+            completed: currentStep > step.number
+          }]"
+        >
+          <div class="step-circle">
+            <i v-if="currentStep > step.number" class="mdi mdi-check"></i>
+            <i v-else-if="currentStep === step.number" :class="['mdi', step.icon]"></i>
+            <span v-else>{{ step.number }}</span>
           </div>
-          <div class="input-field">
-            <label for="siteId">현장 코드 (선택)</label>
-            <input id="siteId" type="text" v-model="site.siteId" class="input-text" />
+          <div class="step-info">
+            <span class="step-number">STEP {{ step.number }}</span>
+            <span class="step-title">{{ step.title }}</span>
           </div>
-          <div class="input-field required">
-            <label for="siteType">현장 형태</label>
-            <select id="siteType" v-model="site.siteType" required class="input-select">
-              <option value="" disabled>선택하세요</option>
-              <option v-for="type in siteTypeOptions" :key="type" :value="type">{{ type }}</option>
-            </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 폼 컨테이너 -->
+    <form @submit.prevent="handleSubmit">
+      <div class="form-container">
+        <!-- Step 1: 기본 정보 -->
+        <div v-show="currentStep === 1" class="form-step">
+          <div class="step-header">
+            <i class="mdi mdi-office-building"></i>
+            <h2>현장 기본 정보</h2>
           </div>
-          <div class="input-field required">
-            <label>현장 상태</label>
-            <div class="radio-group">
-              <label v-for="status in statusOptions" :key="status">
-                <input type="radio" v-model="site.status" :value="status" :checked="site.status === status"> {{ status }}
+
+          <div class="form-grid">
+            <!-- 현장명 -->
+            <div class="form-group full-width">
+              <label class="form-label required">
+                <i class="mdi mdi-office-building"></i>
+                현장명
               </label>
+              <input
+                  type="text"
+                  v-model="site.siteName"
+                  required
+                  class="form-input"
+                  placeholder="예: LH 위례 6단지"
+              />
+            </div>
+
+            <!-- 현장 코드 -->
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-barcode"></i>
+                현장 코드
+              </label>
+              <input
+                  type="text"
+                  v-model="site.siteId"
+                  class="form-input"
+                  placeholder="선택사항"
+              />
+            </div>
+
+            <!-- 현장 형태 -->
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-tag"></i>
+                현장 형태
+              </label>
+              <select v-model="site.siteType" required class="form-select">
+                <option value="">선택하세요</option>
+                <option v-for="type in siteTypeOptions" :key="type" :value="type">
+                  {{ type }}
+                </option>
+              </select>
+            </div>
+
+            <!-- 현장 상태 -->
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-flag"></i>
+                현장 상태
+              </label>
+              <div class="radio-group">
+                <label v-for="status in statusOptions" :key="status" class="radio-label">
+                  <input type="radio" v-model="site.status" :value="status" />
+                  <span class="radio-text">{{ status }}</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 관리면적 -->
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-ruler-square"></i>
+                관리면적 (㎡)
+              </label>
+              <div class="area-wrapper">
+                <input
+                    type="text"
+                    v-model="site.area"
+                    required
+                    class="form-input"
+                    placeholder="예: 150.5"
+                />
+                <label class="checkbox-inline">
+                  <input type="checkbox" v-model="site.is_vat" />
+                  <span>135㎡ 초과</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 건물 수 -->
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-office-building-outline"></i>
+                건물 수
+              </label>
+              <input
+                  type="number"
+                  v-model="site.building_su"
+                  required
+                  class="form-input"
+                  placeholder="0"
+              />
+            </div>
+
+            <!-- 세대 수 -->
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-home-group"></i>
+                세대 수
+              </label>
+              <input
+                  type="number"
+                  v-model="site.unit_su"
+                  required
+                  class="form-input"
+                  placeholder="0"
+              />
+            </div>
+
+            <!-- 급여지급일 -->
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-calendar"></i>
+                급여지급일
+              </label>
+              <select v-model="site.payment_day" required class="form-select">
+                <option value="">선택</option>
+                <option v-for="day in 31" :key="day" :value="day">
+                  {{ day }}일
+                </option>
+              </select>
             </div>
           </div>
-        </div>
 
-        <div class="form-grid mt-4">
-          <div class="input-field required">
-            <label>관리면적 (㎡)</label>
-            <div class="area-input-wrapper">
-              <input type="text" v-model="site.area" required class="input-text" placeholder="예: 150.5" />
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="site.is_vat" />
-                <span>135㎡ 초과</span>
-              </label>
-            </div>
-          </div>
-          <div class="input-field required">
-            <label>건물 수</label>
-            <input type="text" v-model="site.building_su" required class="input-text" />
-          </div>
-          <div class="input-field required">
-            <label>세대 수</label>
-            <input type="text" v-model="site.unit_su" required class="input-text" />
-          </div>
-          <div class="input-field required">
-            <label>급여지급일</label>
-            <select v-model="site.payment_day" required class="input-text">
-              <option value="" disabled>선택</option>
-              <option v-for="day in 31" :key="day" :value="day">
-                {{ day }}일
-              </option>
-            </select>
-          </div>
-        </div>
-      </section>
-
-      <section class="form-section">
-        <h3 class="section-title">주소 정보</h3>
-        <div class="input-field required full-width">
-          <label for="postalCode">주소</label>
-          <div class="address-input-group">
-            <input id="postalCode" type="text" v-model="site.postalCode" placeholder="우편번호" required class="input-text postal-code-input" readonly />
-            <button type="button" @click="searchAddress" class="btn btn-secondary address-search-btn">주소 검색</button>
-          </div>
-          <input type="text" v-model="site.addressMain" placeholder="기본 주소" required class="input-text mt-2" readonly />
-          <input type="text" v-model="site.addressDetail" placeholder="상세 주소 (예: A동 101호)" class="input-text mt-2" ref="detailInput" />
-        </div>
-      </section>
-
-      <section class="form-section bg-gray-50">
-        <div class="section-header-row">
-          <h3 class="section-title mb-0">계약 및 인원 상세 정보</h3>
-          <div class="add-contract-group">
-            <button
-                v-for="cat in typeOptions" :key="cat.itemCd"
-                type="button"
-                @click="addContractGroup(cat)"
-                class="btn btn-xs btn-outline-primary ml-1"
-            >
-              + {{ cat.itemNm }} 추가
+          <div class="form-actions">
+            <button type="button" @click="nextStep" class="btn-next">
+              다음 단계
+              <i class="mdi mdi-arrow-right"></i>
             </button>
           </div>
         </div>
 
-        <div class="info-text" v-if="contractGroups.length === 0">
-          우측 상단의 버튼을 눌러 계약(경비, 미화 등) 정보를 추가해주세요.
-        </div>
-        <div v-for="(group, idx) in contractGroups" :key="idx" class="contract-card">
-          <div class="card-header">
-            <h4 class="card-title">
-              <span class="badge" :class="group.category">{{ group.category }}</span>
-              계약 상세
-            </h4>
-            <button type="button" @click="removeContractGroup(idx)" class="btn-text-red">삭제</button>
+        <!-- Step 2: 주소 정보 -->
+        <div v-show="currentStep === 2" class="form-step">
+          <div class="step-header">
+            <i class="mdi mdi-map-marker"></i>
+            <h2>주소 정보</h2>
           </div>
 
-          <div class="card-body">
-            <div class="form-grid">
-              <div class="input-field required">
-                <label>계약 시작일</label>
-                <input type="date" v-model="group.contractStart" required class="input-text" />
-              </div>
-              <div class="input-field required">
-                <label>계약 종료일</label>
-                <input type="date" v-model="group.contractEnd" required class="input-text" />
-              </div>
-              <!--div class="input-field required">
-                <label>월 도급비 (원)</label>
-                <input type="text" v-model="group.totalCost" required class="input-text" />
-              </div-->
-              <div class="input-field required">
-                <label>근무 일수 (월)</label>
-                <input type="number" v-model="group.workDays" placeholder="예: 25" class="input-text" />
-              </div>
-            </div>
-
-            <div class="form-grid mt-4">
-              <div class="input-field full-width required">
-                <label>근무 시간 및 형태</label>
-                <textarea v-model="group.workSchedule" rows="2" class="input-text" placeholder="예: 격일제 교대 근무 (09:00 ~ 익일 09:00)"></textarea>
-              </div>
-              <div class="input-field full-width">
-                <label>휴게 시간</label>
-                <input type="text" v-model="group.breakTime" class="input-text" placeholder="예: 주간 2시간, 야간 4시간" />
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label class="form-label required">
+                <i class="mdi mdi-map-marker"></i>
+                주소
+              </label>
+              <div class="address-search-group">
+                <input
+                    type="text"
+                    v-model="site.postalCode"
+                    placeholder="우편번호"
+                    required
+                    class="form-input postal-input"
+                    readonly
+                />
+                <button type="button" @click="searchAddress" class="btn-search-address">
+                  <i class="mdi mdi-magnify"></i>
+                  주소 검색
+                </button>
               </div>
             </div>
 
-            <div class="staff-section mt-4">
-              <label class="sub-label">인원 구성</label>
+            <div class="form-group full-width">
+              <input
+                  type="text"
+                  v-model="site.addressMain"
+                  placeholder="기본 주소"
+                  required
+                  class="form-input"
+                  readonly
+              />
+            </div>
 
-              <div class="staff-input-row">
-                <select v-model="group.tempJobCode" class="input-select staff-select">
-                  <option value="" disabled>직책 선택</option>
-                  <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
-                </select>
-                <input type="number" v-model="group.tempCount" min="1" class="input-text staff-count" placeholder="명" />
-                <button type="button" @click="addStaffToGroup(idx)" class="btn btn-primary btn-sm">추가</button>
-              </div>
+            <!--div class="form-group full-width">
+              <input
+                  type="text"
+                  v-model="site.addressDetail"
+                  placeholder="상세 주소 (예: A동 101호)"
+                  class="form-input"
+                  ref="detailInput"
+              />
+            </div-->
+          </div>
 
-              <div class="staff-tags" v-if="group.staffList && group.staffList.length > 0">
-                <span v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-tag">
-                  {{ staff.name }} <strong>{{ staff.count }}명</strong>
-                  <i @click="removeStaffFromGroup(idx, sIdx)" class="close-icon">×</i>
+          <div class="form-actions">
+            <button type="button" @click="prevStep" class="btn-prev">
+              <i class="mdi mdi-arrow-left"></i>
+              이전
+            </button>
+            <button type="button" @click="nextStep" class="btn-next">
+              다음 단계
+              <i class="mdi mdi-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 3: 계약 정보 -->
+        <div v-show="currentStep === 3" class="form-step">
+          <div class="step-header">
+            <i class="mdi mdi-file-document"></i>
+            <h2>계약 및 인원 정보</h2>
+          </div>
+
+          <div class="contract-header">
+            <p class="contract-description">
+              현장의 계약 정보를 추가합니다. 경비, 미화 등 구분별로 계약을 등록할 수 있습니다.
+            </p>
+            <div class="contract-actions">
+              <button
+                  v-for="cat in typeOptions"
+                  :key="cat.itemCd"
+                  type="button"
+                  @click="addContractGroup(cat)"
+                  class="btn-add-contract"
+              >
+                <i class="mdi mdi-plus"></i>
+                {{ cat.itemNm }} 추가
+              </button>
+            </div>
+          </div>
+
+          <div v-if="contractGroups.length === 0" class="empty-contracts">
+            <i class="mdi mdi-file-document-outline"></i>
+            <p>등록된 계약이 없습니다</p>
+            <span>상단 버튼을 눌러 계약 정보를 추가해주세요</span>
+          </div>
+
+          <div v-for="(group, idx) in contractGroups" :key="idx" class="contract-card">
+            <div class="contract-card-header">
+              <div class="contract-title">
+                <span :class="['contract-badge', `badge-${group.category}`]">
+                  <i class="mdi mdi-briefcase"></i>
+                  {{ group.category }}
                 </span>
-                <span class="total-badge">합계: {{ getGroupStaffTotal(group) }}명</span>
+                <span v-if="getContractDuration(group)" class="contract-duration">
+                  <i class="mdi mdi-calendar-range"></i>
+                  {{ getContractDuration(group) }}
+                </span>
+              </div>
+              <button type="button" @click="removeContractGroup(idx)" class="btn-remove-contract">
+                <i class="mdi mdi-delete"></i>
+              </button>
+            </div>
+
+            <div class="contract-card-body">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label class="form-label required">
+                    <i class="mdi mdi-calendar-start"></i>
+                    계약 시작일
+                  </label>
+                  <input type="date" v-model="group.contractStart" required class="form-input" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">
+                    <i class="mdi mdi-calendar-end"></i>
+                    계약 종료일
+                  </label>
+                  <input type="date" v-model="group.contractEnd" required class="form-input" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">
+                    <i class="mdi mdi-calendar-month"></i>
+                    근무 일수 (월)
+                  </label>
+                  <input
+                      type="number"
+                      v-model="group.workDays"
+                      placeholder="예: 25"
+                      class="form-input"
+                  />
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label required">
+                    <i class="mdi mdi-clock-outline"></i>
+                    근무 시간 및 형태
+                  </label>
+                  <textarea
+                      v-model="group.workSchedule"
+                      rows="2"
+                      class="form-textarea"
+                      placeholder="예: 격일제 교대 근무 (09:00 ~ 익일 09:00)"
+                  ></textarea>
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label">
+                    <i class="mdi mdi-coffee"></i>
+                    휴게 시간
+                  </label>
+                  <input
+                      type="text"
+                      v-model="group.breakTime"
+                      class="form-input"
+                      placeholder="예: 주간 2시간, 야간 4시간"
+                  />
+                </div>
+              </div>
+
+              <!-- 인원 구성 -->
+              <div class="staff-section">
+                <label class="section-label">
+                  <i class="mdi mdi-account-group"></i>
+                  인원 구성
+                </label>
+
+                <div class="staff-input-group">
+                  <select v-model="group.tempJobCode" class="form-select staff-position">
+                    <option value="">직책 선택</option>
+                    <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">
+                      {{ opt.itemNm }}
+                    </option>
+                  </select>
+                  <input
+                      type="number"
+                      v-model="group.tempCount"
+                      min="1"
+                      class="form-input staff-count"
+                      placeholder="인원"
+                  />
+                  <button type="button" @click="addStaffToGroup(idx)" class="btn-add-staff">
+                    <i class="mdi mdi-plus"></i>
+                    추가
+                  </button>
+                </div>
+
+                <div v-if="group.staffList && group.staffList.length > 0" class="staff-list">
+                  <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item">
+                    <div class="staff-info">
+                      <i class="mdi mdi-account"></i>
+                      <span class="staff-position-name">{{ staff.name }}</span>
+                      <span class="staff-count-badge">{{ staff.count }}명</span>
+                    </div>
+                    <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff">
+                      <i class="mdi mdi-close"></i>
+                    </button>
+                  </div>
+                  <div class="staff-total">
+                    <i class="mdi mdi-sigma"></i>
+                    <span>합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
+
+          <div class="form-actions">
+            <button type="button" @click="prevStep" class="btn-prev">
+              <i class="mdi mdi-arrow-left"></i>
+              이전
+            </button>
+            <button type="button" @click="nextStep" class="btn-next">
+              다음 단계
+              <i class="mdi mdi-arrow-right"></i>
+            </button>
+          </div>
         </div>
-      </section>
 
-      <section class="form-section">
-        <h3 class="section-title">담당자 및 기타 정보</h3>
-        <div class="form-grid">
-          <div class="input-field">
-            <label for="managerName">본사 담당자 이름</label>
-            <input id="managerName" type="text" v-model="site.managerName" class="input-text" />
+        <!-- Step 4: 담당자 정보 -->
+        <div v-show="currentStep === 4" class="form-step">
+          <div class="step-header">
+            <i class="mdi mdi-account-tie"></i>
+            <h2>담당자 및 기타 정보</h2>
           </div>
-          <div class="input-field">
-            <label for="managerContact">본사 담당자 연락처</label>
-            <input id="managerContact" type="tel" v-model="site.managerContact" class="input-text" placeholder="010-XXXX-XXXX" />
-          </div>
-          <div class="input-field required">
-            <label for="director">관리 소장 이름</label>
-            <input id="director" type="text" v-model="site.director" required class="input-text" />
-          </div>
-          <div class="input-field required">
-            <label for="directorContact">관리 소장 연락처</label>
-            <input id="directorContact" type="tel" v-model="site.directorContact" required class="input-text" placeholder="010-XXXX-XXXX" />
-          </div>
-          <!--div class="input-field full-width">
-            <label for="memo">특이사항 및 메모</label>
-            <textarea id="memo" v-model="site.bigo" class="input-text" rows="3"></textarea>
-          </div-->
-        </div>
-      </section>
 
-      <section class="form-section">
-        <h3 class="section-title">특이사항 및 메모</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-account"></i>
+                본사 담당자 이름
+              </label>
+              <input
+                  type="text"
+                  v-model="site.managerName"
+                  class="form-input"
+                  placeholder="홍길동"
+              />
+            </div>
 
-        <div class="history-container" v-if="bigoHistory.length > 0">
-          <label class="sub-label">📝 히스토리 ({{ bigoHistory.length }}건)</label>
-          <ul class="history-list">
-            <li v-for="(item, idx) in bigoHistory" :key="idx" class="history-item">
-              <div class="history-meta">
-                <span class="history-date">{{ item.regDt ? item.regDt.substring(0, 10) : '날짜 없음' }}</span>
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-phone"></i>
+                본사 담당자 연락처
+              </label>
+              <input
+                  type="tel"
+                  v-model="site.managerContact"
+                  class="form-input"
+                  placeholder="010-0000-0000"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-account-hard-hat"></i>
+                관리 소장 이름
+              </label>
+              <input
+                  type="text"
+                  v-model="site.director"
+                  required
+                  class="form-input"
+                  placeholder="김관리"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-phone"></i>
+                관리 소장 연락처
+              </label>
+              <input
+                  type="tel"
+                  v-model="site.directorContact"
+                  required
+                  class="form-input"
+                  placeholder="010-0000-0000"
+              />
+            </div>
+
+            <!-- 비고 히스토리 -->
+            <div class="form-group full-width">
+              <label class="section-label">
+                <i class="mdi mdi-note-text"></i>
+                특이사항 및 메모
+              </label>
+
+              <div v-if="bigoHistory.length > 0" class="memo-history">
+                <div class="history-header">
+                  <i class="mdi mdi-history"></i>
+                  <span>히스토리 ({{ bigoHistory.length }}건)</span>
+                </div>
+                <div class="history-list">
+                  <div v-for="(item, idx) in bigoHistory" :key="idx" class="history-item">
+                    <span class="history-date">{{ item.regDt ? item.regDt.substring(0, 10) : '-' }}</span>
+                    <p class="history-content">{{ item.bigo }}</p>
+                  </div>
+                </div>
               </div>
-              <p class="history-content">{{ item.bigo }}</p>
-            </li>
-          </ul>
-        </div>
-        <div v-else class="empty-history">
-          등록된 특이사항 내역이 없습니다.
-        </div>
 
-        <div class="input-field full-width mt-4">
-          <label for="memo">새로운 메모 추가</label>
-          <textarea
-              id="memo"
-              v-model="site.bigo"
-              class="input-text"
-              rows="3"
-              placeholder="추가할 특이사항을 입력하세요. (저장 시 히스토리에 추가됩니다)"
-          ></textarea>
-        </div>
-      </section>
+              <textarea
+                  v-model="site.bigo"
+                  class="form-textarea"
+                  rows="4"
+                  placeholder="추가할 특이사항을 입력하세요 (저장 시 히스토리에 추가됩니다)"
+              ></textarea>
+            </div>
+          </div>
 
-      <div class="button-group">
-        <button type="button" @click="handleCancel" class="btn btn-secondary">취소</button>
-        <button type="submit" class="btn btn-primary">현장 등록</button>
+          <div class="form-actions">
+            <button type="button" @click="prevStep" class="btn-prev">
+              <i class="mdi mdi-arrow-left"></i>
+              이전
+            </button>
+            <button type="submit" class="btn-submit">
+              <i class="mdi mdi-check"></i>
+              등록 완료
+            </button>
+          </div>
+        </div>
       </div>
     </form>
   </div>
 </template>
 
 <style scoped>
-/* === 공통 레이아웃 === */
-.register-form {
-  background-color: #ffffff;
-  padding: 30px;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.form-section {
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 20px;
-  margin-bottom: 30px;
-}
-.section-title {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #1f2937;
-  border-bottom: 1px solid #f3f4f6;
-  padding-bottom: 10px;
-  margin-bottom: 15px;
-}
-
-/* === 그리드 시스템 === */
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-}
-.input-field {
-  display: flex;
-  flex-direction: column;
-}
-.input-field label, .sub-label {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: #4b5563;
-  margin-bottom: 5px;
-}
-.input-field.required label:after {
-  content: '*';
-  color: #ef4444;
-  margin-left: 4px;
-}
-.input-text, .input-select {
-  padding: 10px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  transition: border-color 0.2s;
-  background-color: #ffffff;
-}
-.input-text:focus, .input-select:focus {
-  border-color: #3b82f6;
-  outline: none;
-}
-.full-width {
-  grid-column: 1 / -1;
-}
-.mt-2 { margin-top: 8px; }
-.mt-4 { margin-top: 16px; }
-.ml-1 { margin-left: 4px; }
-.mb-0 { margin-bottom: 0; }
-
-/* === 주소 및 라디오 === */
-.address-input-group {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.postal-code-input {
-  flex-grow: 0;
-  width: 120px;
-  background-color: #f9fafb;
-}
-.address-search-btn {
-  padding: 10px 15px;
-  height: 42px;
-}
-.radio-group {
-  display: flex;
-  gap: 15px;
-  padding-top: 5px;
-}
-.radio-group label {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 400;
+.btn-back {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
 }
-.radio-group input { margin-right: 5px; }
 
-/* === [NEW] 계약 카드 스타일 === */
-.bg-gray-50 { background-color: #f9fafb; }
-.section-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #e5e7eb;
-  padding-bottom: 10px;
-  margin-bottom: 15px;
+.btn-back:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
-.contract-card {
-  background: #fff;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+
+.btn-back i {
+  font-size: 24px;
 }
-.card-header {
-  background: #f3f4f6;
-  padding: 10px 15px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #e5e7eb;
-}
-.card-title {
-  font-size: 0.95rem;
+
+.page-title {
+  font-size: 28px;
   font-weight: 700;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.card-body { padding: 20px; }
-
-/* 뱃지 */
-.badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  color: #fff;
-  background: #6b7280;
-}
-.badge.경비 { background: #2563eb; }
-.badge.미화 { background: #db2777; }
-.badge.시설 { background: #059669; }
-
-/* 인원 추가 영역 */
-.staff-section {
-  background: #f9fafb;
-  padding: 15px;
-  border-radius: 6px;
-  border: 1px solid #e5e7eb;
-}
-.staff-input-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.staff-select { width: 140px; }
-.staff-count { width: 80px; }
-.staff-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.staff-tag {
-  background: #fff;
-  border: 1px solid #d1d5db;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.staff-tag strong { color: #2563eb; }
-.close-icon {
-  cursor: pointer;
-  color: #9ca3af;
-  font-weight: bold;
-  line-height: 1;
-}
-.close-icon:hover { color: #ef4444; }
-.total-badge {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #4b5563;
-  margin-left: auto;
-}
-
-/* === 버튼 그룹 === */
-.button-group {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid #e5e7eb;
-}
-.btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-.btn-primary { background-color: #3b82f6; color: white; }
-.btn-primary:hover { background-color: #2563eb; }
-.btn-secondary { background-color: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
-.btn-secondary:hover { background-color: #e5e7eb; }
-.btn-sm { padding: 8px 16px; height: 42px; }
-.btn-xs { padding: 4px 10px; font-size: 0.8rem; }
-.btn-outline-primary {
-  background: #fff;
-  border: 1px solid #3b82f6;
-  color: #3b82f6;
-}
-.btn-outline-primary:hover { background: #eff6ff; }
-.btn-text-red {
-  background: none;
-  border: none;
-  color: #ef4444;
-  font-size: 0.85rem;
-  cursor: pointer;
-  text-decoration: underline;
-}
-.info-text {
-  text-align: center;
-  color: #9ca3af;
-  padding: 20px;
-  font-size: 0.9rem;
-}
-
-/* === 비고 히스토리 스타일 === */
-.history-container {
-  background-color: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 15px;
-  margin-bottom: 15px;
-  max-height: 250px; /* 높이 제한 후 스크롤 */
-  overflow-y: auto;
-}
-
-.history-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.history-item {
-  background-color: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
-  padding: 10px;
-  margin-bottom: 8px;
-}
-.history-item:last-child {
-  margin-bottom: 0;
-}
-
-.history-meta {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.history-date {
-  font-size: 0.8rem;
-  color: #9ca3af;
-  font-weight: 500;
-}
-
-.history-content {
-  font-size: 0.9rem;
-  color: #374151;
-  white-space: pre-wrap; /* 줄바꿈 유지 */
-  margin: 0;
-  line-height: 1.4;
-}
-
-.empty-history {
-  text-align: center;
-  padding: 20px;
-  color: #9ca3af;
-  background-color: #f9fafb;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  border: 1px dashed #d1d5db;
-}
-
-.sub-label {
-  display: block;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #4b5563;
-  margin-bottom: 8px;
-}
-
-/* 스크롤바 커스텀 (선택사항) */
-.history-container::-webkit-scrollbar {
-  width: 6px;
-}
-.history-container::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-.history-container::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
-}
-.history-container::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
-}
-
-.area-input-wrapper {
+  color: #1e293b;
+  margin: 0 0 8px 0;
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.area-input-wrapper .input-text {
+.page-title i {
+  font-size: 32px;
+  color: #667eea;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-cancel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-cancel:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.btn-cancel i {
+  font-size: 18px;
+}
+
+/* === 진행 단계 === */
+.steps-container {
+  background: white;
+  border-radius: 16px;
+  padding: 28px;
+  margin-bottom: 28px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.steps-progress {
+  margin-bottom: 24px;
+}
+
+.progress-bar {
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+}
+
+.steps-list {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.step-item.active {
+  background: #eff6ff;
+}
+
+.step-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+
+.step-item.active .step-circle {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.step-item.completed .step-circle {
+  background: #10b981;
+  color: white;
+}
+
+.step-circle i {
+  font-size: 24px;
+}
+
+.step-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.step-number {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.step-title {
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.step-item.active .step-number,
+.step-item.active .step-title {
+  color: #667eea;
+}
+
+/* === 폼 컨테이너 === */
+.form-container {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+.form-step {
+  padding: 32px;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 20px;
+  margin-bottom: 28px;
+  border-bottom: 2px solid #f1f5f9;
+}
+
+.step-header i {
+  font-size: 32px;
+  color: #667eea;
+}
+
+.step-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+/* === 폼 그리드 === */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-label,
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.form-label i,
+.section-label i {
+  font-size: 16px;
+  color: #667eea;
+}
+
+.form-label.required::after {
+  content: '*';
+  color: #ef4444;
+  margin-left: 4px;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #334155;
+  transition: all 0.2s;
+  background: white;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-input::placeholder {
+  color: #94a3b8;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 100px;
+  font-family: inherit;
+}
+
+/* 라디오 그룹 */
+.radio-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+  background: white;
+}
+
+.radio-label:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.radio-label input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.radio-text {
+  font-size: 14px;
+  color: #64748b;
+}
+
+/* 면적 입력 */
+.area-wrapper {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.area-wrapper .form-input {
   flex: 1;
 }
 
-.checkbox-label {
+.checkbox-inline {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.85rem;
-  color: #ef4444; /* 강조하고 싶을 경우 빨간색 계열 사용 */
+  font-size: 13px;
+  color: #ef4444;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  user-select: none;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-inline input[type="checkbox"] {
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+
+/* 주소 검색 */
+.address-search-group {
+  display: flex;
+  gap: 12px;
+}
+
+.postal-input {
+  width: 140px;
+}
+
+.btn-search-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-search-address:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-search-address i {
+  font-size: 18px;
+}
+
+/* === 계약 섹션 === */
+.contract-header {
+  margin-bottom: 24px;
+}
+
+.contract-description {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 16px 0;
+}
+
+.contract-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-add-contract {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: white;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  color: #667eea;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-contract:hover {
+  background: #f8fafc;
+  border-color: #667eea;
+}
+
+.btn-add-contract i {
+  font-size: 16px;
+}
+
+.empty-contracts {
+  text-align: center;
+  padding: 60px 20px;
+  background: #fafbfc;
+  border-radius: 12px;
+  border: 2px dashed #e2e8f0;
+  color: #94a3b8;
+}
+
+.empty-contracts i {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.3;
+}
+
+.empty-contracts p {
+  font-size: 16px;
+  font-weight: 600;
+  color: #64748b;
+  margin: 0 0 8px 0;
+}
+
+.empty-contracts span {
+  font-size: 13px;
+}
+
+/* 계약 카드 */
+.contract-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.contract-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.contract-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contract-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+}
+
+.contract-badge i {
+  font-size: 16px;
+}
+
+.badge-경비 { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+.badge-미화 { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); }
+.badge-시설 { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+
+.contract-duration {
+  font-size: 13px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.contract-duration i {
+  font-size: 16px;
+}
+
+.btn-remove-contract {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: none;
+  color: #dc2626;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-remove-contract:hover {
+  background: #fee2e2;
+}
+
+.btn-remove-contract i {
+  font-size: 18px;
+}
+
+.contract-card-body {
+  padding: 24px;
+}
+
+/* 인원 섹션 */
+.staff-section {
+  margin-top: 24px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.staff-input-group {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.staff-position {
+  flex: 1;
+}
+
+.staff-count {
+  width: 100px;
+}
+
+.btn-add-staff {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.btn-add-staff:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.btn-add-staff i {
+  font-size: 16px;
+}
+
+.staff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.staff-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.staff-info i {
+  font-size: 18px;
+  color: #667eea;
+}
+
+.staff-position-name {
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.staff-count-badge {
+  padding: 4px 10px;
+  background: #eff6ff;
+  color: #1e40af;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.btn-remove-staff {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #fef2f2;
+  border: none;
+  color: #dc2626;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-remove-staff:hover {
+  background: #fee2e2;
+}
+
+.btn-remove-staff i {
+  font-size: 16px;
+}
+
+.staff-total {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.staff-total i {
+  font-size: 18px;
+}
+
+/* 메모 히스토리 */
+.memo-history {
+  margin-bottom: 16px;
+  background: #fafbfc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.history-header i {
+  font-size: 16px;
+}
+
+.history-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.history-item {
+  padding: 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.history-item:last-child {
+  margin-bottom: 0;
+}
+
+.history-date {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.history-content {
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* === 폼 액션 === */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.btn-prev,
+.btn-next,
+.btn-submit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-prev {
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+.btn-prev:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-next,
+.btn-submit {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-next:hover,
+.btn-submit:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+}
+
+.btn-prev i,
+.btn-next i,
+.btn-submit i {
+  font-size: 18px;
+}
+
+/* === 반응형 === */
+@media (max-width: 1024px) {
+  .steps-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .btn-cancel {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .steps-list {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .address-search-group {
+    flex-direction: column;
+  }
+
+  .postal-input {
+    width: 100%;
+  }
+
+  .btn-search-address {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .area-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .staff-input-group {
+    flex-direction: column;
+  }
+
+  .staff-count {
+    width: 100%;
+  }
+
+  .contract-actions {
+    flex-direction: column;
+  }
+
+  .btn-add-contract {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

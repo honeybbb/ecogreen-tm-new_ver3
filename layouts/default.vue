@@ -269,7 +269,7 @@ onMounted(() => {
                 :to="item.to"
                 :class="['eg-menu-item', { 'eg-active': isActive(item) }]"
             >
-              <!--span class="eg-icon">{{ item.icon }}</span-->
+              <span class="eg-icon">{{ item.icon }}</span>
               <transition name="fade">
                 <span v-show="!miniVariant" class="eg-title">{{ item.title }}</span>
               </transition>
@@ -283,7 +283,7 @@ onMounted(() => {
                   }]"
                   @click="toggleGroup(item.id)"
               >
-                <!--span class="eg-icon">{{ item.icon }}</span-->
+                <span class="eg-icon">{{ item.icon }}</span>
                 <transition name="fade">
                   <span v-show="!miniVariant" class="eg-title">{{ item.title }}</span>
                 </transition>

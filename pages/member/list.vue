@@ -1118,7 +1118,7 @@ onMounted(() => {
   position: absolute;
   bottom: 125%;
   left: 50%;
-  transform: translateX(-50%);
+  /*transform: translateX(-50%);*/
   background: #1e293b;
   color: white;
   padding: 10px 12px;

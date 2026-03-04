@@ -1,821 +1,1536 @@
-<template>
-  <!-- max-w-6xl로 최대 너비를 확장하고, mx-auto로 중앙 정렬합니다. -->
-  <div class="member-detail-page">
-
-    <!-- 페이지 헤더 및 액션 버튼 -->
-    <div class="page-header flex justify-between">
-      <h2 class="page-title">직원 상세 정보</h2>
-
-      <!-- 상태 메시지 (저장/취소 시 피드백) -->
-      <div v-if="statusMessage"
-           :class="['text-sm px-3 py-1 rounded-full font-medium', statusClass]"
-           role="alert">
-        {{ statusMessage }}
-      </div>
-
-      <!-- 편집/저장/취소 버튼 그룹 -->
-      <div class="button-group-header">
-        <button v-if="!isEditMode" @click="toggleEditMode(true)" class="btn btn-primary">
-          정보 수정
-        </button>
-        <button v-if="isEditMode" @click="handleSave" class="btn btn-success">
-          저장
-        </button>
-        <button v-if="isEditMode" @click="toggleEditMode(false)" class="btn btn-secondary">
-          취소
-        </button>
-      </div>
-    </div>
-
-    <!-- 상세 정보 폼 -->
-    <form @submit.prevent="handleSave" class="detail-form">
-
-      <!-- 1. 기본 정보 섹션 -->
-      <section class="form-section">
-        <h3 class="section-title">기본 정보</h3>
-        <div class="form-grid">
-          <div class="input-field required">
-            <label for="type">구분</label>
-            <p class="data-display">{{ employee.type }}</p>
-          </div>
-
-          <!-- 이름 (수정 가능) -->
-          <div class="input-field required">
-            <label for="name">이름</label>
-            <input v-if="isEditMode" id="name" type="text" v-model="employee.name" class="input-text" placeholder="예: 김철수" />
-            <p v-else class="data-display">{{ employee.name }}</p>
-          </div>
-
-          <!-- 사번 (읽기 전용) -->
-          <div class="input-field required">
-            <label for="id">사번</label>
-            <p class="data-display">{{ employee.id }}</p>
-          </div>
-
-          <!-- 연락처 (수정 가능) -->
-          <div class="input-field">
-            <label for="phone">연락처</label>
-            <input v-if="isEditMode" id="phone" type="tel" v-model="employee.phone" class="input-text" placeholder="예: 010-1234-5678" />
-            <p v-else class="data-display">{{ employee.phone || 'N/A' }}</p>
-          </div>
-
-          <!-- ✅ 성별 (추가) -->
-          <div class="input-field required">
-            <label>성별</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="M" v-model="employee.gender" />
-                남
-              </label>
-              <label>
-                <input type="radio" value="F" v-model="employee.gender" />
-                여
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.gender == 'M'? '남':'여' || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 이메일 (수정 가능) -->
-          <div class="input-field">
-            <label for="email">이메일</label>
-            <input v-if="isEditMode" id="email" type="email" v-model="employee.email" class="input-text" />
-            <p v-else class="data-display">{{ employee.email || 'N/A' }}</p>
-          </div>
-
-          <!-- 생년월일 (수정 가능) -->
-          <div class="input-field">
-            <label for="birthDate">생년월일</label>
-            <input v-if="isEditMode" id="birthDate" type="date" v-model="employee.birthDate" class="input-text" />
-            <p v-else class="data-display">{{ employee.birthDate || 'N/A' }}</p>
-          </div>
-
-          <!-- 주소 (수정 가능) -->
-          <div class="input-field full-width">
-            <label for="address">주소</label>
-            <input v-if="isEditMode" id="address" type="text" v-model="employee.address" class="input-text" />
-            <p v-else class="data-display">{{ employee.address || 'N/A' }}</p>
-          </div>
-
-        </div>
-      </section>
-
-      <section class="form-section">
-        <h3 class="section-title">특이 사항</h3>
-        <div class="form-grid">
-          <!-- 장애 여부 -->
-          <div class="input-field required">
-            <label>장애여부</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="Y" v-model="employee.disability" />
-                O
-              </label>
-              <label>
-                <input type="radio" value="N" v-model="employee.disability" />
-                X
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.disability || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 장애등록일 / 등급 (O일 때만 표시) -->
-          <div v-if="employee.disability === 'Y'">
-            <!-- 장애등록일 -->
-            <div class="input-field">
-              <label>장애등록일</label>
-              <input
-                  class="input-text"
-                  v-if="isEditMode"
-                  type="date"
-                  v-model="employee.disability_date"
-              />
-              <p v-else class="data-display">
-                {{ employee.disability_date ? employee.disability_date.split('T')[0] : 'N/A' }}
-              </p>
-            </div>
-          </div>
-
-          <!-- 장애등급 -->
-          <div v-if="employee.disability === 'Y'">
-            <div class="input-field">
-              <label>장애등급</label>
-              <input
-                  class="input-text"
-                  v-if="isEditMode"
-                  type="text"
-                  v-model="employee.disability_grade"
-                  placeholder="예: 1급 / 경증 / 중증"
-              />
-              <p v-else class="data-display">
-                {{ employee.disability_grade || 'N/A' }}
-              </p>
-            </div>
-          </div>
-
-          <!-- 새터민 여부 -->
-          <div class="input-field required">
-            <label>새터민 여부</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="Y" v-model="employee.defector" />
-                O
-              </label>
-              <label>
-                <input type="radio" value="N" v-model="employee.defector" />
-                X
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.defector || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 국가유공자 여부 -->
-          <div class="input-field required">
-            <label>국가유공자 여부</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="Y" v-model="employee.patriot" />
-                O
-              </label>
-              <label>
-                <input type="radio" value="N" v-model="employee.patriot" />
-                X
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.patriot || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 청년인턴 여부 -->
-          <div class="input-field required">
-            <label>청년인턴 여부</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="Y" v-model="employee.intern" />
-                O
-              </label>
-              <label>
-                <input type="radio" value="N" v-model="employee.intern" />
-                X
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.intern || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 기초수급자 여부 -->
-          <div class="input-field required">
-            <label>기초수급자 여부</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="Y" v-model="employee.beneficiary" />
-                O
-              </label>
-              <label>
-                <input type="radio" value="N" v-model="employee.beneficiary" />
-                X
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.beneficiary || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 외국인 여부 -->
-          <div class="input-field required">
-            <label>외국인 여부</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label>
-                <input type="radio" value="Y" v-model="employee.foreigner" />
-                O
-              </label>
-              <label>
-                <input type="radio" value="N" v-model="employee.foreigner" />
-                X
-              </label>
-            </div>
-            <p v-else class="data-display">
-              {{ employee.foreigner || 'N/A' }}
-            </p>
-          </div>
-
-          <!-- 국적 / 코드 / 비자만료일 체크 (O일 때만 표시) -->
-          <div v-if="employee.foreigner === 'Y'">
-            <!-- 국적 -->
-            <div class="input-field">
-              <label>국적</label>
-              <input
-                  class="input-text"
-                  v-if="isEditMode"
-                  type="text"
-                  v-model="employee.nationality"
-                  placeholder="예: 베트남, 중국"
-              />
-              <p v-else class="data-display">
-                {{ employee.nationality || 'N/A' }}
-              </p>
-            </div>
-          </div>
-
-          <div v-if="employee.foreigner === 'Y'">
-            <!-- 코드 -->
-            <div class="input-field">
-              <label>비자 코드</label>
-              <input
-                  class="input-text"
-                  v-if="isEditMode"
-                  type="text"
-                  v-model="employee.visa_code"
-                  placeholder="예: KR, CN"
-              />
-              <p v-else class="data-display">
-                {{ employee.visa_code || 'N/A' }}
-              </p>
-            </div>
-          </div>
-
-          <!-- 비자만료일 -->
-          <div v-if="employee.foreigner === 'Y'">
-            <div class="input-field">
-              <label>비자만료일</label>
-              <input
-                  class="input-text"
-                  v-if="isEditMode"
-                  type="date"
-                  v-model="employee.visa_date"
-              />
-              <p v-else class="data-display">
-                {{ employee.visa_date || 'N/A' }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 근로계약서 섹션 -->
-      <section class="form-section flex justify-end">
-        <h3 class="section-title">근로 계약</h3>
-        <button type="button" @click="showModal = true" class="btn btn-info">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 inline-block" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 4a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd" />
-          </svg>
-          근로계약서 보기
-        </button>
-
-      </section>
-
-      <!-- 2. 현장 및 직무 정보 섹션 (퇴사 정보 포함) -->
-      <section class="form-section">
-        <h3 class="section-title">현장 및 직무 정보</h3>
-        <div class="form-grid">
-
-          <!-- 근무 현장 (수정 가능) -->
-          <div class="input-field required">
-            <label for="site">근무 현장</label>
-            <select v-if="isEditMode" id="site" v-model="employee.sIdx" required class="input-select">
-              <option v-for="site in siteOptions" :key="site" :value="site.idx">{{ site.name }}</option>
-            </select>
-            <p v-else class="data-display">{{ employee.site }}</p>
-          </div>
-
-          <!-- 직위 (수정 가능) -->
-          <div class="input-field required">
-            <label for="position">직위</label>
-            <select v-if="isEditMode" id="position" v-model="employee.positionCd" required class="input-select">
-              <option v-for="pos in positionOptions" :key="pos" :value="pos.itemCd">{{ pos.itemNm }}</option>
-            </select>
-            <p v-else class="data-display">{{ employee.position }}</p>
-          </div>
-
-          <!-- 입사일 (읽기 전용) -->
-          <div class="input-field required">
-            <label for="joinDate">입사일</label>
-            <input v-if="isEditMode" id="joinDate" type="date" v-model="employee.joinDate" class="input-text" />
-            <p v-else class="data-display">{{ employee.joinDate }}</p>
-          </div>
-
-          <!-- 재직 상태 (수정 가능) -->
-          <div class="input-field">
-            <label>재직 상태</label>
-            <div v-if="isEditMode" class="radio-group">
-              <label><input type="radio" v-model="employee.status" value="0"> 재직</label>
-              <label><input type="radio" v-model="employee.status" value="1"> 퇴사</label>
-            </div>
-            <p v-else
-               :class="{
-                'text-green-600 font-semibold': employee.status == '0',
-                'text-red-600 font-semibold': employee.status == '1'}"
-               class="data-display">
-              {{ employee.status == 0 ? '재직':'퇴사' }}
-            </p>
-          </div>
-
-          <!-- 퇴사일 (퇴사 상태이거나 수정 모드일 때만 표시) -->
-          <template v-if="employee.status == 1 && isEditMode">
-            <div class="input-field" :class="{ 'required': employee.status == '1' }">
-              <label for="departureDate">퇴사일</label>
-              <input v-if="isEditMode" id="departureDate" type="date"
-                     v-model="employee.departureDate"
-                     :required="employee.status == '1'"
-                     class="input-text" />
-              <p v-else class="data-display">{{ employee.departureDate || 'N/A' }}</p>
-            </div>
-          </template>
-
-          <!-- 퇴사 사유 (퇴사 상태이거나 수정 모드일 때만 표시) -->
-          <template v-if="employee.status == 1 && isEditMode">
-            <div class="input-field" :class="{ 'required': employee.status == '1' }">
-              <label for="departureReason">퇴사 사유</label>
-              <input v-if="isEditMode" id="departureReason" type="text"
-                     v-model="employee.departureReason"
-                     :required="employee.status == '1'"
-                     class="input-text" />
-              <p v-else class="data-display">{{ employee.departureReason || 'N/A' }}</p>
-            </div>
-          </template>
-
-        </div>
-      </section>
-
-      <!-- 3. 금융 및 기타 정보 섹션 -->
-      <section class="form-section">
-        <h3 class="section-title">금융 및 기타 정보</h3>
-        <div class="form-grid">
-
-          <!-- 은행 (수정 가능) -->
-          <div class="input-field">
-            <label for="bankName">은행</label>
-            <input v-if="isEditMode" id="bankName" type="text" v-model="employee.bankName" class="input-text" />
-            <p v-else class="data-display">{{ employee.bankName || 'N/A' }}</p>
-          </div>
-
-          <!-- 계좌번호 (수정 가능) -->
-          <div class="input-field">
-            <label for="accountNumber">계좌번호</label>
-            <input v-if="isEditMode" id="accountNumber" type="text" v-model="employee.accountNumber" class="input-text" placeholder="숫자만 입력" />
-            <p v-else class="data-display">{{ employee.accountNumber || 'N/A' }}</p>
-          </div>
-
-          <!-- 비고 (수정 가능) -->
-          <div class="input-field full-width">
-            <label for="bigo">비고</label>
-            <textarea v-if="isEditMode" id="bigo" v-model="employee.bigo" class="input-text h-20"></textarea>
-            <p v-else class="data-display whitespace-pre-wrap">{{ employee.bigo || 'N/A' }}</p>
-          </div>
-
-        </div>
-      </section>
-
-    </form>
-
-    <!-- 근로계약서 모달 (인라인 구현) -->
-    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
-      <div class="modal-content">
-
-        <div class="modal-header">
-          <h3 class="modal-title">근로계약서</h3>
-          <button @click="showModal = false" class="close-btn">&times;</button>
-        </div>
-
-        <div class="modal-body custom-scrollbar">
-
-          <div class="contract-document contract-page">
-            <!-- 상단 로고 + 제목 -->
-            <div class="contract-header">
-              <div class="contract-logo">
-                <!-- 회사 로고 자리 (이미지 경로 맞게 수정) -->
-                <!--img src="/eco-img.png" alt="에코그린TM 로고" /-->
-              </div>
-              <div class="contract-title-wrap">
-                <h1 class="contract-title">근 로 계 약 서 {{ contractYear }}년</h1>
-              </div>
-            </div>
-
-            <!-- 작성일 -->
-            <p class="text-right text-sm mb-4">작성일: {{ employee.joinDate || '______-__-__' }}</p>
-
-            <!-- 제1조 계약기간 -->
-            <p class="contract-paragraph">
-              ㈜에코그린티엠 대표이사 백송이(이하 “갑”이라 칭함)과 근로자
-              <span class="underline-field">{{ employee.name }}</span>
-              (이하 “을”이라 칭함)간에 취업규칙을 성실히 준수할 것을 서약하고
-              다음과 같이 근로계약을 체결한다.
-            </p>
-
-            <h4 class="section-sub-title">제 1조 (근로계약 기간)</h4>
-            <p class="contract-paragraph">
-              1. 근로계약 기간은
-              <span class="underline-field">{{ employee.contract.startDt || '____년 __월 __일' }}</span>
-              부터
-              <span v-if="!isContractEditMode" class="underline-field">2025년 12월 31일</span>
-              <input v-else type="date" v-model="employee.contract.endDt"> 까지로 한다.
-            </p>
-            <p class="contract-paragraph">
-              2. “을”의 계속 근무 의사가 있고 “갑”의 계약 갱신 필요성 및 사업장 운영 상황에 따라
-              상호 협의 후 계약을 갱신할 수 있다.
-            </p>
-
-            <!-- 제2조 근무 장소 및 업무 내용 -->
-            <h4 class="section-sub-title">제 2조 (근무 장소 및 업무 내용)</h4>
-            <p class="contract-paragraph">
-              1. 근무 장소는
-              <span v-if="!isContractEditMode" class="underline-field">{{ employee.site || '________________' }}</span>
-              <input v-else type="text" v-model="employee.site">으로 한다.<br>
-              2. 직무는
-              <span v-if="!isContractEditMode" class="underline-field">{{ employee.position || '________________' }}</span>
-              <input v-else type="text" v-model="employee.position"> 업무 일체로 한다.
-            </p>
-
-            <!-- 제3조 소정근로시간 -->
-            <h4 class="section-sub-title">제 3조 (근로시간 및 휴게)</h4>
-            <p class="contract-paragraph">
-              1. 소정근로시간은 1일 8시간, 1주 40시간을 원칙으로 한다.<br>
-              2. 휴게시간은 1일 1시간으로 하되, 구체적인 시간은 현장 운영 사정에 따라 조정할 수 있다.
-            </p>
-
-            <!-- 제4조 임금 (표 형식) -->
-            <h4 class="section-sub-title">제 4조 (임금)</h4>
-            <table class="wage-table">
-              <thead>
-              <tr>
-                <th>기본급</th>
-                <!--th>직책수당</th-->
-                <th>야간수당</th>
-                <!--th>기타수당</th-->
-                <th>계</th>
-              </tr>
-              </thead>
-              <tbody>
-              <tr>
-                <!--td>￦ <span v-if="!isContractEditMode">________</span><input v-else type="text" class="wage-input"></td>
-                <td>￦ <span v-if="!isContractEditMode">________</span><input v-else type="text" class="wage-input"></td>
-                <td>￦ <span v-if="!isContractEditMode">________</span><input v-else type="text" class="wage-input"></td>
-                <td>￦ <span v-if="!isContractEditMode">________</span><input v-else type="text" class="wage-input"></td>
-                <td>￦ <span v-if="!isContractEditMode">________</span><input v-else type="text" class="wage-input"></td-->
-                <td v-for="(value, key) in employee.contract.contractData" :key="key">
-                  <span v-if="!isContractEditMode">￦ {{ formatCurrency(value) }}</span>
-                  <input v-else type="text" class="wage-input">
-                </td>
-                <td class="font-bold bg-gray-50">
-                  ￦ {{ formatCurrency(wageTotal) }}
-                </td>
-
-              </tr>
-              </tbody>
-            </table>
-            <p class="contract-paragraph">
-              1. 위 임금은 매월 말일에 마감하여 익월 {{employee.payment_day}}일에 지급한다.<br>
-              2. 임금의 구성 및 지급일, 지급방법 등 기타 사항은 회사의 취업규칙 및 임금규정에 따른다.
-            </p>
-
-            <!-- 제5조 휴일/휴가 -->
-            <h4 class="section-sub-title">제 5조 (휴일 및 휴가)</h4>
-            <p class="contract-paragraph">
-              1. 휴일은 주휴일 1일을 포함하여 근로기준법 및 회사 규정에 따른다.<br>
-              2. 연차유급휴가는 근로기준법 및 회사의 연차규정에 따라 부여한다.
-            </p>
-
-            <!-- 제6조 기타 조항 (간략 버전) -->
-            <h4 class="section-sub-title">제 6조 (기타)</h4>
-            <p class="contract-paragraph">
-              1. 본 계약서에 명시되지 아니한 사항은 근로기준법, 기타 관계 법령과 회사 취업규칙을 따른다.<br>
-              2. “갑”과 “을”은 상호 성실의 원칙에 따라 근로관계를 유지하며, 회사의 정당한 업무지시에 협조한다.
-            </p>
-
-            <!-- 서명란 -->
-            <p class="mt-8 text-center leading-relaxed">
-              위 근로계약 내용을 상호 확인하였으며, 이를 증명하기 위하여 본 계약서를 2부 작성하여
-              갑과 을이 각각 1부씩 보관한다.
-            </p>
-
-            <div class="signature-box">
-              <p>
-                <strong v-if="!isContractEditMode">____년&nbsp;&nbsp;__ 월&nbsp;&nbsp;__ 일</strong>
-                <input v-else type="date">
-              </p>
-
-              <div class="signature-row">
-                <div>
-                  <p><strong>“갑”</strong> ㈜에코그린티엠</p>
-                  <p>주소: (회사 주소 기재)</p>
-                  <p>대표이사: 백송이 (인)</p>
-                </div>
-                <div>
-                  <p><strong>“을”</strong> 근로자</p>
-                  <p>성명: {{ employee.name }} (인)</p>
-                  <p>주소: {{ employee.address || '________________' }}</p>
-                  <p>연락처: {{ employee.phone || '________________' }}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <div class="modal-footer">
-          <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              @click="isContractEditMode = !isContractEditMode"
-          >
-            {{ isContractEditMode ? '저장' : '수정' }}
-          </button>
-          <button @click="showModal = false" class="btn btn-secondary">닫기</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-<style scoped src="/assets/css/member.css"></style>
-
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import axios from "axios";
-import { useRoute } from 'nuxt/app'
-import {formatCurrency} from "~/utils/formatter.js";
-const route = useRoute()
+import { useRouter, useRoute } from 'nuxt/app';
+import axios from 'axios';
+
+const router = useRouter();
+const route = useRoute();
+
 const {
   siteOptions,
-  typeOptions,
   positionOptions,
+  typeOptions,
+  disabledOptions,
+  bankOptions,
   fetchSiteOptions,
+  fetchPositionOptions,
   fetchTypeOptions,
-  fetchPositionOptions
+  fetchBankOption,
+  fetchDisabledOptions
 } = useApi();
 
-const isEditMode = ref(false);
-const showModal = ref(false); // 모달 상태 관리 변수
-const statusMessage = ref('');
-const statusClass = ref('');
-let originalEmployeeData = {}; // 취소 시 되돌릴 원본 데이터
+// 현재 탭
+const activeTab = ref('info');
 
-// 1. 폼 데이터 모델
+// 편집 모드
+const isEditing = ref(false);
+
+// 직원 정보
 const employee = ref({
+  id: '',
+  name: '',
   type: '',
-  name: '김철수',
-  id: 'EMP001',
-  phone: '010-1234-5678',
-  email: 'chulsoo.kim@company.com',
-  birthDate: '1990-03-15',
-  address: '서울시 강남구 테헤란로 123',
-  site: 'LH 위례 6단지',
-  position: '관리자',
-  joinDate: '2018-09-01',
-  status: '0', // 재직, 퇴사
+  site: '',
+  siteName: '',
+  positionCd: '',
+  positionName: '',
+  phone: '',
+  email: '',
+  birthDate: '',
   gender: '',
-  disability: '', //장애여부
-  disability_date: '', //장애인등록일
-  disability_grade: '', //장애등급
-  defector: '',//새터민 여부
-  patriot: '',//국가유공자 여부
-  intern: '', //청년 인턴 여부
-  beneficiary: '',  //기초수급자여부
-  foreigner: '',  //외국인여부
-  nationality: '',  //국적
-  visa_code: '', //비자코드
-  visa_date: '',  //비자만료일
-  // 요청으로 추가된 필드
-  bankName: '국민은행',
-  accountNumber: '123-45-67890-123',
-  // bigo: '주간 근무만 가능하며, 매주 월요일 오전에만 현장 미팅에 참여할 수 있습니다.',
+  address: '',
+  inDate: '',
+  outDate: '',
+  outReason: '',
+  status: '',
+  disability: '',
+  disability_grade: '',
+  disability_date: '',
+  foreigner: '',
+  nationality: '',
+  visa_code: '',
+  visa_date: '',
+  defector: '',
+  patriot: '',
+  intern: '',
+  beneficiary: '',
+  bank: '',
+  accountNumber: '',
+  four_ins: '',
+  retire_pension: '',
   bigo: '',
-  departureDate: '',
-  departureReason: '',
-
-  contract: {
-    contractData: [], //임금
-    startDt: '',
-    endDt: '',
-    total: '',
-  }
+  photo: null
 });
 
-// 2. 드롭다운 옵션
-const isContractEditMode = ref(false); // 근로계약서 수정 모드
+// 근로계약서 모달 상태 추가
+const isContractModalOpen = ref(false);
 
-// 3. 상태 메시지 표시 함수
-const showStatusMessage = (message, type = 'info') => {
-  statusMessage.value = message;
+// 근무 이력
+const workHistory = ref([
+  { period: '2023.01 ~ 2024.12', site: 'LH 위례 6단지', position: '경비원', status: '재직' },
+  { period: '2021.03 ~ 2022.12', site: '강서 대명 강동', position: '주임', status: '퇴사' }
+]);
 
-  if (type === 'success') {
-    statusClass.value = 'bg-green-100 text-green-800';
-  } else if (type === 'error') {
-    statusClass.value = 'bg-red-100 text-red-800';
-  } else { // info / warning
-    statusClass.value = 'bg-yellow-100 text-yellow-800';
+// 급여 이력
+const salaryHistory = ref([
+  { month: '2024.11', basic: 2100000, allowance: 300000, total: 2400000 },
+  { month: '2024.10', basic: 2100000, allowance: 300000, total: 2400000 },
+  { month: '2024.09', basic: 2100000, allowance: 300000, total: 2400000 }
+]);
+
+// 교육 이력
+const educationHistory = ref([
+  { date: '2024.10.15', title: '직장 내 괴롭힘 예방 교육', duration: '2시간', status: '수료' },
+  { date: '2024.09.20', title: '산업안전보건교육', duration: '4시간', status: '수료' }
+]);
+
+// 탭 목록
+const tabs = [
+  { id: 'info', name: '기본정보', icon: 'mdi-account' },
+  // { id: 'work', name: '근무이력', icon: 'mdi-briefcase' },
+  { id: 'salary', name: '급여이력', icon: 'mdi-cash' },
+  // { id: 'education', name: '교육이력', icon: 'mdi-school' }
+];
+
+// 나이 계산
+const age = computed(() => {
+  if (!employee.value.birthDt) return '-';
+  const today = new Date();
+  const birth = new Date(employee.value.birthDt);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
   }
+  return age;
+});
 
-  setTimeout(() => {
-    statusMessage.value = '';
-  }, 3000);
+// 재직 기간 계산
+const workPeriod = computed(() => {
+  if (!employee.value.inDate) return '-';
+  const start = new Date(employee.value.inDate);
+  const end = employee.value.outDate ? new Date(employee.value.outDate) : new Date();
+
+  const months = (end.getFullYear() - start.getFullYear()) * 12 +
+      (end.getMonth() - start.getMonth());
+  const years = Math.floor(months / 12);
+  const remainMonths = months % 12;
+
+  if (years > 0) {
+    return remainMonths > 0 ? `${years}년 ${remainMonths}개월` : `${years}년`;
+  }
+  return `${months}개월`;
+});
+
+// 데이터 로드
+const loadEmployeeData = async () => {
+  try {
+    const memberId = route.params.id;
+    const response = await axios.get(`/api/v1/member/data/${memberId}`);
+    //employee.value = response.data.data[0];
+    console.log(response.data.data[0])
+    const rawData = response.data.data[0];
+    employee.value = {
+      ...rawData,
+      // JSON 파싱이 필요한 필드들
+      siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
+      contract: rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} }
+    };
+  } catch (error) {
+    console.error('직원 정보 로드 실패:', error);
+    alert('직원 정보를 불러오는데 실패했습니다.');
+  }
 };
 
+// 급여 합계 계산 (계약서용)
+const wageTotal = computed(() => {
+  const data = employee.value.contract?.contractData;
+  if (!data) return 0;
+  return Object.values(data).reduce((acc, cur) => acc + (Number(cur) || 0), 0);
+});
 
-// 4. 편집 모드 전환 함수
-const toggleEditMode = (enable) => {
-  isEditMode.value = enable;
-
-  if (enable) {
-    // 편집 모드 진입 시, 원본 데이터 백업
-    originalEmployeeData = { ...employee.value };
-    //showStatusMessage("수정 모드가 활성화되었습니다. 필요한 정보를 변경하세요.", 'info');
-  } else {
-    // 취소 시, 원본 데이터로 되돌리기
-    employee.value = { ...originalEmployeeData };
-    //showStatusMessage("수정이 취소되었습니다. 변경 사항이 반영되지 않았습니다.", 'error');
-  }
+// 편집 모드 토글
+const toggleEdit = () => {
+  isEditing.value = !isEditing.value;
 };
 
-
-// 5. 변경 사항 저장 핸들러
-const handleSave = async () => {
-  // 간단한 유효성 검사 (필수 필드 확인)
-  if (!employee.value.site || !employee.value.position) {
-    showStatusMessage('근무 현장과 직위는 필수 입력 항목입니다.', 'error');
+// 저장
+const saveEmployee = async () => {
+  if (employee.value.status == '1' && !employee.value.outDate) {
+    alert('퇴사 처리를 위해 퇴사일을 입력해주세요.');
     return;
   }
 
-  // 퇴사 상태일 경우 퇴사일과 사유 필수 검사
-  if (employee.value.status == '1') {
-    if (!employee.value.departureDate) {
-      showStatusMessage('퇴사 상태일 경우, 퇴사일은 필수 입력 항목입니다.', 'error');
-      return;
-    }
-    if (!employee.value.departureReason) {
-      showStatusMessage('퇴사 상태일 경우, 퇴사 사유는 필수 입력 항목입니다.', 'error');
-      return;
-    }
+  if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
+
+  try {
+    const memberId = route.params.id;
+    const payload = {
+      ...employee.value,
+      outDate: employee.value.outDate,
+      outReason: employee.value.outReason
+    };
+    await axios.put(`/api/v1/member/${memberId}`, payload);
+
+    alert('저장되었습니다.');
+    isEditing.value = false;
+    await loadEmployeeData(); // 최신 데이터 다시 로드
+  } catch (error) {
+    console.error('저장 실패:', error);
+    alert('저장에 실패했습니다.');
   }
-
-  // 실제 API 호출 로직은 여기에 구현됩니다.
-  console.log('직원 정보 수정 데이터:', employee.value);
-
-  // 저장 성공 후
-  isEditMode.value = false;
-  originalEmployeeData = { ...employee.value }; // 원본 데이터 업데이트
-  let payload = {
-    type: employee.value.type,
-    name: employee.value.name,
-    phone: employee.value.phone,
-    gender: employee.value.gender,
-    email: employee.value.email,
-    birthDate: employee.value.birthDate,
-    address: employee.value.address,
-    bankName: employee.value.bankName,
-    accountNumber: employee.value.accountNumber,
-    joinDate: employee.value.joinDate,
-    endDate: employee.value.departureDate,
-    endReason: employee.value.departureReason,
-    bigo: employee.value.bigo,
-    disability: employee.value.disability,
-    disability_date: employee.value.disability_date,
-    disability_grade: employee.value.disability_grade,
-    defector: employee.value.defector,
-    patriot: employee.value.patriot,
-    intern: employee.value.intern,
-    beneficiary: employee.value.beneficiary,
-    foreigner: employee.value.foreigner,
-    nationality: employee.value.nationality,
-    visa_code: employee.value.visa_code,
-    visa_date: employee.value.visa_date,
-
-  }
-  const res = await axios.post('/api/v1/member/register', payload)
-  showStatusMessage('직원 정보가 성공적으로 저장되었습니다.', 'success');
-
 };
 
-const getMemberData = async () => {
-  const mIdx = route.params.id;
-  const response = await axios.get(`/api/v1/member/data/${mIdx}`)
-  console.log(response.data.data, employee.value, 'd')
-
-  // 기본정보
-  employee.value.type = response.data.data[0].type
-  employee.value.name = response.data.data[0].name
-  employee.value.id = response.data.data[0].id
-  employee.value.phone = response.data.data[0].phone
-  employee.value.gender = response.data.data[0].gender
-  employee.value.email = response.data.data[0].email
-  employee.value.birthDate = response.data.data[0].birthDt;
-  employee.value.address = response.data.data[0].addr
-  employee.value.bankName = response.data.data[0].bank
-  employee.value.accountNumber = response.data.data[0].accountNo
-
-
-  //장애여부
-  employee.value.disability = response.data.data[0].disability
-  employee.value.disability_date  = response.data.data[0].disability_date
-  employee.value.disability_grade = response.data.data[0].disability_grade
-
-  employee.value.defector = response.data.data[0].defector;//새터민여부
-  employee.value.patriot = response.data.data[0].patriot; //국가유공자여부
-  employee.value.beneficiary = response.data.data[0].beneficiary//기초수급자여부
-  employee.value.intern = response.data.data[0].intern; //청년인턴여부
-
-  //외국인여부
-  employee.value.foreigner = response.data.data[0].foreigner;
-  employee.value.nationality = response.data.data[0].nationality;
-  employee.value.visa_code = response.data.data[0].visa_code;
-  employee.value.visa_date = response.data.data[0].visa_date;
-
-  // 현장 배치 정보
-  employee.value.site = JSON.parse(response.data.data[0].sites)[0].name
-  employee.value.sIdx = response.data.data[0].sIdx
-  employee.value.position = response.data.data[0].position
-  employee.value.positionCd = response.data.data[0].positionCd
-  employee.value.joinDate = response.data.data[0].inDate;
-  employee.value.status = response.data.data[0].status;
-  employee.value.payment_day = response.data.data[0].payment_day;
-
-  // 계약 정보
-  employee.value.contract.startDt = JSON.parse(response.data.data[0].contract)[0].startDt;
-  employee.value.contract.endDt = JSON.parse(response.data.data[0].contract)[0].endDt;
-  employee.value.contract.contractData = JSON.parse(response.data.data[0].contract)[0].contractData;
-  employee.value.contract.total = wageTotal(JSON.parse(response.data.data[0].contract)[0].contractData)
-
-  // 금용정보
-  employee.value.bankName = response.data.data[0].bank
-  employee.value.accountNumber = response.data.data[0].accountNo
-  employee.value.bigo = response.data.data[0].bigo
-}
-
-const wageTotal = computed(() => {
-  const data = employee.value.contract.contractData;
-  if (!data) return 0;
-
-  // 객체인 경우 (항목: 금액) 모든 값을 더함
-  if (typeof data === 'object' && !Array.isArray(data)) {
-    return Object.values(data).reduce((acc, cur) => acc + (Number(cur) || 0), 0);
+// 취소
+const cancelEdit = () => {
+  if (confirm('수정을 취소하시겠습니까?')) {
+    isEditing.value = false;
+    loadEmployeeData();
   }
+};
 
-  // 배열인 경우 (금액만 들어있는 경우)
-  if (Array.isArray(data)) {
-    return data.reduce((acc, cur) => acc + (Number(cur) || 0), 0);
+// 삭제
+const deleteEmployee = async () => {
+  if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+
+  try {
+    const memberId = route.params.id;
+    await axios.delete(`/api/v1/member/${memberId}`);
+    alert('삭제되었습니다.');
+    router.push('/member/list');
+  } catch (error) {
+    console.error('삭제 실패:', error);
+    alert('삭제에 실패했습니다.');
   }
+};
 
-  return 0;
-});
-
-const contractYear = computed(() => {
-  if (employee.value.joinDate) {
-    return String(employee.value.joinDate).slice(0, 4)
-  }
-  return String(new Date().getFullYear())
-});
-
+// 목록으로
+const goBack = () => {
+  router.push('/member/list');
+};
 
 onMounted(() => {
-  // 컴포넌트가 로드되면 초기 목록을 가져옵니다.
+  loadEmployeeData();
   fetchSiteOptions();
   fetchPositionOptions();
-  getMemberData();
+  fetchTypeOptions();
+  fetchBankOption();
+  fetchDisabledOptions();
 });
 </script>
+
+<template>
+  <div class="member-detail-page">
+    <!-- 페이지 헤더 -->
+    <div class="page-header">
+      <div class="header-left">
+        <button @click="goBack" class="btn-back">
+          <i class="mdi mdi-arrow-left"></i>
+        </button>
+        <div>
+          <h1 class="page-title">
+            <i class="mdi mdi-account-details"></i>
+            직원 상세정보
+          </h1>
+          <p class="page-subtitle">직원의 상세 정보를 확인하고 관리합니다</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <template v-if="!isEditing">
+          <button @click="toggleEdit" class="btn-edit">
+            <i class="mdi mdi-pencil"></i>
+            <span>수정</span>
+          </button>
+          <button @click="deleteEmployee" class="btn-delete">
+            <i class="mdi mdi-delete"></i>
+            <span>삭제</span>
+          </button>
+        </template>
+        <template v-else>
+          <button @click="cancelEdit" class="btn-cancel">
+            <i class="mdi mdi-close"></i>
+            <span>취소</span>
+          </button>
+          <button @click="saveEmployee" class="btn-save">
+            <i class="mdi mdi-check"></i>
+            <span>저장</span>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <!-- 프로필 카드 -->
+    <div class="profile-card">
+      <div class="profile-banner"></div>
+      <div class="profile-content">
+        <div class="profile-photo-section">
+          <div class="profile-photo">
+            <img v-if="employee.photo" :src="employee.photo" alt="프로필 사진" />
+            <i v-else class="mdi mdi-account"></i>
+          </div>
+          <button v-if="isEditing" class="btn-change-photo">
+            <i class="mdi mdi-camera"></i>
+          </button>
+        </div>
+
+        <div class="profile-info">
+          <div class="profile-main">
+            <h2 class="profile-name">{{ employee.name }}</h2>
+            <span :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">
+              <i :class="['mdi', employee.status == '0' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+              {{ employee.status == 0 ? '재직' : '퇴사' }}
+            </span>
+          </div>
+
+          <div class="profile-details">
+            <div class="detail-item">
+              <i class="mdi mdi-card-account-details"></i>
+              <span>{{ employee.id || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <i class="mdi mdi-office-building"></i>
+              <span>{{ employee.siteName || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <i class="mdi mdi-account-tie"></i>
+              <span>{{ employee.positionName || '-' }}</span>
+            </div>
+            <div class="detail-item">
+              <i class="mdi mdi-calendar"></i>
+              <span>재직기간: {{ workPeriod }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="profile-stats">
+          <div class="stat-item">
+            <div class="stat-icon" style="--stat-color: #667eea;">
+              <i class="mdi mdi-calendar-clock"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">근속년수</span>
+              <span class="stat-value">{{ workPeriod }}</span>
+            </div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-icon" style="--stat-color: #10b981;">
+              <i class="mdi mdi-calendar-start"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">입사일</span>
+              <span class="stat-value">{{ employee.inDate || '-' }}</span>
+            </div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-icon" style="--stat-color: #f59e0b;">
+              <i class="mdi mdi-cake-variant"></i>
+            </div>
+            <div class="stat-content">
+              <span class="stat-label">나이</span>
+              <span class="stat-value">{{ age }}세</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 탭 네비게이션 -->
+    <div class="tabs-container">
+      <div class="tabs-nav">
+        <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="['tab-button', { active: activeTab === tab.id }]"
+            @click="activeTab = tab.id"
+        >
+          <i :class="['mdi', tab.icon]"></i>
+          <span>{{ tab.name }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 탭 컨텐츠 -->
+    <div class="tab-content">
+      <!-- 기본정보 탭 -->
+      <div v-show="activeTab === 'info'" class="tab-panel">
+        <div class="info-sections">
+          <!-- 개인정보 -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-account"></i>
+              <h3>개인정보</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <label>이름</label>
+                <input
+                    v-if="isEditing"
+                    type="text"
+                    v-model="employee.name"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.name }}</span>
+              </div>
+              <div class="info-item">
+                <label>성별</label>
+                <div v-if="isEditing" class="radio-group-inline">
+                  <label class="radio-label-inline">
+                    <input type="radio" v-model="employee.gender" value="M" />
+                    <span>남성</span>
+                  </label>
+                  <label class="radio-label-inline">
+                    <input type="radio" v-model="employee.gender" value="F" />
+                    <span>여성</span>
+                  </label>
+                </div>
+                <span v-else class="info-value">{{ employee.gender === 'M' ? '남성' : '여성' }}</span>
+              </div>
+              <div class="info-item">
+                <label>생년월일</label>
+                <input
+                    v-if="isEditing"
+                    type="date"
+                    v-model="employee.birthDt"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.birthDt || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>나이</label>
+                <span class="info-value">{{ age }}세</span>
+              </div>
+              <div class="info-item full-width">
+                <label>연락처</label>
+                <input
+                    v-if="isEditing"
+                    type="tel"
+                    v-model="employee.phone"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.phone || '-' }}</span>
+              </div>
+              <div class="info-item full-width">
+                <label>이메일</label>
+                <input
+                    v-if="isEditing"
+                    type="email"
+                    v-model="employee.email"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.email || '-' }}</span>
+              </div>
+              <div class="info-item full-width">
+                <label>주소</label>
+                <input
+                    v-if="isEditing"
+                    type="text"
+                    v-model="employee.address"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.address || '-' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 근무정보 -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-briefcase"></i>
+              <h3>근무정보</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <label>사번</label>
+                <span class="info-value">{{ employee.id }}</span>
+              </div>
+              <div class="info-item">
+                <label>구분</label>
+                <!--select
+                    v-if="isEditing"
+                    v-model="employee.type"
+                    class="info-select"
+                >
+                  <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+                    {{ employee.type }}
+                  </option>
+                </select-->
+                <span class="info-value">{{ employee.type || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>근무 현장</label>
+                <select
+                    v-if="isEditing"
+                    v-model="employee.sIdx"
+                    class="info-select"
+                >
+                  <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
+                    {{ site.name }}
+                  </option>
+                </select>
+                <span v-else class="info-value">{{ employee.siteName }}</span>
+              </div>
+              <div class="info-item">
+                <label>직위</label>
+                <select
+                    v-if="isEditing"
+                    v-model="employee.positionCd"
+                    class="info-select"
+                >
+                  <option v-for="pos in positionOptions" :key="pos.itemCd" :value="pos.itemCd">
+                    {{ pos.itemNm }}
+                  </option>
+                </select>
+                <span v-else class="info-value">{{ employee.positionName }}</span>
+              </div>
+              <div class="info-item">
+                <label>재직 상태</label>
+                <div v-if="isEditing" class="radio-group-inline">
+                  <label class="radio-label-status active-label">
+                    <input type="radio" v-model="employee.status" value="0" />
+                    <span>재직</span>
+                  </label>
+                  <label class="radio-label-status inactive-label">
+                    <input type="radio" v-model="employee.status" value="1" />
+                    <span>퇴사</span>
+                  </label>
+                </div>
+                <span v-else :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">
+                  {{ employee.status == 0 ? '재직 중' : '퇴사' }}
+                </span>
+              </div>
+              <div class="info-item">
+                <label>입사일</label>
+                <input
+                    v-if="isEditing"
+                    type="date"
+                    v-model="employee.inDate"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.inDate }}</span>
+              </div>
+              <template v-if="employee.status == 1">
+                <div class="info-item">
+                  <label class="text-red">퇴사일</label>
+                  <input v-if="isEditing" type="date" v-model="employee.outDate" class="info-input border-red" />
+                  <span v-else class="info-value text-red">{{ employee.outDate || '미입력' }}</span>
+                </div>
+                <div class="info-item full-width">
+                  <label class="text-red">퇴사 사유</label>
+                  <input v-if="isEditing" type="text" v-model="employee.outReason" class="info-input border-red" placeholder="퇴사 사유를 입력하세요" />
+                  <span v-else class="info-value text-red">{{ employee.outReason || '미입력' }}</span>
+                </div>
+              </template>
+              <!--div class="info-item">
+                <label>재직기간</label>
+                <span class="info-value">{{ workPeriod }}</span>
+              </div-->
+            </div>
+          </div>
+
+          <!-- 특이사항 -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-alert-circle"></i>
+              <h3>특이사항</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <label>장애여부</label>
+                <select
+                    v-if="isEditing"
+                    v-model="employee.disability_grade"
+                    class="info-select"
+                >
+                  <option v-for="di in disabledOptions" :key="di.itemCd" :value="di.itemCd">
+                    {{ di.itemNm }}
+                  </option>
+                </select>
+                <span v-if="employee.disability === 'Y'" class="badge badge-purple">
+                  <i class="mdi mdi-wheelchair-accessibility"></i>
+                  {{ employee.disability_grade || '장애' }}
+                </span>
+                <span v-else class="info-value text-gray">해당없음</span>
+              </div>
+              <div class="info-item">
+                <label>외국인여부</label>
+                <span v-if="employee.foreigner === 'Y'" class="badge badge-orange">
+                  <i class="mdi mdi-earth"></i>
+                  {{ employee.nationality || '외국인' }}
+                </span>
+                <span v-else class="info-value text-gray">해당없음</span>
+              </div>
+              <div class="info-item">
+                <label>국가유공자</label>
+                <span v-if="employee.patriot === 'Y'" class="badge badge-blue">
+                  <i class="mdi mdi-medal"></i>
+                  유공자
+                </span>
+                <span v-else class="info-value text-gray">해당없음</span>
+              </div>
+              <div class="info-item">
+                <label>기초수급자</label>
+                <span v-if="employee.beneficiary === 'Y'" class="badge badge-green">
+                  <i class="mdi mdi-hand-heart"></i>
+                  수급자
+                </span>
+                <span v-else class="info-value text-gray">해당없음</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 급여정보 -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-cash"></i>
+              <h3>급여정보</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <label>은행</label>
+                <select
+                    v-if="isEditing"
+                    v-model="employee.bank"
+                    class="info-select"
+                >
+                  <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">
+                    {{ bank.itemNm }}
+                  </option>
+                </select>
+                <span v-else class="info-value">{{ employee.bank || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>계좌번호</label>
+                <input
+                    v-if="isEditing"
+                    type="text"
+                    v-model="employee.accountNumber"
+                    class="info-input"
+                />
+                <span v-else class="info-value">{{ employee.accountNumber || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>4대보험</label>
+                <span :class="['badge', employee.four_ins === 'Y' ? 'badge-green' : 'badge-gray']">
+                  <i :class="['mdi', employee.four_ins === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+                  {{ employee.four_ins === 'Y' ? '가입' : '미가입' }}
+                </span>
+              </div>
+              <div class="info-item">
+                <label>퇴직연금</label>
+                <span :class="['badge', employee.retire_pension === 'Y' ? 'badge-green' : 'badge-gray']">
+                  <i :class="['mdi', employee.retire_pension === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+                  {{ employee.retire_pension === 'Y' ? '가입' : '미가입' }}
+                </span>
+              </div>
+              <div class="info-item full-width">
+                <label>비고</label>
+                <textarea
+                    v-if="isEditing"
+                    v-model="employee.bigo"
+                    class="info-textarea"
+                    rows="3"
+                ></textarea>
+                <span v-else class="info-value">{{ employee.bigo || '-' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-file-document-edit"></i>
+              <h3>근로 계약 관리</h3>
+            </div>
+            <div class="contract-box">
+              <div class="contract-info-summary">
+                <p>현재 등록된 근로계약서 정보를 확인하고 출력할 수 있습니다.</p>
+                <button @click="isContractModalOpen = true" class="btn-contract-view">
+                  <i class="mdi mdi-file-find"></i>
+                  근로계약서 상세보기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 근무이력 탭 -->
+      <!--div v-show="activeTab === 'work'" class="tab-panel">
+        <div class="history-list">
+          <div v-for="(item, index) in workHistory" :key="index" class="history-item">
+            <div class="history-icon">
+              <i class="mdi mdi-briefcase"></i>
+            </div>
+            <div class="history-content">
+              <div class="history-header">
+                <h4>{{ item.site }}</h4>
+                <span :class="['history-status', item.status === '재직' ? 'status-active' : '']">
+                  {{ item.status }}
+                </span>
+              </div>
+              <div class="history-details">
+                <span class="history-period">
+                  <i class="mdi mdi-calendar"></i>
+                  {{ item.period }}
+                </span>
+                <span class="history-position">
+                  <i class="mdi mdi-account-tie"></i>
+                  {{ item.positionName }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div-->
+
+      <!-- 급여이력 탭 -->
+      <div v-show="activeTab === 'salary'" class="tab-panel">
+        <div class="table-wrapper">
+          <table class="history-table">
+            <thead>
+            <tr>
+              <th>지급월</th>
+              <th>기본급</th>
+              <th>수당</th>
+              <th>지급총액</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="(item, index) in salaryHistory" :key="index">
+              <td>{{ item.month }}</td>
+              <td>{{ item.basic.toLocaleString() }}원</td>
+              <td>{{ item.allowance.toLocaleString() }}원</td>
+              <td class="total">{{ item.total.toLocaleString() }}원</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 교육이력 탭 -->
+      <!--div v-show="activeTab === 'education'" class="tab-panel">
+        <div class="history-list">
+          <div v-for="(item, index) in educationHistory" :key="index" class="history-item">
+            <div class="history-icon">
+              <i class="mdi mdi-school"></i>
+            </div>
+            <div class="history-content">
+              <div class="history-header">
+                <h4>{{ item.title }}</h4>
+                <span class="badge badge-green">{{ item.status }}</span>
+              </div>
+              <div class="history-details">
+                <span class="history-period">
+                  <i class="mdi mdi-calendar"></i>
+                  {{ item.date }}
+                </span>
+                <span class="history-position">
+                  <i class="mdi mdi-clock-outline"></i>
+                  {{ item.duration }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div-->
+    </div>
+  </div>
+</template>
+
+<style scoped>
+/* === 페이지 헤더 === */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.btn-back {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-back i {
+  font-size: 24px;
+}
+
+.page-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-title i {
+  font-size: 32px;
+  color: #667eea;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-edit,
+.btn-delete,
+.btn-cancel,
+.btn-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-edit {
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+.btn-edit:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-delete {
+  background: white;
+  border: 1px solid #fee2e2;
+  color: #dc2626;
+}
+
+.btn-delete:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.btn-cancel {
+  background: white;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+.btn-cancel:hover {
+  background: #f8fafc;
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-save:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+}
+
+.btn-edit i,
+.btn-delete i,
+.btn-cancel i,
+.btn-save i {
+  font-size: 18px;
+}
+
+/* === 프로필 카드 === */
+.profile-card {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  margin-bottom: 28px;
+}
+
+.profile-banner {
+  height: 120px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.profile-content {
+  padding: 0 32px 32px;
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.profile-photo-section {
+  position: relative;
+  margin-top: -60px;
+}
+
+.profile-photo {
+  width: 120px;
+  height: 120px;
+  border-radius: 20px;
+  background: white;
+  border: 4px solid white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.profile-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-photo i {
+  font-size: 64px;
+  color: #cbd5e1;
+}
+
+.btn-change-photo {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #667eea;
+  border: 3px solid white;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s;
+}
+
+.btn-change-photo:hover {
+  background: #5568d3;
+  transform: scale(1.1);
+}
+
+.btn-change-photo i {
+  font-size: 20px;
+}
+
+.profile-info {
+  flex: 1;
+  padding-top: 8px;
+}
+
+.profile-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.profile-name {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-badge i {
+  font-size: 16px;
+}
+
+.status-active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-inactive {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.profile-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.detail-item i {
+  font-size: 18px;
+  color: #94a3b8;
+}
+
+.profile-stats {
+  display: flex;
+  gap: 24px;
+  padding-top: 8px;
+}
+
+.stat-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--stat-color);
+  opacity: 0.1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.stat-icon i {
+  font-size: 24px;
+  color: var(--stat-color);
+  position: absolute;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+/* === 탭 === */
+.tabs-container {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 28px;
+  overflow: hidden;
+}
+
+.tabs-nav {
+  display: flex;
+  border-bottom: 2px solid #f1f5f9;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 16px 24px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.tab-button i {
+  font-size: 18px;
+}
+
+.tab-button:hover {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.tab-button.active {
+  color: #667eea;
+}
+
+.tab-button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* === 탭 컨텐츠 === */
+.tab-content {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 32px;
+}
+
+.tab-panel {
+  animation: fadeIn 0.3s;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* === 정보 섹션 === */
+.info-sections {
+  display: grid;
+  gap: 24px;
+}
+
+.info-section {
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
+  padding: 24px;
+  background: #fafbfc;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #f1f5f9;
+}
+
+.section-header i {
+  font-size: 24px;
+  color: #667eea;
+}
+
+.section-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.info-item label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.info-value {
+  font-size: 15px;
+  color: #1e293b;
+  padding: 10px 0;
+}
+
+.info-input,
+.info-select,
+.info-textarea {
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #334155;
+  background: white;
+  transition: all 0.2s;
+}
+
+.info-input:focus,
+.info-select:focus,
+.info-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.info-textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.radio-group-inline {
+  display: flex;
+  gap: 12px;
+  padding: 5px 0;
+}
+
+.radio-label-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.active-label:has(input:checked) {
+  background: #d1fae5;
+  border-color: #10b981;
+  color: #065f46;
+}
+
+.inactive-label:has(input:checked) {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+/* 퇴사 강조 스타일 */
+.text-red {
+  color: #dc2626 !important;
+  font-weight: 600;
+}
+
+.border-red {
+  border-color: #fecaca !important;
+}
+
+.border-red:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+}
+
+.radio-label-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.radio-label-inline input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* 배지 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge i {
+  font-size: 14px;
+}
+
+.badge-green {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-purple {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.badge-orange {
+  background: #fed7aa;
+  color: #92400e;
+}
+
+.badge-blue {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge-gray {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.text-gray {
+  color: #94a3b8;
+}
+
+/* === 이력 리스트 === */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.history-item {
+  display: flex;
+  gap: 16px;
+  padding: 20px;
+  background: #fafbfc;
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.history-item:hover {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.history-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.history-icon i {
+  font-size: 24px;
+  color: white;
+}
+
+.history-content {
+  flex: 1;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-header h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.history-status {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.history-status.status-active {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.history-details {
+  display: flex;
+  gap: 20px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.history-period,
+.history-position {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-period i,
+.history-position i {
+  font-size: 16px;
+}
+
+/* === 이력 테이블 === */
+.table-wrapper {
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.history-table thead {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.history-table th {
+  padding: 14px 20px;
+  text-align: left;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.history-table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.history-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.history-table td.total {
+  font-weight: 700;
+  color: #667eea;
+}
+
+/* === 반응형 === */
+@media (max-width: 1024px) {
+  .profile-content {
+    flex-direction: column;
+  }
+
+  .profile-stats {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .btn-edit,
+  .btn-delete,
+  .btn-cancel,
+  .btn-save {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .tabs-nav {
+    flex-direction: column;
+  }
+
+  .tab-button.active::after {
+    left: 0;
+    right: auto;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    height: 100%;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-stats {
+    width: 100%;
+  }
+}
+
+/* 특이사항 구분선 */
+.full-width.opacity-10 {
+  grid-column: 1 / -1;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 10px 0;
+}
+
+/* 근로계약 버튼 스타일 */
+.contract-box {
+  padding: 20px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.contract-info-summary p {
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 16px;
+}
+
+.btn-contract-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #1e293b;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-contract-view:hover {
+  background: #334155;
+  transform: translateY(-2px);
+}
+</style>
