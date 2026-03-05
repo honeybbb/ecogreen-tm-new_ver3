@@ -170,7 +170,7 @@ const saveEmployee = async () => {
       outDate: employee.value.outDate,
       outReason: employee.value.outReason
     };
-    await axios.put(`/api/v1/member/${memberId}`, payload);
+    await axios.put(`/api/v1/member/data/${memberId}`, payload);
 
     alert('저장되었습니다.');
     isEditing.value = false;

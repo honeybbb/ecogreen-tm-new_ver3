@@ -323,16 +323,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-.notice-management-page { padding: 0; }
-
-/* === 페이지 헤더 === */
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
-.page-title { font-size: 28px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 12px; }
-.page-title i { color: #667eea; font-size: 32px; }
-.page-subtitle { font-size: 14px; color: #64748b; margin-top: 4px; }
-
 .btn-add { display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.3s; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
 .btn-add:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
 
@@ -354,13 +344,6 @@ onMounted(() => {
 .search-box i { color: #94a3b8; font-size: 20px; }
 .search-input { border: none; background: transparent; outline: none; width: 100%; font-size: 14px; color: #334155; }
 .btn-search { background: #1e293b; color: white; padding: 10px 24px; border-radius: 10px; font-weight: 600; border: none; cursor: pointer; }
-
-/* === 데이터 테이블 === */
-.table-card { background: white; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table thead { background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.data-table th { padding: 16px 20px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; }
-.data-table td { padding: 16px 20px; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #334155; vertical-align: middle; }
 
 /* 행 스타일 */
 .row-pinned { background: #fff8f8; cursor: pointer; transition: 0.2s; }

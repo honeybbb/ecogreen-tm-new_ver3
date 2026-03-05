@@ -281,15 +281,6 @@ onMounted(() => {
 /* === 기존 관리 페이지 스타일 계승 === */
 .member-list-page { padding: 0; }
 
-/* 통계 카드 */
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
-.stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; }
-.stat-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--card-color); }
-.stat-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--card-color); opacity: 0.1; display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
-.stat-icon i { font-size: 22px; color: var(--card-color); position: absolute; }
-.stat-label { font-size: 12px; color: #64748b; font-weight: 600; }
-.stat-value { font-size: 20px; font-weight: 700; color: var(--card-color); }
-
 /* 필터 패널 */
 .filter-panel { background: white; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
 .filter-row { display: flex; align-items: flex-end; gap: 20px; }
@@ -334,7 +325,12 @@ onMounted(() => {
 .btn-reject:hover { background: #dc2626; transform: translateY(-1px); }
 
 /* Sticky 컬럼 */
-.sticky-col { position: sticky; right: 0; background: white; box-shadow: -4px 0 8px rgba(0, 0, 0, 0.05); z-index: 5; }
+.sticky-col {
+  position: sticky;
+  right: 0;
+  box-shadow: -4px 0 8px rgba(0, 0, 0, 0.05);
+  z-index: 5;
+}
 .data-row:hover .sticky-col { background: #f8fafc; }
 
 .text-gray { color: #94a3b8; }

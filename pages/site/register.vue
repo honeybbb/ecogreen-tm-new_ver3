@@ -173,7 +173,7 @@ const handleSubmit = () => {
   axios.post(`/api/v1/site/register`, params)
       .then(res => {
         alert(`${site.value.siteName} 현장이 등록되었습니다.`);
-        router.push('/site');
+        router.push('/site/list');
       })
       .catch(err => {
         console.error(err);
@@ -276,7 +276,7 @@ const searchAddress = async () => {
 // 취소
 const handleCancel = () => {
   if (confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) {
-    router.push('/site');
+    router.push('/site/list');
   }
 };
 

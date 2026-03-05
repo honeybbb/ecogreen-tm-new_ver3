@@ -5,13 +5,13 @@ import axios from "axios";
 
 const router = useRouter();
 
-// 1. 상태 관리
+// 상태 관리
 const insuranceRates = ref({
-  nationalPension: 4.5,       // 국민연금 (근로자)
-  healthInsurance: 3.545,     // 건강보험 (근로자)
-  longTermCare: 12.95,        // 장기요양 (건강보험의 %)
-  employmentInsurance: 0.9,   // 고용보험 (근로자)
-  industrialAccident: 0.7,    // ✅ 산재보험 (전액 회사부담, 업종별 상이)
+  nationalPension: 4.5,
+  healthInsurance: 3.545,
+  longTermCare: 12.95,
+  employmentInsurance: 0.9,
+  industrialAccident: 0.7,
   appliedYear: new Date().getFullYear(),
   lastUpdated: '2024-01-01'
 });
@@ -20,24 +20,35 @@ const insuranceRates = ref({
 const isEditMode = ref(false);
 const tempRates = ref({ ...insuranceRates.value });
 
-// 2. 미리보기 계산 (가상 급여 기준)
-const sampleSalary = 3000000; // 계산하기 쉽게 300만원으로 예시 변경 (또는 기존 값 유지)
+// 1. 기준 급여 (실제 계산에 쓰이는 순수 숫자형)
+const sampleSalary = ref(3000000);
 
+// 2. 화면 표시용 쉼표 포맷팅 (get, set 활용)
+const formattedSalary = computed({
+  get: () => {
+    // 값이 0이거나 없을 때 빈칸 처리 원하면 '' 리턴, 아니면 toLocaleString()
+    if (!sampleSalary.value) return '';
+    return sampleSalary.value.toLocaleString();
+  },
+  set: (newValue) => {
+    // 입력값에서 숫자만 추출해서 다시 sampleSalary에 저장 (쉼표, 문자 등 모두 제거)
+    const numericString = newValue.replace(/[^\d]/g, '');
+    sampleSalary.value = numericString ? Number(numericString) : 0;
+  }
+});
+
+// 미리보기 계산
 const previewCalculation = computed(() => {
   const rates = isEditMode.value ? tempRates.value : insuranceRates.value;
 
-  // 근로자 부담분 계산
-  const pension = Math.floor(sampleSalary * (rates.nationalPension / 100));
-  const health = Math.floor(sampleSalary * (rates.healthInsurance / 100));
-  const longTerm = Math.floor(health * (rates.longTermCare / 100)); // 건보료의 %
-  const employment = Math.floor(sampleSalary * (rates.employmentInsurance / 100));
+  const currentSalary = Number(sampleSalary.value) || 0;
 
-  // 근로자 공제 합계
+  const pension = Math.floor(currentSalary * (rates.nationalPension / 100));
+  const health = Math.floor(currentSalary * (rates.healthInsurance / 100));
+  const longTerm = Math.floor(health * (rates.longTermCare / 100));
+  const employment = Math.floor(currentSalary * (rates.employmentInsurance / 100));
   const employeeTotal = pension + health + longTerm + employment;
-
-  // ✅ 회사 부담분 (산재보험) 계산
-  // 산재보험은 과세소득(여기선 sampleSalary로 가정) * 요율
-  const industrial = Math.floor(sampleSalary * (rates.industrialAccident / 100));
+  const industrial = Math.floor(currentSalary * (rates.industrialAccident / 100));
 
   return {
     pension,
@@ -45,21 +56,20 @@ const previewCalculation = computed(() => {
     longTerm,
     employment,
     employeeTotal,
-    industrial // ✅ 회사 부담금 별도 반환
+    industrial
   };
 });
 
-// 3. 이벤트 핸들러
+// 이벤트 핸들러
 const toggleEdit = () => {
   if (isEditMode.value) {
-    tempRates.value = { ...insuranceRates.value }; // 취소 시 복구
+    tempRates.value = { ...insuranceRates.value };
   }
   isEditMode.value = !isEditMode.value;
 };
 
 const handleSave = () => {
   if (confirm('변경된 요율을 저장하시겠습니까?\n산재보험은 회사 부담금 계산에만 영향을 미칩니다.')) {
-
     const params = {
       applied_year: tempRates.value.appliedYear,
       pension_rate: tempRates.value.nationalPension,
@@ -72,8 +82,6 @@ const handleSave = () => {
     try {
       axios.post('/api/v1/config/tax/rate', params)
           .then(res => {
-            console.log(res.data);
-            // 저장 성공 시 실제 상태 업데이트 (새로고침 없이 반영 위함)
             insuranceRates.value = { ...tempRates.value };
             isEditMode.value = false;
             alert('설정이 저장되었습니다.');
@@ -89,19 +97,16 @@ const getTaxRate = async function () {
   const year = tempRates.value.appliedYear;
   axios.get(`/api/v1/config/tax/rate/${year}`)
       .then(res => {
-        console.log(res.data);
         let result = res.data.data[0];
-        if(result) {
+        if (result) {
           tempRates.value.nationalPension = result.pension_rate;
           tempRates.value.healthInsurance = result.health_rate;
           tempRates.value.longTermCare = result.long_term_care_rate;
           tempRates.value.employmentInsurance = result.employment_rate;
           tempRates.value.industrialAccident = result.industrial_rate || 0;
-
-          // 조회된 값으로 원본 데이터도 동기화
+          tempRates.value.lastUpdated = result.regDt;
           insuranceRates.value = { ...tempRates.value };
         } else {
-          // 데이터 없을 경우 초기화
           tempRates.value.nationalPension = 0;
           tempRates.value.healthInsurance = 0;
           tempRates.value.longTermCare = 0;
@@ -122,192 +127,440 @@ onMounted(() => {
 <template>
   <div class="settings-page">
     <div class="page-header">
-      <h2 class="page-title">급여 및 4대보험 요율 설정</h2>
-      <p class="page-subtitle">근로자 공제 및 회사 부담금 계산의 기준이 되는 요율을 관리합니다.</p>
+      <div class="header-left">
+        <div>
+          <h1 class="page-title">
+            <i class="mdi mdi-shield-account"></i>
+            4대보험 요율 설정
+          </h1>
+          <p class="page-subtitle">근로자 공제 및 회사 부담금 계산의 기준이 되는 요율을 관리합니다</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <template v-if="!isEditMode">
+          <button @click="toggleEdit" class="btn-edit">
+            <i class="mdi mdi-pencil"></i>
+            <span>수정하기</span>
+          </button>
+        </template>
+        <template v-else>
+          <button @click="toggleEdit" class="btn-cancel">
+            <i class="mdi mdi-close"></i>
+            <span>취소</span>
+          </button>
+          <button @click="handleSave" class="btn-save">
+            <i class="mdi mdi-check"></i>
+            <span>저장하기</span>
+          </button>
+        </template>
+      </div>
     </div>
 
-    <div class="settings-container">
-      <div class="settings-card">
-        <div class="card-header">
-          <h3 class="card-title">
+    <div class="year-selector-card">
+      <div class="year-selector-content">
+        <div class="year-icon">
+          <i class="mdi mdi-calendar"></i>
+        </div>
+        <div class="year-info">
+          <span class="year-label">적용 연도</span>
+          <div class="year-select-wrapper">
+            <select v-model="tempRates.appliedYear" @change="getTaxRate" class="year-select">
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+            </select>
+            <i class="mdi mdi-chevron-down"></i>
+          </div>
+        </div>
+      </div>
+      <div class="year-last-updated">
+        <i class="mdi mdi-clock-outline"></i>
+        최종 업데이트: {{ insuranceRates.lastUpdated }}
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <div class="rates-section">
+        <div class="section-header">
+          <h2 class="section-title">
+            <i class="mdi mdi-percent"></i>
             보험별 요율 설정
-            <span class="year-select-wrapper">
-              (
-              <select v-model="tempRates.appliedYear" @change="getTaxRate" class="year-select">
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-                <option value="2026">2026</option>
-              </select>
-              년 기준 )
-            </span>
-          </h3>
-          <button v-if="!isEditMode" @click="toggleEdit" class="btn btn-primary">수정하기</button>
-          <div v-else class="btn-group">
-            <button @click="toggleEdit" class="btn btn-outline">취소</button>
-            <button @click="handleSave" class="btn btn-success">저장하기</button>
-          </div>
+          </h2>
         </div>
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label class="form-label">국민연금 요율 (%)</label>
-            <div class="input-wrapper">
-              <input type="number" v-model="tempRates.nationalPension" :disabled="!isEditMode" step="0.001" class="form-input">
-              <span class="unit">%</span>
+        <div class="rates-grid">
+          <div class="rate-card">
+            <div class="rate-card-header">
+              <div class="rate-icon pension">
+                <i class="mdi mdi-shield-account"></i>
+              </div>
+              <div class="rate-title-group">
+                <h3 class="rate-title">국민연금</h3>
+                <p class="rate-description">근로자 부담분 (전체 9.0% 중 4.5%)</p>
+              </div>
             </div>
-            <p class="helper-text">근로자 부담분 (전체 9.0% 중 4.5%)</p>
+            <div class="rate-input-group">
+              <input
+                  type="number"
+                  v-model="tempRates.nationalPension"
+                  :disabled="!isEditMode"
+                  step="0.001"
+                  class="rate-input"
+              />
+              <span class="rate-unit">%</span>
+            </div>
+            <div class="rate-preview">
+              <span class="preview-label">예상 공제액</span>
+              <span class="preview-value">{{ previewCalculation.pension.toLocaleString() }}원</span>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">건강보험 요율 (%)</label>
-            <div class="input-wrapper">
-              <input type="number" v-model="tempRates.healthInsurance" :disabled="!isEditMode" step="0.001" class="form-input">
-              <span class="unit">%</span>
+          <div class="rate-card">
+            <div class="rate-card-header">
+              <div class="rate-icon health">
+                <i class="mdi mdi-medical-bag"></i>
+              </div>
+              <div class="rate-title-group">
+                <h3 class="rate-title">건강보험</h3>
+                <p class="rate-description">근로자 부담분 (2024년 기준 3.545%)</p>
+              </div>
             </div>
-            <p class="helper-text">근로자 부담분 (2024년 기준 3.545%)</p>
+            <div class="rate-input-group">
+              <input
+                  type="number"
+                  v-model="tempRates.healthInsurance"
+                  :disabled="!isEditMode"
+                  step="0.001"
+                  class="rate-input"
+              />
+              <span class="rate-unit">%</span>
+            </div>
+            <div class="rate-preview">
+              <span class="preview-label">예상 공제액</span>
+              <span class="preview-value">{{ previewCalculation.health.toLocaleString() }}원</span>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">장기요양보험 요율 (%)</label>
-            <div class="input-wrapper">
-              <input type="number" v-model="tempRates.longTermCare" :disabled="!isEditMode" step="0.01" class="form-input">
-              <span class="unit">%</span>
+          <div class="rate-card">
+            <div class="rate-card-header">
+              <div class="rate-icon longterm">
+                <i class="mdi mdi-hospital-building"></i>
+              </div>
+              <div class="rate-title-group">
+                <h3 class="rate-title">장기요양보험</h3>
+                <p class="rate-description">건강보험료 대비 비율 (2024년 12.95%)</p>
+              </div>
             </div>
-            <p class="helper-text">건강보험료 대비 비율 (2024년 12.95%)</p>
+            <div class="rate-input-group">
+              <input
+                  type="number"
+                  v-model="tempRates.longTermCare"
+                  :disabled="!isEditMode"
+                  step="0.01"
+                  class="rate-input"
+              />
+              <span class="rate-unit">%</span>
+            </div>
+            <div class="rate-preview">
+              <span class="preview-label">예상 공제액</span>
+              <span class="preview-value">{{ previewCalculation.longTerm.toLocaleString() }}원</span>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">고용보험 요율 (%)</label>
-            <div class="input-wrapper">
-              <input type="number" v-model="tempRates.employmentInsurance" :disabled="!isEditMode" step="0.01" class="form-input">
-              <span class="unit">%</span>
+          <div class="rate-card">
+            <div class="rate-card-header">
+              <div class="rate-icon employment">
+                <i class="mdi mdi-briefcase"></i>
+              </div>
+              <div class="rate-title-group">
+                <h3 class="rate-title">고용보험</h3>
+                <p class="rate-description">근로자 실업급여 부담분 (0.9%)</p>
+              </div>
             </div>
-            <p class="helper-text">근로자 실업급여 부담분 (0.9%)</p>
+            <div class="rate-input-group">
+              <input
+                  type="number"
+                  v-model="tempRates.employmentInsurance"
+                  :disabled="!isEditMode"
+                  step="0.01"
+                  class="rate-input"
+              />
+              <span class="rate-unit">%</span>
+            </div>
+            <div class="rate-preview">
+              <span class="preview-label">예상 공제액</span>
+              <span class="preview-value">{{ previewCalculation.employment.toLocaleString() }}원</span>
+            </div>
           </div>
 
-          <div class="form-group full-width-group">
-            <label class="form-label badge-label">
-              산재보험 요율 (%)
-              <span class="badge company-only">전액 회사부담</span>
-            </label>
-            <div class="input-wrapper">
-              <input type="number" v-model="tempRates.industrialAccident" :disabled="!isEditMode" step="0.01" class="form-input">
-              <span class="unit">%</span>
+          <div class="rate-card full-width company-card">
+            <div class="rate-card-header">
+              <div class="rate-icon industrial">
+                <i class="mdi mdi-hard-hat"></i>
+              </div>
+              <div class="rate-title-group">
+                <div class="title-with-badge">
+                  <h3 class="rate-title">산재보험</h3>
+                  <span class="company-badge">
+                    <i class="mdi mdi-office-building"></i>
+                    전액 회사부담
+                  </span>
+                </div>
+                <p class="rate-description company-description">업종별 요율 상이 (급여명세서 공제 안 됨)</p>
+              </div>
             </div>
-            <p class="helper-text text-company">
-              업종별 요율 상이 (급여명세서 공제 안 됨)
-            </p>
+            <div class="rate-input-group">
+              <input
+                  type="number"
+                  v-model="tempRates.industrialAccident"
+                  :disabled="!isEditMode"
+                  step="0.01"
+                  class="rate-input"
+              />
+              <span class="rate-unit">%</span>
+            </div>
+            <div class="rate-preview company-preview">
+              <span class="preview-label">회사 부담금</span>
+              <span class="preview-value company-value">{{ previewCalculation.industrial.toLocaleString() }}원</span>
+            </div>
           </div>
-        </div>
-
-        <div class="last-updated">
-          최종 업데이트: {{ insuranceRates.lastUpdated }}
         </div>
       </div>
 
-      <div class="preview-card">
-        <h3 class="card-title">시뮬레이션 (월 {{ (sampleSalary/10000).toLocaleString() }}만원 기준)</h3>
+      <div class="simulation-section">
+        <div class="simulation-card">
+          <div class="simulation-header">
+            <div class="simulation-icon">
+              <i class="mdi mdi-calculator"></i>
+            </div>
+            <div>
+              <h2 class="simulation-title">급여 시뮬레이션</h2>
+              <p class="simulation-subtitle">예상 공제액 및 실수령액 계산기</p>
+            </div>
+          </div>
 
-        <div class="preview-section">
-          <p class="section-title emp">근로자 공제 예상액</p>
-          <div class="preview-list">
-            <div class="preview-item">
-              <span>국민연금</span>
-              <span class="amount">{{ previewCalculation.pension.toLocaleString() }}원</span>
+          <div class="simulation-input-section">
+            <label class="input-label">
+              <i class="mdi mdi-cash-multiple"></i>
+              월 급여액 (과세대상금액)
+            </label>
+            <div class="salary-input-wrapper">
+              <input
+                  type="text"
+                  v-model="formattedSalary"
+                  class="salary-input"
+                  placeholder="급여액을 입력하세요"
+              />
+              <span class="salary-unit">원</span>
             </div>
-            <div class="preview-item">
-              <span>건강보험</span>
-              <span class="amount">{{ previewCalculation.health.toLocaleString() }}원</span>
+          </div>
+
+          <div class="simulation-section-card employee">
+            <div class="simulation-section-header">
+              <i class="mdi mdi-account"></i>
+              <h3>근로자 공제 예상액</h3>
             </div>
-            <div class="preview-item">
-              <span>장기요양</span>
-              <span class="amount">{{ previewCalculation.longTerm.toLocaleString() }}원</span>
+            <div class="simulation-items">
+              <div class="simulation-item">
+                <div class="item-info">
+                  <div class="item-icon pension">
+                    <i class="mdi mdi-shield-account"></i>
+                  </div>
+                  <span class="item-name">국민연금</span>
+                </div>
+                <span class="item-amount">{{ previewCalculation.pension.toLocaleString() }}원</span>
+              </div>
+              <div class="simulation-item">
+                <div class="item-info">
+                  <div class="item-icon health">
+                    <i class="mdi mdi-medical-bag"></i>
+                  </div>
+                  <span class="item-name">건강보험</span>
+                </div>
+                <span class="item-amount">{{ previewCalculation.health.toLocaleString() }}원</span>
+              </div>
+              <div class="simulation-item">
+                <div class="item-info">
+                  <div class="item-icon longterm">
+                    <i class="mdi mdi-hospital-building"></i>
+                  </div>
+                  <span class="item-name">장기요양</span>
+                </div>
+                <span class="item-amount">{{ previewCalculation.longTerm.toLocaleString() }}원</span>
+              </div>
+              <div class="simulation-item">
+                <div class="item-info">
+                  <div class="item-icon employment">
+                    <i class="mdi mdi-briefcase"></i>
+                  </div>
+                  <span class="item-name">고용보험</span>
+                </div>
+                <span class="item-amount">{{ previewCalculation.employment.toLocaleString() }}원</span>
+              </div>
             </div>
-            <div class="preview-item">
-              <span>고용보험</span>
-              <span class="amount">{{ previewCalculation.employment.toLocaleString() }}원</span>
+            <div class="simulation-total">
+              <span class="total-label">총 공제액</span>
+              <span class="total-amount">{{ previewCalculation.employeeTotal.toLocaleString() }}원</span>
             </div>
-            <hr class="divider">
-            <div class="preview-item total">
-              <span>공제 계</span>
-              <span class="amount">{{ previewCalculation.employeeTotal.toLocaleString() }}원</span>
+          </div>
+
+          <div class="simulation-section-card company">
+            <div class="simulation-section-header">
+              <i class="mdi mdi-office-building"></i>
+              <h3>회사 부담금 (참고)</h3>
+            </div>
+            <div class="simulation-items">
+              <div class="simulation-item">
+                <div class="item-info">
+                  <div class="item-icon industrial">
+                    <i class="mdi mdi-hard-hat"></i>
+                  </div>
+                  <span class="item-name">산재보험료</span>
+                </div>
+                <span class="item-amount company">{{ previewCalculation.industrial.toLocaleString() }}원</span>
+              </div>
+            </div>
+            <div class="simulation-note">
+              <i class="mdi mdi-information"></i>
+              <span>산재보험은 전액 회사가 납부합니다</span>
+            </div>
+          </div>
+
+          <div class="net-pay-card">
+            <div class="net-pay-content">
+              <span class="net-pay-label">예상 실수령액</span>
+              <span class="net-pay-amount">
+                {{ (Number(sampleSalary) - previewCalculation.employeeTotal).toLocaleString() }}원
+              </span>
             </div>
           </div>
         </div>
-
-        <div class="preview-section company-section">
-          <p class="section-title com">회사 부담금 예상액 (참고)</p>
-          <div class="preview-list">
-            <div class="preview-item">
-              <span>산재보험료</span>
-              <span class="amount company-cost">{{ previewCalculation.industrial.toLocaleString() }}원</span>
-            </div>
-            <p class="info-text-xs">* 산재보험은 전액 회사가 납부합니다.</p>
-          </div>
-        </div>
-
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page-subtitle { color: #6b7280; margin-top: 5px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+.header-left { display: flex; align-items: flex-start; gap: 16px; }
+.page-title { font-size: 28px; font-weight: 700; color: #1e293b; margin: 0 0 8px 0; display: flex; align-items: center; gap: 12px; }
+.page-title i { font-size: 32px; color: #667eea; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
+.header-actions { display: flex; gap: 12px; }
+.btn-edit, .btn-cancel, .btn-save { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+.btn-edit { background: white; border: 1px solid #e2e8f0; color: #64748b; }
+.btn-edit:hover { background: #f8fafc; border-color: #cbd5e1; }
+.btn-cancel { background: white; border: 1px solid #e2e8f0; color: #64748b; }
+.btn-cancel:hover { background: #f8fafc; }
+.btn-save { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+.btn-save:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
+.btn-edit i, .btn-cancel i, .btn-save i { font-size: 18px; }
 
-.settings-container { display: grid; grid-template-columns: 1fr 350px; gap: 25px; }
+.year-selector-card { background: white; border-radius: 12px; padding: 20px 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); margin-bottom: 28px; display: flex; justify-content: space-between; align-items: center; }
+.year-selector-content { display: flex; align-items: center; gap: 16px; }
+.year-icon { width: 48px; height: 48px; border-radius: 10px; background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); display: flex; align-items: center; justify-content: center; }
+.year-icon i { font-size: 24px; color: #3b82f6; }
+.year-info { display: flex; flex-direction: column; gap: 6px; }
+.year-label { font-size: 13px; color: #64748b; font-weight: 500; }
+.year-select-wrapper { position: relative; display: inline-block; }
+.year-select { appearance: none; background: transparent; border: none; font-size: 20px; font-weight: 700; color: #3b82f6; cursor: pointer; padding-right: 28px; }
+.year-select-wrapper i { position: absolute; right: 0; top: 50%; transform: translateY(-50%); font-size: 24px; color: #3b82f6; pointer-events: none; }
+.year-last-updated { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #94a3b8; }
+.year-last-updated i { font-size: 16px; }
 
-/* 카드 공통 */
-.settings-card, .preview-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
-.card-title { font-size: 1.1rem; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 5px;}
+.content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 28px; }
+.rates-section { display: flex; flex-direction: column; gap: 20px; }
+.section-header { margin-bottom: 4px; }
+.section-title { font-size: 18px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 10px; margin: 0; }
+.section-title i { font-size: 20px; color: #667eea; }
 
-/* 년도 선택 */
-.year-select-wrapper { font-weight: 400; font-size: 0.95rem; margin-left: 5px; color: #4b5563;}
-.year-select { border: none; font-weight: 700; color: #3b82f6; cursor: pointer; background: transparent; font-size: 1rem;}
+.rates-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.rate-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); border: 2px solid transparent; transition: all 0.3s; }
+.rate-card:hover { border-color: #e2e8f0; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+.rate-card.full-width { grid-column: 1 / -1; }
+.rate-card.company-card { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fcd34d; }
+.rate-card-header { display: flex; gap: 12px; margin-bottom: 16px; }
+.rate-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.rate-icon i { font-size: 22px; color: white; }
+.rate-icon.pension { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+.rate-icon.health { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.rate-icon.longterm { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
+.rate-icon.employment { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.rate-icon.industrial { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+.title-with-badge { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rate-title { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0 0 4px 0; }
+.rate-description { font-size: 12px; color: #64748b; margin: 0; }
+.rate-description.company-description { color: #92400e; }
+.company-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; font-size: 11px; font-weight: 600; color: #d97706; }
+.company-badge i { font-size: 12px; }
+.rate-input-group { position: relative; margin-bottom: 12px; }
+.rate-input { padding: 12px 40px 12px 14px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 18px; font-weight: 700; text-align: right; color: #1e293b; transition: all 0.2s; }
+.rate-input:disabled { background: #f8fafc; color: #94a3b8; }
+.rate-input:not(:disabled):focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+.rate-unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 16px; font-weight: 600; color: #94a3b8; }
+.rate-preview { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f8fafc; border-radius: 6px; }
+.rate-preview.company-preview { background: #fef3c7; }
+.preview-label { font-size: 12px; color: #64748b; font-weight: 500; }
+.preview-value { font-size: 15px; font-weight: 700; color: #1e293b; }
+.preview-value.company-value { color: #d97706; }
 
-/* 폼 그리드 */
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.form-group { display: flex; flex-direction: column; }
-.full-width-group { grid-column: 1 / -1; } /* 산재보험 한 줄 차지 */
+.simulation-section { position: sticky; top: 20px; }
+.simulation-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); overflow: hidden; }
+.simulation-header { padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; display: flex; gap: 16px; align-items: center; }
+.simulation-icon { width: 56px; height: 56px; border-radius: 12px; background: rgba(255, 255, 255, 0.2); display: flex; align-items: center; justify-content: center; }
+.simulation-icon i { font-size: 28px; }
+.simulation-title { font-size: 18px; font-weight: 700; margin: 0 0 4px 0; }
+.simulation-subtitle { font-size: 13px; opacity: 0.9; margin: 0; }
 
-.form-label { font-size: 0.9rem; font-weight: 600; margin-bottom: 8px; color: #374151; display: flex; justify-content: space-between; align-items: center;}
-.input-wrapper { position: relative; display: flex; align-items: center; }
-.form-input { width: 100%; padding: 10px 40px 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem; text-align: right; }
-.form-input:disabled { background-color: #f9fafb; color: #6b7280; }
-.unit { position: absolute; right: 15px; color: #9ca3af; font-weight: 500; }
-.helper-text { font-size: 0.75rem; color: #9ca3af; margin-top: 5px; }
-.text-company { color: #d97706; } /* 산재보험 헬퍼 텍스트 색상 */
+.simulation-input-section { padding: 20px 24px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.input-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 10px; }
+.input-label i { font-size: 16px; color: #667eea; }
+.salary-input-wrapper { position: relative; display: flex; align-items: center; }
+.salary-input { width: 100%; padding: 12px 40px 12px 16px; border: 2px solid #cbd5e1; border-radius: 8px; font-size: 18px; font-weight: 700; color: #1e293b; text-align: right; transition: all 0.2s; background: white; }
+.salary-input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+.salary-unit { position: absolute; right: 16px; font-size: 16px; font-weight: 600; color: #64748b; pointer-events: none; }
 
-/* 뱃지 스타일 */
-.badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 500; }
-.company-only { background-color: #fef3c7; color: #d97706; border: 1px solid #fcd34d; }
+.simulation-section-card { padding: 20px; border-bottom: 1px solid #f1f5f9; }
+.simulation-section-card:last-child { border-bottom: none; }
+.simulation-section-card.employee { background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); }
+.simulation-section-card.company { background: linear-gradient(135deg, #ffffff 0%, #fffbeb 100%); }
+.simulation-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e2e8f0; }
+.simulation-section-header i { font-size: 18px; color: #667eea; }
+.simulation-section-header h3 { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0; }
+.simulation-items { display: flex; flex-direction: column; gap: 12px; }
+.simulation-item { display: flex; justify-content: space-between; align-items: center; }
+.item-info { display: flex; align-items: center; gap: 10px; }
+.item-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.item-icon i { font-size: 16px; color: white; }
+.item-icon.pension { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
+.item-icon.health { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.item-icon.longterm { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
+.item-icon.employment { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+.item-icon.industrial { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+.item-name { font-size: 14px; color: #475569; font-weight: 500; }
+.item-amount { font-size: 15px; font-weight: 700; color: #1e293b; }
+.item-amount.company { color: #d97706; }
+.simulation-total { margin-top: 12px; padding-top: 16px; border-top: 2px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+.total-label { font-size: 14px; font-weight: 600; color: #64748b; }
+.total-amount { font-size: 18px; font-weight: 700; color: #3b82f6; }
+.simulation-note { margin-top: 12px; padding: 10px 12px; background: #fef3c7; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #92400e; }
+.simulation-note i { font-size: 16px; }
 
-.last-updated { margin-top: 30px; font-size: 0.8rem; color: #9ca3af; text-align: right; }
+.net-pay-card { padding: 20px; background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); }
+.net-pay-content { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.net-pay-label { font-size: 13px; color: #64748b; font-weight: 600; }
+.net-pay-amount { font-size: 28px; font-weight: 700; color: #3b82f6; }
 
-/* 버튼 */
-.btn { padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; }
-.btn-group { display: flex; gap: 8px; }
-.btn-primary { background-color: #3b82f6; color: white; }
-.btn-success { background-color: #10b981; color: white; }
-.btn-outline { background-color: white; border: 1px solid #d1d5db; color: #374151; }
-.btn:hover { opacity: 0.9; }
-
-/* 미리보기 카드 */
-.preview-card { height: fit-content; background-color: #f8fafc; border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 20px;}
-.preview-section { background: #fff; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; }
-.section-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 12px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;}
-.section-title.emp { color: #3b82f6; }
-.section-title.com { color: #d97706; }
-
-.preview-list { display: flex; flex-direction: column; gap: 10px; }
-.preview-item { display: flex; justify-content: space-between; font-size: 0.9rem; color: #475569; }
-.amount { font-weight: 600; color: #1e293b; }
-.total { font-size: 1rem; font-weight: 700; color: #3b82f6; }
-.company-cost { color: #d97706; }
-.divider { border: 0; border-top: 1px solid #e2e8f0; margin: 5px 0; }
-.info-text-xs { font-size: 0.7rem; color: #94a3b8; margin-top: 5px; text-align: right;}
-
-@media (max-width: 900px) {
-  .settings-container { grid-template-columns: 1fr; }
+@media (max-width: 1200px) {
+  .content-grid { grid-template-columns: 1fr; }
+  .simulation-section { position: static; }
+}
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; gap: 16px; }
+  .header-actions { width: 100%; flex-direction: column; }
+  .btn-edit, .btn-cancel, .btn-save { width: 100%; justify-content: center; }
+  .year-selector-card { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .rates-grid { grid-template-columns: 1fr; }
+  .rate-card.full-width { grid-column: 1; }
 }
 </style>

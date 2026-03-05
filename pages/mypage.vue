@@ -90,12 +90,16 @@ onMounted(() => {
 <template>
   <div class="page-container">
     <div class="page-header">
-      <h2 class="page-title">👤 내 정보 관리</h2>
-      <p class="page-subtitle">계정 정보 확인 및 보안 설정을 관리합니다.</p>
+      <div class="header-left">
+        <h1 class="page-title">
+          <i class="mdi mdi-account-edit"></i>
+          내 정보 관리
+        </h1>
+        <p class="page-subtitle">계정 정보 확인 및 보안 설정을 관리합니다.</p>
+      </div>
     </div>
 
     <div class="profile-grid">
-
       <div class="left-col">
         <div class="card profile-card">
           <div class="card-header">

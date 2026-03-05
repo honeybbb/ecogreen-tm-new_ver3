@@ -10,7 +10,6 @@ const props = defineProps({
 });
 const emit = defineEmits(['close', 'save']);
 
-// useApi()에서 필요한 상태와 함수 가져오기
 const {
   siteOptions,
   typeOptions,
@@ -28,10 +27,8 @@ const editData = ref({
   details_data: []
 });
 
-// 💡 핵심 해결부분: 모달이 열릴 때(isOpen === true) API를 호출합니다.
 watch(() => props.isOpen, async (newVal) => {
   if (newVal) {
-    // 1. 기존 데이터 복사 (원본 훼손 방지)
     if (props.initialData) {
       const data = JSON.parse(JSON.stringify(props.initialData));
       editData.value = {
@@ -40,10 +37,8 @@ watch(() => props.isOpen, async (newVal) => {
         details_data: data.details_data || []
       };
     }
-    activeTab.value = 'statement';
+    activeTab.value = props.initialData?.defaultTab || 'statement';
 
-    // 2. 모달이 화면에 뜨는 시점에 안전하게 API를 호출합니다!
-    // (이미 옵션 목록을 불러왔다면 중복 호출하지 않도록 방어 코드 추가)
     try {
       if (siteOptions.value.length === 0) {
         await fetchSiteOptions();
@@ -57,12 +52,10 @@ watch(() => props.isOpen, async (newVal) => {
   }
 });
 
-// === 정산서(총괄) 행 제어 ===
 const addStatementRow = () => {
   editData.value.statement_data.push({ category: '', item: '', price: 0, count: 1, note: '' });
 };
 
-// === 내역서(인원별) 행 제어 ===
 const addDetailRow = () => {
   editData.value.details_data.push({
     name: '',
@@ -76,7 +69,6 @@ const addDetailRow = () => {
   });
 };
 
-// 공통 행 삭제
 const removeRow = (type, index) => {
   if (confirm('해당 행을 삭제하시겠습니까?')) {
     if (type === 'S') editData.value.statement_data.splice(index, 1);
@@ -84,14 +76,16 @@ const removeRow = (type, index) => {
   }
 };
 
-// 정산서 실시간 총계 계산
 const totalStatementAmount = computed(() => {
   return editData.value.statement_data.reduce((sum, row) => sum + (Number(row.price || 0) * Number(row.count || 0)), 0);
 });
 
-// 서버 저장 로직 (Axios 직접 호출)
+const totalDetailsAmount = computed(() => {
+  return editData.value.details_data.reduce((sum, row) => sum + (Number(row.basic_pay || 0) - Number(row.deduction || 0)), 0);
+});
+
 const handleSave = async () => {
-  if (!editData.value.siteName) return alert('단지명을 선택해주세요.');
+  if (!editData.value.siteName) return alert('현장을 선택해주세요.');
 
   try {
     const payload = {
@@ -118,7 +112,6 @@ const handleSave = async () => {
   }
 };
 
-// 엑셀 다운로드 함수
 const downloadExcel = async () => {
   const workbook = new ExcelJS.Workbook();
   const ws = workbook.addWorksheet('정산내역서', {
@@ -145,13 +138,11 @@ const downloadExcel = async () => {
   ws.addRow(['', `문서번호 : 에코그린 202X-XX-09호`]);
   ws.addRow(['', `시행일자 : ${editData.value.target_month.replace('-', '. ')}.`]);
 
-  // 현장명 텍스트 추출 (siteOptions에서 매칭)
   const selectedSite = siteOptions.value.find(s => s.idx === editData.value.siteName);
   const siteNameText = selectedSite ? selectedSite.name : '알수없음';
 
   ws.addRow(['', `수    신 : ${siteNameText} 관리사무소`]);
 
-  // 구분명 텍스트 추출 (청소/경비 등)
   const selectedType = typeOptions.value.find(t => t.code === editData.value.type);
   const typeNameText = selectedType ? selectedType.name : editData.value.type;
 
@@ -276,177 +267,828 @@ const downloadExcel = async () => {
 
 <template>
   <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-content">
+    <div class="modal-container">
+      <!-- 모달 헤더 -->
+      <div class="modal-header">
+        <div class="header-title">
+          <i class="mdi mdi-file-document-edit"></i>
+          <h2>{{ settlementId ? '정산서 수정' : '새 정산서 작성' }}</h2>
+        </div>
+        <button @click="$emit('close')" class="btn-close">
+          <i class="mdi mdi-close"></i>
+        </button>
+      </div>
 
-      <header class="modal-header">
-        <div class="header-inputs">
-          <input v-model="editData.target_month" type="month" class="input-month" />
-          <select v-model="editData.type" class="input-select">
-            <option v-for="type in typeOptions">{{ type.itemNm }}</option>
-          </select>
-          <!--input v-model="editData.siteName" placeholder="단지명 (예: 쌍용플래티넘고산)" class="input-complex" /-->
-          <select v-model="editData.siteName" class="site-select">
+      <!-- 입력 필드 -->
+      <div class="info-panel">
+        <div class="info-group">
+          <label class="info-label">
+            <i class="mdi mdi-calendar"></i>
+            청구 연월
+          </label>
+          <input type="month" v-model="editData.target_month" class="info-input" />
+        </div>
+
+        <div class="info-group">
+          <label class="info-label">
+            <i class="mdi mdi-office-building"></i>
+            현장명
+          </label>
+          <select v-model="editData.siteName" class="info-select">
             <option value="" disabled>현장 선택</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
               {{ site.name }}
             </option>
           </select>
         </div>
-        <button @click="$emit('close')" class="close-btn">✕</button>
-      </header>
 
-      <div class="tab-menu">
-        <button :class="{ active: activeTab === 'statement' }" @click="activeTab = 'statement'">
-          📋 정산서
+        <div class="info-group">
+          <label class="info-label">
+            <i class="mdi mdi-tag"></i>
+            구분
+          </label>
+          <select v-model="editData.type" class="info-select">
+            <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+              {{ type.itemNm }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 탭 메뉴 -->
+      <div class="tab-nav">
+        <button
+            :class="['tab-btn', { active: activeTab === 'statement' }]"
+            @click="activeTab = 'statement'"
+        >
+          <i class="mdi mdi-file-document"></i>
+          <span>정산서 (총괄)</span>
         </button>
-        <button :class="{ active: activeTab === 'details' }" @click="activeTab = 'details'">
-          🧑‍🤝‍🧑 세부내역서
+        <button
+            :class="['tab-btn', { active: activeTab === 'details' }]"
+            @click="activeTab = 'details'"
+        >
+          <i class="mdi mdi-account-group"></i>
+          <span>세부내역서 (인원별)</span>
         </button>
       </div>
 
+      <!-- 탭 컨텐츠 -->
       <div class="modal-body">
-
+        <!-- 정산서 탭 -->
         <div v-show="activeTab === 'statement'" class="tab-content">
-          <table class="data-table">
-            <thead>
-            <tr>
-              <th width="15%">구분</th>
-              <th width="20%">항목</th>
-              <th width="15%">단가(금액)</th>
-              <th width="10%">인원/수량</th>
-              <th width="15%">소계</th>
-              <th width="18%">비고</th>
-              <th width="7%">관리</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr v-for="(row, idx) in editData.statement_data" :key="'stmt-'+idx">
-              <td><input v-model="row.category" placeholder="직접노무비" /></td>
-              <td><input v-model="row.item" placeholder="기본급" /></td>
-              <td><input type="number" v-model.number="row.price" class="text-right" /></td>
-              <td><input type="number" v-model.number="row.count" step="0.01" class="text-center" /></td>
-              <td class="text-right calc-cell">{{ (row.price * row.count).toLocaleString() }}</td>
-              <td><input v-model="row.note" placeholder="산출근거 등" /></td>
-              <td class="text-center"><button @click="removeRow('S', idx)" class="del-btn">삭제</button></td>
-            </tr>
-            </tbody>
-          </table>
-          <button @click="addStatementRow" class="add-row-btn">+ 정산 항목 추가</button>
+          <div class="table-header">
+            <div class="table-title">
+              <i class="mdi mdi-format-list-bulleted"></i>
+              <span>정산 항목 ({{ editData.statement_data.length }}개)</span>
+            </div>
+            <button @click="addStatementRow" class="btn-add-row">
+              <i class="mdi mdi-plus"></i>
+              <span>항목 추가</span>
+            </button>
+          </div>
+
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+              <tr>
+                <th style="width: 15%;">구분</th>
+                <th style="width: 20%;">항목</th>
+                <th style="width: 15%;">단가(금액)</th>
+                <th style="width: 10%;">인원/수량</th>
+                <th style="width: 15%;">소계</th>
+                <th style="width: 18%;">비고</th>
+                <th style="width: 7%;">관리</th>
+              </tr>
+              </thead>
+              <tbody>
+              <tr v-for="(row, idx) in editData.statement_data" :key="'stmt-' + idx" class="data-row">
+                <td>
+                  <input
+                      v-model="row.category"
+                      placeholder="직접노무비"
+                      class="cell-input"
+                  />
+                </td>
+                <td>
+                  <input
+                      v-model="row.item"
+                      placeholder="기본급"
+                      class="cell-input"
+                  />
+                </td>
+                <td>
+                  <input
+                      type="number"
+                      v-model.number="row.price"
+                      class="cell-input text-right"
+                      placeholder="0"
+                  />
+                </td>
+                <td>
+                  <input
+                      type="number"
+                      v-model.number="row.count"
+                      step="0.01"
+                      class="cell-input text-center"
+                      placeholder="1"
+                  />
+                </td>
+                <td class="calc-cell">
+                  {{ (row.price * row.count).toLocaleString() }}
+                </td>
+                <td>
+                  <input
+                      v-model="row.note"
+                      placeholder="산출근거"
+                      class="cell-input"
+                  />
+                </td>
+                <td class="action-cell">
+                  <button @click="removeRow('S', idx)" class="btn-remove">
+                    <i class="mdi mdi-delete"></i>
+                  </button>
+                </td>
+              </tr>
+
+              <tr v-if="editData.statement_data.length === 0" class="empty-row">
+                <td colspan="7">
+                  <div class="empty-state">
+                    <i class="mdi mdi-file-plus-outline"></i>
+                    <p>항목을 추가해주세요</p>
+                  </div>
+                </td>
+              </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
+        <!-- 세부내역서 탭 -->
         <div v-show="activeTab === 'details'" class="tab-content">
-          <table class="data-table">
-            <thead>
-            <tr>
-              <th>이름</th>
-              <th>직책</th>
-              <th>생년월일</th>
-              <th>입사일</th>
-              <th>퇴사일</th>
-              <th>총 급여(A)</th>
-              <th>공제액(B)</th>
-              <th>지급금액(A-B)</th>
-              <th>비고</th>
-              <th>관리</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr v-for="(row, idx) in editData.details_data" :key="'dtl-'+idx">
-              <td><input v-model="row.name" placeholder="홍길동" /></td>
-              <td><input v-model="row.position" placeholder="반장" /></td>
-              <td><input v-model="row.birth_date" placeholder="YYMMDD" /></td>
-              <td><input type="date" v-model="row.inDate" /></td>
-              <td><input type="date" v-model="row.outDate" /></td>
-              <td><input type="number" v-model.number="row.basic_pay" class="text-right" /></td>
-              <td><input type="number" v-model.number="row.deduction" class="text-right" /></td>
-              <td class="text-right calc-cell">{{ (row.basic_pay - row.deduction).toLocaleString() }}</td>
-              <td><input v-model="row.note" /></td>
-              <td class="text-center"><button @click="removeRow('D', idx)" class="del-btn">삭제</button></td>
-            </tr>
-            </tbody>
-          </table>
-          <button @click="addDetailRow" class="add-row-btn">+ 인원 추가</button>
-        </div>
+          <div class="table-header">
+            <div class="table-title">
+              <i class="mdi mdi-account-multiple"></i>
+              <span>인원 목록 ({{ editData.details_data.length }}명)</span>
+            </div>
+            <button @click="addDetailRow" class="btn-add-row">
+              <i class="mdi mdi-plus"></i>
+              <span>인원 추가</span>
+            </button>
+          </div>
 
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+              <tr>
+                <th style="width: 10%;">이름</th>
+                <th style="width: 10%;">직책</th>
+                <th style="width: 12%;">생년월일</th>
+                <th style="width: 12%;">입사일</th>
+                <th style="width: 12%;">퇴사일</th>
+                <th style="width: 13%;">총 급여(A)</th>
+                <th style="width: 13%;">공제액(B)</th>
+                <th style="width: 13%;">실수령액</th>
+                <th style="width: 10%;">비고</th>
+                <th style="width: 5%;">관리</th>
+              </tr>
+              </thead>
+              <tbody>
+              <tr v-for="(row, idx) in editData.details_data" :key="'dtl-' + idx" class="data-row">
+                <td>
+                  <input
+                      v-model="row.name"
+                      placeholder="홍길동"
+                      class="cell-input"
+                  />
+                </td>
+                <td>
+                  <input
+                      v-model="row.position"
+                      placeholder="반장"
+                      class="cell-input"
+                  />
+                </td>
+                <td>
+                  <input
+                      v-model="row.birth_date"
+                      placeholder="YYMMDD"
+                      class="cell-input text-center"
+                  />
+                </td>
+                <td>
+                  <input
+                      type="date"
+                      v-model="row.inDate"
+                      class="cell-input"
+                  />
+                </td>
+                <td>
+                  <input
+                      type="date"
+                      v-model="row.outDate"
+                      class="cell-input"
+                  />
+                </td>
+                <td>
+                  <input
+                      type="number"
+                      v-model.number="row.basic_pay"
+                      class="cell-input text-right"
+                      placeholder="0"
+                  />
+                </td>
+                <td>
+                  <input
+                      type="number"
+                      v-model.number="row.deduction"
+                      class="cell-input text-right"
+                      placeholder="0"
+                  />
+                </td>
+                <td class="calc-cell">
+                  {{ (row.basic_pay - row.deduction).toLocaleString() }}
+                </td>
+                <td>
+                  <input
+                      v-model="row.note"
+                      placeholder="메모"
+                      class="cell-input"
+                  />
+                </td>
+                <td class="action-cell">
+                  <button @click="removeRow('D', idx)" class="btn-remove">
+                    <i class="mdi mdi-delete"></i>
+                  </button>
+                </td>
+              </tr>
+
+              <tr v-if="editData.details_data.length === 0" class="empty-row">
+                <td colspan="10">
+                  <div class="empty-state">
+                    <i class="mdi mdi-account-plus-outline"></i>
+                    <p>인원을 추가해주세요</p>
+                  </div>
+                </td>
+              </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      <footer class="modal-footer">
-        <div class="total-summary">
-          총 청구 금액 : <span class="highlight">{{ totalStatementAmount.toLocaleString() }}</span> 원
+      <!-- 모달 푸터 -->
+      <div class="modal-footer">
+        <div class="footer-left">
+          <div class="total-info">
+            <span class="total-label">총 청구금액</span>
+            <span class="total-amount">{{ totalStatementAmount.toLocaleString() }}원</span>
+          </div>
         </div>
-        <div class="footer-btns">
-          <button @click="downloadExcel" class="excel-btn">📊 엑셀 다운로드</button>
-          <button @click="$emit('close')" class="cancel-btn">취소</button>
-          <button @click="handleSave" class="save-btn">저장하기</button>
-        </div>
-      </footer>
 
+        <div class="footer-actions">
+          <button @click="downloadExcel" class="btn-excel">
+            <i class="mdi mdi-microsoft-excel"></i>
+            <span>엑셀 다운로드</span>
+          </button>
+          <button @click="$emit('close')" class="btn-cancel">
+            <i class="mdi mdi-close"></i>
+            <span>취소</span>
+          </button>
+          <button @click="handleSave" class="btn-save">
+            <i class="mdi mdi-check"></i>
+            <span>저장하기</span>
+          </button>
+        </div>
+      </div>
     </div>
-
-
   </div>
 </template>
 
 <style scoped>
-/* 모달 배경 및 컨테이너 */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(17, 24, 39, 0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(2px); }
-.modal-content { background: #fff; width: 95%; max-width: 1300px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); overflow: hidden; }
+/* Material Design Icons */
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
 
-/* 헤더 */
-.modal-header { padding: 20px 25px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
-.header-inputs { display: flex; gap: 10px; flex: 1; }
-.input-month, .input-select, .input-complex { padding: 10px 15px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; font-weight: 600; color: #1e293b; outline: none; }
-.input-complex { flex: 0.5; }
-.input-complex:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-.close-btn { background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer; }
-.close-btn:hover { color: #0f172a; }
-
-/* 탭 메뉴 */
-.tab-menu { display: flex; padding: 0 25px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.tab-menu button { padding: 15px 25px; border: none; background: none; font-size: 15px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; transition: 0.2s; }
-.tab-menu button:hover { color: #3b82f6; }
-.tab-menu button.active { color: #3b82f6; border-bottom-color: #3b82f6; }
-
-/* 바디 및 테이블 */
-.modal-body { flex: 1; overflow-y: auto; padding: 25px; background: #fff; }
-.data-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-.data-table th { background: #f1f5f9; padding: 12px; font-size: 13px; color: #475569; border: 1px solid #e2e8f0; font-weight: 700; text-align: center; }
-.data-table td { border: 1px solid #e2e8f0; padding: 0; }
-.data-table input { width: 100%; border: none; padding: 12px 10px; font-size: 14px; color: #0f172a; box-sizing: border-box; outline: none; background: transparent; }
-.data-table input:focus { background: #eff6ff; }
-
-/* 유틸리티 클래스 */
-.text-right { text-align: right; }
-.text-center { text-align: center; }
-.calc-cell { padding: 0 15px !important; font-weight: 700; color: #334155; background: #f8fafc; }
-.del-btn { padding: 6px 12px; background: #fee2e2; color: #ef4444; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; }
-.del-btn:hover { background: #fecaca; }
-
-/* 추가 버튼 */
-.add-row-btn { width: 100%; padding: 12px; border: 1px dashed #cbd5e1; background: #f8fafc; color: #64748b; font-weight: 600; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-.add-row-btn:hover { background: #f1f5f9; color: #0f172a; border-color: #94a3b8; }
-
-/* 푸터 */
-.modal-footer { padding: 20px 25px; background: #fff; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
-.total-summary { font-size: 18px; font-weight: 600; color: #475569; }
-.total-summary .highlight { font-size: 26px; color: #ef4444; font-weight: 800; }
-.footer-btns { display: flex; gap: 10px; }
-.cancel-btn { padding: 12px 24px; border: 1px solid #cbd5e1; background: #fff; color: #475569; border-radius: 8px; font-weight: 600; cursor: pointer; }
-.save-btn { padding: 12px 30px; border: none; background: #00dc82; color: #fff; border-radius: 8px; font-weight: 700; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(0, 220, 130, 0.2); }
-.save-btn:hover { background: #00c373; }
-
-/* 엑셀 다운로드 버튼 스타일 */
-.excel-btn {
-  padding: 12px 20px;
-  border: 1px solid #10b981;
-  background: #ecfdf5;
-  color: #047857;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: 0.2s;
+/* === 모달 오버레이 === */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fadeIn 0.2s;
 }
-.excel-btn:hover {
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* === 모달 컨테이너 === */
+.modal-container {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 1400px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+  animation: slideUp 0.3s;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* === 모달 헤더 === */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 28px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px 16px 0 0;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: white;
+}
+
+.header-title i {
+  font-size: 28px;
+}
+
+.header-title h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.btn-close {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.btn-close i {
+  font-size: 24px;
+}
+
+/* === 정보 패널 === */
+.info-panel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  padding: 24px 28px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.info-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.info-label i {
+  font-size: 16px;
+  color: #667eea;
+}
+
+.info-input,
+.info-select {
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 500;
+  transition: all 0.2s;
+  background: white;
+}
+
+.info-input:focus,
+.info-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* === 탭 네비게이션 === */
+.tab-nav {
+  display: flex;
+  padding: 0 28px;
+  background: white;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+  margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+  color: #667eea;
+}
+
+.tab-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+.tab-btn i {
+  font-size: 18px;
+}
+
+/* === 모달 바디 === */
+.modal-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 24px 28px;
+  background: white;
+}
+
+.tab-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.table-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.table-title i {
+  font-size: 20px;
+  color: #667eea;
+}
+
+.btn-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.btn-add-row:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-add-row i {
+  font-size: 16px;
+}
+
+/* === 테이블 스크롤 === */
+.table-scroll {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+/* === 데이터 테이블 === */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.data-table th {
+  padding: 14px 12px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.data-row:hover {
+  background: #f8fafc;
+}
+
+/* === 셀 입력 === */
+.cell-input {
+  width: 100%;
+  border: none;
+  padding: 12px;
+  font-size: 14px;
+  color: #1e293b;
+  background: transparent;
+  outline: none;
+  transition: background 0.2s;
+}
+
+.cell-input:focus {
+  background: #eff6ff;
+}
+
+.cell-input::placeholder {
+  color: #cbd5e1;
+}
+
+/* 텍스트 정렬 */
+.text-right {
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* === 계산 셀 === */
+.calc-cell {
+  padding: 12px !important;
+  font-weight: 700;
+  color: #059669;
+  background: #f0fdf4;
+  text-align: right;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* === 액션 셀 === */
+.action-cell {
+  text-align: center;
+  padding: 8px !important;
+}
+
+.btn-remove {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  background: #fef2f2;
+  color: #ef4444;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  transition: all 0.2s;
+}
+
+.btn-remove:hover {
+  background: #fee2e2;
+}
+
+.btn-remove i {
+  font-size: 16px;
+}
+
+/* === 빈 상태 === */
+.empty-row td {
+  padding: 60px 20px !important;
+}
+
+.empty-state {
+  text-align: center;
+  color: #94a3b8;
+}
+
+.empty-state i {
+  font-size: 48px;
+  margin-bottom: 12px;
+  display: block;
+  opacity: 0.5;
+}
+
+.empty-state p {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* === 모달 푸터 === */
+.modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 28px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0 0 16px 16px;
+}
+
+.footer-left {
+  flex: 1;
+}
+
+.total-info {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.total-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.total-amount {
+  font-size: 28px;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-excel,
+.btn-cancel,
+.btn-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-excel {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.btn-excel:hover {
   background: #d1fae5;
+}
+
+.btn-cancel {
+  background: white;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.btn-cancel:hover {
+  background: #f8fafc;
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-save:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+}
+
+.btn-excel i,
+.btn-cancel i,
+.btn-save i {
+  font-size: 18px;
+}
+
+/* === 반응형 === */
+@media (max-width: 1200px) {
+  .info-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .modal-container {
+    max-width: 100%;
+    max-height: 95vh;
+  }
+
+  .modal-header,
+  .info-panel,
+  .modal-body,
+  .modal-footer {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .tab-nav {
+    padding: 0 20px;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .footer-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .btn-excel,
+  .btn-cancel,
+  .btn-save {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .total-info {
+    justify-content: center;
+  }
 }
 </style>

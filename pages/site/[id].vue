@@ -280,7 +280,7 @@ const deleteSite = async () => {
     const sIdx = route.params.id || route.query.idx;
     await axios.delete(`/api/v1/site/${sIdx}`);
     alert('삭제되었습니다.');
-    router.push('/site');
+    router.push('/site/list');
   } catch (error) {
     console.error('삭제 실패:', error);
     alert('삭제에 실패했습니다.');
@@ -289,7 +289,7 @@ const deleteSite = async () => {
 
 // 목록으로
 const goBack = () => {
-  router.push('/site');
+  router.push('/site/list');
 };
 
 // 계약 그룹 추가

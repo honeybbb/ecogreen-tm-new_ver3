@@ -57,7 +57,6 @@ const fetchMembers = async () => {
   try {
     const response = await axios.get('/api/v1/member/list');
     if (response.data.data.length > 0) {
-      console.log(response.data.data);
       members.value = response.data.data;
     } else {
       members.value = [];
@@ -547,7 +546,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Material Design Icons */
 @import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
 
 /* === 기본 레이아웃 === */
@@ -981,6 +979,7 @@ onMounted(() => {
   overflow-y: visible;
   max-width: 100%;
   -webkit-overflow-scrolling: touch;
+  max-height: calc(100vh - 420px);
 }
 
 .table-scroll-container::-webkit-scrollbar {
