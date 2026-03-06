@@ -1253,10 +1253,6 @@ const refreshData = () => {
     justify-content: center;
   }
 
-  .filter-row {
-    flex-direction: column;
-  }
-
   .filter-group,
   .search-box {
     width: 100%;

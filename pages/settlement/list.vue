@@ -1,64 +1,106 @@
 <script setup>
 import { ref, computed, onMounted, reactive, watch } from 'vue';
 import axios from 'axios';
-// import { useRouter } from 'nuxt/app'; // 필요시 주석 해제
-// import SettlementModal from '@/components/SettlementModal.vue'; // 실제 경로에 맞게 수정
+// import { useRouter } from 'nuxt/app';
+import SettlementModal from '@/components/SettlementModal.vue';
 
-// const router = useRouter();
+const {typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions} = useApi();
+// const typeOptions = ref(['청소', '경비', '소독/방역']);}
+// 옵션 데이터 (JSON의 sIdx인 16, 18에 맞춰서 세팅)
+/*
+const siteOptions = ref([
+  { idx: 16, name: '쌍용플래티넘고산' },
+  { idx: 18, name: '위례롯데캐슬' },
+  { idx: 2, name: '답십리래미안' }
+]);
 
+ */
 // 1. 상태 및 검색 조건
 const isLoading = ref(false);
 const error = ref(null);
 const settlements = ref([]);
 
-// 필터 상태
+// 현재 년-월 (DB JSON에 맞춰 테스트용으로 2026-01로 세팅)
 const selectedYear = reactive({
-  month: new Date().toISOString().slice(0, 7), // YYYY-MM
+  month: '2026-01',
 });
 const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
 
-// 빠른 필터 (상태별)
 const filterCompleted = ref(false);
 const filterPending = ref(false);
 
-// 옵션 데이터 (API 연동 대체용 Mock)
-const siteOptions = ref([
-  { idx: 1, name: '쌍용플래티넘고산' },
-  { idx: 2, name: '센트럴푸르지오' },
-  { idx: 3, name: '래미안에스티움' }
-]);
-const typeOptions = ref(['청소', '경비', '소독/방역']);
-
 // 2. 정렬 관련 상태
 const sortKey = ref('id');
-const sortOrder = ref('desc'); // 최신순 기본
+const sortOrder = ref('desc');
 
-// 모달 제어 상태
 const isModalOpen = ref(false);
 const selectedId = ref(null);
 const initialDataForModal = ref(null);
 
-// 3. API 데이터 호출 (Mock 데이터 적용)
+// 백엔드에서 내려주는 실제 JSON 응답 예시
+const mockApiResponse = {
+  "result": true,
+  "data": [
+    {
+      "idx": 5, "sIdx": 16, "cIdx": 1, "year": 2026, "month": 1,
+      "docType": "SERVICE", "docNo": "에코그린 2026-01-29호", "type": "경비",
+      "subTotal": 16800000, "vatAmount": 1680000, "grandTotal": 18480000,
+      "regDt": "2026-03-06 12:01:59", "status": 1
+    },
+    {
+      "idx": 7, "sIdx": 18, "cIdx": 1, "year": 2026, "month": 1,
+      "docType": "SERVICE", "docNo": "에코그린 2026-01-29호", "type": "미화",
+      "subTotal": 38586480, "vatAmount": 3858648, "grandTotal": 42445128,
+      "regDt": "2026-03-06 12:01:59", "status": 0
+    }
+  ]
+};
+
+// 3. API 데이터 호출 및 매핑 로직 (핵심 변경점)
 const fetchList = async () => {
   isLoading.value = true;
   error.value = null;
 
   try {
-    // 실제 API 호출 로직
-    // const res = await axios.get('/api/v1/settlements', { params: selectedYear });
-    // settlements.value = res.data.list || [];
+    const params = {
+      year: selectedYear.month.split('-')[0],
+      month: selectedYear.month.split('-')[1],
+    }
+    // 실제 연동 시 아래 로직 사용
+    const res = await axios.get('/api/v1/settle/site/list', { params });
+    const rawData = res.data.data || [];
+    console.log(rawData, 'rawData')
 
-    // UI 확인용 임시 데이터
     setTimeout(() => {
-      settlements.value = [
-        { id: 105, siteName: '쌍용플래티넘고산', sIdx: 1, type: '청소', target_month: selectedYear.month, total_amount: 1542400, status: '결재완료', regDt: '2024-02-01' },
-        { id: 104, siteName: '쌍용플래티넘고산', sIdx: 1, type: '경비', target_month: selectedYear.month, total_amount: 3200000, status: '진행중', regDt: '2024-02-02' },
-        { id: 103, siteName: '센트럴푸르지오', sIdx: 2, type: '청소', target_month: selectedYear.month, total_amount: 4500000, status: '결재완료', regDt: '2024-02-03' },
-        { id: 102, siteName: '래미안에스티움', sIdx: 3, type: '소독/방역', target_month: selectedYear.month, total_amount: 850000, status: '반려', regDt: '2024-02-04' },
-        { id: 101, siteName: '센트럴푸르지오', sIdx: 2, type: '경비', target_month: '2023-12', total_amount: 3100000, status: '결재완료', regDt: '2024-01-05' },
-      ];
+      //const rawData = mockApiResponse.data;
+
+      // DB 데이터를 프론트엔드 UI 테이블용 데이터로 변환(Mapping)
+      settlements.value = rawData.map(item => {
+        // 1) 현장명 매핑
+        const site = siteOptions.value.find(s => s.idx === item.sIdx);
+        const siteName = site ? site.name : `알수없는현장(${item.sIdx})`;
+
+        // 2) 년월 포맷 매핑 (예: 2026, 1 -> 2026-01)
+        const formattedMonth = String(item.month).padStart(2, '0');
+        const targetMonth = `${item.year}-${formattedMonth}`;
+
+        // 3) 상태값 매핑 (DB의 int값을 문자열로 변환)
+        let statusText = '진행중';
+        if (item.status === 1) statusText = '결재완료';
+        else if (item.status === 2) statusText = '반려';
+
+        return {
+          ...item,
+          id: item.idx,                       // No. 컬럼용 (idx)
+          siteName: siteName,                 // 찾아낸 현장명
+          target_month: targetMonth,          // YYYY-MM 형태
+          total_amount: item.grandTotal,      // 총 청구금액
+          statusText: statusText,             // 문자열 상태 (결재완료 등)
+          regDtShort: item.regDt.split(' ')[0] // 날짜 시간 중 날짜만 표시 (YYYY-MM-DD)
+        };
+      });
       isLoading.value = false;
     }, 500);
   } catch (e) {
@@ -78,22 +120,23 @@ const toggleSort = (key) => {
   }
 };
 
-// 5. 필터링 + 정렬된 결과 계산
+// 5. 필터링 + 정렬된 결과 계산 (필터 조건 변경됨)
 const filteredSettlements = computed(() => {
   let result = settlements.value.filter(item => {
     const monthMatch = item.target_month === selectedYear.month;
     const siteMatch = selectedSite.value === '전체' || item.sIdx === selectedSite.value;
     const searchMatch = item.siteName.toLowerCase().includes(searchTerm.value.toLowerCase());
+
+    // JSON 데이터는 '미화' 로 오고 UI는 '청소'일 수 있으므로 유연하게 처리
     const typeMatch = selectedType.value === '전체' || item.type === selectedType.value;
 
     let statusMatch = true;
-    if (filterCompleted.value) statusMatch = item.status === '결재완료';
-    if (filterPending.value) statusMatch = item.status !== '결재완료';
+    if (filterCompleted.value) statusMatch = item.statusText === '결재완료';
+    if (filterPending.value) statusMatch = item.statusText !== '결재완료';
 
     return monthMatch && siteMatch && searchMatch && typeMatch && statusMatch;
   });
 
-  // 정렬 로직
   result.sort((a, b) => {
     let modifier = sortOrder.value === 'asc' ? 1 : -1;
     let valA = a[sortKey.value];
@@ -110,52 +153,30 @@ const filteredSettlements = computed(() => {
   return result;
 });
 
-// 6. 통계 정보 계산 (현재 달 기준)
+// 6. 통계 정보 계산
 const statsInfo = computed(() => {
   const currentMonthData = filteredSettlements.value;
-
   const totalCount = currentMonthData.length;
   const totalAmount = currentMonthData.reduce((sum, item) => sum + (item.total_amount || 0), 0);
-  const completedCount = currentMonthData.filter(item => item.status === '결재완료').length;
+  const completedCount = currentMonthData.filter(item => item.status == 1).length;
   const pendingCount = totalCount - completedCount;
 
   return { totalCount, totalAmount, completedCount, pendingCount };
 });
 
-// 7. 유틸리티 함수
 const formatCurrency = (amount) => {
   return (amount || 0).toLocaleString() + ' 원';
 };
 
-// 8. 이벤트 핸들러 (모달 열기 등)
-const handleSearch = () => {
-  fetchList();
-};
+const handleSearch = () => fetchList();
+const refreshData = () => fetchList();
 
-const refreshData = () => {
-  fetchList();
-};
-
-// 신규 작성 모달
 const openCreateModal = () => {
   selectedId.value = null;
-  initialDataForModal.value = {
-    siteName: '',
-    type: '청소',
-    target_month: selectedYear.month,
-    total_amount: 0,
-    statement_data: [
-      { category: '직접노무비', item: '기본급', price: 0, count: 1, note: '' },
-      { category: '직접노무비', item: '연차수당', price: 0, count: 1, note: '' }
-    ],
-    details_data: [
-      { name: '', position: '', birth_date: '', join_date: '', basic_pay: 0, deduction: 0, note: '' }
-    ]
-  };
+  initialDataForModal.value = { /* 신규 작성 초기값 */ };
   isModalOpen.value = true;
 };
 
-// 기존 내역 열기 (정산서 or 내역서 구분용 플래그 전달 가능)
 const openEditModal = (id, docType = 'statement') => {
   const item = settlements.value.find(s => s.id === id);
   selectedId.value = id;
@@ -164,6 +185,8 @@ const openEditModal = (id, docType = 'statement') => {
 };
 
 onMounted(() => {
+  fetchTypeOptions();
+  fetchSiteOptions();
   fetchList();
 });
 
@@ -172,7 +195,6 @@ watch(() => selectedYear.month, fetchList);
 
 <template>
   <div class="settlement-list-page">
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">
@@ -193,42 +215,30 @@ watch(() => selectedYear.month, fetchList);
       </div>
     </div>
 
-    <!-- 통계 카드 -->
     <div class="stats-grid">
       <div class="stat-card" style="--card-color: #667eea;">
-        <div class="stat-icon">
-          <i class="mdi mdi-file-document-multiple-outline"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-file-document-multiple-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">당월 총 청구건수</span>
           <span class="stat-value">{{ statsInfo.totalCount }}건</span>
         </div>
       </div>
-
       <div class="stat-card" style="--card-color: #10b981;">
-        <div class="stat-icon">
-          <i class="mdi mdi-cash-multiple"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
         <div class="stat-content">
           <span class="stat-label">당월 총 청구금액</span>
           <span class="stat-value">{{ formatCurrency(statsInfo.totalAmount) }}</span>
         </div>
       </div>
-
       <div class="stat-card" style="--card-color: #3b82f6;">
-        <div class="stat-icon">
-          <i class="mdi mdi-check-decagram"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-check-decagram"></i></div>
         <div class="stat-content">
           <span class="stat-label">결재 완료</span>
           <span class="stat-value">{{ statsInfo.completedCount }}건</span>
         </div>
       </div>
-
       <div class="stat-card" style="--card-color: #f59e0b;">
-        <div class="stat-icon">
-          <i class="mdi mdi-clock-outline"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-clock-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">진행 중/반려</span>
           <span class="stat-value">{{ statsInfo.pendingCount }}건</span>
@@ -236,22 +246,15 @@ watch(() => selectedYear.month, fetchList);
       </div>
     </div>
 
-    <!-- 검색 및 필터 패널 -->
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-calendar-month"></i>
-            청구 연월
-          </label>
+          <label class="filter-label"><i class="mdi mdi-calendar-month"></i> 청구 연월</label>
           <input type="month" v-model="selectedYear.month" class="filter-select" />
         </div>
 
         <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-office-building"></i>
-            현장 선택
-          </label>
+          <label class="filter-label"><i class="mdi mdi-office-building"></i> 현장 선택</label>
           <select v-model="selectedSite" class="filter-select">
             <option value="전체">전체</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
@@ -261,14 +264,11 @@ watch(() => selectedYear.month, fetchList);
         </div>
 
         <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-format-list-bulleted-type"></i>
-            구분
-          </label>
+          <label class="filter-label"><i class="mdi mdi-format-list-bulleted-type"></i> 구분</label>
           <select v-model="selectedType" class="filter-select">
             <option value="전체">전체</option>
-            <option v-for="opt in typeOptions" :key="opt" :value="opt">
-              {{ opt }}
+            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">
+              {{ opt.itemNm }}
             </option>
           </select>
         </div>
@@ -276,33 +276,20 @@ watch(() => selectedYear.month, fetchList);
         <div class="search-group">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
-            <input
-                type="text"
-                v-model="searchTerm"
-                placeholder="현장명으로 검색..."
-                class="search-input"
-                @keyup.enter="handleSearch"
-            />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
-              <i class="mdi mdi-close"></i>
-            </button>
+            <input type="text" v-model="searchTerm" placeholder="현장명으로 검색..." class="search-input" @keyup.enter="handleSearch" />
+            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear"><i class="mdi mdi-close"></i></button>
           </div>
         </div>
       </div>
 
-      <!-- 필터 토글 -->
       <div class="filter-toggles-row">
-        <span class="toggles-label">
-          <i class="mdi mdi-filter-variant"></i>
-          상태 필터:
-        </span>
+        <span class="toggles-label"><i class="mdi mdi-filter-variant"></i> 상태 필터:</span>
         <div class="filter-toggles">
           <label class="toggle-chip" :class="{ active: filterCompleted }">
             <input type="checkbox" v-model="filterCompleted" @change="filterPending = false">
             <i class="mdi mdi-check-circle-outline"></i>
             <span>결재완료만 보기</span>
           </label>
-
           <label class="toggle-chip" :class="{ active: filterPending }">
             <input type="checkbox" v-model="filterPending" @change="filterCompleted = false">
             <i class="mdi mdi-clock-alert-outline"></i>
@@ -312,26 +299,7 @@ watch(() => selectedYear.month, fetchList);
       </div>
     </div>
 
-    <!-- 로딩 및 에러 -->
-    <div v-if="isLoading" class="loading-state">
-      <div class="spinner"></div>
-      <p>데이터를 불러오는 중...</p>
-    </div>
-
-    <div v-if="error" class="error-state">
-      <i class="mdi mdi-alert-circle"></i>
-      <p>{{ error }}</p>
-    </div>
-
-    <!-- 테이블 -->
     <div class="table-card" v-if="!isLoading">
-      <div class="table-header">
-        <div class="table-title">
-          <i class="mdi mdi-table"></i>
-          <span>정산 내역 목록 ({{ filteredSettlements.length }}건)</span>
-        </div>
-      </div>
-
       <div class="table-scroll-container">
         <table class="data-table">
           <thead>
@@ -366,16 +334,16 @@ watch(() => selectedYear.month, fetchList);
                 <i v-if="sortKey === 'total_amount'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th @click="toggleSort('status')" class="sortable text-center">
+            <th @click="toggleSort('statusText')" class="sortable text-center">
               <div class="th-content justify-center">
                 <span>상태</span>
-                <i v-if="sortKey === 'status'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+                <i v-if="sortKey === 'statusText'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th @click="toggleSort('regDt')" class="sortable text-center">
+            <th @click="toggleSort('regDtShort')" class="sortable text-center">
               <div class="th-content justify-center">
                 <span>작성일</span>
-                <i v-if="sortKey === 'regDt'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+                <i v-if="sortKey === 'regDtShort'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
             </th>
             <th class="text-center sticky-col" style="width: 220px;">
@@ -390,23 +358,25 @@ watch(() => selectedYear.month, fetchList);
             <td class="text-center text-gray">{{ item.id }}</td>
             <td class="site-name">{{ item.siteName }}</td>
             <td class="text-center">
-              <span :class="['badge', item.type === '청소' ? 'badge-clean' : item.type === '경비' ? 'badge-guard' : 'badge-etc']">
-                {{ item.type }}
+              <span :class="[
+                  'badge', item.type === '01001002' ? 'badge-clean' :
+                  item.type === '01001001' ? 'badge-guard' : 'badge-etc']">
+                {{ item.typeNm }}
               </span>
             </td>
             <td class="text-center font-medium">{{ item.target_month }}</td>
             <td class="text-right amount-text">{{ formatCurrency(item.total_amount) }}</td>
             <td class="text-center">
                <span :class="['status-badge',
-                 item.status === '결재완료' ? 'status-active' :
-                 item.status === '반려' ? 'status-inactive' : 'status-pending']">
+                 item.statusText === '결재완료' ? 'status-active' :
+                 item.statusText === '반려' ? 'status-inactive' : 'status-pending']">
                   <i :class="['mdi',
-                    item.status === '결재완료' ? 'mdi-check-circle' :
-                    item.status === '반려' ? 'mdi-close-circle' : 'mdi-dots-horizontal-circle']"></i>
-                  {{ item.status }}
+                    item.statusText === '결재완료' ? 'mdi-check-circle' :
+                    item.statusText === '반려' ? 'mdi-close-circle' : 'mdi-dots-horizontal-circle']"></i>
+                  {{ item.statusText }}
                 </span>
             </td>
-            <td class="text-center text-gray">{{ item.regDt }}</td>
+            <td class="text-center text-gray">{{ item.regDtShort }}</td>
             <td class="text-center sticky-col">
               <div class="action-buttons">
                 <button @click="openEditModal(item.id, 'statement')" class="btn-action btn-statement">
@@ -418,22 +388,11 @@ watch(() => selectedYear.month, fetchList);
               </div>
             </td>
           </tr>
-
-          <tr v-if="filteredSettlements.length === 0" class="empty-row">
-            <td colspan="8">
-              <div class="empty-state">
-                <i class="mdi mdi-file-search-outline"></i>
-                <p>조건에 맞는 정산서가 없습니다</p>
-                <span>다른 월이나 현장으로 검색해보세요</span>
-              </div>
-            </td>
-          </tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- SettlementModal 컴포넌트 렌더링 -->
     <SettlementModal
         v-if="isModalOpen"
         :is-open="isModalOpen"
@@ -442,6 +401,7 @@ watch(() => selectedYear.month, fetchList);
         @close="isModalOpen = false"
         @save="fetchList"
     />
+
   </div>
 </template>
 

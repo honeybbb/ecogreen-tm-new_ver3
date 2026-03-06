@@ -159,7 +159,7 @@ const savePayroll = async () => {
     // 저장 로직
     await Promise.all(payrollList.value.map(row => {
       const c = calculateRowSummary(row);
-      return axios.post(`/api/v1/member/base/salary/${row.idx}`, {
+      return axios.post(`/api/v1/member/payroll/month/${row.idx}`, {
         mIdx: row.idx,
         sIdx: row.sIdx,
         year: selectedYearMonth.value.split('-')[0],

@@ -263,7 +263,7 @@ onMounted(() => {
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #3b82f6;">
+      <div class="stat-card" style="--card-color: #667eea;">
         <div class="stat-icon">
           <i class="mdi mdi-account-check-outline"></i>
         </div>
@@ -439,21 +439,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-.attendance-calendar-container {
-  padding: 0;
-  min-height: 100vh;
-  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
-}
-
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
-.header-left { flex: 1; }
-.page-title { font-size: 28px; font-weight: 700; color: #1e293b; margin: 0 0 8px 0; display: flex; align-items: center; gap: 12px; }
-.page-title i { font-size: 32px; color: #667eea; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-.header-actions { display: flex; gap: 12px; }
-
 .nav-controls { display: flex; align-items: center; gap: 12px; background: white; padding: 8px 16px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
 .btn-nav { width: 36px; height: 36px; border-radius: 8px; border: none; background: #f8fafc; color: #475569; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .btn-nav:hover { background: #e2e8f0; color: #1e293b; }
@@ -594,9 +579,7 @@ onMounted(() => {
   .btn-excel { width: 100%; justify-content: center; }
 
   /* 모바일에서 카드 2열 배치 */
-  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-  .stat-card { padding: 16px; flex-direction: column; text-align: center; gap: 8px;}
-  .stat-icon { margin: 0 auto; }
+  .stats-grid { grid-template-columns: 1fr; }
 
   .calendar-card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow-y: auto; border: none; }
   .calendar-grid-header { display: none; }
