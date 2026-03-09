@@ -293,7 +293,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
       <div class="welcome-box">
         <h1 class="welcome-title">
           <i class="mdi mdi-hand-wave"></i>
-          안녕하세요, 관리자님!
+          안녕하세요, {{ authStore.user?.managerNm }}님!
         </h1>
         <p class="welcome-subtitle">오늘도 좋은 하루 보내세요. {{ currentTime }}</p>
       </div>

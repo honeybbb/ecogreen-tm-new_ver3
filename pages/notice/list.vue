@@ -8,9 +8,10 @@ const authStore = useAuthStore();
 
 // 1. 상태 데이터
 const notices = ref([]);
-const searchQuery = ref('');
+const searchTerm = ref('');
 const searchType = ref('title');
 const isLoading = ref(false);
+const error = ref(null);
 
 // 모달 관련 상태
 const isModalOpen = ref(false);
@@ -47,11 +48,20 @@ const isNew = (dateString) => {
 
 const fetchNotices = async () => {
   isLoading.value = true;
+  error.value = null;
   try {
     const res = await axios.get('/api/v1/notice/list');
-    notices.value = res.data.data;
-  } catch (err) {
-    console.error("공지 로드 실패", err);
+    if(res.data.data.length > 0) {
+      notices.value = res.data.data;
+    }else {
+      notices.value = [];
+      console.error("API 응답 구조가 예상과 다릅니다.", res.data);
+    }
+
+  } catch (e) {
+    console.error("공지 로드 실패", e);
+    error.value = '공지 목록을 불러오는 중 오류가 발생했습니다.';
+    notices.value = [];
   } finally {
     isLoading.value = false;
   }
@@ -145,31 +155,60 @@ onMounted(() => {
     </div>
 
     <div class="filter-panel">
-      <div class="search-row">
-        <div class="input-group">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-mdi-format-list-bulleted-type"></i>
+            구분
+          </label>
           <select v-model="searchType" class="filter-select">
             <option value="title">제목</option>
             <option value="content">내용</option>
             <option value="author">작성자</option>
           </select>
         </div>
-        <div class="search-box flex-1">
-          <i class="mdi mdi-magnify"></i>
-          <input
-              type="text"
-              v-model="searchQuery"
-              @keyup.enter="fetchNotices"
-              placeholder="찾으시는 공지 내용을 입력하세요..."
-              class="search-input"
-          />
-        </div>
-        <button @click="fetchNotices" class="btn-search">
-          <span>검색</span>
-        </button>
+
+        <div class="search-group">
+          <div class="search-box">
+            <i class="mdi mdi-magnify"></i>
+            <input
+                type="text"
+                v-model="searchTerm"
+                @keyup.enter="fetchNotices"
+                placeholder="찾으시는 공지 내용을 입력하세요..."
+                class="search-input"
+            />
+            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+              <i class="mdi mdi-close"></i>
+            </button>
+          </div>
+          <button @click="fetchNotices" class="btn-search">
+            <i class="mdi mdi-magnify"></i>
+            <span>검색</span>
+          </button>
       </div>
     </div>
+    </div>
 
-    <div class="table-card">
+    <!-- 로딩 및 에러 -->
+    <div v-if="isLoading" class="loading-state">
+      <div class="spinner"></div>
+      <p>데이터를 불러오는 중...</p>
+    </div>
+
+    <div v-if="error" class="error-state">
+      <i class="mdi mdi-alert-circle"></i>
+      <p>{{ error }}</p>
+    </div>
+
+    <div class="table-card" v-if="!isLoading">
+      <div class="table-header">
+        <div class="table-title">
+          <i class="mdi mdi-table"></i>
+          <span>공지 목록 ({{ notices.length }}명)</span>
+        </div>
+      </div>
+
       <div class="table-scroll-container">
         <table class="data-table">
           <thead>
@@ -187,7 +226,7 @@ onMounted(() => {
           <tr
               v-for="notice in pinnedNotices"
               :key="'p'+notice.idx"
-              class="row-pinned"
+              class="row-pinned data-row"
               @click="openModal('view', notice)"
           >
             <td class="text-center"><span class="badge-pinned">필독</span></td>
@@ -266,7 +305,7 @@ onMounted(() => {
 
           <form v-else class="notice-edit-form">
             <div class="form-row">
-              <div class="form-group flex-1">
+              <div class="form-group">
                 <label>분류</label>
                 <select v-model="form.type" class="form-select">
                   <option value="일반">일반</option>
@@ -275,14 +314,14 @@ onMounted(() => {
                   <option value="긴급">긴급</option>
                 </select>
               </div>
-              <div class="form-group flex-1">
+              <div class="form-group">
                 <label>공지 대상</label>
                 <select v-model="form.target" class="form-select">
                   <option value="전체">전체 사원</option>
                   <option v-for="pos in positionOptions" :key="pos.itemCd" :value="pos.itemCd">{{ pos.itemNm }}</option>
                 </select>
               </div>
-              <div class="form-group flex items-center pt-6 pl-4">
+              <div class="form-group toggle-group">
                 <label class="toggle-container">
                   <input type="checkbox" v-model="form.must">
                   <span class="toggle-label">상단 고정 (필독)</span>
@@ -305,7 +344,7 @@ onMounted(() => {
         <div class="modal-footer">
           <template v-if="modalMode === 'view'">
             <button @click="deleteNotice" class="btn-footer-delete">삭제</button>
-            <div class="flex gap-2">
+            <div class="footer-right-btns">
               <button @click="switchToEdit" class="btn-footer-edit">정보 수정</button>
               <button @click="closeModal" class="btn-footer-close">닫기</button>
             </div>
@@ -323,28 +362,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.btn-add { display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; transition: 0.3s; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
-.btn-add:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
-
-/* === 통계 카드 === */
-.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
-.stat-card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; }
-.stat-card::before { content: ''; position: absolute; left: 0; top: 0; width: 4px; height: 100%; background: var(--card-color); }
-.stat-icon { width: 48px; height: 48px; border-radius: 12px; background: var(--card-color); opacity: 0.1; display: flex; align-items: center; justify-content: center; position: relative; }
-.stat-icon i { font-size: 24px; color: var(--card-color); position: absolute; }
-.stat-label { font-size: 12px; color: #64748b; font-weight: 600; }
-.stat-value { font-size: 24px; font-weight: 700; color: #1e293b; }
-
-/* === 검색 필터 === */
-.filter-panel { background: white; border-radius: 16px; padding: 20px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-.search-row { display: flex; align-items: center; gap: 12px; }
-.filter-select { padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 14px; outline: none; background: white; cursor: pointer; }
-.search-box { height:18px; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; transition: 0.2s; }
-.search-box:focus-within { background: white; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
-.search-box i { color: #94a3b8; font-size: 20px; }
-.search-input { border: none; background: transparent; outline: none; width: 100%; font-size: 14px; color: #334155; }
-.btn-search { background: #1e293b; color: white; padding: 10px 24px; border-radius: 10px; font-weight: 600; border: none; cursor: pointer; }
-
 /* 행 스타일 */
 .row-pinned { background: #fff8f8; cursor: pointer; transition: 0.2s; }
 .row-pinned:hover { background: #fff1f1; }

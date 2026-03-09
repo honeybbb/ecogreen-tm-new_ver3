@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
+import { useAuthStore } from '@/stores/auth';
 import axios from 'axios';
 
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
 
 const {
   positionOptions,
@@ -56,6 +58,9 @@ const site = ref({
 
 // 계약 그룹
 const contractGroups = ref([]);
+
+// 파일 업로드 상태 관리
+const selectedFile = ref(null);
 
 // 옵션 데이터
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
@@ -144,41 +149,75 @@ const getContractDuration = (group) => {
   return `${months}개월`;
 };
 
+// 파일 선택 핸들러
+const handleFileChange = (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    if (file.type !== 'application/pdf') {
+      alert('PDF 파일만 업로드 가능합니다.');
+      event.target.value = ''; // 입력 초기화
+      selectedFile.value = null;
+      return;
+    }
+    selectedFile.value = file;
+  } else {
+    selectedFile.value = null;
+  }
+};
+
 // 폼 제출
-const handleSubmit = () => {
-  const contractsJson = JSON.stringify(contractGroups.value);
+const handleSubmit = async () => {
+  try {
+    const contractsJson = JSON.stringify(contractGroups.value);
 
-  let params = {
-    cIdx: 1,
-    sIdx: route.query.idx || '',
-    sType: site.value.siteType,
-    name: site.value.siteName,
-    site_id: site.value.siteId,
-    status: site.value.status,
-    area: site.value.area,
-    is_vat: site.value.is_vat ? 'Y' : 'N',
-    building_su: site.value.building_su,
-    unit_su: site.value.unit_su,
-    address: site.value.addressMain,
-    addressDetail: site.value.addressDetail,
-    payment_day: site.value.payment_day,
-    manager: site.value.managerName,
-    phone: site.value.managerContact,
-    director: site.value.director,
-    directorContact: site.value.directorContact,
-    bigo: site.value.bigo,
-    contract_details: contractsJson
-  };
+    let params = {
+      cIdx: authStore.user?.cIdx, // 법인 인덱스
+      sIdx: route.query.idx || '', // 수정일 경우 기존 idx, 신규일 경우 빈 값
+      sType: site.value.siteType,
+      name: site.value.siteName,
+      site_id: site.value.siteId,
+      status: site.value.status,
+      area: site.value.area,
+      is_vat: site.value.is_vat ? 'Y' : 'N',
+      building_su: site.value.building_su,
+      unit_su: site.value.unit_su,
+      address: site.value.addressMain,
+      addressDetail: site.value.addressDetail,
+      payment_day: site.value.payment_day,
+      manager: site.value.managerName,
+      phone: site.value.managerContact,
+      director: site.value.director,
+      directorContact: site.value.directorContact,
+      bigo: site.value.bigo,
+      contract_details: contractsJson
+    };
 
-  axios.post(`/api/v1/site/register`, params)
-      .then(res => {
-        alert(`${site.value.siteName} 현장이 등록되었습니다.`);
-        router.push('/site/list');
-      })
-      .catch(err => {
-        console.error(err);
-        alert('오류가 발생했습니다.');
+    // 1. 현장 정보 등록/수정 API 호출
+    const res = await axios.post(`/api/v1/site/register`, params);
+    const savedSIdx = res.data.data?.insertId || route.query.idx;
+
+    if (!savedSIdx) {
+      throw new Error('현장 등록은 성공했으나, 파일 업로드를 위한 sIdx를 찾을 수 없습니다.');
+    }
+
+    // 2. 첨부된 파일이 있다면 파일 업로드 API 호출
+    if (selectedFile.value) {
+      const formData = new FormData();
+      formData.append('file', selectedFile.value);
+
+      // sIdx를 파라미터로 붙여 업로드 라우터 호출
+      await axios.post(`/api/v1/upload/file/${savedSIdx}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
+    }
+
+    alert(`${site.value.siteName} 현장 및 계약 정보가 등록되었습니다.`);
+    router.push('/site/list');
+
+  } catch (err) {
+    console.error('등록 에러:', err);
+    alert('저장 중 오류가 발생했습니다.');
+  }
 };
 
 // 데이터 로드
@@ -566,6 +605,25 @@ onMounted(() => {
           <div class="step-header">
             <i class="mdi mdi-file-document"></i>
             <h2>계약 및 인원 정보</h2>
+          </div>
+
+          <div
+              class="form-group full-width"
+               style="margin-bottom: 24px; padding: 20px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px;">
+            <label class="form-label">
+              <i class="mdi mdi-file-upload"></i>
+              계약서 원본 파일 업로드 (PDF)
+            </label>
+            <input
+                type="file"
+                accept=".pdf"
+                @change="handleFileChange"
+                class="form-input"
+                style="background: transparent; border: none; padding: 10px 0;"
+            />
+            <p v-if="selectedFile" style="font-size: 13px; color: #10b981; margin-top: 8px;">
+              <i class="mdi mdi-check-circle"></i> 선택된 파일: {{ selectedFile.name }} (최종 등록 완료 시 업로드됩니다)
+            </p>
           </div>
 
           <div class="contract-header">
