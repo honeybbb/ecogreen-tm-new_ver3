@@ -1,10 +1,17 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
+import { useAuthStore } from "~/stores/auth.js";
 
-const cIdx = 1;
+const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
 
 // 1. 주요 현황 데이터 (KPI)
+const startDate = ref('');
+const endDate = ref('');
+const orderCount = ref(0);
+const offCount = ref(0);
+
 const stats = ref([
   {
     id:'site',
@@ -42,15 +49,18 @@ const stats = ref([
   {
     id:'request',
     title: '승인 대기',
-    value: 5,
+    value: 0, // computed나 함수에서 업데이트
     unit: '건',
     icon: 'mdi-clock-alert-outline',
-    change: '긴급',
-    changeText: '처리 필요',
+    change: '', // 아래에서 세부 수치로 활용
+    changeText: '',
     color: '#ef4444',
     bgColor: 'rgba(239, 68, 68, 0.1)'
   },
 ]);
+
+const rawOrders = ref([]);
+const rawOffs = ref([]);
 
 // 2. 공지사항 (최신순)
 const notices = ref([
@@ -63,35 +73,30 @@ const notices = ref([
 ]);
 
 // 3. 결재/승인 대기 현황
-const pendingApprovals = ref([
-  {
-    id: 101,
-    type: '피복신청',
-    site: 'LH 위례 6단지',
-    applicant: '김철수',
-    date: '2025-05-03',
-    status: '승인대기',
-    priority: 'high'
-  },
-  {
-    id: 102,
-    type: '용품신청',
-    site: '강서 대명 강동',
-    applicant: '이영희',
-    date: '2025-05-03',
-    status: '승인대기',
+const pendingApprovals = computed(() => {
+  const orders = rawOrders.value.map(item => ({
+    id: `order-${item.idx}`,
+    type: item.groupCode === '05' ? '피복신청' : '용품신청',
+    site: item.siteName || '미지정 현장',
+    applicant: item.applicant || '알 수 없음',
+    date: item.regDt?.slice(0, 10) || '-',
+    status: item.status,
     priority: 'normal'
-  },
-  {
-    id: 103,
+  }));
+
+  const offs = rawOffs.value.map(item => ({
+    id: `off-${item.idx}`,
     type: '연차신청',
-    site: 'LH 율곡 8단지',
-    applicant: '박민준',
-    date: '2025-05-02',
-    status: '검토중',
-    priority: 'normal'
-  },
-]);
+    site: item.site || '본사',
+    applicant: item.staff,
+    date: item.startDt,
+    status: item.status,
+    priority: 'high'
+  }));
+
+  // 최신순 정렬
+  return [...orders, ...offs].sort((a, b) => new Date(b.date) - new Date(a.date));
+});
 
 // 4. 현장별 계약/이슈 현황
 const siteStatus = ref([
@@ -194,8 +199,9 @@ const calculateProcessed = (data) => {
 const getSiteData = async () => {
   await axios.get(`/api/v1/site/list/${cIdx}`)
       .then(res => {
-        stats.value[0].value = res.data.data.length;
-        const processedData = calculateProcessed(res.data.data);
+        const result = res.data.data;
+        stats.value[0].value = result.length;
+        const processedData = calculateProcessed(result.slice(0, 3));
         siteStatus.value = processedData;
       })
       .catch(err => {
@@ -210,19 +216,65 @@ const getMemberData = async () => {
   })
 }
 
+const getPayrollMonth = async () => {
+  console.log('급여 총액')
+
+}
+
 const fetchNotices = () => {
   // alert(`검색: [${searchType.value}] ${searchQuery.value}`);
   axios.get('/api/v1/notice/list')
       .then(res => {
-        // console.log(res.data.data, 'notices');
-        notices.value = res.data.data;
+        notices.value = res.data.data.slice(0, 4);
       })
 };
 
+const fetchOrders = async () => {
+  try {
+    const res = await axios.get('/api/v1/code/item/order');
+    if (res.data.result) {
+      rawOrders.value = res.data.data;
+      orderCount.value = res.data.data.length;
+      updateRequestStat();
+    }
+  } catch (err) { console.error(err); }
+};
+
+const getMemberOff = async () => {
+  try {
+    let params = { startDt: startDate.value, endDt: endDate.value };
+    const res = await axios.get(`/api/v1/member/off/${cIdx}`, { params });
+    rawOffs.value = res.data.data;
+    offCount.value = res.data.data.length;
+    updateRequestStat();
+  } catch (err) { console.error(err); }
+};
+
+const updateRequestStat = () => {
+  const total = orderCount.value + offCount.value;
+  const statObj = stats.value.find(s => s.id === 'request');
+  if (statObj) {
+    statObj.value = total;
+    //statObj.change = `연차 ${offCount.value} / 용품 ${orderCount.value}`;
+    statObj.changeText = `연차 신청 ${offCount.value} / 용품 신청 ${orderCount.value}`; // 기존 '처리 필요' 대신 세부 수치 강조
+  }
+};
+
+const setDefaultDate = () => {
+  const today = new Date();
+  const end = today.toISOString().slice(0, 10);
+  const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  startDate.value = start;
+  endDate.value = end;
+};
+
 onMounted(() => {
+  setDefaultDate();
   getSiteData();
   fetchNotices();
   getMemberData();
+  getMemberOff();
+  fetchOrders();
 })
 
 // 현재 시간
@@ -294,10 +346,10 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
               <h3>승인 대기 업무</h3>
               <span class="count-badge">{{ pendingApprovals.length }}</span>
             </div>
-            <NuxtLink to="/" class="btn-text">
+            <!--NuxtLink to="/supplies/list" class="btn-text">
               전체보기
               <i class="mdi mdi-arrow-right"></i>
-            </NuxtLink>
+            </NuxtLink-->
           </div>
           <div class="card-body">
             <div class="approval-list">
@@ -320,9 +372,9 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                 </div>
                 <div class="approval-right">
                   <div class="approval-date">{{ item.date }}</div>
-                  <span class="status-badge status-pending">
+                  <span class="status-badge" :class="['status-badge', getStatusClass(item.status)]">
                     <i class="mdi mdi-clock-outline"></i>
-                    {{ item.status }}
+                    {{ item.status == 0 ? '승인대기': item.status == 1 ? '승인' : '반려' }}
                   </span>
                 </div>
               </div>
@@ -858,6 +910,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   font-weight: 600;
   color: #1e293b;
   margin-bottom: 4px;
+  word-break: keep-all;
 }
 
 .approval-sub {

@@ -49,3 +49,12 @@ export const formatCurrency = (amount) => {
     const numberAmount = typeof amount === 'string' ? parseInt(amount.replace(/,/g, ''), 10) : amount;
     return new Intl.NumberFormat('ko-KR').format(numberAmount);
 };
+
+export const getStatusClass = (status) => {
+    switch (Number(status)) {
+        case 0: return 'status-pending';
+        case 1: return 'status-approved';
+        case 2: return 'status-rejected';
+        default: return '';
+    }
+};

@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
+import {useAuthStore} from "~/stores/auth.js";
 
-const cIdx = 1;
+const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
 
 // 1. 상태 및 필터
 const startDate = ref('');
@@ -44,7 +46,6 @@ const getMemberOff = async () => {
       endDt: endDate.value,
     };
     const res = await axios.get(`/api/v1/member/off/${cIdx}`, { params });
-    console.log(res.data.data, 'dd')
     requests.value = res.data.data;
   } catch (err) {
     console.error("연차 목록 로드 실패", err);
@@ -276,11 +277,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 기존 관리 페이지 스타일 계승 === */
-.member-list-page { padding: 0; }
-
 /* 필터 패널 */
 .filter-panel { background: white; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
 .filter-row { display: flex; align-items: flex-end; gap: 20px; }

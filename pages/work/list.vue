@@ -11,6 +11,7 @@ const schedules = ref([]);
 const isLoading = ref(false);
 
 // 모달 상태
+const isDailyModalOpen = ref(false);
 const isModalOpen = ref(false);
 const isExcelModalOpen = ref(false);
 
@@ -19,6 +20,7 @@ const currentSiteId = ref('');
 const staffSearchName = ref('');
 const staffList = ref([]);
 const form = ref({ workStartDt: '', mIdx: '', sIdx: '', workType: 'work', bigo: '' });
+const selectedDay = ref(null);
 
 // 엑셀 업로드 상태
 const excelFile = ref(null);
@@ -34,28 +36,24 @@ const selectedYearMonth = computed(() => {
 });
 const monthTitle = computed(() => `${selectedYear.value}년 ${selectedMonth.value + 1}월`);
 
-// 상단 통계 요약 (결근 absent 추가)
 const monthSummary = computed(() => {
   const work = schedules.value.filter(s => s.workType === 'work').length;
   const leave = schedules.value.filter(s => s.workType === 'leave' || s.workType === 'annual').length;
   const holiday = schedules.value.filter(s => s.workType === 'holiday').length;
-  const absent = schedules.value.filter(s => s.workType === 'absent').length; // ★ 결근 추가
+  const absent = schedules.value.filter(s => s.workType === 'absent').length;
   return { work, leave, holiday, absent };
 });
 
 const calendarDays = computed(() => {
   const daysInMonth = new Date(selectedYear.value, selectedMonth.value + 1, 0).getDate();
   const firstDayOfWeek = new Date(selectedYear.value, selectedMonth.value, 1).getDay();
-  // ★ 모바일 리스트뷰에서 요일을 보여주기 위한 배열 추가
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
   const days = [];
 
-  // 빈 날짜 (이전 달)
   for (let i = 0; i < firstDayOfWeek; i++) {
     days.push({ date: '', isEmpty: true });
   }
 
-  // 실제 날짜
   for (let i = 1; i <= daysInMonth; i++) {
     const dateStr = `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
     const dailySchedules = schedules.value.filter(s => s.date === dateStr);
@@ -63,7 +61,7 @@ const calendarDays = computed(() => {
 
     days.push({
       date: i,
-      dayName: dayNames[dayOfWeek], // 모바일 표시용 요일
+      dayName: dayNames[dayOfWeek],
       isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
       fullDate: dateStr,
       isEmpty: false,
@@ -72,7 +70,7 @@ const calendarDays = computed(() => {
         work: dailySchedules.filter(s => s.workType === 'work').length,
         leave: dailySchedules.filter(s => s.workType === 'leave' || s.workType === 'annual').length,
         holiday: dailySchedules.filter(s => s.workType === 'holiday').length,
-        absent: dailySchedules.filter(s => s.workType === 'absent').length // ★ 결근 추가
+        absent: dailySchedules.filter(s => s.workType === 'absent').length
       }
     });
   }
@@ -101,7 +99,6 @@ const fetchSchedules = async () => {
 
     let combinedSchedules = [];
 
-    // 출근/특근/결근 데이터
     if (workRes.data.data) {
       workRes.data.data.forEach(item => {
         const pureDate = item.workStartDt.split(' ')[0];
@@ -110,12 +107,11 @@ const fetchSchedules = async () => {
           mIdx: item.mIdx,
           date: pureDate,
           staffName: staff ? staff.name : `직원(${item.mIdx})`,
-          workType: item.workType || 'work', // work, holiday, absent
+          workType: item.workType || 'work',
         });
       });
     }
 
-    // 연차 데이터 (기간을 풀어서 매핑)
     if (leaveRes.data.data) {
       leaveRes.data.data.forEach(item => {
         const staff = staffList.value.find(s => s.idx === item.mIdx);
@@ -132,6 +128,11 @@ const fetchSchedules = async () => {
       });
     }
     schedules.value = combinedSchedules;
+
+    if (isDailyModalOpen.value && selectedDay.value) {
+      const updatedDay = calendarDays.value.find(d => d.fullDate === selectedDay.value.fullDate);
+      if (updatedDay) selectedDay.value = updatedDay;
+    }
   } catch (e) {
     console.error('스케줄 로드 실패', e);
   } finally {
@@ -150,14 +151,20 @@ watch([currentDate, currentSiteId], () => {
   }
 });
 
-// === 5. 수동 등록 핸들러 ===
-const openModal = (day) => {
+// === 5. 모달 및 수동 등록 핸들러 ===
+const handleDayClick = (day) => {
   if (day.isEmpty || !currentSiteId.value) {
     if (!currentSiteId.value) alert('현장을 먼저 선택해주세요.');
     return;
   }
-  form.value = { workStartDt: day.fullDate, mIdx: '', sIdx: currentSiteId.value, workType: 'work', bigo: '' };
+  selectedDay.value = day;
+  isDailyModalOpen.value = true;
+};
+
+const openRegisterModal = () => {
+  form.value = { workStartDt: selectedDay.value.fullDate, mIdx: '', sIdx: currentSiteId.value, workType: 'work', bigo: '' };
   staffSearchName.value = '';
+  isDailyModalOpen.value = false;
   isModalOpen.value = true;
 };
 
@@ -170,14 +177,25 @@ const saveSchedule = async () => {
     await axios.post(`/api/v1/work/start`, form.value);
     await fetchSchedules();
     isModalOpen.value = false;
+    isDailyModalOpen.value = true;
   } catch (e) {
     alert('등록 중 오류가 발생했습니다.');
   }
 };
 
+const getWorkTypeName = (type) => {
+  switch(type) {
+    case 'work': return '출근';
+    case 'holiday': return '특근';
+    case 'leave':
+    case 'annual': return '연차';
+    case 'absent': return '결근';
+    default: return '알수없음';
+  }
+};
+
 // === 6. 엑셀 업로드 핸들러 ===
 const triggerFileInput = () => { fileInput.value.click(); };
-
 const handleFileChange = (e) => {
   const file = e.target.files[0];
   if (file) excelFile.value = file;
@@ -192,10 +210,7 @@ const submitExcelUpload = async () => {
   formData.append('file', excelFile.value);
 
   try {
-    const res = await axios.post('/api/v1/upload/work', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-
+    const res = await axios.post('/api/v1/upload/work', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
     if (res.data.result) {
       alert(res.data.message || '엑셀 업로드가 완료되었습니다.');
       isExcelModalOpen.value = false;
@@ -209,7 +224,7 @@ const submitExcelUpload = async () => {
     alert(error.response?.data?.message || '업로드 처리 중 서버 에러가 발생했습니다.');
   } finally {
     uploadLoading.value = false;
-    if (fileInput.value) fileInput.value.value = ''; // input 초기화
+    if (fileInput.value) fileInput.value.value = '';
   }
 };
 
@@ -223,10 +238,7 @@ onMounted(() => {
 
     <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title">
-          <i class="mdi mdi-calendar-check"></i>
-          출근 현황 관리
-        </h1>
+        <h1 class="page-title"><i class="mdi mdi-calendar-check"></i> 직원 출근 관리</h1>
         <p class="page-subtitle">직원들의 출퇴근 및 휴무 현황을 관리합니다</p>
       </div>
 
@@ -243,10 +255,7 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-office-building"></i>
-            현장 선택
-          </label>
+          <label class="filter-label"><i class="mdi mdi-office-building"></i> 현장 선택</label>
           <select v-model="currentSiteId" class="filter-select">
             <option value="" disabled>관리할 현장을 선택하세요</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
@@ -255,48 +264,37 @@ onMounted(() => {
 
         <div class="search-group" style="justify-content: flex-end;">
           <button v-if="currentSiteId" @click="isExcelModalOpen = true" class="btn-excel">
-            <i class="mdi mdi-file-excel"></i>
-            <span>엑셀 일괄 업로드</span>
+            <i class="mdi mdi-file-excel"></i> <span>엑셀 일괄 업로드</span>
           </button>
         </div>
       </div>
     </div>
 
+    <!-- 통계 요약 카드 (동일) -->
     <div class="stats-grid">
       <div class="stat-card" style="--card-color: #667eea;">
-        <div class="stat-icon">
-          <i class="mdi mdi-account-check-outline"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-account-check-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 출근</span>
           <span class="stat-value">{{ monthSummary.work }} <small>건</small></span>
         </div>
       </div>
-
       <div class="stat-card" style="--card-color: #f59e0b;">
-        <div class="stat-icon">
-          <i class="mdi mdi-star-circle-outline"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-star-circle-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 특근</span>
           <span class="stat-value">{{ monthSummary.holiday }} <small>건</small></span>
         </div>
       </div>
-
       <div class="stat-card" style="--card-color: #ef4444;">
-        <div class="stat-icon">
-          <i class="mdi mdi-account-clock-outline"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-account-clock-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 휴무/연차</span>
           <span class="stat-value">{{ monthSummary.leave }} <small>건</small></span>
         </div>
       </div>
-
       <div class="stat-card" style="--card-color: #64748b;">
-        <div class="stat-icon">
-          <i class="mdi mdi-account-remove-outline"></i>
-        </div>
+        <div class="stat-icon"><i class="mdi mdi-account-remove-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 결근</span>
           <span class="stat-value">{{ monthSummary.absent }} <small>건</small></span>
@@ -310,13 +308,7 @@ onMounted(() => {
       </div>
 
       <div class="calendar-grid-header">
-        <div class="day-name sun">일</div>
-        <div class="day-name">월</div>
-        <div class="day-name">화</div>
-        <div class="day-name">수</div>
-        <div class="day-name">목</div>
-        <div class="day-name">금</div>
-        <div class="day-name sat">토</div>
+        <div class="day-name sun">일</div><div class="day-name">월</div><div class="day-name">화</div><div class="day-name">수</div><div class="day-name">목</div><div class="day-name">금</div><div class="day-name sat">토</div>
       </div>
 
       <div class="calendar-grid-body">
@@ -324,34 +316,87 @@ onMounted(() => {
             v-for="(day, index) in calendarDays"
             :key="index"
             :class="['day-cell', { 'empty': day.isEmpty, 'today': day.fullDate === new Date().toISOString().split('T')[0] }]"
-            @click="openModal(day)"
+            @click="handleDayClick(day)"
         >
           <div v-if="!day.isEmpty" class="cell-content">
+
             <div class="day-header">
               <div class="date-group">
                 <span class="date-num" :class="{ 'text-red': day.dayName === '일', 'text-blue': day.dayName === '토' }">{{ day.date }}</span>
                 <span class="mobile-day-name" :class="{ 'text-red': day.dayName === '일', 'text-blue': day.dayName === '토' }">{{ day.dayName }}</span>
               </div>
+              <!-- 마우스를 올렸을 때 클릭 가능하다는 힌트 아이콘 -->
+              <i class="mdi mdi-arrow-top-right detail-icon" title="상세보기"></i>
+            </div>
 
-              <div class="mini-stats">
-                <span v-if="day.summary.work" class="dot work" title="출근"></span>
-                <span v-if="day.summary.holiday" class="dot holiday" title="특근"></span>
-                <span v-if="day.summary.leave" class="dot leave" title="연차"></span>
-                <span v-if="day.summary.absent" class="dot absent" title="결근"></span>
+            <!-- ★ 변경된 부분: 이름 목록 대신 요약 뱃지 표시 -->
+            <div class="summary-container custom-scrollbar">
+              <!-- 데이터가 있을 때 요약 뱃지 출력 -->
+              <template v-if="day.schedules.length > 0">
+                <div v-if="day.summary.work > 0" class="summary-badge work">
+                  출근 <strong>{{ day.summary.work }}</strong>
+                </div>
+                <div v-if="day.summary.holiday > 0" class="summary-badge holiday">
+                  특근 <strong>{{ day.summary.holiday }}</strong>
+                </div>
+                <div v-if="day.summary.leave > 0" class="summary-badge leave">
+                  연차 <strong>{{ day.summary.leave }}</strong>
+                </div>
+                <div v-if="day.summary.absent > 0" class="summary-badge absent">
+                  결근 <strong>{{ day.summary.absent }}</strong>
+                </div>
+              </template>
+
+              <!-- 데이터가 아무것도 없을 때 (선택적) -->
+              <div v-else class="empty-cell-hint">
+                <i class="mdi mdi-plus"></i> 추가
               </div>
             </div>
 
-            <div class="schedule-container custom-scrollbar">
-              <div v-for="(sch, sIdx) in day.schedules" :key="sIdx" :class="['sch-item', sch.workType === 'annual' ? 'leave' : sch.workType]">
-                <span class="sch-name">{{ sch.staffName }}</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- 일일 출근자 리스트 팝업 (동일) -->
     <transition name="fade">
+      <div v-if="isDailyModalOpen" class="modal-overlay" @click.self="isDailyModalOpen = false">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3><i class="mdi mdi-clipboard-text-outline text-blue"></i> {{ selectedDay?.fullDate }} 근무 현황</h3>
+            <i class="mdi mdi-close close-icon" @click="isDailyModalOpen = false"></i>
+          </div>
+          <div class="modal-body list-body">
+            <div class="daily-action-bar">
+              <p class="summary-text">총 <strong>{{ selectedDay?.schedules.length }}</strong>건의 기록</p>
+              <button class="btn-submit small-btn" @click="openRegisterModal">
+                <i class="mdi mdi-plus-circle-outline"></i> 근무 등록
+              </button>
+            </div>
+
+            <div class="daily-list custom-scrollbar">
+              <div v-if="selectedDay?.schedules.length === 0" class="empty-state">
+                <i class="mdi mdi-inbox-outline"></i>
+                <p>등록된 근무 내역이 없습니다.</p>
+              </div>
+              <div v-else class="daily-list-item" v-for="(sch, idx) in selectedDay.schedules" :key="idx">
+                <div class="worker-info">
+                  <div class="worker-avatar"><i class="mdi mdi-account"></i></div>
+                  <span class="staff-name">{{ sch.staffName }}</span>
+                </div>
+                <span :class="['status-badge', sch.workType === 'annual' ? 'leave' : sch.workType]">
+                  {{ getWorkTypeName(sch.workType) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 근태 수동 등록 팝업 (동일) -->
+    <transition name="fade">
+      <!-- (내용 동일 생략 없이 유지됨) -->
       <div v-if="isModalOpen" class="modal-overlay" @click.self="isModalOpen = false">
         <div class="modal-card">
           <div class="modal-header">
@@ -404,6 +449,7 @@ onMounted(() => {
       </div>
     </transition>
 
+    <!-- 엑셀 일괄 업로드 팝업 (동일) -->
     <transition name="fade">
       <div v-if="isExcelModalOpen" class="modal-overlay" @click.self="isExcelModalOpen = false">
         <div class="modal-card excel-modal">
@@ -439,13 +485,13 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* 공통, 레이아웃, 카드 CSS 동일 */
 .nav-controls { display: flex; align-items: center; gap: 12px; background: white; padding: 8px 16px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
 .btn-nav { width: 36px; height: 36px; border-radius: 8px; border: none; background: #f8fafc; color: #475569; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .btn-nav:hover { background: #e2e8f0; color: #1e293b; }
 .current-month-label { font-size: 16px; font-weight: 700; color: #1e293b; min-width: 120px; text-align: center; }
 .btn-today { padding: 8px 16px; background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
 .btn-today:hover { background: #e2e8f0; color: #1e293b; }
-
 .filter-panel { background: white; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
 .filter-row { display: flex; align-items: flex-end; gap: 16px; }
 .filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
@@ -453,7 +499,6 @@ onMounted(() => {
 .filter-label i { font-size: 16px; color: #667eea; }
 .filter-select { padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; color: #334155; background: white; cursor: pointer; transition: all 0.2s; min-width: 250px; }
 .filter-select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-
 .search-group { display: flex; gap: 8px; flex: 1; }
 .btn-excel { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.3s; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); }
 .btn-excel:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
@@ -475,55 +520,55 @@ onMounted(() => {
 .day-name.sun, .text-red { color: #ef4444 !important; }
 .day-name.sat, .text-blue { color: #3b82f6 !important; }
 .mobile-day-name { display: none; }
-
 .calendar-grid-body { display: grid; grid-template-columns: repeat(7, 1fr); width: 100%; background: #f1f5f9; gap: 1px; }
-.day-cell { background: #fff; height: 160px; cursor: pointer; transition: background-color 0.2s; }
+
+/* 캘린더 일자 셀 스타일 (수정됨) */
+.day-cell { background: #fff; height: 130px; cursor: pointer; transition: all 0.2s; position: relative; }
 .day-cell:hover { background: #f8fafc; }
 .day-cell.empty { background: #f8fafc; cursor: default; }
 .day-cell.today { background: #f0fdf4; }
 
-.cell-content { padding: 12px; height: 100%; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
-.day-header { display: flex; justify-content: space-between; align-items: center; }
-.date-group { display: flex; flex-direction: column; align-items: center;}
+.cell-content { padding: 12px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.day-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.date-group { display: flex; flex-direction: column; align-items: flex-start;}
 .date-num { font-size: 15px; font-weight: 700; color: #334155; }
-.today .date-num { background: #10b981; color: white !important; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4); }
+.today .date-num { background: #10b981; color: white !important; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4); margin-top: -3px; margin-left: -3px;}
 
-.mini-stats { display: flex; gap: 4px; }
-.dot { width: 6px; height: 6px; border-radius: 50%; }
-.dot.work { background: #3b82f6; }
-.dot.holiday { background: #f59e0b; }
-.dot.leave { background: #ef4444; }
-.dot.absent { background: #64748b; } /* ★ 결근 미니 닷 색상 */
+/* 마우스 호버시 나타나는 디테일 아이콘 */
+.detail-icon { color: #cbd5e1; font-size: 16px; opacity: 0; transition: all 0.2s; transform: translate(-4px, 4px); }
+.day-cell:hover .detail-icon { opacity: 1; color: #3b82f6; transform: translate(0, 0); }
 
-.schedule-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; }
-.sch-item { font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 6px; color: #1e293b; border-left: 3px solid transparent; background: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; min-height: 26px; line-height: 1.2; }
-.sch-item.work { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
-.sch-item.holiday { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
-.sch-item.leave { border-color: #ef4444; background: #fef2f2; color: #b91c1c; text-decoration: line-through; }
-.sch-item.absent { border-color: #64748b; background: #f1f5f9; color: #475569; text-decoration: line-through; opacity: 0.8; } /* ★ 결근 라벨 스타일 */
+/* ★ 새로 작성된 요약 뱃지 컨테이너 & 뱃지 스타일 */
+.summary-container { flex: 1; display: flex; flex-direction: column; gap: 6px; margin-top: 10px; overflow-y: auto; padding-right: 4px; }
+.summary-badge { padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; }
+.summary-badge strong { font-size: 13px; font-weight: 800; }
 
-/* 모달 */
+.summary-badge.work { background: #eff6ff; color: #1d4ed8; border-color: #3b82f6; }
+.summary-badge.holiday { background: #fffbeb; color: #b45309; border-color: #f59e0b; }
+.summary-badge.leave { background: #fef2f2; color: #b91c1c; border-color: #ef4444; }
+.summary-badge.absent { background: #f1f5f9; color: #475569; border-color: #64748b; }
+
+/* 빈 셀일때 살짝 보이는 추가 버튼 */
+.empty-cell-hint { opacity: 0; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #94a3b8; transition: opacity 0.2s; gap: 4px;}
+.day-cell:hover .empty-cell-hint { opacity: 1; }
+
+/* 팝업 모달 공통 스타일 */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;}
 .modal-card { background: #fff; width: 100%; max-width: 440px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); overflow: hidden; transform: translateY(0);}
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
-
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
-.modal-header h3 { font-size: 18px; font-weight: 800; margin: 0; color: #1e293b; display: flex; align-items: center; gap: 8px;}
+.modal-header h3 { font-size: 18px; /*font-weight: 800;*/ margin: 0; color: #1e293b; display: flex; align-items: center; gap: 8px;}
 .close-icon { font-size: 24px; color: #94a3b8; cursor: pointer; transition: 0.2s; }
 .close-icon:hover { color: #ef4444; transform: rotate(90deg); }
-
 .modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
 .info-box { background: #f8fafc; padding: 14px 16px; border-radius: 12px; font-size: 14px; color: #475569; }
 .info-box.warning { background: #fffbeb; color: #b45309; display: flex; gap: 10px; align-items: flex-start; }
 .info-box.warning i { font-size: 20px; color: #f59e0b; }
-
 .form-group label { font-size: 13px; font-weight: 700; color: #475569; margin-bottom: 8px; display: block; }
 .search-input-wrapper { display: flex; align-items: center; gap: 10px; border: 1px solid #cbd5e1; padding: 12px 16px; border-radius: 10px; transition: 0.2s; background: #fff; }
 .search-input-wrapper:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
 .search-input-wrapper input { border: none; outline: none; width: 100%; font-size: 15px; color: #1e293b; }
-
-/* ★ 모달 내 4개의 선택지로 변경 */
 .type-selector { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .type-option input { display: none; }
 .option-card { padding: 12px 0; border: 2px solid #e2e8f0; border-radius: 10px; text-align: center; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; gap: 6px; }
@@ -531,9 +576,30 @@ onMounted(() => {
 .type-option input:checked + .option-card { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
 .type-option input:checked + .option-card.holiday { border-color: #f59e0b; color: #d97706; background: #fffbeb; }
 .type-option input:checked + .option-card.leave { border-color: #ef4444; color: #b91c1c; background: #fef2f2; }
-.type-option input:checked + .option-card.absent { border-color: #64748b; color: #475569; background: #f1f5f9; } /* ★ 결근 라디오 활성 스타일 */
+.type-option input:checked + .option-card.absent { border-color: #64748b; color: #475569; background: #f1f5f9; }
 
-/* 엑셀 */
+/* 리스트 팝업 스타일 */
+.text-blue { color: #3b82f6; }
+.list-body { padding: 20px 24px; gap: 16px; }
+.daily-action-bar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
+.summary-text { font-size: 14px; color: #64748b; margin: 0; }
+.summary-text strong { color: #1e293b; font-size: 16px; }
+.small-btn { padding: 8px 16px !important; font-size: 13px !important; border-radius: 8px !important; flex: none !important; }
+.daily-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 5px; }
+.empty-state { padding: 40px 0; text-align: center; color: #94a3b8; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.empty-state i { font-size: 36px; color: #cbd5e1; }
+.daily-list-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #f1f5f9; transition: background 0.2s; }
+.daily-list-item:hover { background: #f1f5f9; }
+.worker-info { display: flex; align-items: center; gap: 12px; }
+.worker-avatar { width: 32px; height: 32px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 16px; }
+.staff-name { font-weight: 700; color: #334155; font-size: 14px; }
+.status-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
+.status-badge.work { background: #eff6ff; color: #1d4ed8; }
+.status-badge.holiday { background: #fffbeb; color: #b45309; }
+.status-badge.leave { background: #fef2f2; color: #b91c1c; }
+.status-badge.absent { background: #f1f5f9; color: #475569; }
+
+/* 엑셀 등 버튼 스타일 */
 .file-upload-area { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
 .file-upload-area:hover { border-color: #10b981; background: #f0fdf4; }
 .hidden-input { display: none; }
@@ -541,7 +607,6 @@ onMounted(() => {
 .file-upload-area:hover .upload-icon { color: #10b981; }
 .file-upload-area p { font-size: 14px; color: #64748b; margin: 0; font-weight: 600; }
 .file-name { color: #10b981 !important; font-weight: 800 !important; }
-.text-green { color: #10b981; }
 
 .modal-footer { padding: 20px 24px; border-top: 1px solid #f1f5f9; display: flex; gap: 12px; background: #f8fafc; }
 .modal-footer button { flex: 1; padding: 14px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; transition: 0.2s; display: flex; align-items: center; justify-content: center;}
@@ -553,7 +618,6 @@ onMounted(() => {
 .btn-submit.green:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(16, 185, 129, 0.4); }
 .btn-submit:disabled { opacity: 0.7; cursor: not-allowed; transform: none; box-shadow: none;}
 
-/* 유틸 */
 .loader-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(2px); }
 .spinner { width: 40px; height: 40px; border: 4px solid #f1f5f9; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
@@ -561,8 +625,7 @@ onMounted(() => {
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-
-/* 모바일/태블릿 */
+/* 모바일/태블릿 반응형 */
 @media screen and (max-width: 1024px) {
   .filter-row { flex-wrap: wrap; }
 }
@@ -577,33 +640,28 @@ onMounted(() => {
   .filter-select { width: 100%; min-width: auto; }
   .search-group { justify-content: stretch !important; }
   .btn-excel { width: 100%; justify-content: center; }
-
-  /* 모바일에서 카드 2열 배치 */
   .stats-grid { grid-template-columns: 1fr; }
 
   .calendar-card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow-y: auto; border: none; }
   .calendar-grid-header { display: none; }
   .calendar-grid-body { display: flex; flex-direction: column; gap: 0; border-top: 1px solid #e2e8f0; }
-  .day-cell { height: auto; min-height: auto; border-bottom: 1px solid #f1f5f9; background: #fff; }
+  .day-cell { height: auto; min-height: 80px; border-bottom: 1px solid #f1f5f9; background: #fff; }
   .day-cell.empty { display: none; }
   .day-cell:last-child { border-bottom: none; }
+
   .cell-content { flex-direction: row; align-items: flex-start; padding: 16px 14px; gap: 16px; overflow: visible; }
   .day-header { flex-direction: column; align-items: center; justify-content: flex-start; width: 44px; border-right: 1px solid #e2e8f0; padding-right: 16px; flex-shrink: 0; }
   .date-num { font-size: 18px; margin-bottom: 4px; }
   .mobile-day-name { display: block; font-size: 13px; color: #64748b; font-weight: 600; }
-  .mini-stats { display: none; }
-  .schedule-container { flex: 1; display: flex; flex-direction: row; flex-wrap: wrap; max-height: none; overflow: visible; gap: 8px; padding-top: 2px; }
-  .sch-item { font-size: 13px; padding: 6px 12px; border-radius: 20px; white-space: nowrap; border-left: none; border: 1px solid transparent; }
-  .sch-item.work { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
-  .sch-item.holiday { background: #fffbeb; color: #b45309; border-color: #fde68a; }
-  .sch-item.leave { background: #fef2f2; color: #b91c1c; border-color: #fecaca; text-decoration: line-through; opacity: 0.8; }
-  .sch-item.absent { background: #f1f5f9; color: #475569; border-color: #cbd5e1; text-decoration: line-through; opacity: 0.8; } /* ★ 모바일 결근 스타일 */
+  .detail-icon { display: none; } /* 모바일에서는 생략 */
+
+  .summary-container { flex-direction: row; flex-wrap: wrap; margin-top: 0; padding-top: 2px; }
+  .summary-badge { padding: 4px 8px; font-size: 12px; }
+  .empty-cell-hint { justify-content: flex-start; }
 }
 
 @media screen and (max-width: 480px) {
-  .page-title { font-size: 20px; }
   .modal-card { width: 90%; }
-  /* 모바일에서 라디오버튼 2개씩 2줄 배치 */
   .type-selector { grid-template-columns: repeat(2, 1fr); gap: 6px; }
   .option-card { font-size: 12px; padding: 10px 0; }
 }

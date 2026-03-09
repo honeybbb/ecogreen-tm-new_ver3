@@ -97,7 +97,7 @@ onMounted(fetchOrders);
           <i class="mdi mdi-cart-check"></i>
           용품 신청 관리
         </h1>
-        <p class="page-subtitle">현장별 청소용품 신청 현황을 관리하고 승인합니다</p>
+        <p class="page-subtitle">현장별 청소용품 및 피복 신청 현황을 관리하고 승인합니다</p>
       </div>
       <div class="header-actions">
         <button @click="fetchOrders" class="btn-refresh">
@@ -196,11 +196,14 @@ onMounted(fetchOrders);
           <tr v-for="order in filteredOrders" :key="order.regDt + order.mIdx" class="data-row">
             <td class="text-gray">{{ order.regDt }}</td>
             <td class="font-bold">{{ order.siteName }}</td>
-            <td>{{ order.applicant }}</td>
+            <td>{{ order.applicant }} <span class="staff-id">({{order.memberId }})</span></td>
             <td class="text-blue">{{ order.summary }}</td>
             <td class="text-right font-bold">{{ formatPrice(order.totalAmount) }}</td>
             <td class="text-center">
-                <span :class="['status-badge', order.status === 0 ? 'status-pending' : order.status === 1 ? 'status-shipping' : 'status-completed']">
+                <span :class="[
+                    'status-badge', order.status === 0 ? 'status-pending' :
+                    order.status === 1 ? 'status-shipping' : 'status-completed'
+                    ]">
                   {{ getStatusText(order.status) }}
                 </span>
             </td>
@@ -262,7 +265,7 @@ onMounted(fetchOrders);
               </thead>
               <tbody>
               <tr v-for="item in selectedOrder.items" :key="item.idx">
-                <td class="font-medium">{{ item.itemName }}</td>
+                <td class="font-medium">{{item.categoryName}} - {{ item.itemName }}</td>
                 <td class="text-center">{{ item.qty }}개</td>
                 <td class="text-right text-gray">{{ formatPrice(item.price) }}</td>
                 <td class="text-right font-bold">{{ formatPrice(item.price * item.qty) }}</td>
@@ -303,198 +306,7 @@ onMounted(fetchOrders);
 </template>
 
 <style scoped>
-/* === 통계 카드 === */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 28px;
-}
-
-.stat-card {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  transition: all 0.3s;
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: var(--card-color);
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: var(--card-color);
-  opacity: 0.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  flex-shrink: 0;
-}
-
-.stat-icon i {
-  font-size: 24px;
-  color: var(--card-color);
-  position: absolute;
-}
-
-.stat-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--card-color);
-}
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.filter-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 180px;
-}
-
-.filter-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-}
-
-.filter-label i {
-  font-size: 16px;
-  color: #667eea;
-}
-
-.filter-select {
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #334155;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-select:hover {
-  border-color: #cbd5e1;
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-/* 검색 그룹 */
-.search-group {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  flex: 1;
-  transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  background: white;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.search-box i {
-  font-size: 20px;
-  color: #94a3b8;
-}
-
-.search-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  color: #334155;
-  outline: none;
-}
-
-.search-input::placeholder {
-  color: #94a3b8;
-}
-
-.search-clear {
-  background: none;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.search-clear:hover {
-  background: #e2e8f0;
-  color: #64748b;
-}
-
 /* 테이블 */
-
 .status-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; }
 .status-pending { background: #fef3c7; color: #92400e; }
 .status-shipping { background: #dbeafe; color: #1e40af; }
@@ -540,4 +352,11 @@ onMounted(fetchOrders);
 
 .empty-state { text-align: center; padding: 60px; color: #cbd5e1; }
 .empty-state i { font-size: 48px; margin-bottom: 10px; }
+
+.staff-id {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 400;
+  margin-left: 4px;
+}
 </style>

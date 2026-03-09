@@ -798,7 +798,7 @@ onMounted(() => {
                   />
                   <span v-else class="info-value">{{ group.contractEnd }}</span>
                 </div>
-                <div class="contract-info-item">
+                <!--div class="contract-info-item">
                   <label>근무 일수</label>
                   <input
                       v-if="isEditing"
@@ -807,7 +807,7 @@ onMounted(() => {
                       class="info-input"
                   />
                   <span v-else class="info-value">{{ group.workDays }}일</span>
-                </div>
+                </div-->
                 <div class="contract-info-item full-width">
                   <label>근무 시간 및 형태</label>
                   <textarea

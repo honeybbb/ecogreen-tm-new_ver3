@@ -627,7 +627,7 @@ onMounted(() => {
                   <input type="date" v-model="group.contractEnd" required class="form-input" />
                 </div>
 
-                <div class="form-group">
+                <!--div class="form-group">
                   <label class="form-label required">
                     <i class="mdi mdi-calendar-month"></i>
                     근무 일수 (월)
@@ -638,7 +638,7 @@ onMounted(() => {
                       placeholder="예: 25"
                       class="form-input"
                   />
-                </div>
+                </div-->
 
                 <div class="form-group full-width">
                   <label class="form-label required">

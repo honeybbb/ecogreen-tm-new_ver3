@@ -194,16 +194,18 @@ a {
 
 .filter-row {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
 }
 
 .filter-group {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    min-width: 200px;
+    min-width: 180px;
+    flex: 1;
 }
 
 .filter-label {
@@ -213,6 +215,7 @@ a {
     font-size: 13px;
     font-weight: 600;
     color: #475569;
+    white-space: nowrap;
 }
 
 .filter-label i {
@@ -229,30 +232,45 @@ a {
     background: white;
     cursor: pointer;
     transition: all 0.2s;
+    width: 100%;
+    box-sizing: border-box;
+    height: 42px; /* ← search-box와 높이 통일 */
 }
 
-.filter-select:hover {
-    border-color: #cbd5e1;
-}
-
+.filter-select:hover { border-color: #cbd5e1; }
 .filter-select:focus {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.filter-spacer {
-    flex: 1;
-}
-
 /* 검색 그룹 */
 .search-group {
     display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    flex: 2;
+    min-width: 240px;
+}
+
+/* 검색박스를 label + input 구조와 맞추기 위한 래퍼 */
+.search-input-wrapper {
+    display: flex;
+    flex-direction: column;
     gap: 8px;
     flex: 1;
 }
 
-/* 검색 박스 */
+.search-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
 .search-box {
     display: flex;
     align-items: center;
@@ -260,8 +278,9 @@ a {
     padding: 10px 16px;
     background: #f8fafc;
     border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    min-width: 320px;
+    border-radius: 8px;
+    height: 42px;
+    box-sizing: border-box;
     transition: all 0.2s;
 }
 
@@ -271,10 +290,7 @@ a {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.search-box i {
-    font-size: 20px;
-    color: #94a3b8;
-}
+.search-box i { font-size: 20px; color: #94a3b8; }
 
 .search-input {
     flex: 1;
@@ -284,31 +300,22 @@ a {
     color: #334155;
     outline: none;
 }
-
-.search-input::placeholder {
-    color: #94a3b8;
-}
+.search-input::placeholder { color: #94a3b8; }
 
 .search-clear {
-    background: none;
-    border: none;
-    color: #94a3b8;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
-    transition: all 0.2s;
+    background: none; border: none;
+    color: #94a3b8; cursor: pointer;
+    padding: 4px; border-radius: 4px;
+    transition: all 0.2s; line-height: 1;
 }
-
-.search-clear:hover {
-    background: #e2e8f0;
-    color: #64748b;
-}
+.search-clear:hover { background: #e2e8f0; color: #64748b; }
 
 .btn-search {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 10px 20px;
+    padding: 0 20px;
+    height: 42px; /* ← filter-select, search-box와 높이 통일 */
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border: none;
     border-radius: 8px;
@@ -319,16 +326,14 @@ a {
     transition: all 0.3s;
     box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     white-space: nowrap;
+    flex-shrink: 0;
+    align-self: flex-end; /* ← label 없는 버튼을 하단 정렬 */
 }
-
 .btn-search:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
-
-.btn-search i {
-    font-size: 18px;
-}
+.btn-search i { font-size: 18px; }
 
 .action-buttons {
     display: flex;
@@ -458,6 +463,10 @@ a {
 .status-chip { padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
 .status-active { background-color: #d1fae5; color: #065f46; }
 .status-inactive { background-color: #fee2e2; color: #991b1b; }
+.status-pending { background: #fff7ed; color: #c2410c; }
+.status-approved { background: #d1fae5; color: #065f46; }
+.status-rejected { background: #fee2e2; color: #991b1b; }
+
 
 /* 라디오 버튼 그룹 */
 .radio-group {
@@ -645,4 +654,28 @@ a {
 
 .data-row:hover {
     background: #f8fafc;
+}
+
+/* 반응형 */
+@media (max-width: 1024px) {
+    .filter-row { flex-wrap: wrap; }
+    .filter-group { min-width: calc(50% - 8px); flex: 1 1 calc(50% - 8px); }
+    .search-group { width: 100%; flex: 1 1 100%; }
+}
+
+@media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+        align-items: stretch; /* ← stretch로 변경, flex-end 제거 */
+    }
+    .filter-group { min-width: 100%; flex: 1 1 100%; }
+    .search-group {
+        width: 100%;
+        flex-direction: row; /* 검색창 + 버튼 가로 유지 */
+        align-items: flex-end;
+    }
+    .search-input-wrapper { flex: 1; }
+    .btn-search { flex-shrink: 0; }
+    .filter-toggles-row { flex-direction: column; align-items: flex-start; }
+    .filter-toggles { flex-wrap: wrap; }
 }

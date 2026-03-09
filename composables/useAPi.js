@@ -9,7 +9,7 @@ export const useApi = () => {
     const positionOptions = ref([]);
     const disabledOptions = ref([]);
     // const categoryOptions = ref([]);
-    // const directWages  = ref([]);
+    const wagesData  = ref([]);
 
     //은행 코드 가져오기
     const fetchBankOption = async (groupCd = '02001') => {
@@ -53,17 +53,15 @@ export const useApi = () => {
         }
     }
 
-    /*
-    const fetchDirectWages = async (cIdx = 1) => {
-        try{
+    const fetchWageCode = async () => {
+        try {
+            // 실제 API 경로에 맞게 수정해주세요
             const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-            directWages.value = res.data.data;
-        }catch(e){
-            console.error(`직접경비 목록(${cIdx}) 로드 실패:`, e);
+            wagesData.value = res.data.data || [];
+        } catch (err) {
+            console.error("급여 항목 로드 실패", err);
         }
-    }
-
-     */
+    };
 
     const fetchDisabledOptions = async (groupCd = '02002') => {
         try {
@@ -81,12 +79,12 @@ export const useApi = () => {
         typeOptions,
         positionOptions,
         disabledOptions,
-        // directWages,
+        wagesData,
         fetchBankOption,
         fetchSiteOptions,
         fetchTypeOptions,
         fetchPositionOptions,
-        fetchDisabledOptions
-        // fetchDirectWages
+        fetchDisabledOptions,
+        fetchWageCode
     };
 };

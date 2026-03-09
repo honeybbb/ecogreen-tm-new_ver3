@@ -35,7 +35,15 @@ const filteredPayrollList = computed(() =>
     })
 );
 
-// 전체 합계 (하단 푸터 및 상단 카드용) - 개별 값이 변하면 자동 갱신됨
+// 전체 선택/해제 로직 (필터링된 리스트 기준)
+const selectAll = computed({
+  get: () => filteredPayrollList.value.length > 0 && filteredPayrollList.value.every(p => p.selected),
+  set: (val) => {
+    filteredPayrollList.value.forEach(p => p.selected = val);
+  }
+});
+
+// 전체 합계
 const statsInfo = computed(() => {
   const total = filteredPayrollList.value.length;
   let gross = 0, ded = 0;
@@ -49,16 +57,14 @@ const statsInfo = computed(() => {
 
 const formatCurrency = (v) => new Intl.NumberFormat('ko-KR').format(v ?? 0);
 
-// 개별 직원의 지급/공제 합계 계산 함수 (화면에 바인딩되어 실시간 동작)
+// 개별 직원의 지급/공제 합계 계산 함수
 const calculateRowSummary = (row) => {
   let gross = 0, ded = 0;
-  // payItems 객체(지급 항목)의 값을 모두 더함
   if (row.payItems) {
     payItems.value.forEach(i => {
       gross += Number(row.payItems[i.itemCd] || 0);
     });
   }
-  // deductionItems 객체(공제 항목)의 값을 모두 더함
   if (row.deductionItems) {
     deductionItems.value.forEach(i => {
       ded += Number(row.deductionItems[i.itemCd] || 0);
@@ -67,9 +73,8 @@ const calculateRowSummary = (row) => {
   return { gross, ded, net: gross - ded };
 };
 
-// ★ 스마트 급여 자동 계산 로직 (입력값이 바뀔 때마다 실행됨)
+// 스마트 급여 자동 계산 로직
 const updatePay = (row) => {
-  // 1. 원본 계약 기본급 백업 (최초 1회만 저장하여 기본급이 날아가는 것 방지)
   if (row.originalBasePay === undefined) {
     row.originalBasePay = row.payItems['04001001'] || 0;
   }
@@ -79,47 +84,61 @@ const updatePay = (row) => {
   const worked = Number(row.workedDays) || 0;
   const absent = Number(row.absentDays) || 0;
 
-  // 1일치 급여 단가 (기본급 ÷ 기준일수)
   const dailyWage = Math.floor(basePay / scheduled);
 
-  // ★ 핵심 판별 로직: 중도 입/퇴사자 vs 정상 근로자
   if ((worked + absent) < scheduled) {
-    // [중도 퇴사자] 일할 계산: 출근한 날짜만큼만 곱해서 지급
+    // [중도 퇴사자] 일할 계산
     row.payItems['04001001'] = dailyWage * worked;
   } else {
-    // [정상 근로자] 결근 차감: 만근 월급에서 결근한 날짜만 빼기
+    // [정상 근로자] 결근 차감
     row.payItems['04001001'] = basePay - (dailyWage * absent);
   }
 
-  // 급여가 변동되었으니 4대보험도 즉시 재계산
   calculateInsurances(row);
 };
 
-// 최초 '급여 계산 실행' 버튼을 눌렀을 때 동작하는 엔진
+// ★ 체크된 데이터만 급여 계산 실행
 const fetchCalculatedPay = async () => {
+  const selectedRows = payrollList.value.filter(p => p.selected);
+
+  if (selectedRows.length === 0) {
+    alert('급여를 계산할 직원을 체크해주세요.');
+    return;
+  }
   if (!selectedYearMonth.value) { alert('급여 연월을 선택해주세요.'); return; }
+
   isLoading.value = true;
   try {
     const [year, month] = selectedYearMonth.value.split('-');
     const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
 
     if (res.data.result && res.data.data?.length > 0) {
-      payrollList.value = res.data.data.map(calc => {
-        // 객체 초기화
-        const row = {
-          ...calc,
-          mIdx: calc.idx,
-          payItems: { ...calc.payItems },
-          deductionItems: {},
-          deductionFlags: {}
-        };
+      selectedRows.forEach(row => {
+        const calcData = res.data.data.find(c => c.idx === row.idx);
 
-        deductionItems.value.forEach(i => row.deductionFlags[i.itemCd] = true);
+        if (calcData) {
+          let dbCheckedItems = {};
+          if (calcData.checkedItems) {
+            dbCheckedItems = typeof calcData.checkedItems === 'string'
+                ? JSON.parse(calcData.checkedItems)
+                : calcData.checkedItems;
+          }
 
-        // 데이터 세팅 후 즉시 스마트 계산기 1회 가동
-        updatePay(row);
+          row.payItems = typeof calcData.payItems === 'string' ? JSON.parse(calcData.payItems || '{}') : (calcData.payItems || {});
+          row.deductionItems = {};
+          row.deductionFlags = {};
+          row.workedDays = calcData.workedDays;
+          row.scheduledDays = calcData.scheduledDays;
 
-        return row;
+          deductionItems.value.forEach(i => {
+            row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false;
+          });
+
+          // ★ 상태를 2(임시 계산됨, 저장 대기)로 변경하여 색상이 노란색으로 바뀌게 함
+          row.status = 2;
+
+          updatePay(row);
+        }
       });
       dataMode.value = 'draft';
     }
@@ -129,51 +148,64 @@ const fetchCalculatedPay = async () => {
 const calculateInsurances = (row) => {
   let taxablePay = 0;
   Object.keys(row.payItems || {}).forEach(k => {
-    // 식대를 제외한 과세 금액 합산
     if (!payItems.value.find(i => i.itemCd === k)?.itemNm.includes('식대')) {
       taxablePay += Number(row.payItems[k] || 0);
     }
   });
 
-  // 4대보험 자동 계산 로직
   if(!row.deductionItems) row.deductionItems = {};
 
   deductionItems.value.forEach(i => {
     let amt = 0;
-    if (i.itemNm.includes('국민연금')) amt = taxablePay * (targetCodes.value.pension / 100);
-    else if (i.itemNm.includes('건강보험')) amt = taxablePay * (targetCodes.value.health / 100);
-    else if (i.itemNm.includes('장기요양')) {
-      const health = deductionItems.value.find(d => d.itemNm.includes('건강보험'));
-      amt = (row.deductionItems[health?.itemCd] || 0) * (targetCodes.value.longTerm / 100);
-    }
-    else if (i.itemNm.includes('고용보험')) amt = taxablePay * (targetCodes.value.employment / 100);
 
-    // 계산된 보험료를 객체에 삽입 (원단위 절사)
+    if (row.deductionFlags[i.itemCd]) {
+      if (i.itemNm.includes('국민연금')) amt = taxablePay * (targetCodes.value.pension / 100);
+      else if (i.itemNm.includes('건강보험')) amt = taxablePay * (targetCodes.value.health / 100);
+      else if (i.itemNm.includes('장기요양')) {
+        const health = deductionItems.value.find(d => d.itemNm.includes('건강보험'));
+        amt = (row.deductionItems[health?.itemCd] || 0) * (targetCodes.value.longTerm / 100);
+      }
+      else if (i.itemNm.includes('고용보험')) amt = taxablePay * (targetCodes.value.employment / 100);
+    }
+
     row.deductionItems[i.itemCd] = Math.floor(amt / 10) * 10;
   });
 };
 
+// 체크된 데이터만 저장
 const savePayroll = async () => {
-  if (!confirm('정산 결과를 저장하시겠습니까?')) return;
+  const selectedRows = payrollList.value.filter(p => p.selected);
+
+  if (selectedRows.length === 0) {
+    alert('저장할 직원을 체크해주세요.');
+    return;
+  }
+  if (!confirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
+
   try {
-    // 저장 로직
-    await Promise.all(payrollList.value.map(row => {
+    const [saveYear, saveMonth] = selectedYearMonth.value.split('-');
+
+    await Promise.all(selectedRows.map(row => {
       const c = calculateRowSummary(row);
       return axios.post(`/api/v1/member/payroll/month/${row.idx}`, {
         mIdx: row.idx,
         sIdx: row.sIdx,
-        year: selectedYearMonth.value.split('-')[0],
+        year: saveYear,
+        month: saveMonth,
         grossPay: c.gross,
         deductions: c.ded,
         netPay: c.net,
+        workedDays: row.workedDays,
+        scheduledDays: row.scheduledDays,
         payItems: JSON.stringify(row.payItems || {}),
         deductionItems: JSON.stringify(row.deductionItems || {}),
         checkedItems: JSON.stringify(row.deductionFlags || {}),
-        total: 0
+        total: c.gross - c.ded
       });
     }));
-    alert('정산 결과가 저장되었습니다.');
+    alert('선택한 직원의 정산 결과가 성공적으로 저장되었습니다.');
     dataMode.value = 'saved';
+    await getPayrollMonth(); // 저장 후 전체 데이터를 DB에서 다시 불러옴 (status가 1로 바뀜)
   } catch (e) {
     alert('저장 실패');
   }
@@ -196,10 +228,19 @@ const getPayrollMonth = async function () {
   }
   axios.get(`/api/v1/member/payroll/month`, { params })
       .then(res => {
-        console.log(res.data.data, 'getPayrollMonth')
-        payrollList.value = res.data.data;
+        if (res.data.data) {
+          payrollList.value = res.data.data.map(item => ({
+            ...item,
+            selected: false,
+            payItems: item.payItems || {},
+            deductionItems: item.deductionItems || {},
+            deductionFlags: item.checkedItems || {}
+          }));
+        } else {
+          payrollList.value = [];
+        }
       })
-}
+};
 
 onMounted(() => {
   fetchSiteOptions();
@@ -222,11 +263,11 @@ onMounted(() => {
       <div class="header-actions">
         <button @click="fetchCalculatedPay" class="btn-calculate">
           <i class="mdi mdi-lightning-bolt"></i>
-          <span>급여 계산 실행</span>
+          <span>선택 급여 계산</span>
         </button>
-        <button @click="savePayroll" class="btn-save" :disabled="dataMode !== 'draft'">
+        <button @click="savePayroll" class="btn-save">
           <i class="mdi mdi-content-save"></i>
-          <span>정산 결과 저장</span>
+          <span>선택 결과 저장</span>
         </button>
       </div>
     </div>
@@ -309,7 +350,9 @@ onMounted(() => {
         <table class="data-table">
           <thead>
           <tr>
-            <th rowspan="2" class="text-center" style="width:30px;"></th>
+            <th rowspan="2" class="text-center" style="width:30px;">
+              <input type="checkbox" v-model="selectAll" />
+            </th>
             <th rowspan="2" class="text-center" style="width:50px;">No.</th>
             <th rowspan="2" class="text-center" style="width:130px;">현장명</th>
             <th rowspan="2" class="text-center" style="width:80px;">직책</th>
@@ -331,20 +374,19 @@ onMounted(() => {
           <tbody>
           <tr v-for="(p, index) in filteredPayrollList" :key="p.idx" class="data-row">
             <td
-                class="text-center"
-                :class="[
-                    'calculate-status', p.status == 1 ? 'calculate-active' : 'calculate-inactive'
-                    ]">
-              <input type="checkbox">
+                class="text-center calculate-status transition-colors duration-300"
+                :class="{
+                    'calculate-active': p.status == 1,
+                    'calculate-draft': p.status == 2,
+                    'calculate-inactive': p.status == 0
+                }">
+              <input type="checkbox" v-model="p.selected" />
             </td>
             <td class="text-center">{{ index + 1 }}</td>
             <td class="text-center">{{ p.siteName }}</td>
             <td class="text-center">{{ p.role }}</td>
             <td class="text-center">{{ p.id }}</td>
             <td class="text-center fw-bold">{{ p.staff }}</td>
-            <!--td class="text-center">
-              <input type="text" style="width:12px !important;" v-model="p.workedDays"/> / {{ p.scheduledDays || 0 }}
-            </td-->
 
             <td class="text-center">
               <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
@@ -563,13 +605,10 @@ onMounted(() => {
 .inline-input:hover { border-color: #cbd5e1; background: #f8fafc; }
 .inline-input:focus { border-color: #3b82f6; background: white; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
 
-.calculate-inactive {
-  background: #fde68a;
-}
-
-.calculate-active {
-  background: #4f46e5;
-}
+/* ★ 체크박스 배경 상태 CSS 업데이트 */
+.calculate-inactive { background: #e2e8f0; } /* 계산 전 (회색) */
+.calculate-draft { background: #fde68a; } /* 계산 실행됨, 저장 전 (노란색) */
+.calculate-active { background: #4f46e5; } /* 저장 완료 (파란색) */
 
 .bg-light-gray { background: #f8fafc; }
 .text-red { color: #ef4444; }
