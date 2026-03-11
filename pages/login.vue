@@ -33,7 +33,7 @@ const handleLogin = async () => {
 
     if (res.data.result) {
       authStore.setLogin({
-        user: JSON.stringify(res.data.data[0]),
+        user: res.data.data[0],
         token: res.data.token,
       });
       await navigateTo('/', { replace: true });
