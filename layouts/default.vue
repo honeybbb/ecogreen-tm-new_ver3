@@ -18,10 +18,6 @@ const cIdx = computed(() => authStore.user?.cIdx ?? null);
 const myEmail = computed(() => authStore.user?.email ?? null);
 const myManagerNm = computed(() => authStore.user?.managerNm ?? null);
 
-watch(() => cIdx, (cIdx) => {
-  if (cIdx) getMenus();
-}, { immediate: true });
-
 // === 2. 메뉴 데이터 ===
 const items = ref([]);
 const systemItems = ref([]);
@@ -116,6 +112,10 @@ const getMenus = (companyNo) => {
       })
       .catch(err => console.error("메뉴 로딩 실패:", err));
 }
+
+watch(() => cIdx.value, (val) => {
+  if (val) getMenus(val);
+}, { immediate: true });
 </script>
 
 <template>
