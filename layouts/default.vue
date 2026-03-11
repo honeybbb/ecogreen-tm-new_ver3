@@ -101,6 +101,7 @@ const buildMenuTree = (flatList) => {
 
 const getMenus = () => {
   const companyNo = authStore.user?.cIdx;
+  if(!companyNo) return;
   const params = { isMaster: authStore.user?.isMaster, path: route.path };
 
   axios.get(`/api/v1/menu/${companyNo}`, { params })
