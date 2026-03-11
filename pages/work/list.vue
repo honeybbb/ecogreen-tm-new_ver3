@@ -238,7 +238,7 @@ onMounted(() => {
 
     <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title"><i class="mdi mdi-calendar-check"></i> 직원 출근 관리</h1>
+        <h1 class="page-title"><i class="mdi mdi-calendar-check-outline"></i> 직원 출근 관리</h1>
         <p class="page-subtitle">직원들의 출퇴근 및 휴무 현황을 관리합니다</p>
       </div>
 
@@ -255,7 +255,7 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-office-building"></i> 현장 선택</label>
+          <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 현장 선택</label>
           <select v-model="currentSiteId" class="filter-select">
             <option value="" disabled>관리할 현장을 선택하세요</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
@@ -264,36 +264,35 @@ onMounted(() => {
 
         <div class="search-group" style="justify-content: flex-end;">
           <button v-if="currentSiteId" @click="isExcelModalOpen = true" class="btn-excel">
-            <i class="mdi mdi-file-excel"></i> <span>엑셀 일괄 업로드</span>
+            <i class="mdi mdi-file-excel-outline"></i> <span>엑셀 일괄 업로드</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- 통계 요약 카드 (동일) -->
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #667eea;">
+      <div class="stat-card" style="--card-color: #4f46e5; --card-bg: #eef2ff;">
         <div class="stat-icon"><i class="mdi mdi-account-check-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 출근</span>
           <span class="stat-value">{{ monthSummary.work }} <small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #f59e0b;">
+      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: #fffbeb;">
         <div class="stat-icon"><i class="mdi mdi-star-circle-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 특근</span>
           <span class="stat-value">{{ monthSummary.holiday }} <small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #ef4444;">
-        <div class="stat-icon"><i class="mdi mdi-account-clock-outline"></i></div>
+      <div class="stat-card" style="--card-color: #ef4444; --card-bg: #fef2f2;">
+        <div class="stat-icon"><i class="mdi mdi-beach"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 휴무/연차</span>
           <span class="stat-value">{{ monthSummary.leave }} <small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #64748b;">
+      <div class="stat-card" style="--card-color: #64748b; --card-bg: #f1f5f9;">
         <div class="stat-icon"><i class="mdi mdi-account-remove-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">이번 달 결근</span>
@@ -325,13 +324,10 @@ onMounted(() => {
                 <span class="date-num" :class="{ 'text-red': day.dayName === '일', 'text-blue': day.dayName === '토' }">{{ day.date }}</span>
                 <span class="mobile-day-name" :class="{ 'text-red': day.dayName === '일', 'text-blue': day.dayName === '토' }">{{ day.dayName }}</span>
               </div>
-              <!-- 마우스를 올렸을 때 클릭 가능하다는 힌트 아이콘 -->
               <i class="mdi mdi-arrow-top-right detail-icon" title="상세보기"></i>
             </div>
 
-            <!-- ★ 변경된 부분: 이름 목록 대신 요약 뱃지 표시 -->
             <div class="summary-container custom-scrollbar">
-              <!-- 데이터가 있을 때 요약 뱃지 출력 -->
               <template v-if="day.schedules.length > 0">
                 <div v-if="day.summary.work > 0" class="summary-badge work">
                   출근 <strong>{{ day.summary.work }}</strong>
@@ -346,10 +342,8 @@ onMounted(() => {
                   결근 <strong>{{ day.summary.absent }}</strong>
                 </div>
               </template>
-
-              <!-- 데이터가 아무것도 없을 때 (선택적) -->
               <div v-else class="empty-cell-hint">
-                <i class="mdi mdi-plus"></i> 추가
+                <i class="mdi mdi-plus"></i>
               </div>
             </div>
 
@@ -358,13 +352,15 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 일일 출근자 리스트 팝업 (동일) -->
     <transition name="fade">
       <div v-if="isDailyModalOpen" class="modal-overlay" @click.self="isDailyModalOpen = false">
         <div class="modal-card">
           <div class="modal-header">
-            <h3><i class="mdi mdi-clipboard-text-outline text-blue"></i> {{ selectedDay?.fullDate }} 근무 현황</h3>
-            <i class="mdi mdi-close close-icon" @click="isDailyModalOpen = false"></i>
+            <h3 class="modal-title">
+              <i class="mdi mdi-clipboard-text-outline text-blue"></i>
+              {{ selectedDay?.fullDate }} 근무 현황
+            </h3>
+            <button class="modal-close" @click="isDailyModalOpen = false"><i class="mdi mdi-close"></i></button>
           </div>
           <div class="modal-body list-body">
             <div class="daily-action-bar">
@@ -394,14 +390,14 @@ onMounted(() => {
       </div>
     </transition>
 
-    <!-- 근태 수동 등록 팝업 (동일) -->
     <transition name="fade">
-      <!-- (내용 동일 생략 없이 유지됨) -->
       <div v-if="isModalOpen" class="modal-overlay" @click.self="isModalOpen = false">
         <div class="modal-card">
           <div class="modal-header">
-            <h3>📅 근태 수동 등록</h3>
-            <i class="mdi mdi-close close-icon" @click="isModalOpen = false"></i>
+            <h3 class="modal-title">
+              <i class="mdi mdi-calendar-plus"></i> 근태 수동 등록
+            </h3>
+            <button class="modal-close" @click="isModalOpen = false"><i class="mdi mdi-close"></i></button>
           </div>
           <div class="modal-body">
             <div class="info-box">
@@ -424,11 +420,11 @@ onMounted(() => {
               <div class="type-selector">
                 <label class="type-option">
                   <input type="radio" v-model="form.workType" value="work">
-                  <div class="option-card"><i class="mdi mdi-check-circle"></i>출근</div>
+                  <div class="option-card work"><i class="mdi mdi-check-circle-outline"></i>출근</div>
                 </label>
                 <label class="type-option">
                   <input type="radio" v-model="form.workType" value="holiday">
-                  <div class="option-card holiday"><i class="mdi mdi-star"></i>특근</div>
+                  <div class="option-card holiday"><i class="mdi mdi-star-circle-outline"></i>특근</div>
                 </label>
                 <label class="type-option">
                   <input type="radio" v-model="form.workType" value="leave">
@@ -436,7 +432,7 @@ onMounted(() => {
                 </label>
                 <label class="type-option">
                   <input type="radio" v-model="form.workType" value="absent">
-                  <div class="option-card absent"><i class="mdi mdi-account-remove"></i>결근</div>
+                  <div class="option-card absent"><i class="mdi mdi-account-remove-outline"></i>결근</div>
                 </label>
               </div>
             </div>
@@ -449,25 +445,32 @@ onMounted(() => {
       </div>
     </transition>
 
-    <!-- 엑셀 일괄 업로드 팝업 (동일) -->
     <transition name="fade">
       <div v-if="isExcelModalOpen" class="modal-overlay" @click.self="isExcelModalOpen = false">
         <div class="modal-card excel-modal">
           <div class="modal-header">
-            <h3><i class="mdi mdi-file-excel text-green"></i> 엑셀 일괄 업로드</h3>
-            <i class="mdi mdi-close close-icon" @click="isExcelModalOpen = false"></i>
+            <h3 class="modal-title">
+              <i class="mdi mdi-file-excel-outline text-green"></i> 엑셀 일괄 업로드
+            </h3>
+            <button class="modal-close" @click="isExcelModalOpen = false"><i class="mdi mdi-close"></i></button>
           </div>
           <div class="modal-body">
             <div class="info-box warning">
-              <i class="mdi mdi-alert-circle"></i>
+              <i class="mdi mdi-alert-circle-outline"></i>
               <span>선택된 현장(<strong>{{ siteOptions.find(s => s.idx === currentSiteId)?.name }}</strong>)에 데이터가 일괄 등록됩니다. 양식에 맞춘 엑셀 파일만 업로드해주세요.</span>
             </div>
 
-            <div class="file-upload-area" @click="triggerFileInput">
+            <div class="file-upload-area" :class="{ 'has-file': excelFile }" @click="triggerFileInput">
               <input type="file" ref="fileInput" @change="handleFileChange" accept=".xlsx, .xls" class="hidden-input" />
-              <i class="mdi mdi-cloud-upload-outline upload-icon"></i>
-              <p v-if="!excelFile">클릭하여 엑셀 파일을 선택해주세요</p>
-              <p v-else class="file-name"><i class="mdi mdi-file-check"></i> {{ excelFile.name }}</p>
+              <div v-if="!excelFile" class="upload-placeholder">
+                <i class="mdi mdi-cloud-upload-outline"></i>
+                <p>클릭하여 엑셀 파일을 선택해주세요</p>
+              </div>
+              <div v-else class="upload-selected">
+                <i class="mdi mdi-file-excel"></i>
+                <p class="file-name">{{ excelFile.name }}</p>
+                <span class="file-change-text">파일 변경하기</span>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -485,184 +488,306 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 공통, 레이아웃, 카드 CSS 동일 */
-.nav-controls { display: flex; align-items: center; gap: 12px; background: white; padding: 8px 16px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.btn-nav { width: 36px; height: 36px; border-radius: 8px; border: none; background: #f8fafc; color: #475569; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+
+/* === 전역 설정 === */
+.attendance-calendar-container {
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #334155;
+}
+
+/* === 페이지 헤더 === */
+.page-header {
+  display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
+}
+.header-left { flex: 1; }
+.page-title {
+  font-size: 24px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;
+  display: flex; align-items: center; gap: 10px; letter-spacing: -0.5px;
+}
+.page-title i { font-size: 26px; color: #4f46e5; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
+
+.header-actions { display: flex; gap: 12px; }
+
+.nav-controls {
+  display: flex; align-items: center; gap: 10px; background: white;
+  padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+.btn-nav {
+  width: 32px; height: 32px; border-radius: 6px; border: none;
+  background: #f8fafc; color: #475569; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+}
 .btn-nav:hover { background: #e2e8f0; color: #1e293b; }
-.current-month-label { font-size: 16px; font-weight: 700; color: #1e293b; min-width: 120px; text-align: center; }
-.btn-today { padding: 8px 16px; background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+.current-month-label { font-size: 15px; font-weight: 700; color: #1e293b; min-width: 100px; text-align: center; }
+.btn-today {
+  padding: 6px 14px; background: #f8fafc; color: #475569;
+  border: 1px solid #e2e8f0; border-radius: 6px; font-weight: 600; font-size: 13px;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
 .btn-today:hover { background: #e2e8f0; color: #1e293b; }
-.filter-panel { background: white; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
-.filter-row { display: flex; align-items: flex-end; gap: 16px; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
+
+/* === 필터 패널 === */
+.filter-panel {
+  background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px;
+  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;}
+.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 200px; flex: 1; }
 .filter-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569; }
-.filter-label i { font-size: 16px; color: #667eea; }
-.filter-select { padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; color: #334155; background: white; cursor: pointer; transition: all 0.2s; min-width: 250px; }
-.filter-select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-.search-group { display: flex; gap: 8px; flex: 1; }
-.btn-excel { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.3s; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3); }
-.btn-excel:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
+.filter-label i { font-size: 16px; color: #4f46e5; }
+.filter-select {
+  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 13px; color: #334155; background: white; cursor: pointer; transition: all 0.2s; width: 100%; height: 42px;
+}
+.filter-select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
 
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
-.stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); display: flex; align-items: center; gap: 16px; transition: all 0.3s; position: relative; overflow: hidden; }
+.search-group { display: flex; align-items: flex-end; }
+.btn-excel {
+  background-color: #10b981; color: white; border: none; padding: 0 20px; height: 42px;
+  border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.btn-excel:hover { background-color: #059669; transform: translateY(-1px); }
+.btn-excel i { font-size: 16px; }
+
+/* === 통계 카드 === */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px; margin-bottom: 24px;
+}
+.stat-card {
+  background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; align-items: center; gap: 16px;
+  transition: transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden;
+}
 .stat-card::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--card-color); }
-.stat-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12); }
-.stat-icon { width: 48px; height: 48px; border-radius: 12px; background: var(--card-color); opacity: 0.1; display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
-.stat-icon i { font-size: 24px; color: var(--card-color); position: absolute; }
-.stat-content { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
-.stat-value { font-size: 24px; font-weight: 700; color: var(--card-color); }
-.stat-value small { font-size: 14px; color: #94a3b8; font-weight: 500; margin-left: 2px;}
+.stat-card:hover { transform: translateY(-2px); border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
 
-.calendar-card { background: white; border-radius: 16px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); position: relative; overflow: hidden; width: 100%; }
-.calendar-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); width: 100%; background: #f8fafc; border-bottom: 1px solid #f1f5f9; }
-.day-name { padding: 16px 0; text-align: center; font-size: 14px; font-weight: 700; color: #475569; }
+.stat-icon {
+  width: 48px; height: 48px; border-radius: 12px; background-color: var(--card-bg);
+  display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
+}
+.stat-icon i { font-size: 24px; color: var(--card-color); }
+
+.stat-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
+.stat-value { font-size: 22px; font-weight: 700; color: #1e293b; letter-spacing: -0.5px;}
+.stat-value small { font-size: 13px; color: #94a3b8; font-weight: 500; margin-left: 2px;}
+
+/* === 캘린더 영역 === */
+.calendar-card {
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02); position: relative; overflow: hidden; width: 100%;
+}
+.calendar-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); width: 100%; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.day-name { padding: 14px 0; text-align: center; font-size: 13px; font-weight: 600; color: #475569; }
 .day-name.sun, .text-red { color: #ef4444 !important; }
 .day-name.sat, .text-blue { color: #3b82f6 !important; }
 .mobile-day-name { display: none; }
-.calendar-grid-body { display: grid; grid-template-columns: repeat(7, 1fr); width: 100%; background: #f1f5f9; gap: 1px; }
 
-/* 캘린더 일자 셀 스타일 (수정됨) */
-.day-cell { background: #fff; height: 130px; cursor: pointer; transition: all 0.2s; position: relative; }
+.calendar-grid-body {
+  display: grid; grid-template-columns: repeat(7, 1fr); width: 100%;
+  background: #e2e8f0; /* Grid line color */ gap: 1px;
+}
+
+.day-cell { background: #fff; height: 140px; cursor: pointer; transition: background 0.2s; position: relative; }
 .day-cell:hover { background: #f8fafc; }
 .day-cell.empty { background: #f8fafc; cursor: default; }
 .day-cell.today { background: #f0fdf4; }
 
-.cell-content { padding: 12px; height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.cell-content { padding: 10px; height: 100%; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;}
 .day-header { display: flex; justify-content: space-between; align-items: flex-start; }
-.date-group { display: flex; flex-direction: column; align-items: flex-start;}
-.date-num { font-size: 15px; font-weight: 700; color: #334155; }
-.today .date-num { background: #10b981; color: white !important; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4); margin-top: -3px; margin-left: -3px;}
+.date-group { display: flex; flex-direction: column; align-items: flex-start; }
+.date-num { font-size: 14px; font-weight: 600; color: #334155; }
+.today .date-num {
+  background: #10b981; color: white !important; width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center; border-radius: 50%;
+  margin-top: -3px; margin-left: -3px;
+}
 
-/* 마우스 호버시 나타나는 디테일 아이콘 */
-.detail-icon { color: #cbd5e1; font-size: 16px; opacity: 0; transition: all 0.2s; transform: translate(-4px, 4px); }
-.day-cell:hover .detail-icon { opacity: 1; color: #3b82f6; transform: translate(0, 0); }
+.detail-icon { color: #cbd5e1; font-size: 16px; opacity: 0; transition: all 0.2s; transform: translate(-2px, 2px); }
+.day-cell:hover .detail-icon { opacity: 1; color: #4f46e5; transform: translate(0, 0); }
 
-/* ★ 새로 작성된 요약 뱃지 컨테이너 & 뱃지 스타일 */
-.summary-container { flex: 1; display: flex; flex-direction: column; gap: 6px; margin-top: 10px; overflow-y: auto; padding-right: 4px; }
-.summary-badge { padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid transparent; }
-.summary-badge strong { font-size: 13px; font-weight: 800; }
+/* 요약 뱃지 (파스텔 플랫톤) */
+.summary-container { flex: 1; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; overflow-y: auto; padding-right: 2px; }
+.summary-badge {
+  padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.summary-badge strong { font-size: 12px; font-weight: 700; }
 
-.summary-badge.work { background: #eff6ff; color: #1d4ed8; border-color: #3b82f6; }
-.summary-badge.holiday { background: #fffbeb; color: #b45309; border-color: #f59e0b; }
-.summary-badge.leave { background: #fef2f2; color: #b91c1c; border-color: #ef4444; }
-.summary-badge.absent { background: #f1f5f9; color: #475569; border-color: #64748b; }
+.summary-badge.work { background-color: #eef2ff; color: #4f46e5; }
+.summary-badge.holiday { background-color: #fffbeb; color: #d97706; }
+.summary-badge.leave { background-color: #fef2f2; color: #dc2626; }
+.summary-badge.absent { background-color: #f1f5f9; color: #475569; }
 
-/* 빈 셀일때 살짝 보이는 추가 버튼 */
-.empty-cell-hint { opacity: 0; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #94a3b8; transition: opacity 0.2s; gap: 4px;}
-.day-cell:hover .empty-cell-hint { opacity: 1; }
+.empty-cell-hint {
+  opacity: 0; height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: #cbd5e1; transition: opacity 0.2s;
+}
+.day-cell:hover .empty-cell-hint { opacity: 1; color: #94a3b8; }
 
-/* 팝업 모달 공통 스타일 */
-.modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;}
-.modal-card { background: #fff; width: 100%; max-width: 440px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); overflow: hidden; transform: translateY(0);}
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+/* === 모달 팝업 === */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;
+}
+.modal-card {
+  background: #fff; width: 100%; max-width: 450px; border-radius: 16px; border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; transform: translateY(0);
+}
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
-.modal-header { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
-.modal-header h3 { font-size: 18px; /*font-weight: 800;*/ margin: 0; color: #1e293b; display: flex; align-items: center; gap: 8px;}
-.close-icon { font-size: 24px; color: #94a3b8; cursor: pointer; transition: 0.2s; }
-.close-icon:hover { color: #ef4444; transform: rotate(90deg); }
+
+.modal-header {
+  padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.modal-title { font-size: 16px; font-weight: 700; margin: 0; color: #1e293b; display: flex; align-items: center; gap: 8px;}
+.modal-title i { font-size: 20px; }
+.modal-close { background: transparent; border: none; color: #94a3b8; cursor: pointer; font-size: 20px; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 4px;}
+.modal-close:hover { background: #e2e8f0; color: #1e293b; }
+
 .modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
-.info-box { background: #f8fafc; padding: 14px 16px; border-radius: 12px; font-size: 14px; color: #475569; }
-.info-box.warning { background: #fffbeb; color: #b45309; display: flex; gap: 10px; align-items: flex-start; }
-.info-box.warning i { font-size: 20px; color: #f59e0b; }
-.form-group label { font-size: 13px; font-weight: 700; color: #475569; margin-bottom: 8px; display: block; }
-.search-input-wrapper { display: flex; align-items: center; gap: 10px; border: 1px solid #cbd5e1; padding: 12px 16px; border-radius: 10px; transition: 0.2s; background: #fff; }
-.search-input-wrapper:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-.search-input-wrapper input { border: none; outline: none; width: 100%; font-size: 15px; color: #1e293b; }
+.info-box { background: #f8fafc; padding: 14px 16px; border-radius: 8px; font-size: 13px; color: #475569; border: 1px solid #e2e8f0; }
+.info-box.warning { background: #fffbeb; color: #d97706; border-color: #fde68a; display: flex; gap: 10px; align-items: flex-start; }
+.info-box.warning i { font-size: 18px; color: #f59e0b; }
+
+.form-group label { font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px; display: block; }
+.search-input-wrapper {
+  display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0;
+  padding: 10px 14px; border-radius: 8px; transition: 0.2s; background: #fff;
+}
+.search-input-wrapper:focus-within { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+.search-input-wrapper i { color: #94a3b8; font-size: 18px; }
+.search-input-wrapper input { border: none; outline: none; width: 100%; font-size: 13px; color: #1e293b; }
+
+/* 라디오 카드형 선택기 */
 .type-selector { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .type-option input { display: none; }
-.option-card { padding: 12px 0; border: 2px solid #e2e8f0; border-radius: 10px; text-align: center; font-size: 13px; font-weight: 700; color: #64748b; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; gap: 6px; }
-.option-card i { font-size: 22px; }
-.type-option input:checked + .option-card { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+.option-card {
+  padding: 12px 0; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;
+  font-size: 12px; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.2s;
+  display: flex; flex-direction: column; gap: 6px; background: white;
+}
+.option-card i { font-size: 20px; }
+.option-card:hover { border-color: #cbd5e1; background: #f8fafc; color: #1e293b; }
+
+/* 선택 상태 컬러링 (플랫) */
+.type-option input:checked + .option-card.work { border-color: #4f46e5; color: #4f46e5; background: #eef2ff; }
 .type-option input:checked + .option-card.holiday { border-color: #f59e0b; color: #d97706; background: #fffbeb; }
-.type-option input:checked + .option-card.leave { border-color: #ef4444; color: #b91c1c; background: #fef2f2; }
+.type-option input:checked + .option-card.leave { border-color: #ef4444; color: #dc2626; background: #fef2f2; }
 .type-option input:checked + .option-card.absent { border-color: #64748b; color: #475569; background: #f1f5f9; }
 
-/* 리스트 팝업 스타일 */
-.text-blue { color: #3b82f6; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid #e2e8f0; display: flex; gap: 10px; background: #f8fafc; }
+.modal-footer button { flex: 1; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;}
+.btn-cancel { background: white; border: 1px solid #e2e8f0 !important; color: #475569; }
+.btn-cancel:hover { background: #f1f5f9; color: #1e293b;}
+.btn-submit { background-color: #4f46e5; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
+.btn-submit:hover { background-color: #4338ca; transform: translateY(-1px);}
+.btn-submit.green { background-color: #10b981; }
+.btn-submit.green:hover { background-color: #059669; }
+.btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none;}
+
+/* 일일 리스트 팝업 (플랫 모던) */
 .list-body { padding: 20px 24px; gap: 16px; }
 .daily-action-bar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
-.summary-text { font-size: 14px; color: #64748b; margin: 0; }
-.summary-text strong { color: #1e293b; font-size: 16px; }
-.small-btn { padding: 8px 16px !important; font-size: 13px !important; border-radius: 8px !important; flex: none !important; }
-.daily-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 5px; }
-.empty-state { padding: 40px 0; text-align: center; color: #94a3b8; display: flex; flex-direction: column; gap: 10px; align-items: center; }
-.empty-state i { font-size: 36px; color: #cbd5e1; }
-.daily-list-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f8fafc; border-radius: 10px; border: 1px solid #f1f5f9; transition: background 0.2s; }
-.daily-list-item:hover { background: #f1f5f9; }
-.worker-info { display: flex; align-items: center; gap: 12px; }
-.worker-avatar { width: 32px; height: 32px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 16px; }
-.staff-name { font-weight: 700; color: #334155; font-size: 14px; }
-.status-badge { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; }
-.status-badge.work { background: #eff6ff; color: #1d4ed8; }
-.status-badge.holiday { background: #fffbeb; color: #b45309; }
-.status-badge.leave { background: #fef2f2; color: #b91c1c; }
-.status-badge.absent { background: #f1f5f9; color: #475569; }
+.summary-text { font-size: 13px; color: #64748b; margin: 0; }
+.summary-text strong { color: #1e293b; font-size: 15px; }
+.small-btn { padding: 8px 14px !important; font-size: 12px !important; border-radius: 6px !important; flex: none !important; }
 
-/* 엑셀 등 버튼 스타일 */
-.file-upload-area { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #f8fafc; }
+.daily-list { max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+.daily-list-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; transition: border-color 0.2s;
+}
+.daily-list-item:hover { border-color: #cbd5e1; }
+
+.worker-info { display: flex; align-items: center; gap: 10px; }
+.worker-avatar { width: 28px; height: 28px; background: #f1f5f9; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 14px; }
+.staff-name { font-weight: 600; color: #334155; font-size: 13px; }
+
+.status-badge { font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; }
+.status-badge.work { background-color: #eef2ff; color: #4f46e5; }
+.status-badge.holiday { background-color: #fffbeb; color: #d97706; }
+.status-badge.leave { background-color: #fef2f2; color: #dc2626; }
+.status-badge.absent { background-color: #f1f5f9; color: #475569; }
+
+/* 엑셀 파일 업로드 폼 (플랫 & 모던) */
+.file-upload-area {
+  border: 2px dashed #cbd5e1; border-radius: 10px; padding: 40px 20px; text-align: center;
+  cursor: pointer; transition: all 0.2s; background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
 .file-upload-area:hover { border-color: #10b981; background: #f0fdf4; }
+.file-upload-area.has-file { border-color: #10b981; border-style: solid; background: #ecfdf5;}
 .hidden-input { display: none; }
-.upload-icon { font-size: 48px; color: #94a3b8; margin-bottom: 10px; display: block; transition: color 0.2s;}
-.file-upload-area:hover .upload-icon { color: #10b981; }
-.file-upload-area p { font-size: 14px; color: #64748b; margin: 0; font-weight: 600; }
-.file-name { color: #10b981 !important; font-weight: 800 !important; }
 
-.modal-footer { padding: 20px 24px; border-top: 1px solid #f1f5f9; display: flex; gap: 12px; background: #f8fafc; }
-.modal-footer button { flex: 1; padding: 14px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; transition: 0.2s; display: flex; align-items: center; justify-content: center;}
-.btn-cancel { background: #fff; border: 1px solid #cbd5e1 !important; color: #64748b; }
-.btn-cancel:hover { background: #f1f5f9; color: #1e293b;}
-.btn-submit { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);}
-.btn-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(59, 130, 246, 0.4);}
-.btn-submit.green { background: linear-gradient(135deg, #10b981 0%, #059669 100%); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);}
-.btn-submit.green:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(16, 185, 129, 0.4); }
-.btn-submit:disabled { opacity: 0.7; cursor: not-allowed; transform: none; box-shadow: none;}
+.upload-placeholder i { font-size: 40px; color: #94a3b8; margin-bottom: 8px; transition: color 0.2s;}
+.file-upload-area:hover .upload-placeholder i { color: #10b981; }
+.upload-placeholder p { font-size: 13px; color: #475569; margin: 0; font-weight: 600; }
+
+.upload-selected i { font-size: 28px; color: #10b981; margin-bottom: 8px; }
+.upload-selected .file-name { color: #1e293b; font-weight: 700; font-size: 14px; margin: 0 0 4px 0;}
+.upload-selected .file-change-text { font-size: 12px; color: #10b981; text-decoration: underline; }
+
+.text-blue { color: #4f46e5; }
+.text-green { color: #10b981; }
 
 .loader-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(2px); }
-.spinner { width: 40px; height: 40px; border: 4px solid #f1f5f9; border-top: 4px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; }
+.spinner { width: 32px; height: 32px; border: 3px solid #f1f5f9; border-top: 3px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
-.custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* 모바일/태블릿 반응형 */
+/* === 반응형 (모바일 캘린더 리스트 변환 포함) === */
 @media screen and (max-width: 1024px) {
   .filter-row { flex-wrap: wrap; }
+  .filter-group, .search-group { min-width: 200px;}
 }
 
 @media screen and (max-width: 768px) {
   .page-header { flex-direction: column; align-items: stretch; gap: 16px; }
-  .header-left { flex-direction: column; align-items: stretch; gap: 12px; }
-  .header-right { flex-direction: column; align-items: stretch; width: 100%; gap: 12px; }
-  .nav-controls { justify-content: space-between; }
-  .filter-row { flex-direction: column; align-items: stretch; }
-  .filter-group, .search-group { width: 100%; }
-  .filter-select { width: 100%; min-width: auto; }
-  .search-group { justify-content: stretch !important; }
-  .btn-excel { width: 100%; justify-content: center; }
-  .stats-grid { grid-template-columns: 1fr; }
+  .header-actions { width: 100%; }
+  .nav-controls { justify-content: space-between; width: 100%; }
 
-  .calendar-card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow-y: auto; border: none; }
+  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
+  .filter-group, .search-group { width: 100%; min-width: 100%; }
+  .filter-select { width: 100%; }
+  .btn-excel { width: 100%; justify-content: center; }
+
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+  /* 모바일 달력을 세로 리스트형태로 변환 */
+  .calendar-card { border-radius: 12px; border: 1px solid #e2e8f0; max-height: calc(100vh - 250px); overflow-y: auto; }
   .calendar-grid-header { display: none; }
-  .calendar-grid-body { display: flex; flex-direction: column; gap: 0; border-top: 1px solid #e2e8f0; }
-  .day-cell { height: auto; min-height: 80px; border-bottom: 1px solid #f1f5f9; background: #fff; }
+  .calendar-grid-body { display: flex; flex-direction: column; gap: 0; background: transparent;}
+
+  .day-cell { height: auto; min-height: 70px; border-bottom: 1px solid #e2e8f0; background: #fff; }
   .day-cell.empty { display: none; }
   .day-cell:last-child { border-bottom: none; }
 
-  .cell-content { flex-direction: row; align-items: flex-start; padding: 16px 14px; gap: 16px; overflow: visible; }
-  .day-header { flex-direction: column; align-items: center; justify-content: flex-start; width: 44px; border-right: 1px solid #e2e8f0; padding-right: 16px; flex-shrink: 0; }
-  .date-num { font-size: 18px; margin-bottom: 4px; }
-  .mobile-day-name { display: block; font-size: 13px; color: #64748b; font-weight: 600; }
-  .detail-icon { display: none; } /* 모바일에서는 생략 */
+  .cell-content { flex-direction: row; align-items: center; padding: 12px 16px; gap: 16px; overflow: visible; }
+  .day-header { flex-direction: row; align-items: center; width: 60px; border-right: 1px solid #f1f5f9; padding-right: 12px; flex-shrink: 0; }
+  .date-group { flex-direction: column; align-items: center; gap: 2px; width: 100%;}
+  .date-num { font-size: 16px; }
+  .mobile-day-name { display: block; font-size: 12px; color: #64748b; font-weight: 600; }
+  .detail-icon { display: none; }
 
-  .summary-container { flex-direction: row; flex-wrap: wrap; margin-top: 0; padding-top: 2px; }
-  .summary-badge { padding: 4px 8px; font-size: 12px; }
-  .empty-cell-hint { justify-content: flex-start; }
+  .summary-container { flex-direction: row; flex-wrap: wrap; margin-top: 0; padding: 0; overflow: visible; align-items: center;}
+  .summary-badge { padding: 4px 8px; font-size: 11px; }
+  .empty-cell-hint { justify-content: flex-start; font-size: 13px; margin-left: 10px;}
 }
 
 @media screen and (max-width: 480px) {
-  .modal-card { width: 90%; }
-  .type-selector { grid-template-columns: repeat(2, 1fr); gap: 6px; }
-  .option-card { font-size: 12px; padding: 10px 0; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .type-selector { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .option-card { padding: 10px 0; }
 }
 </style>

@@ -13,13 +13,13 @@ const allCodeData = {
   '04001': {
     name: '지급 항목',
     icon: 'mdi-plus-circle',
-    color: '#10b981',
+    color: '#10b981', // 그린
     codes: ref([]),
   },
   '04002': {
     name: '공제 항목',
     icon: 'mdi-minus-circle',
-    color: '#ef4444',
+    color: '#ef4444', // 레드
     codes: ref([]),
   },
 };
@@ -243,7 +243,6 @@ onMounted(() => {
 
 <template>
   <div class="payroll-settings-page">
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">
@@ -258,32 +257,12 @@ onMounted(() => {
           <span>새로고침</span>
         </button>
         <button @click="saveSubGroup" class="btn-save-all">
-          <i class="mdi mdi-content-save"></i>
+          <i class="mdi mdi-content-save-outline"></i>
           <span>전체 저장</span>
         </button>
       </div>
     </div>
 
-    <!-- 통계 카드 -->
-    <!--div class="stats-grid">
-      <div
-          v-for="option in groupOptions"
-          :key="option.key"
-          :class="['stat-card', { active: selectedGroupKey === option.key }]"
-          :style="{ '--card-color': option.color }"
-          @click="selectedGroupKey = option.key"
-      >
-        <div class="stat-icon">
-          <i :class="['mdi', option.icon]"></i>
-        </div>
-        <div class="stat-content">
-          <span class="stat-label">{{ option.name }}</span>
-          <span class="stat-value">{{ allCodeData[option.key].codes.value.length }}</span>
-        </div>
-      </div>
-    </div-->
-
-    <!-- 필터 패널 -->
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
@@ -314,7 +293,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 현재 선택 정보 -->
       <div class="selection-info" v-if="currentGroupInfo">
         <div class="info-badge">
           <i class="mdi mdi-information-outline"></i>
@@ -325,13 +303,12 @@ onMounted(() => {
           <span>총 <strong>{{ currentGroupInfo.count }}</strong>개 항목</span>
         </div>
         <div class="active-badge">
-          <i class="mdi mdi-check-circle"></i>
+          <i class="mdi mdi-check-circle-outline"></i>
           <span>활성 <strong>{{ currentGroupInfo.activeCount }}</strong>개</span>
         </div>
       </div>
     </div>
 
-    <!-- 테이블 카드 -->
     <div class="table-card">
       <div class="table-wrapper">
         <table class="data-table">
@@ -361,28 +338,27 @@ onMounted(() => {
                 <span>비과세한도</span>
               </div>
             </th>
-            <th style="width: 50px;">
+            <th style="width: 80px;">
               <div class="th-content">
                 <i class="mdi mdi-sort-variant"></i>
                 <span>순서</span>
               </div>
             </th>
-            <th style="width: 140px;">
+            <th style="width: 120px;">
               <div class="th-content">
                 <i class="mdi mdi-check-circle-outline"></i>
                 <span>사용 여부</span>
               </div>
             </th>
-            <th class="text-center" style="width: 100px;">
-              <div class="th-content">
-                <i class="mdi mdi-cog"></i>
+            <th class="text-center" style="width: 140px;">
+              <div class="th-content justify-center">
+                <i class="mdi mdi-cog-outline"></i>
                 <span>관리</span>
               </div>
             </th>
           </tr>
           </thead>
           <tbody>
-          <!-- 기존 데이터 행 -->
           <tr v-for="(code, index) in currentCodeList" :key="code.id" class="data-row">
             <td class="text-center">
               <span class="row-number">{{ index + 1 }}</span>
@@ -420,10 +396,11 @@ onMounted(() => {
                 </div>
               </template>
               <template v-else>
-                <span>{{ code.tax_free }} 원</span>
+                <span class="tax-display">{{ Number(code.tax_free).toLocaleString() }} 원</span>
               </template>
             </td>
-            <td>
+
+            <td class="text-center">
               <template v-if="code.isEditing">
                 <input
                     type="number"
@@ -436,6 +413,7 @@ onMounted(() => {
                 <span class="sort-number">{{ code.sort }}</span>
               </template>
             </td>
+
             <td>
               <template v-if="code.isEditing">
                 <select v-model="code.useFl" class="status-select">
@@ -445,7 +423,7 @@ onMounted(() => {
               </template>
               <template v-else>
                   <span :class="['status-badge', code.useFl === 'Y' ? 'status-active' : 'status-inactive']">
-                    <i :class="['mdi', code.useFl === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+                    <i :class="['mdi', code.useFl === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
                     {{ code.useFl === 'Y' ? '사용' : '사용안함' }}
                   </span>
               </template>
@@ -455,7 +433,7 @@ onMounted(() => {
               <div class="action-buttons">
                 <template v-if="code.isEditing">
                   <button @click="saveCode(code)" class="btn-action btn-save">
-                    <i class="mdi mdi-content-save"></i>
+                    <i class="mdi mdi-content-save-outline"></i>
                     <span>저장</span>
                   </button>
                   <button @click="cancelEdit(code)" class="btn-action btn-cancel">
@@ -469,7 +447,7 @@ onMounted(() => {
                       class="btn-action btn-edit"
                       :disabled="!code.editFl"
                   >
-                    <i class="mdi mdi-pencil"></i>
+                    <i class="mdi mdi-pencil-outline"></i>
                     <span>수정</span>
                   </button>
                   <button
@@ -477,7 +455,7 @@ onMounted(() => {
                       class="btn-action btn-delete"
                       :disabled="code.deleteFl == 'N'"
                   >
-                    <i class="mdi mdi-delete"></i>
+                    <i class="mdi mdi-trash-can-outline"></i>
                     <span>삭제</span>
                   </button>
                 </template>
@@ -485,9 +463,8 @@ onMounted(() => {
             </td>
           </tr>
 
-          <!-- 데이터 없음 -->
           <tr v-if="currentCodeList.length === 0" class="empty-row">
-            <td :colspan="selectedGroupKey == '04001' ? 6 : 5">
+            <td :colspan="selectedGroupKey == '04001' ? 7 : 6">
               <div class="empty-state">
                 <i class="mdi mdi-folder-open-outline"></i>
                 <p>등록된 항목이 없습니다</p>
@@ -496,11 +473,10 @@ onMounted(() => {
             </td>
           </tr>
 
-          <!-- 추가 행 -->
           <tr class="add-row">
             <td class="text-center">
               <div class="add-icon">
-                <i class="mdi mdi-plus-circle"></i>
+                <i class="mdi mdi-plus-circle-outline"></i>
               </div>
             </td>
             <td>
@@ -527,7 +503,7 @@ onMounted(() => {
                     type="number"
                     v-model.number="newTaxFree"
                     placeholder="0"
-                    class="input-add"
+                    class="input-add text-right"
                     min="0"
                 />
                 <span class="tax-unit">원</span>
@@ -560,9 +536,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 안내 메시지 -->
     <div class="info-box">
-      <i class="mdi mdi-information"></i>
+      <i class="mdi mdi-information-outline"></i>
       <div class="info-content">
         <strong>기초 급여 정보 안내</strong>
         <ul>
@@ -580,9 +555,10 @@ onMounted(() => {
 /* Material Design Icons */
 @import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
 
-/* === 기본 레이아웃 === */
+/* === 전역 설정 === */
 .payroll-settings-page {
   padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* === 페이지 헤더 === */
@@ -590,739 +566,252 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
-.header-left {
-  flex: 1;
-}
+.header-left { flex: 1; }
 
 .page-title {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   color: #1e293b;
-  margin: 0 0 8px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-title i {
-  font-size: 32px;
-  color: #667eea;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.btn-refresh,
-.btn-save-all {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.btn-refresh {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
-
-.btn-refresh:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-save-all {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-}
-
-.btn-save-all:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
-}
-
-.btn-refresh i,
-.btn-save-all i {
-  font-size: 18px;
-}
-
-/* === 통계 카드 === */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-  margin-bottom: 28px;
-}
-
-.stat-card {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  cursor: pointer;
-  transition: all 0.3s;
-  position: relative;
-  overflow: hidden;
-  border: 2px solid transparent;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: var(--card-color);
-  transform: scaleY(0);
-  transition: transform 0.3s;
-}
-
-.stat-card:hover,
-.stat-card.active {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-  border-color: var(--card-color);
-}
-
-.stat-card.active::before {
-  transform: scaleY(1);
-}
-
-.stat-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
-  background: var(--card-color);
-  opacity: 0.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  flex-shrink: 0;
-}
-
-.stat-icon i {
-  font-size: 28px;
-  color: var(--card-color);
-  position: absolute;
-}
-
-.stat-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.stat-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--card-color);
-}
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.filter-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 200px;
-}
-
-.filter-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-}
-
-.filter-label i {
-  font-size: 16px;
-  color: #667eea;
-}
-
-.filter-select {
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #334155;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-select:hover {
-  border-color: #cbd5e1;
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.filter-spacer {
-  flex: 1;
-}
-
-/* 검색 박스 */
-.search-box {
+  margin: 0 0 6px 0;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  min-width: 320px;
-  transition: all 0.2s;
+  letter-spacing: -0.5px;
 }
 
-.search-box:focus-within {
-  background: white;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+.page-title i { font-size: 26px; color: #4f46e5; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
+
+.header-actions { display: flex; gap: 10px; }
+
+.btn-refresh, .btn-save-all {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
 }
 
-.search-box i {
-  font-size: 20px;
-  color: #94a3b8;
+.btn-refresh { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+
+.btn-save-all {
+  background-color: #10b981; color: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* 진한 그림자, 그라디언트 제거 */
 }
+.btn-save-all:hover { background-color: #059669; transform: translateY(-1px); }
+
+.btn-refresh i, .btn-save-all i { font-size: 18px; }
+
+/* === 필터 패널 === */
+.filter-panel {
+  background: white; border-radius: 12px; padding: 24px;
+  margin-bottom: 24px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.filter-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 200px; flex: 1; }
+
+.filter-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: #475569;
+}
+.filter-label i { font-size: 16px; color: #4f46e5; }
+
+.filter-select {
+  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 13px; color: #334155; background: white; cursor: pointer;
+  transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+.filter-select:hover { border-color: #cbd5e1; }
+.filter-select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+
+.filter-spacer { flex: 1; }
+
+/* 검색 박스 */
+.search-box {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 8px; min-width: 320px; height: 42px; box-sizing: border-box; transition: all 0.2s;
+}
+.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+.search-box i { font-size: 20px; color: #94a3b8; }
 
 .search-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  color: #334155;
-  outline: none;
+  flex: 1; border: none; background: transparent;
+  font-size: 13px; color: #334155; outline: none;
 }
-
-.search-input::placeholder {
-  color: #94a3b8;
-}
+.search-input::placeholder { color: #94a3b8; }
 
 .search-clear {
-  background: none;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.2s;
+  background: none; border: none; color: #94a3b8; cursor: pointer;
+  padding: 4px; border-radius: 4px; transition: all 0.2s;
 }
+.search-clear:hover { background: #e2e8f0; color: #64748b; }
 
-.search-clear:hover {
-  background: #e2e8f0;
-  color: #64748b;
-}
-
-/* 선택 정보 */
+/* 선택 정보 배지 */
 .selection-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid #f1f5f9;
+  display: flex; align-items: center; gap: 12px;
+  padding-top: 16px; border-top: 1px solid #f1f5f9; flex-wrap: wrap;
 }
-
-.info-badge,
-.count-badge,
-.active-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+.info-badge, .count-badge, .active-badge {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap;
 }
-
-.info-badge {
-  background: #eff6ff;
-  color: #1e40af;
-}
-
-.count-badge {
-  background: #f0fdf4;
-  color: #166534;
-}
-
-.active-badge {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.info-badge i,
-.count-badge i,
-.active-badge i {
-  font-size: 16px;
-}
+.info-badge { background-color: #eff6ff; color: #1e40af; }
+.count-badge { background-color: #f1f5f9; color: #475569; }
+.active-badge { background-color: #ecfdf5; color: #065f46; }
+.info-badge i, .count-badge i, .active-badge i { font-size: 15px; }
 
 /* === 테이블 카드 === */
 .table-card {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-  margin-bottom: 24px;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; margin-bottom: 24px;
 }
 
-.table-wrapper {
-  overflow-x: auto;
-}
+.table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrapper::-webkit-scrollbar { height: 8px; }
+.table-wrapper::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 
 /* === 데이터 테이블 === */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-}
+.data-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px;}
 
-.data-table thead {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
+.data-table thead { background-color: #6d28d9; } /* 솔리드 퍼플 */
 
 .data-table th {
-  padding: 16px 20px;
-  text-align: left;
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  padding: 14px 16px; text-align: left; font-size: 12px;
+  font-weight: 600; color: white; white-space: nowrap;
 }
 
-.th-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.th-content i {
-  font-size: 16px;
-  opacity: 0.9;
-}
+.th-content { display: flex; align-items: center; gap: 6px; }
+.th-content.justify-center { justify-content: center; }
+.th-content i { font-size: 14px; opacity: 0.8; }
 
 .data-table td {
-  padding: 16px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  font-size: 14px;
-  color: #334155;
-  vertical-align: middle;
+  padding: 12px 16px; border-bottom: 1px solid #e2e8f0;
+  color: #334155; vertical-align: middle;
 }
 
-.data-row {
-  transition: background 0.2s;
-}
+.data-row { transition: background 0.2s; }
+.data-row:hover { background-color: #f8fafc; }
 
-.data-row:hover {
-  background: #f8fafc;
-}
+.text-center { text-align: center !important; }
+.text-right { text-align: right; }
 
-.text-center {
-  text-align: center;
-}
-
-/* 행 번호 */
+/* 행 번호 및 코드 표시 */
 .row-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: #f1f5f9;
-  border-radius: 8px;
-  font-weight: 600;
-  color: #64748b;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; background: #f1f5f9; border-radius: 6px;
+  font-weight: 600; color: #64748b; font-size: 12px;
 }
-
-/* 코드 표시 */
 .code-number {
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  color: #667eea;
-  background: #eff6ff;
-  padding: 6px 12px;
-  border-radius: 6px;
-  display: inline-block;
+  font-family: 'Courier New', monospace; font-weight: 600;
+  color: #4f46e5; background: #eff6ff; padding: 4px 10px; border-radius: 6px; font-size: 12px;
 }
+.code-name { font-weight: 500; color: #1e293b; }
 
 /* 비과세 입력 */
-.tax-input-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
+.tax-input-wrapper { display: flex; align-items: center; gap: 6px; }
 .input-tax {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #334155;
-  text-align: right;
-  font-family: 'Courier New', monospace;
+  width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
+  font-size: 13px; color: #334155; text-align: right; transition: all 0.2s; box-sizing: border-box;
 }
-
-.input-tax:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.tax-unit {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
+.input-tax:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+.tax-unit { font-size: 12px; color: #64748b; font-weight: 500; }
+.tax-display { color: #475569; font-weight: 500; }
 
 /* 상태 배지 */
 .status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.status-new { background-color: #eff6ff; color: #1d4ed8; }
+.status-active { background-color: #d1fae5; color: #065f46; }
+.status-inactive { background-color: #f1f5f9; color: #475569; }
+.status-badge i { font-size: 13px; }
+
+/* 입력 필드 공통 */
+.input-edit, .input-add, .status-select {
+  width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
+  font-size: 13px; color: #334155; transition: all 0.2s; background: white; box-sizing: border-box;
+}
+.input-edit:focus, .input-add:focus, .status-select:focus {
+  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
-.status-new {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.status-badge i {
-  font-size: 14px;
-}
-
-/* 입력 필드 */
-.input-edit,
-.input-add {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #334155;
-  transition: all 0.2s;
-}
-
-.input-edit:focus,
-.input-add:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.input-add {
-  background: #f8fafc;
-}
-
-.input-add.disabled {
-  background: #f1f5f9;
-  color: #94a3b8;
-  cursor: not-allowed;
-}
-
-.status-select {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #334155;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.status-select:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
+.input-add.disabled { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; border-color: transparent; }
 
 /* 액션 버튼 */
-.action-buttons {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-}
-
-/* 액션 버튼 */
+.action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;}
 .btn-action {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; padding: 6px 10px;
+  border: none; border-radius: 6px; font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
+.btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-action i { font-size: 14px; }
 
-.btn-action:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
+.btn-cancel { background-color: #64748b; color: white; }
+.btn-cancel:hover { background-color: #475569; }
 
-.btn-action i {
-  font-size: 16px;
-}
+.btn-edit { background-color: #4f46e5; color: white; }
+.btn-edit:hover:not(:disabled) { background-color: #4338ca; }
 
-.btn-cancel {
-  background: #6b7280;
-  color: white;
-}
+.btn-delete { background-color: #ef4444; color: white; }
+.btn-delete:hover:not(:disabled) { background-color: #dc2626; }
 
-.btn-cancel:hover {
-  background: #4b5563;
-}
-
-.btn-edit {
-  background: #667eea;
-  color: white;
-}
-
-.btn-edit:hover:not(:disabled) {
-  background: #5568d3;
-  transform: translateY(-1px);
-}
-
-.btn-delete {
-  background: #ef4444;
-  color: white;
-}
-
-.btn-delete:hover:not(:disabled) {
-  background: #dc2626;
-  transform: translateY(-1px);
-}
-
-.btn-save {
-  background: #10b981;
-  color: white;
-}
-
-.btn-save:hover:not(:disabled) {
-  background: #059669;
-  transform: translateY(-1px);
-}
+.btn-save { background-color: #10b981; color: white; }
+.btn-save:hover:not(:disabled) { background-color: #059669; }
 
 /* 추가 행 */
-.add-row {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
-  border-top: 2px dashed #bbf7d0;
-}
-
-.add-row:hover {
-  background: linear-gradient(135deg, #dcfce7 0%, #d1fae5 100%);
-}
-
-.add-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.add-icon i {
-  font-size: 24px;
-  color: #10b981;
-}
+.add-row { background-color: #f0fdf4; border-top: 1px solid #bbf7d0; }
+.add-row:hover { background-color: #dcfce7; }
+.add-icon { display: flex; align-items: center; justify-content: center; }
+.add-icon i { font-size: 22px; color: #10b981; }
 
 .btn-add-submit {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 8px 14px; background-color: #10b981; border: none; border-radius: 6px;
+  color: white; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%;
 }
-
-.btn-add-submit:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-}
-
-.btn-add-submit i {
-  font-size: 16px;
-}
+.btn-add-submit:hover { transform: translateY(-1px); background-color: #059669; }
+.btn-add-submit i { font-size: 15px; }
 
 /* 빈 상태 */
-.empty-row {
-  background: #fafafa;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: #94a3b8;
-}
-
-.empty-state i {
-  font-size: 64px;
-  margin-bottom: 16px;
-  opacity: 0.3;
-}
-
-.empty-state p {
-  font-size: 16px;
-  font-weight: 600;
-  color: #64748b;
-  margin: 0 0 8px 0;
-}
-
-.empty-state span {
-  font-size: 13px;
-}
+.empty-row { background: white; }
+.empty-state { text-align: center; padding: 50px 20px; color: #94a3b8; }
+.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1;}
+.empty-state p { font-size: 15px; font-weight: 600; color: #475569; margin: 0 0 6px 0; }
+.empty-state span { font-size: 13px; }
 
 /* === 안내 박스 === */
 .info-box {
-  display: flex;
-  gap: 16px;
-  padding: 20px 24px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 12px;
-  color: #1e40af;
+  display: flex; gap: 14px; padding: 20px;
+  background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1e40af;
 }
+.info-box i { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+.info-content { flex: 1; }
+.info-content strong { display: block; font-size: 14px; margin-bottom: 8px; font-weight: 700; }
+.info-content ul { margin: 0; padding-left: 20px; }
+.info-content li { font-size: 12px; line-height: 1.6; margin-bottom: 4px; color: #1e3a8a; }
 
-.info-box i {
-  font-size: 24px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.info-content {
-  flex: 1;
-}
-
-.info-content strong {
-  display: block;
-  font-size: 15px;
-  margin-bottom: 10px;
-}
-
-.info-content ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.info-content li {
-  font-size: 13px;
-  line-height: 1.6;
-  margin-bottom: 6px;
-}
-
-.info-content li:last-child {
-  margin-bottom: 0;
-}
-
-/* === 반응형 === */
-@media (max-width: 1200px) {
-  .filter-row {
-    flex-wrap: wrap;
-  }
-
-  .filter-group {
-    min-width: 180px;
-  }
-
-  .search-box {
-    min-width: 100%;
-  }
+/* === 반응형 (Responsive) === */
+@media (max-width: 1024px) {
+  .search-box { flex: 1; min-width: 200px; }
 }
 
 @media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
+  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
+  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
+  .btn-refresh, .btn-save-all { flex: 1; justify-content: center; }
 
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-  }
+  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
+  .filter-group, .search-box { width: 100%; min-width: 100%; }
+  .filter-spacer { display: none; }
 
-  .btn-refresh,
-  .btn-save-all {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .filter-row {
-    flex-direction: column;
-  }
-
-  .filter-group,
-  .search-box {
-    width: 100%;
-    min-width: auto;
-  }
-
-  .selection-info {
-    flex-direction: column;
-    align-items: stretch;
-  }
+  .selection-info { flex-direction: column; align-items: stretch; gap: 8px; }
 }
 </style>

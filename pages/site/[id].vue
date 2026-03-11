@@ -55,10 +55,10 @@ const statusOptions = ref(['준비 중', '운영 중', '계약 종료']);
 
 // 탭 목록
 const tabs = [
-  { id: 'info', name: '기본정보', icon: 'mdi-information' },
-  { id: 'contract', name: '계약정보', icon: 'mdi-file-document' },
-  { id: 'staff', name: '배치인원', icon: 'mdi-account-group' },
-  { id: 'memo', name: '특이사항', icon: 'mdi-note-text' }
+  { id: 'info', name: '기본정보', icon: 'mdi-information-outline' },
+  { id: 'contract', name: '계약정보', icon: 'mdi-file-document-outline' },
+  { id: 'staff', name: '배치인원', icon: 'mdi-account-group-outline' },
+  { id: 'memo', name: '특이사항', icon: 'mdi-note-text-outline' }
 ];
 
 const isAssignModalOpen = ref(false);
@@ -392,7 +392,6 @@ onMounted(() => {
 
 <template>
   <div class="site-detail-page">
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <button @click="goBack" class="btn-back">
@@ -400,7 +399,7 @@ onMounted(() => {
         </button>
         <div>
           <h1 class="page-title">
-            <i class="mdi mdi-office-building"></i>
+            <i class="mdi mdi-office-building-outline"></i>
             현장 상세정보
           </h1>
           <p class="page-subtitle">현장의 상세 정보를 확인하고 관리합니다</p>
@@ -409,11 +408,11 @@ onMounted(() => {
       <div class="header-actions">
         <template v-if="!isEditing">
           <button @click="toggleEdit" class="btn-edit">
-            <i class="mdi mdi-pencil"></i>
+            <i class="mdi mdi-pencil-outline"></i>
             <span>수정</span>
           </button>
           <button @click="deleteSite" class="btn-delete">
-            <i class="mdi mdi-delete"></i>
+            <i class="mdi mdi-trash-can-outline"></i>
             <span>삭제</span>
           </button>
         </template>
@@ -430,13 +429,12 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 프로필 카드 -->
     <div class="profile-card">
       <div class="profile-banner"></div>
       <div class="profile-content">
         <div class="profile-icon-section">
           <div class="profile-icon">
-            <i class="mdi mdi-office-building"></i>
+            <i class="mdi mdi-domain"></i>
           </div>
         </div>
 
@@ -448,9 +446,9 @@ onMounted(() => {
               site.status === '준비 중' ? 'status-pending' :
               'status-inactive']">
               <i :class="['mdi',
-                site.status === '운영 중' ? 'mdi-check-circle' :
-                site.status === '준비 중' ? 'mdi-clock' :
-                'mdi-close-circle']"></i>
+                site.status === '운영 중' ? 'mdi-check-circle-outline' :
+                site.status === '준비 중' ? 'mdi-clock-outline' :
+                'mdi-close-circle-outline']"></i>
               {{ site.status }}
             </span>
           </div>
@@ -461,11 +459,11 @@ onMounted(() => {
               <span>{{ site.siteId || '코드 없음' }}</span>
             </div>
             <div class="detail-item">
-              <i class="mdi mdi-tag"></i>
+              <i class="mdi mdi-tag-outline"></i>
               <span>{{ site.siteType || '-' }}</span>
             </div>
             <div class="detail-item">
-              <i class="mdi mdi-map-marker"></i>
+              <i class="mdi mdi-map-marker-outline"></i>
               <span>{{ site.addressMain || '-' }}</span>
             </div>
           </div>
@@ -473,7 +471,7 @@ onMounted(() => {
 
         <div class="profile-stats">
           <div class="stat-item">
-            <div class="stat-icon" style="--stat-color: #667eea;">
+            <div class="stat-icon" style="--stat-color: #4f46e5; --stat-bg: #eef2ff;">
               <i class="mdi mdi-ruler-square"></i>
             </div>
             <div class="stat-content">
@@ -482,7 +480,7 @@ onMounted(() => {
             </div>
           </div>
           <div class="stat-item">
-            <div class="stat-icon" style="--stat-color: #10b981;">
+            <div class="stat-icon" style="--stat-color: #10b981; --stat-bg: #ecfdf5;">
               <i class="mdi mdi-office-building-outline"></i>
             </div>
             <div class="stat-content">
@@ -491,8 +489,8 @@ onMounted(() => {
             </div>
           </div>
           <div class="stat-item">
-            <div class="stat-icon" style="--stat-color: #f59e0b;">
-              <i class="mdi mdi-account-group"></i>
+            <div class="stat-icon" style="--stat-color: #f59e0b; --stat-bg: #fffbeb;">
+              <i class="mdi mdi-account-group-outline"></i>
             </div>
             <div class="stat-content">
               <span class="stat-label">총 인원</span>
@@ -503,7 +501,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 탭 네비게이션 -->
     <div class="tabs-container">
       <div class="tabs-nav">
         <button
@@ -518,15 +515,12 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 탭 컨텐츠 -->
     <div class="tab-content">
-      <!-- 기본정보 탭 -->
       <div v-show="activeTab === 'info'" class="tab-panel">
         <div class="info-sections">
-          <!-- 현장 정보 -->
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-office-building"></i>
+              <i class="mdi mdi-domain"></i>
               <h3>현장 정보</h3>
             </div>
             <div class="info-grid">
@@ -633,10 +627,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 주소 정보 -->
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-map-marker"></i>
+              <i class="mdi mdi-map-marker-outline"></i>
               <h3>주소 정보</h3>
             </div>
             <div class="info-grid">
@@ -667,24 +660,12 @@ onMounted(() => {
                 />
                 <span v-else class="info-value">{{ site.addressMain }}</span>
               </div>
-              <!--div class="info-item full-width">
-                <label>상세 주소</label>
-                <input
-                    v-if="isEditing"
-                    type="text"
-                    v-model="site.addressDetail"
-                    class="info-input"
-                    ref="detailInput"
-                />
-                <span v-else class="info-value">{{ site.addressDetail || '-' }}</span>
-              </div-->
             </div>
           </div>
 
-          <!-- 담당자 정보 -->
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-account-tie"></i>
+              <i class="mdi mdi-account-tie-outline"></i>
               <h3>담당자 정보</h3>
             </div>
             <div class="info-grid">
@@ -733,7 +714,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 계약정보 탭 -->
       <div v-show="activeTab === 'contract'" class="tab-panel">
         <div v-if="isEditing" class="contract-actions-top">
           <button
@@ -758,7 +738,7 @@ onMounted(() => {
             <div class="contract-card-header">
               <div class="contract-title-row">
                 <span :class="['contract-badge', `badge-${group.category}`]">
-                  <i class="mdi mdi-briefcase"></i>
+                  <i class="mdi mdi-briefcase-outline"></i>
                   {{ group.category }}
                 </span>
                 <span v-if="getContractDuration(group)" class="contract-duration">
@@ -772,7 +752,7 @@ onMounted(() => {
                   @click="removeContractGroup(idx)"
                   class="btn-remove-small"
               >
-                <i class="mdi mdi-delete"></i>
+                <i class="mdi mdi-trash-can-outline"></i>
               </button>
             </div>
 
@@ -798,16 +778,6 @@ onMounted(() => {
                   />
                   <span v-else class="info-value">{{ group.contractEnd }}</span>
                 </div>
-                <!--div class="contract-info-item">
-                  <label>근무 일수</label>
-                  <input
-                      v-if="isEditing"
-                      type="number"
-                      v-model="group.workDays"
-                      class="info-input"
-                  />
-                  <span v-else class="info-value">{{ group.workDays }}일</span>
-                </div-->
                 <div class="contract-info-item full-width">
                   <label>근무 시간 및 형태</label>
                   <textarea
@@ -834,18 +804,17 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 배치인원 탭 -->
       <div v-show="activeTab === 'staff'" class="tab-panel">
         <div class="staff-overview">
           <div class="overview-card">
-            <i class="mdi mdi-account-group"></i>
+            <i class="mdi mdi-account-group-outline"></i>
             <div class="overview-content">
               <span class="overview-label">총 배치인원</span>
               <span class="overview-value">{{ totalStaff }}명</span>
             </div>
           </div>
           <div class="overview-card">
-            <i class="mdi mdi-file-document"></i>
+            <i class="mdi mdi-file-document-outline"></i>
             <div class="overview-content">
               <span class="overview-label">계약 수</span>
               <span class="overview-value">{{ contractGroups.length }}건</span>
@@ -862,7 +831,7 @@ onMounted(() => {
           <div v-for="(group, idx) in contractGroups" :key="idx" class="staff-contract-section">
             <div class="staff-section-header">
               <span :class="['contract-badge', `badge-${group.category}`]">
-                <i class="mdi mdi-briefcase"></i>
+                <i class="mdi mdi-briefcase-outline"></i>
                 {{ group.category }}
               </span>
               <span class="staff-count-badge">{{ getGroupStaffTotal(group) }}명</span>
@@ -891,7 +860,7 @@ onMounted(() => {
             <div v-if="group.staffList && group.staffList.length > 0" class="staff-members-grid">
               <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-member-card">
                 <div class="staff-member-info">
-                  <i class="mdi mdi-account"></i>
+                  <i class="mdi mdi-account-outline"></i>
                   <div class="staff-member-details">
                     <span class="staff-position">{{ staff.name }}</span>
                     <span class="staff-count">{{ staff.count }}명</span>
@@ -909,21 +878,20 @@ onMounted(() => {
             </div>
 
             <div v-else class="empty-staff">
-              <i class="mdi mdi-account-off"></i>
+              <i class="mdi mdi-account-off-outline"></i>
               <span>배치된 인원 없음</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 특이사항 탭 -->
       <div v-show="activeTab === 'memo'" class="tab-panel">
         <div v-if="bigoHistory.length > 0" class="memo-timeline">
           <div v-for="(item, idx) in bigoHistory" :key="idx" class="timeline-item">
             <div class="timeline-marker"></div>
             <div class="timeline-content">
               <div class="timeline-header">
-                <i class="mdi mdi-calendar"></i>
+                <i class="mdi mdi-calendar-outline"></i>
                 <span class="timeline-date">{{ item.regDt ? item.regDt.substring(0, 10) : '-' }}</span>
               </div>
               <p class="timeline-text">{{ item.bigo }}</p>
@@ -938,7 +906,7 @@ onMounted(() => {
 
         <div v-if="isEditing" class="memo-add-section">
           <label class="section-label">
-            <i class="mdi mdi-pencil"></i>
+            <i class="mdi mdi-pencil-outline"></i>
             새로운 메모 추가
           </label>
           <textarea
@@ -954,6 +922,22 @@ onMounted(() => {
 </template>
 
 <style scoped>
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+
+/* === 전역 공통 === */
+.site-detail-page {
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* === 페이지 헤더 === */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
 .header-left {
   display: flex;
   align-items: flex-start;
@@ -961,1001 +945,379 @@ onMounted(() => {
 }
 
 .btn-back {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  background: white; border: 1px solid #e2e8f0; color: #475569;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-
-.btn-back:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-back i {
-  font-size: 24px;
-}
+.btn-back:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+.btn-back i { font-size: 20px; }
 
 .page-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 8px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: 24px; font-weight: 700; color: #1e293b;
+  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px;
+  letter-spacing: -0.5px;
+}
+.page-title i { font-size: 26px; color: #4f46e5; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
+
+.header-actions { display: flex; gap: 10px; }
+
+.btn-edit, .btn-delete, .btn-cancel, .btn-save {
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
+  border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
 
-.page-title i {
-  font-size: 32px;
-  color: #667eea;
-}
+.btn-edit { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-edit:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
 
-.page-subtitle {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0;
-}
+.btn-delete { background: white; border: 1px solid #fee2e2; color: #dc2626; }
+.btn-delete:hover { background: #fef2f2; border-color: #fecaca; }
 
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
+.btn-cancel { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-cancel:hover { background: #f8fafc; color: #1e293b; }
 
-.btn-edit,
-.btn-delete,
-.btn-cancel,
-.btn-save {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
+.btn-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-save:hover { background-color: #059669; transform: translateY(-1px); }
 
-.btn-edit {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
-
-.btn-edit:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-delete {
-  background: white;
-  border: 1px solid #fee2e2;
-  color: #dc2626;
-}
-
-.btn-delete:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-}
-
-.btn-cancel {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
-
-.btn-cancel:hover {
-  background: #f8fafc;
-}
-
-.btn-save {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-}
-
-.btn-save:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
-}
-
-.btn-edit i,
-.btn-delete i,
-.btn-cancel i,
-.btn-save i {
-  font-size: 18px;
-}
+.btn-edit i, .btn-delete i, .btn-cancel i, .btn-save i { font-size: 16px; }
 
 /* === 프로필 카드 === */
 .profile-card {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-  margin-bottom: 28px;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; margin-bottom: 24px;
 }
 
 .profile-banner {
-  height: 120px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 100px;
+  background-color: #6d28d9; /* 솔리드 퍼플/인디고 혼합 톤 대신 단색 */
 }
 
 .profile-content {
-  padding: 0 32px 32px;
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
+  padding: 0 24px 24px; display: flex; gap: 24px; align-items: flex-start;
 }
 
 .profile-icon-section {
-  position: relative;
-  margin-top: -60px;
+  position: relative; margin-top: -40px;
 }
 
 .profile-icon {
-  width: 120px;
-  height: 120px;
-  border-radius: 20px;
-  background: white;
-  border: 4px solid white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 100px; height: 100px; border-radius: 16px;
+  background-color: #eef2ff; border: 4px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex; align-items: center; justify-content: center;
 }
+.profile-icon i { font-size: 50px; color: #4f46e5; }
 
-.profile-icon i {
-  font-size: 64px;
-  color: white;
-}
+.profile-info { flex: 1; padding-top: 12px; }
 
-.profile-info {
-  flex: 1;
-  padding-top: 8px;
-}
-
-.profile-main {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.profile-name {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.profile-main { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.profile-name { font-size: 24px; font-weight: 700; color: #1e293b; margin: 0; }
 
 .status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  border-radius: 6px; font-size: 12px; font-weight: 600; color: white;
 }
+.status-badge i { font-size: 14px; }
+.status-active { background-color: #10b981; }
+.status-pending { background-color: #f59e0b; }
+.status-inactive { background-color: #64748b; }
 
-.status-badge i {
-  font-size: 16px;
-}
+.profile-details { display: flex; flex-wrap: wrap; gap: 16px; }
+.detail-item { display: flex; align-items: center; gap: 6px; color: #475569; font-size: 13px; font-weight: 500; }
+.detail-item i { font-size: 16px; color: #94a3b8; }
 
-.status-active {
-  background: #10b981;
-}
-
-.status-pending {
-  background: #f59e0b;
-}
-
-.status-inactive {
-  background: #64748b;
-}
-
-.profile-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-}
-
-.detail-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.detail-item i {
-  font-size: 18px;
-  color: #94a3b8;
-}
-
-.profile-stats {
-  display: flex;
-  gap: 24px;
-  padding-top: 8px;
-}
-
-.stat-item {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
+.profile-stats { display: flex; gap: 20px; padding-top: 12px; }
+.stat-item { display: flex; gap: 10px; align-items: center; }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: var(--stat-color);
-  opacity: 0.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  flex-shrink: 0;
+  width: 44px; height: 44px; border-radius: 10px;
+  background-color: var(--stat-bg, #f1f5f9);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
+.stat-icon i { font-size: 20px; color: var(--stat-color); }
 
-.stat-icon i {
-  font-size: 24px;
-  color: var(--stat-color);
-  position: absolute;
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.stat-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-}
+.stat-content { display: flex; flex-direction: column; gap: 2px; }
+.stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
+.stat-value { font-size: 14px; font-weight: 700; color: #1e293b; }
 
 /* === 탭 === */
 .tabs-container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  margin-bottom: 28px;
-  overflow: hidden;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); margin-bottom: 24px; overflow: hidden;
 }
 
-.tabs-nav {
-  display: flex;
-  border-bottom: 2px solid #f1f5f9;
-}
+.tabs-nav { display: flex; border-bottom: 1px solid #f1f5f9; }
 
 .tab-button {
-  flex: 1;
-  padding: 16px 24px;
-  background: transparent;
-  border: none;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: all 0.2s;
-  position: relative;
+  flex: 1; padding: 14px 20px; background: transparent; border: none;
+  color: #64748b; font-size: 13px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s; position: relative; outline: none;
 }
-
-.tab-button i {
-  font-size: 18px;
-}
-
-.tab-button:hover {
-  background: #f8fafc;
-  color: #334155;
-}
-
-.tab-button.active {
-  color: #667eea;
-}
-
+.tab-button i { font-size: 16px; }
+.tab-button:hover { background: #f8fafc; color: #334155; }
+.tab-button.active { color: #4f46e5; background: white; }
 .tab-button.active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+  height: 2px; background-color: #4f46e5;
 }
 
 /* === 탭 컨텐츠 === */
 .tab-content {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 32px;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); padding: 24px;
 }
-
-.tab-panel {
-  animation: fadeIn 0.3s;
-}
+.tab-panel { animation: fadeIn 0.3s; }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 /* === 정보 섹션 === */
-.info-sections {
-  display: grid;
-  gap: 24px;
-}
-
+.info-sections { display: grid; gap: 20px; }
 .info-section {
-  border: 1px solid #f1f5f9;
-  border-radius: 12px;
-  padding: 24px;
-  background: #fafbfc;
+  border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; background: white;
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #f1f5f9;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 20px;
+  padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;
+}
+.section-header i { font-size: 20px; color: #4f46e5; }
+.section-header h3 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0; }
+
+.info-grid, .contract-info-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;
 }
 
-.section-header i {
-  font-size: 24px;
-  color: #667eea;
+.info-item, .contract-info-item { display: flex; flex-direction: column; gap: 6px; }
+.info-item.full-width, .contract-info-item.full-width { grid-column: 1 / -1; }
+
+.info-item label, .contract-info-item label, .section-label {
+  font-size: 12px; font-weight: 600; color: #64748b;
 }
 
-.section-header h3 {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.section-label { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.section-label i { font-size: 16px; color: #4f46e5; }
 
-.info-grid,
-.contract-info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-.info-item,
-.contract-info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.info-item.full-width,
-.contract-info-item.full-width {
-  grid-column: 1 / -1;
-}
-
-.info-item label,
-.contract-info-item label,
-.section-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.section-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.section-label i {
-  font-size: 16px;
-  color: #667eea;
-}
-
-.info-value {
-  font-size: 15px;
-  color: #1e293b;
-  padding: 10px 0;
-}
+.info-value { font-size: 14px; color: #1e293b; padding: 8px 0; font-weight: 500; }
 
 .text-green { color: #10b981; font-weight: 600; }
 .text-orange { color: #f59e0b; font-weight: 600; }
 .text-gray { color: #64748b; }
 
-.info-input,
-.info-select,
-.info-textarea {
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #334155;
-  background: white;
-  transition: all 0.2s;
+.info-input, .info-select, .info-textarea {
+  padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 13px; color: #334155; background: white; transition: all 0.2s;
 }
 
-.info-input:focus,
-.info-select:focus,
-.info-textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+.info-input:focus, .info-select:focus, .info-textarea:focus {
+  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
-.info-textarea {
-  resize: vertical;
-  font-family: inherit;
-}
+.info-textarea { resize: vertical; font-family: inherit; }
 
-.area-input {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.area-input .info-input {
-  flex: 1;
-}
+.area-input { display: flex; gap: 12px; align-items: center; }
+.area-input .info-input { flex: 1; }
 
 .checkbox-inline-small {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #ef4444;
-  font-weight: 600;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  color: #dc2626; font-weight: 600; white-space: nowrap; cursor: pointer;
 }
+.checkbox-inline-small input { width: 16px; height: 16px; cursor: pointer; }
 
-.checkbox-inline-small input {
-  width: 16px;
-  height: 16px;
-}
-
-.address-search-group {
-  display: flex;
-  gap: 12px;
-}
-
-.postal-input {
-  width: 140px;
-}
+.address-search-group { display: flex; gap: 10px; }
+.postal-input { width: 120px; background-color: #f8fafc; }
 
 .btn-search-small {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: 6px; padding: 10px 16px;
+  background-color: #4f46e5; border: none; border-radius: 8px;
+  color: white; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
-
-.btn-search-small i {
-  font-size: 16px;
-}
+.btn-search-small:hover { background-color: #4338ca; transform: translateY(-1px); }
+.btn-search-small i { font-size: 14px; }
 
 /* 배지 */
 .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  margin-left: 8px;
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px;
+  border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 8px;
 }
-
-.badge-red {
-  background: #fee2e2;
-  color: #991b1b;
-}
+.badge-red { background-color: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 
 /* === 계약 탭 === */
-.contract-actions-top {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
+.contract-actions-top { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
 
 .btn-add-contract-small {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: white;
-  border: 2px dashed #cbd5e1;
-  border-radius: 8px;
-  color: #667eea;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  background: white; border: 1px dashed #94a3b8; border-radius: 6px;
+  color: #475569; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;
 }
+.btn-add-contract-small:hover { background: #f8fafc; border-color: #4f46e5; color: #4f46e5; }
+.btn-add-contract-small i { font-size: 14px; }
 
-.btn-add-contract-small:hover {
-  background: #f8fafc;
-  border-color: #667eea;
-}
-
-.btn-add-contract-small i {
-  font-size: 16px;
-}
-
-.contract-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
+.contract-list { display: flex; flex-direction: column; gap: 20px; }
 
 .contract-card-detail {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  overflow: hidden;
-  background: white;
+  border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: white;
 }
 
 .contract-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
 }
 
-.contract-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.contract-title-row { display: flex; align-items: center; gap: 12px; }
 
 .contract-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  border-radius: 6px; font-size: 12px; font-weight: 600; color: white;
 }
+.contract-badge i { font-size: 14px; }
 
-.contract-badge i {
-  font-size: 16px;
-}
-
-.badge-경비 { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-.badge-미화 { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); }
-.badge-시설 { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+.badge-경비 { background-color: #3b82f6; }
+.badge-미화 { background-color: #ec4899; }
+.badge-시설 { background-color: #10b981; }
 
 .contract-duration {
-  font-size: 13px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; font-weight: 500;
 }
-
-.contract-duration i {
-  font-size: 16px;
-}
+.contract-duration i { font-size: 14px; }
 
 .btn-remove-small {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: #fef2f2;
-  border: none;
-  color: #dc2626;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; background: #fef2f2; border: none;
+  color: #dc2626; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
+.btn-remove-small:hover { background: #fee2e2; }
+.btn-remove-small i { font-size: 14px; }
 
-.btn-remove-small:hover {
-  background: #fee2e2;
-}
-
-.btn-remove-small i {
-  font-size: 16px;
-}
-
-.contract-card-body {
-  padding: 20px;
-}
+.contract-card-body { padding: 20px; }
 
 /* === 배치인원 탭 === */
 .staff-overview {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 28px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px; margin-bottom: 24px;
 }
 
 .overview-card {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  padding: 20px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  display: flex; gap: 16px; align-items: center; padding: 20px;
+  background-color: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;
 }
+.overview-card i { font-size: 32px; color: #4f46e5; }
+.overview-content { display: flex; flex-direction: column; gap: 2px; }
+.overview-label { font-size: 12px; color: #64748b; font-weight: 500; }
+.overview-value { font-size: 20px; font-weight: 700; color: #1e293b; }
 
-.overview-card i {
-  font-size: 40px;
-  color: #667eea;
-}
-
-.overview-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.overview-label {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.overview-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.staff-by-contract {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
+.staff-by-contract { display: flex; flex-direction: column; gap: 20px; }
 .staff-contract-section {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 20px;
-  background: #fafbfc;
+  border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; background: white;
 }
-
 .staff-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #e2e8f0;
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;
 }
-
 .staff-count-badge {
-  padding: 6px 12px;
-  background: #eff6ff;
-  color: #1e40af;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 700;
+  padding: 4px 10px; background-color: #f1f5f9; color: #475569;
+  border-radius: 6px; font-size: 12px; font-weight: 700;
 }
 
-.staff-add-section {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  align-items: center;
-}
-
-.staff-position-select {
-  flex: 1;
-}
-
-.staff-count-input {
-  width: 100px;
-}
+.staff-add-section { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+.staff-position-select { flex: 1; }
+.staff-count-input { width: 80px; }
 
 .btn-add-staff-small {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; padding: 10px 14px;
+  background-color: #10b981; border: none; border-radius: 8px; color: white;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
-
-.btn-add-staff-small i {
-  font-size: 16px;
-}
+.btn-add-staff-small:hover { background-color: #059669; }
 
 .staff-members-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
 }
-
 .staff-member-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
 }
-
-.staff-member-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.staff-member-info i {
-  font-size: 24px;
-  color: #667eea;
-}
-
-.staff-member-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.staff-position {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.staff-count {
-  font-size: 12px;
-  color: #64748b;
-}
+.staff-member-info { display: flex; align-items: center; gap: 10px; flex: 1; }
+.staff-member-info i { font-size: 20px; color: #4f46e5; }
+.staff-member-details { display: flex; flex-direction: column; gap: 2px; }
+.staff-position { font-size: 13px; font-weight: 600; color: #1e293b; }
+.staff-count { font-size: 11px; color: #64748b; }
 
 .btn-remove-staff-small {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: #fef2f2;
-  border: none;
-  color: #dc2626;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; background: #fef2f2;
+  border: none; color: #dc2626; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
+.btn-remove-staff-small:hover { background: #fee2e2; }
+.btn-remove-staff-small i { font-size: 14px; }
 
-.btn-remove-staff-small:hover {
-  background: #fee2e2;
-}
-
-.btn-remove-staff-small i {
-  font-size: 16px;
-}
-
-.empty-staff {
-  text-align: center;
-  padding: 40px 20px;
-  color: #94a3b8;
-  font-size: 14px;
-}
-
-.empty-staff i {
-  font-size: 48px;
-  display: block;
-  margin-bottom: 12px;
-  opacity: 0.3;
-}
+.empty-staff { text-align: center; padding: 30px 20px; color: #94a3b8; font-size: 13px; }
+.empty-staff i { font-size: 32px; display: block; margin-bottom: 8px; opacity: 0.5; }
 
 /* === 특이사항 탭 === */
 .memo-timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  position: relative;
-  padding-left: 32px;
-  margin-bottom: 24px;
+  display: flex; flex-direction: column; gap: 20px; position: relative;
+  padding-left: 28px; margin-bottom: 24px;
 }
-
 .memo-timeline::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  background: #e2e8f0;
+  content: ''; position: absolute; left: 8px; top: 8px; bottom: 8px; width: 2px; background: #e2e8f0;
 }
-
-.timeline-item {
-  position: relative;
-}
-
+.timeline-item { position: relative; }
 .timeline-marker {
-  position: absolute;
-  left: -28px;
-  top: 4px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #667eea;
-  border: 3px solid white;
-  box-shadow: 0 0 0 2px #e2e8f0;
+  position: absolute; left: -25px; top: 4px; width: 10px; height: 10px;
+  border-radius: 50%; background-color: #4f46e5; border: 3px solid white; box-shadow: 0 0 0 1px #e2e8f0;
 }
-
 .timeline-content {
-  background: #fafbfc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 16px;
+  background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px;
 }
-
 .timeline-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 600;
+  display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #64748b; font-size: 12px; font-weight: 600;
 }
-
-.timeline-header i {
-  font-size: 16px;
-}
-
-.timeline-date {
-  color: #94a3b8;
-}
-
-.timeline-text {
-  font-size: 14px;
-  color: #334155;
-  line-height: 1.6;
-  margin: 0;
-  white-space: pre-wrap;
-}
+.timeline-header i { font-size: 14px; }
+.timeline-date { color: #94a3b8; }
+.timeline-text { font-size: 13px; color: #334155; line-height: 1.6; margin: 0; white-space: pre-wrap; }
 
 .memo-add-section {
-  padding: 20px;
-  background: #f8fafc;
-  border-radius: 10px;
-  border: 2px dashed #cbd5e1;
+  padding: 20px; background: #f8fafc; border-radius: 10px; border: 1px dashed #cbd5e1;
 }
 
 /* === 빈 상태 === */
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-  color: #94a3b8;
-}
-
-.empty-state i {
-  font-size: 64px;
-  margin-bottom: 16px;
-  opacity: 0.3;
-}
-
-.empty-state p {
-  font-size: 16px;
-  font-weight: 600;
-  color: #64748b;
-  margin: 0;
-}
+.empty-state { text-align: center; padding: 50px 20px; color: #94a3b8; }
+.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1; }
+.empty-state p { font-size: 15px; font-weight: 600; color: #475569; margin: 0; }
 
 /* === 반응형 === */
 @media (max-width: 1024px) {
-  .profile-content {
-    flex-direction: column;
-  }
-
-  .profile-stats {
-    flex-direction: column;
-  }
+  .profile-content { flex-direction: column; gap: 20px; }
+  .profile-icon-section { margin-top: -50px; }
+  .profile-stats { flex-direction: column; width: 100%; gap: 12px; padding-top: 0; }
 }
 
 @media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
+  .page-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
+  .btn-edit, .btn-delete, .btn-cancel, .btn-save { flex: 1; justify-content: center; }
 
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-  }
+  .tabs-nav { flex-wrap: wrap; }
+  .tab-button { flex: 1 1 50%; border-bottom: 1px solid #f1f5f9; }
+  .tab-button.active::after { bottom: 0; }
 
-  .btn-edit,
-  .btn-delete,
-  .btn-cancel,
-  .btn-save {
-    width: 100%;
-    justify-content: center;
-  }
+  .info-grid, .contract-info-grid { grid-template-columns: 1fr; }
+  .tab-content { padding: 16px; }
+  .info-section { padding: 16px; }
+  .profile-details { flex-direction: column; gap: 10px; }
 
-  .tabs-nav {
-    flex-direction: column;
-  }
+  .address-search-group { flex-direction: column; }
+  .postal-input { width: 100%; }
+  .btn-search-small { width: 100%; justify-content: center; }
 
-  .tab-button.active::after {
-    left: 0;
-    right: auto;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    height: 100%;
-  }
-
-  .info-grid,
-  .contract-info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-stats {
-    width: 100%;
-  }
-
-  .address-search-group {
-    flex-direction: column;
-  }
-
-  .postal-input {
-    width: 100%;
-  }
-
-  .btn-search-small {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .staff-add-section {
-    flex-direction: column;
-  }
-
-  .staff-position-select,
-  .staff-count-input {
-    width: 100%;
-  }
-
-  .staff-members-grid {
-    grid-template-columns: 1fr;
-  }
+  .staff-add-section { flex-direction: column; align-items: stretch; }
+  .staff-count-input { width: 100%; }
+  .btn-add-staff-small { justify-content: center; }
+  .staff-members-grid { grid-template-columns: 1fr; }
 }
 </style>

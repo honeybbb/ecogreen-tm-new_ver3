@@ -12,6 +12,7 @@ const endDate = ref('');
 const orderCount = ref(0);
 const offCount = ref(0);
 
+// === [디자인 변경] 기존의 고유 포인트 색상들을 플랫하게 복원 ===
 const stats = ref([
   {
     id:'site',
@@ -21,8 +22,8 @@ const stats = ref([
     icon: 'mdi-office-building',
     change: '+1',
     changeText: '지난달 대비',
-    color: '#667eea',
-    bgColor: 'rgba(102, 126, 234, 0.1)'
+    color: '#667eea', // 기존 보라색 복원 (그라디언트 없이 사용)
+    bgColor: '#eef2ff'  // 부드러운 배경색
   },
   {
     id:'member',
@@ -32,8 +33,8 @@ const stats = ref([
     icon: 'mdi-account-group',
     change: '+5',
     changeText: '이번달',
-    color: '#10b981',
-    bgColor: 'rgba(16, 185, 129, 0.1)'
+    color: '#10b981', // 기존 초록색 복원
+    bgColor: '#ecfdf5'
   },
   {
     id:'payroll',
@@ -43,8 +44,8 @@ const stats = ref([
     icon: 'mdi-cash-multiple',
     change: '+2%',
     changeText: '전월 대비',
-    color: '#f59e0b',
-    bgColor: 'rgba(245, 158, 11, 0.1)'
+    color: '#f59e0b', // 기존 노란색 복원
+    bgColor: '#fffbeb'
   },
   {
     id:'request',
@@ -52,10 +53,10 @@ const stats = ref([
     value: 0, // computed나 함수에서 업데이트
     unit: '건',
     icon: 'mdi-clock-alert-outline',
-    change: '', // 아래에서 세부 수치로 활용
+    change: '',
     changeText: '',
-    color: '#ef4444',
-    bgColor: 'rgba(239, 68, 68, 0.1)'
+    color: '#ef4444', // 기존 빨간색 복원
+    bgColor: '#fef2f2'
   },
 ]);
 
@@ -63,14 +64,7 @@ const rawOrders = ref([]);
 const rawOffs = ref([]);
 
 // 2. 공지사항 (최신순)
-const notices = ref([
-    /*
-  { id: 1, type: '인사', title: '5월 근무 스케줄 확정 안내', date: '2025-05-02', author: '인사팀', isNew: true },
-  { id: 2, type: '시스템', title: 'ERP 서버 정기 점검 안내', date: '2025-05-01', author: '관리자', isNew: false },
-  { id: 3, type: '공지', title: '하절기 복장 착용 규정', date: '2025-04-28', author: '총무팀', isNew: false },
-  { id: 4, type: '교육', title: '안전교육 일정 안내', date: '2025-04-25', author: '안전팀', isNew: false },
-     */
-]);
+const notices = ref([]);
 
 // 3. 결재/승인 대기 현황
 const pendingApprovals = computed(() => {
@@ -118,12 +112,12 @@ const cleaningSchedules = ref([
   { id: 3, site: '판교 테크노밸리', type: '외벽 유리창 청소', date: '2025-05-01', status: '완료', worker: '외부 용역' },
 ]);
 
-// 최근 활동 로그
+// 최근 활동 로그 (주석 해제 대비 디자인 적용)
 const recentActivities = ref([
-  { id: 1, type: '급여', action: '4월 급여 계산 완료', time: '2시간 전', icon: 'mdi-calculator' },
-  { id: 2, type: '직원', action: '신규 직원 3명 등록', time: '5시간 전', icon: 'mdi-account-plus' },
-  { id: 3, type: '현장', action: '강남 A현장 계약 갱신', time: '1일 전', icon: 'mdi-file-document' },
-  { id: 4, type: '공지', action: '안전교육 공지 발송', time: '2일 전', icon: 'mdi-bullhorn' },
+  { id: 1, type: '급여', action: '4월 급여 계산 완료', time: '2시간 전', icon: 'mdi-calculator', color: '#f59e0b' },
+  { id: 2, type: '직원', action: '신규 직원 3명 등록', time: '5시간 전', icon: 'mdi-account-plus', color: '#10b981' },
+  { id: 3, type: '현장', action: '강남 A현장 계약 갱신', time: '1일 전', icon: 'mdi-file-document', color: '#667eea' },
+  { id: 4, type: '공지', action: '안전교육 공지 발송', time: '2일 전', icon: 'mdi-bullhorn', color: '#ef4444' },
 ]);
 
 // 유틸리티 함수
@@ -153,9 +147,16 @@ const getTypeTagClass = (type) => {
 };
 
 const getProgressColor = (progress) => {
-  if (progress >= 80) return '#ef4444';
-  if (progress >= 50) return '#f59e0b';
-  return '#10b981';
+  if (progress >= 80) return '#ef4444'; // 위험 (레드)
+  if (progress >= 50) return '#f59e0b'; // 진행 (옐로우)
+  return '#10b981'; // 초기 (그린)
+};
+
+// [추가] 승인 상태 아이콘 유틸
+const getStatusIconInfo = (status) => {
+  if (status == 0) return { icon: 'mdi-clock-outline', class: 'status-pending-icon' };
+  if (status == 1) return { icon: 'mdi-check-circle-outline', class: 'status-complete-icon' };
+  return { icon: 'mdi-close-circle-outline', class: 'status-delayed-icon' }; // 반려
 };
 
 // 데이터 가공 로직
@@ -197,36 +198,32 @@ const calculateProcessed = (data) => {
 
 // API 호출
 const getSiteData = async () => {
-  await axios.get(`/api/v1/site/list/${cIdx}`)
-      .then(res => {
-        const result = res.data.data;
-        stats.value[0].value = result.length;
-        const processedData = calculateProcessed(result.slice(0, 3));
-        siteStatus.value = processedData;
-      })
-      .catch(err => {
-        console.error('현장 로드 실패:', err);
-      });
+  try {
+    const res = await axios.get(`/api/v1/site/list/${cIdx}`);
+    const result = res.data.data;
+    if (stats.value[0]) stats.value[0].value = result.length;
+    const processedData = calculateProcessed(result.slice(0, 3));
+    siteStatus.value = processedData;
+  } catch (err) { console.error('현장 로드 실패:', err); }
 }
 
 const getMemberData = async () => {
-  await axios.get(`/api/v1/member/list`)
-  .then(res => {
-    stats.value[1].value = res.data.data.length;
-  })
+  try {
+    const res = await axios.get(`/api/v1/member/list`);
+    if (stats.value[1]) stats.value[1].value = res.data.data.length;
+  } catch (err) { console.error(err); }
 }
 
 const getPayrollMonth = async () => {
-  console.log('급여 총액')
-
+  console.log('급여 총액 API 호출 위치')
 }
 
 const fetchNotices = () => {
-  // alert(`검색: [${searchType.value}] ${searchQuery.value}`);
   axios.get('/api/v1/notice/list')
       .then(res => {
         notices.value = res.data.data.slice(0, 4);
       })
+      .catch(err => console.error(err));
 };
 
 const fetchOrders = async () => {
@@ -255,8 +252,7 @@ const updateRequestStat = () => {
   const statObj = stats.value.find(s => s.id === 'request');
   if (statObj) {
     statObj.value = total;
-    //statObj.change = `연차 ${offCount.value} / 용품 ${orderCount.value}`;
-    statObj.changeText = `연차 신청 ${offCount.value} / 용품 신청 ${orderCount.value}`; // 기존 '처리 필요' 대신 세부 수치 강조
+    statObj.changeText = `연차 신청 ${offCount.value} / 용품 신청 ${orderCount.value}`;
   }
 };
 
@@ -288,28 +284,16 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
 <template>
   <div class="dashboard-page">
-    <!-- 헤더 섹션 -->
     <div class="header-section">
       <div class="welcome-box">
         <h1 class="welcome-title">
-          <i class="mdi mdi-hand-wave"></i>
+          <i class="mdi mdi-hand-wave wave-icon"></i>
           안녕하세요, {{ authStore.user?.managerNm }}님!
         </h1>
         <p class="welcome-subtitle">오늘도 좋은 하루 보내세요. {{ currentTime }}</p>
       </div>
-      <!--div class="quick-actions">
-        <button class="quick-btn">
-          <i class="mdi mdi-plus-circle"></i>
-          <span>신규 등록</span>
-        </button>
-        <button class="quick-btn">
-          <i class="mdi mdi-file-export"></i>
-          <span>보고서</span>
-        </button>
-      </div-->
     </div>
 
-    <!-- KPI 카드 그리드 -->
     <div class="kpi-grid">
       <div
           v-for="(stat, index) in stats"
@@ -334,22 +318,15 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
       </div>
     </div>
 
-    <!-- 메인 그리드 -->
     <div class="main-grid">
-      <!-- 왼쪽 컬럼 -->
       <div class="grid-column">
-        <!-- 승인 대기 업무 -->
         <div class="card">
           <div class="card-header">
             <div class="card-title-group">
-              <i class="mdi mdi-alert-circle-outline card-icon"></i>
+              <i class="mdi mdi-file-sign card-icon"></i>
               <h3>승인 대기 업무</h3>
               <span class="count-badge">{{ pendingApprovals.length }}</span>
             </div>
-            <!--NuxtLink to="/supplies/list" class="btn-text">
-              전체보기
-              <i class="mdi mdi-arrow-right"></i>
-            </NuxtLink-->
           </div>
           <div class="card-body">
             <div class="approval-list">
@@ -372,8 +349,8 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                 </div>
                 <div class="approval-right">
                   <div class="approval-date">{{ item.date }}</div>
-                  <span class="status-badge" :class="['status-badge', getStatusClass(item.status)]">
-                    <i class="mdi mdi-clock-outline"></i>
+                  <span :class="['status-icon', getStatusIconInfo(item.status).class]">
+                    <i :class="['mdi', getStatusIconInfo(item.status).icon]"></i>
                     {{ item.status == 0 ? '승인대기': item.status == 1 ? '승인' : '반려' }}
                   </span>
                 </div>
@@ -382,11 +359,10 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
           </div>
         </div>
 
-        <!-- 공지사항 -->
         <div class="card">
           <div class="card-header">
             <div class="card-title-group">
-              <i class="mdi mdi-bullhorn card-icon"></i>
+              <i class="mdi mdi-bullhorn card-iconBull"></i>
               <h3>최신 공지사항</h3>
             </div>
             <NuxtLink to="/notice/list" class="btn-text">
@@ -410,11 +386,11 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                 <div class="notice-title">{{ notice.title }}</div>
                 <div class="notice-footer">
                   <span class="notice-author">
-                    <i class="mdi mdi-account-circle"></i>
+                    <i class="mdi mdi-account-circle-outline"></i>
                     {{ notice.author }}
                   </span>
                   <span class="notice-date">
-                    <i class="mdi mdi-calendar"></i>
+                    <i class="mdi mdi-calendar-blank-outline"></i>
                     {{ notice.date }}
                   </span>
                 </div>
@@ -423,44 +399,16 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
           </div>
         </div>
 
-        <!-- 최근 활동 -->
-        <!--div class="card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <i class="mdi mdi-history card-icon"></i>
-              <h3>최근 활동</h3>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="activity-list">
-              <div
-                  v-for="activity in recentActivities"
-                  :key="activity.id"
-                  class="activity-item"
-              >
-                <div class="activity-icon">
-                  <i :class="['mdi', activity.icon]"></i>
-                </div>
-                <div class="activity-content">
-                  <div class="activity-action">{{ activity.action }}</div>
-                  <div class="activity-time">{{ activity.time }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div-->
       </div>
 
-      <!-- 오른쪽 컬럼 -->
       <div class="grid-column">
-        <!-- 주요 현장 현황 -->
-        <div class="card">
+        <div class="card site-card">
           <div class="card-header">
             <div class="card-title-group">
-              <i class="mdi mdi-map-marker card-icon"></i>
+              <i class="mdi mdi-map-marker-radius card-iconGreen"></i>
               <h3>주요 현장 현황</h3>
             </div>
-            <NuxtLink to="/site/list" class="btn-icon">
+            <NuxtLink to="/site/list" class="btn-icon-cog">
               <i class="mdi mdi-cog"></i>
             </NuxtLink>
           </div>
@@ -486,7 +434,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                 </div>
                 <div class="site-info-row">
                   <span class="site-meta">
-                    <i class="mdi mdi-calendar-end"></i>
+                    <i class="mdi mdi-calendar-clock"></i>
                     계약 만료: {{ site.contractEnd }}
                   </span>
                   <span class="site-progress-text">{{ site.progress }}%</span>
@@ -507,11 +455,10 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
           </div>
         </div>
 
-        <!-- 대청소 일정 -->
-        <div class="card">
+        <div class="card cleaning-card">
           <div class="card-header">
             <div class="card-title-group">
-              <i class="mdi mdi-broom card-icon"></i>
+              <i class="mdi mdi-broom card-iconBroom"></i>
               <h3>이번 달 대청소 일정</h3>
             </div>
             <span class="sub-badge">
@@ -525,7 +472,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                   :key="item.id"
                   class="cleaning-item"
               >
-                <div class="date-box">
+                <div class="date-box-flat">
                   <span class="day">{{ item.date.split('-')[2] }}</span>
                   <span class="month">{{ item.date.split('-')[1] }}월</span>
                 </div>
@@ -555,754 +502,311 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 /* Material Design Icons */
 @import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
 
-/* === 기본 설정 === */
+/* === 전역 설정 === */
 .dashboard-page {
   padding: 0;
+  /* 눈의 피로를 줄이기 위한 차분한 베이스 배경색 (옅은회색) */
+  background-color: #f1f5f9;
+  min-height: 100vh;
 }
 
-/* === 헤더 섹션 === */
+/* === 헤더 섹션 (그라디언트 제거, 플랫 보라색) === */
 .header-section {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-  padding: 28px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 16px;
+  margin-bottom: 30px;
+  padding: 30px;
+  /* 그라디언트 제거 -> 원본 보라색 톤 단색 적용 */
+  background-color: #6d28d9;
+  border-radius: 12px;
   color: white;
-  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-.welcome-box {
-  flex: 1;
+.welcome-box { flex: 1; }
+.welcome-title { font-size: 26px; font-weight: 700; margin: 0 0 10px 0; display: flex; align-items: center; gap: 12px; }
+.wave-icon { font-size: 30px; color: #fbbf24; animation: wave-animation 2.5s infinite; transform-origin: 70% 70%; }
+.welcome-subtitle { font-size: 15px; opacity: 0.9; margin: 0; }
+
+@keyframes wave-animation {
+  0% { transform: rotate( 0.0deg) }
+  10% { transform: rotate(14.0deg) }
+  20% { transform: rotate(-8.0deg) }
+  30% { transform: rotate(14.0deg) }
+  40% { transform: rotate(-4.0deg) }
+  50% { transform: rotate(10.0deg) }
+  60% { transform: rotate( 0.0deg) }
+  100% { transform: rotate( 0.0deg) }
 }
 
-.welcome-title {
-  font-size: 28px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.welcome-title i {
-  font-size: 32px;
-  animation: wave 1s ease-in-out infinite;
-}
-
-@keyframes wave {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(20deg); }
-  75% { transform: rotate(-20deg); }
-}
-
-.welcome-subtitle {
-  font-size: 15px;
-  opacity: 0.95;
-  margin: 0;
-}
-
-.quick-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.quick-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 10px;
-  color: white;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s;
-  backdrop-filter: blur(10px);
-}
-
-.quick-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: translateY(-2px);
-}
-
-.quick-btn i {
-  font-size: 20px;
-}
-
-/* === KPI 카드 === */
+/* === KPI 카드 (포인트 컬러 활용, 그라디언트 무) === */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 20px;
-  margin-bottom: 32px;
+  margin-bottom: 30px;
 }
 
 .kpi-card {
-  background: white;
-  border-radius: 16px;
+  background: white; /* 카드는 화이트로 깔끔하게 */
+  border-radius: 12px;
   padding: 24px;
   display: flex;
   align-items: center;
   gap: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s;
+  /* 옅은 보더로 카드 구분 */
+  border: 1px solid #e2e8f0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   position: relative;
   overflow: hidden;
 }
 
+/* 왼쪽에 포인트 컬러 바 */
 .kpi-card::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: var(--card-color);
+  top: 0; left: 0; width: 4px; height: 100%;
+  background-color: var(--card-color);
 }
 
 .kpi-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 .kpi-icon-wrapper {
-  width: 60px;
-  height: 60px;
-  border-radius: 14px;
-  background: var(--card-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 56px; height: 56px;
+  border-radius: 12px;
+  /* 플랫한 연한 배경색 */
+  background-color: var(--card-bg);
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 
-.kpi-icon-wrapper i {
-  font-size: 28px;
-  color: var(--card-color);
-}
+.kpi-icon-wrapper i { font-size: 26px; color: var(--card-color); }
+.kpi-content { flex: 1; min-width: 0; }
+.kpi-title { display: block; font-size: 13px; color: #64748b; margin-bottom: 6px; font-weight: 500; }
+.kpi-value-row { display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px; }
+.kpi-value { font-size: 30px; font-weight: 700; color: #1e293b; line-height: 1; }
+.kpi-unit { font-size: 14px; color: #64748b; }
+.kpi-change-row { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.kpi-change { font-weight: 600; color: var(--card-color); }
+.kpi-change-text { color: #94a3b8; }
 
-.kpi-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.kpi-title {
-  display: block;
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-
-.kpi-value-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.kpi-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: #1e293b;
-  line-height: 1;
-}
-
-.kpi-unit {
-  font-size: 16px;
-  color: #64748b;
-  font-weight: 500;
-}
-
-.kpi-change-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.kpi-change {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--card-color);
-}
-
-.kpi-change-text {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-/* === 메인 그리드 === */
+/* === 메인 그리드 및 카드 === */
 .main-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 25px;
+  padding-bottom: 30px;
 }
+.grid-column { display: flex; flex-direction: column; gap: 25px; }
 
-.grid-column {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-/* === 카드 === */
 .card {
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
   overflow: hidden;
-  transition: all 0.3s;
-}
-
-.card:hover {
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
 }
 
 .card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 24px;
   border-bottom: 1px solid #f1f5f9;
 }
+.card-title-group { display: flex; align-items: center; gap: 10px; }
 
-.card-title-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+/* 카드별 아이콘 색상 고정 (원본 톤 복원) */
+.card-icon { font-size: 22px; color: #667eea; } /* 보라 */
+.card-iconBull { font-size: 22px; color: #ef4444; } /* 레드 */
+.card-iconGreen { font-size: 22px; color: #10b981; } /* 그린 */
+.card-iconBroom { font-size: 22px; color: #f59e0b; } /* 옐로우 */
+.gray-icon { font-size: 22px; color: #94a3b8; }
 
-.card-icon {
-  font-size: 24px;
-  color: #667eea;
-}
+.card-header h3 { font-size: 16px; font-weight: 600; color: #1e293b; margin: 0; }
 
-.card-header h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0;
-}
-
+/* 배지 디자인 (그라디언트 제거, 단색 플랫 적용) */
 .count-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
+  background-color: #ede9fe; /* 연한보라 */
+  color: #6d28d9; /* 진한보라 */
+  padding: 3px 10px; border-radius: 12px;
+  font-size: 12px; font-weight: 600;
 }
 
 .sub-badge {
-  background: #f1f5f9;
-  color: #64748b;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
+  background-color: #fffbeb; /* 연한노랑 */
+  color: #b45309; /* 진한노랑 */
+  padding: 4px 10px; border-radius: 8px;
+  font-size: 12px; font-weight: 500;
 }
 
 .btn-text {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #667eea;
-  font-size: 14px;
-  font-weight: 500;
-  text-decoration: none;
-  transition: all 0.2s;
-}
-
-.btn-text:hover {
-  gap: 8px;
-}
-
-.btn-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #f8fafc;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: flex; align-items: center; gap: 4px;
+  color: #4f46e5; font-size: 13px; font-weight: 500;
   text-decoration: none;
 }
+.btn-icon-cog { color: #94a3b8; border: none; background: none; cursor: pointer; font-size: 18px; }
+.btn-icon-cog:hover { color: #64748b; }
 
-.btn-icon:hover {
-  background: #e2e8f0;
-  color: #334155;
-}
+/*.card-body { padding: 24px; }*/
 
-.btn-icon i {
-  font-size: 18px;
-}
-
-.card-body {
-  padding: 24px;
-}
-
-/* === 승인 대기 목록 === */
-.approval-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+/* === 승인 대기 목록 디자인 === */
+.approval-list { display: flex; flex-direction: column; gap: 12px; }
 
 .approval-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: flex; justify-content: space-between; align-items: center;
   padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
-  transition: all 0.2s;
+  border-bottom: 1px solid #f1f5f9;
+  /*
+  background-color: white;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+   */
 }
+/*.approval-item:hover { background-color: #f8fafc; border-color: #e2e8f0; }*/
 
-.approval-item:hover {
-  background: #f1f5f9;
-  transform: translateX(4px);
-}
+.approval-left { display: flex; align-items: center; gap: 14px; flex: 1; }
 
-.approval-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex: 1;
-}
-
+/* 플랫 태그 디자인 */
 .type-tag {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+  padding: 4px 10px; border-radius: 6px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
 }
+.type-tag-purple { background-color: #f3e8ff; color: #9333ea; }
+.type-tag-blue { background-color: #e0f2fe; color: #0284c7; }
+.type-tag-green { background-color: #d1fae5; color: #059669; }
 
-.type-tag-purple {
-  background: #ede9fe;
-  color: #7c3aed;
-}
+.approval-info { flex: 1; min-width: 0; }
+.approval-title { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
+.approval-sub { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
 
-.type-tag-blue {
-  background: #dbeafe;
-  color: #2563eb;
-}
+.approval-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.approval-date { font-size: 11px; color: #94a3b8; }
 
-.type-tag-green {
-  background: #d1fae5;
-  color: #059669;
-}
+/* 아이콘 중심 상태 표시 */
+.status-icon { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; }
+.status-pending-icon { color: #f59e0b; } /* 대기 - 옐로우 */
+.status-complete-icon { color: #10b981; } /* 승인 - 그린 */
+.status-delayed-icon { color: #ef4444; } /* 반려 - 레드 */
 
-.approval-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.approval-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 4px;
-  word-break: keep-all;
-}
-
-.approval-sub {
-  font-size: 13px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.approval-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.approval-date {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.status-pending {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.status-complete {
-  background: #d1fae5;
-  color: #059669;
-}
-
-.status-upcoming {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-/* === 공지사항 === */
-.notice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+/* === 공지사항 디자인 === */
+.notice-list { display: flex; flex-direction: column; gap: 12px; }
 .notice-item {
   padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
-  transition: all 0.2s;
-  cursor: pointer;
-}
+  border-bottom: 1px solid #f1f5f9;
+  /*
+  background-color: white;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px; cursor: pointer;
 
-.notice-item:hover {
-  background: #f1f5f9;
-  transform: translateX(4px);
+   */
 }
+/*.notice-item:hover { background-color: #f8fafc; border-color: #e2e8f0; }*/
 
-.notice-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+.notice-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* 플랫 배지 */
+.badge { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.badge-blue { background-color: #dbeafe; color: #1e40af; }
+.badge-red { background-color: #fee2e2; color: #b91c1c; }
+.badge-gray { background-color: #f1f5f9; color: #475569; }
+.badge-green { background-color: #d1fae5; color: #065f46; }
+
+.new-badge { color: #ef4444; font-size: 11px; font-weight: 700; }
+.notice-title { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 8px; }
+.notice-footer { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #94a3b8; }
+.notice-author, .notice-date { display: flex; align-items: center; gap: 4px; }
+
+/* === 최근 활동 (주석 해제 대비) === */
+.activity-list { display: flex; flex-direction: column; gap: 16px; }
+.activity-item { display: flex; align-items: center; gap: 14px; }
+.activity-icon-w {
+  width: 36px; height: 36px; border-radius: 10px;
+  background-color: #f1f5f9;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
 }
+.activity-action { font-size: 13px; font-weight: 500; color: #334155; margin-bottom: 2px; }
+.activity-time { font-size: 11px; color: #94a3b8; }
 
-.badge {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.badge-blue {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.badge-red {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.badge-gray {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.badge-green {
-  background: #d1fae5;
-  color: #059669;
-}
-
-.new-badge {
-  background: #ef4444;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.notice-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 10px;
-  line-height: 1.5;
-}
-
-.notice-footer {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-.notice-author,
-.notice-date {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* === 최근 활동 === */
-.activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.activity-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.activity-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  flex-shrink: 0;
-}
-
-.activity-icon i {
-  font-size: 20px;
-}
-
-.activity-content {
-  flex: 1;
-}
-
-.activity-action {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1e293b;
-  margin-bottom: 4px;
-}
-
-.activity-time {
-  font-size: 12px;
-  color: #94a3b8;
-}
-
-/* === 현장 현황 === */
-.site-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
+/* === 주요 현장 현황 디자인 === */
+.site-list { display: flex; flex-direction: column; gap: 18px; }
 .site-item {
-  padding: 20px;
-  background: #f8fafc;
-  border-radius: 12px;
-  transition: all 0.3s;
+  padding: 16px;
+  border-bottom: 1px solid #f1f5f9;
+  /*
+  background-color: white;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+
+   */
 }
 
-.site-item:hover {
-  background: #f1f5f9;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.site-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.site-name-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.site-icon {
-  font-size: 20px;
-  color: #667eea;
-}
-
-.site-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1e293b;
-}
+.site-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.site-name-group { display: flex; align-items: center; gap: 8px; }
+.site-icon { font-size: 18px; color: #667eea; }
+.site-name { font-size: 15px; font-weight: 600; color: #1e293b; }
 
 .issue-badge {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: #fee2e2;
-  color: #dc2626;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  display: flex; align-items: center; gap: 3px;
+  background-color: #fee2e2; color: #b91c1c;
+  padding: 3px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 600;
 }
 
-.site-info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
+.site-info-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.site-meta { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
+.site-progress-text { font-size: 12px; font-weight: 600; color: #1e293b; }
 
-.site-meta {
-  font-size: 13px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
+.progress-bar-bg { height: 6px; background-color: #e2e8f0; border-radius: 3px; overflow: hidden; }
+.progress-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
 
-.site-progress-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.progress-bar-wrapper {
-  margin-top: 8px;
-}
-
-.progress-bar-bg {
-  height: 8px;
-  background: #e2e8f0;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  border-radius: 4px;
-  transition: width 0.5s ease;
-}
-
-/* === 대청소 일정 === */
-.cleaning-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+/* === 대청소 일정 디자인 === */
+.cleaning-list { display: flex; flex-direction: column; gap: 12px; }
 .cleaning-item {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: #f8fafc;
-  border-radius: 12px;
-  transition: all 0.2s;
+  border-bottom: 1px solid #f1f5f9;
+  /*
+  background-color: white;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+
+   */
 }
 
-.cleaning-item:hover {
-  background: #f1f5f9;
-  transform: translateX(4px);
+/* 그라디언트 제거 -> 원본 보라색 플랫 배경 */
+.date-box-flat {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 54px; height: 54px;
+  background-color: #6d28d9; /* 진한보라 단색 */
+  border-radius: 10px; color: white; flex-shrink: 0;
 }
+.date-box-flat .day { font-size: 22px; font-weight: 700; line-height: 1; }
+.date-box-flat .month { font-size: 11px; margin-top: 3px; opacity: 0.9; }
 
-.date-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  color: white;
-  flex-shrink: 0;
-}
+.info-box { flex: 1; min-width: 0; }
+.cleaning-site { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
+.cleaning-type { font-size: 13px; color: #64748b; margin-bottom: 5px; }
+.cleaning-worker { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px; }
 
-.date-box .day {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
-}
+/* 상태 배지 (플랫 톤 고정) */
+.status-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.status-complete { background-color: #d1fae5; color: #065f46; } /* 완료 - 그린 */
+.status-upcoming { background-color: #e0f2fe; color: #0369a1; } /* 예정 - 블루 */
+.status-delayed { background-color: #fee2e2; color: #991b1b; } /* 지연 - 레드 */
 
-.date-box .month {
-  font-size: 11px;
-  margin-top: 4px;
-  opacity: 0.9;
-}
-
-.info-box {
-  flex: 1;
-  min-width: 0;
-}
-
-.cleaning-site {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 4px;
-}
-
-.cleaning-type {
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 6px;
-}
-
-.cleaning-worker {
-  font-size: 12px;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.status-box {
-  flex-shrink: 0;
-}
-
-/* === 반응형 === */
-@media (max-width: 1200px) {
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
+/* === 반응형 미디어 쿼리 === */
+@media (max-width: 1024px) {
+  .main-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {
-  .header-section {
-    flex-direction: column;
-    gap: 16px;
-    align-items: flex-start;
-  }
-
-  .quick-actions {
-    width: 100%;
-  }
-
-  .quick-btn {
-    flex: 1;
-    justify-content: center;
-  }
-
-  .kpi-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .main-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .approval-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .approval-right {
-    flex-direction: row;
-    width: 100%;
-    justify-content: space-between;
-  }
+  .header-section { flex-direction: column; gap: 15px; align-items: flex-start; padding: 20px; }
+  .kpi-grid { grid-template-columns: 1fr; }
+  .approval-item { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .approval-right { flex-direction: row; width: 100%; justify-content: space-between; }
 }
 </style>

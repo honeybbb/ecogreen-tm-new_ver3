@@ -26,10 +26,10 @@ const progressPercentage = computed(() => {
 
 // 단계별 정보
 const steps = [
-  { number: 1, title: '기본 정보', icon: 'mdi-office-building' },
-  { number: 2, title: '주소 정보', icon: 'mdi-map-marker' },
-  { number: 3, title: '계약 정보', icon: 'mdi-file-document' },
-  { number: 4, title: '담당자 정보', icon: 'mdi-account-tie' }
+  { number: 1, title: '기본 정보', icon: 'mdi-office-building-outline' },
+  { number: 2, title: '주소 정보', icon: 'mdi-map-marker-outline' },
+  { number: 3, title: '계약 정보', icon: 'mdi-file-document-outline' },
+  { number: 4, title: '담당자 정보', icon: 'mdi-account-tie-outline' }
 ];
 
 // 현장 기본 정보
@@ -343,15 +343,11 @@ onMounted(() => {
 
 <template>
   <div class="site-register-page">
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
-        <!--button @click="handleCancel" class="btn-back">
-          <i class="mdi mdi-arrow-left"></i>
-        </button-->
         <div>
           <h1 class="page-title">
-            <i class="mdi mdi-office-building-plus"></i>
+            <i class="mdi mdi-office-building-plus-outline"></i>
             현장 등록
           </h1>
           <p class="page-subtitle">새로운 현장 정보를 등록합니다</p>
@@ -365,7 +361,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 진행 단계 -->
     <div class="steps-container">
       <div class="steps-progress">
         <div class="progress-bar">
@@ -395,21 +390,18 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 폼 컨테이너 -->
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
-        <!-- Step 1: 기본 정보 -->
         <div v-show="currentStep === 1" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-office-building"></i>
+            <i class="mdi mdi-office-building-outline"></i>
             <h2>현장 기본 정보</h2>
           </div>
 
           <div class="form-grid">
-            <!-- 현장명 -->
             <div class="form-group full-width">
               <label class="form-label required">
-                <i class="mdi mdi-office-building"></i>
+                <i class="mdi mdi-office-building-marker-outline"></i>
                 현장명
               </label>
               <input
@@ -421,7 +413,6 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 현장 코드 -->
             <div class="form-group">
               <label class="form-label">
                 <i class="mdi mdi-barcode"></i>
@@ -435,10 +426,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 현장 형태 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-tag"></i>
+                <i class="mdi mdi-tag-outline"></i>
                 현장 형태
               </label>
               <select v-model="site.siteType" required class="form-select">
@@ -449,10 +439,9 @@ onMounted(() => {
               </select>
             </div>
 
-            <!-- 현장 상태 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-flag"></i>
+                <i class="mdi mdi-flag-outline"></i>
                 현장 상태
               </label>
               <div class="radio-group">
@@ -463,7 +452,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 관리면적 -->
             <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-ruler-square"></i>
@@ -474,7 +462,7 @@ onMounted(() => {
                     type="text"
                     v-model="site.area"
                     required
-                    class="form-input"
+                    class="form-input text-right"
                     placeholder="예: 150.5"
                 />
                 <label class="checkbox-inline">
@@ -484,22 +472,20 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 건물 수 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-office-building-outline"></i>
+                <i class="mdi mdi-domain"></i>
                 건물 수
               </label>
               <input
                   type="number"
                   v-model="site.building_su"
                   required
-                  class="form-input"
+                  class="form-input text-right"
                   placeholder="0"
               />
             </div>
 
-            <!-- 세대 수 -->
             <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-home-group"></i>
@@ -509,15 +495,14 @@ onMounted(() => {
                   type="number"
                   v-model="site.unit_su"
                   required
-                  class="form-input"
+                  class="form-input text-right"
                   placeholder="0"
               />
             </div>
 
-            <!-- 급여지급일 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-calendar"></i>
+                <i class="mdi mdi-calendar-clock-outline"></i>
                 급여지급일
               </label>
               <select v-model="site.payment_day" required class="form-select">
@@ -537,17 +522,16 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Step 2: 주소 정보 -->
         <div v-show="currentStep === 2" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-map-marker"></i>
+            <i class="mdi mdi-map-marker-outline"></i>
             <h2>주소 정보</h2>
           </div>
 
           <div class="form-grid">
             <div class="form-group full-width">
               <label class="form-label required">
-                <i class="mdi mdi-map-marker"></i>
+                <i class="mdi mdi-map-marker-radius-outline"></i>
                 주소
               </label>
               <div class="address-search-group">
@@ -576,16 +560,6 @@ onMounted(() => {
                   readonly
               />
             </div>
-
-            <!--div class="form-group full-width">
-              <input
-                  type="text"
-                  v-model="site.addressDetail"
-                  placeholder="상세 주소 (예: A동 101호)"
-                  class="form-input"
-                  ref="detailInput"
-              />
-            </div-->
           </div>
 
           <div class="form-actions">
@@ -600,29 +574,43 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Step 3: 계약 정보 -->
         <div v-show="currentStep === 3" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-file-document"></i>
+            <i class="mdi mdi-file-document-outline"></i>
             <h2>계약 및 인원 정보</h2>
           </div>
 
-          <div
-              class="form-group full-width"
-               style="margin-bottom: 24px; padding: 20px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px;">
-            <label class="form-label">
-              <i class="mdi mdi-file-upload"></i>
+          <div class="file-upload-section">
+            <label class="section-label">
+              <i class="mdi mdi-file-pdf-box"></i>
               계약서 원본 파일 업로드 (PDF)
             </label>
-            <input
-                type="file"
-                accept=".pdf"
-                @change="handleFileChange"
-                class="form-input"
-                style="background: transparent; border: none; padding: 10px 0;"
-            />
-            <p v-if="selectedFile" style="font-size: 13px; color: #10b981; margin-top: 8px;">
-              <i class="mdi mdi-check-circle"></i> 선택된 파일: {{ selectedFile.name }} (최종 등록 완료 시 업로드됩니다)
+
+            <div class="file-upload-box" :class="{ 'has-file': selectedFile }">
+              <input
+                  type="file"
+                  id="contract-file"
+                  accept=".pdf"
+                  @change="handleFileChange"
+                  class="hidden-file-input"
+              />
+              <label for="contract-file" class="file-upload-label">
+                <div v-if="!selectedFile" class="upload-placeholder">
+                  <i class="mdi mdi-cloud-upload-outline"></i>
+                  <p>클릭하여 PDF 파일을 선택해주세요</p>
+                  <span>(또는 파일을 여기로 드래그 앤 드롭 하세요)</span>
+                </div>
+                <div v-else class="upload-selected">
+                  <div class="selected-file-info">
+                    <i class="mdi mdi-file-pdf-box"></i>
+                    <span class="file-name">{{ selectedFile.name }}</span>
+                  </div>
+                  <span class="file-change-text">파일 변경하기</span>
+                </div>
+              </label>
+            </div>
+            <p v-if="selectedFile" class="file-success-msg">
+              <i class="mdi mdi-check-circle"></i> 최종 등록 완료 시 파일이 안전하게 업로드됩니다.
             </p>
           </div>
 
@@ -645,7 +633,7 @@ onMounted(() => {
           </div>
 
           <div v-if="contractGroups.length === 0" class="empty-contracts">
-            <i class="mdi mdi-file-document-outline"></i>
+            <i class="mdi mdi-file-document-multiple-outline"></i>
             <p>등록된 계약이 없습니다</p>
             <span>상단 버튼을 눌러 계약 정보를 추가해주세요</span>
           </div>
@@ -654,7 +642,7 @@ onMounted(() => {
             <div class="contract-card-header">
               <div class="contract-title">
                 <span :class="['contract-badge', `badge-${group.category}`]">
-                  <i class="mdi mdi-briefcase"></i>
+                  <i class="mdi mdi-briefcase-outline"></i>
                   {{ group.category }}
                 </span>
                 <span v-if="getContractDuration(group)" class="contract-duration">
@@ -663,7 +651,7 @@ onMounted(() => {
                 </span>
               </div>
               <button type="button" @click="removeContractGroup(idx)" class="btn-remove-contract">
-                <i class="mdi mdi-delete"></i>
+                <i class="mdi mdi-trash-can-outline"></i>
               </button>
             </div>
 
@@ -671,7 +659,7 @@ onMounted(() => {
               <div class="form-grid">
                 <div class="form-group">
                   <label class="form-label required">
-                    <i class="mdi mdi-calendar-start"></i>
+                    <i class="mdi mdi-calendar-start-outline"></i>
                     계약 시작일
                   </label>
                   <input type="date" v-model="group.contractStart" required class="form-input" />
@@ -679,24 +667,11 @@ onMounted(() => {
 
                 <div class="form-group">
                   <label class="form-label required">
-                    <i class="mdi mdi-calendar-end"></i>
+                    <i class="mdi mdi-calendar-end-outline"></i>
                     계약 종료일
                   </label>
                   <input type="date" v-model="group.contractEnd" required class="form-input" />
                 </div>
-
-                <!--div class="form-group">
-                  <label class="form-label required">
-                    <i class="mdi mdi-calendar-month"></i>
-                    근무 일수 (월)
-                  </label>
-                  <input
-                      type="number"
-                      v-model="group.workDays"
-                      placeholder="예: 25"
-                      class="form-input"
-                  />
-                </div-->
 
                 <div class="form-group full-width">
                   <label class="form-label required">
@@ -713,7 +688,7 @@ onMounted(() => {
 
                 <div class="form-group full-width">
                   <label class="form-label">
-                    <i class="mdi mdi-coffee"></i>
+                    <i class="mdi mdi-coffee-outline"></i>
                     휴게 시간
                   </label>
                   <input
@@ -725,10 +700,9 @@ onMounted(() => {
                 </div>
               </div>
 
-              <!-- 인원 구성 -->
               <div class="staff-section">
                 <label class="section-label">
-                  <i class="mdi mdi-account-group"></i>
+                  <i class="mdi mdi-account-group-outline"></i>
                   인원 구성
                 </label>
 
@@ -743,7 +717,7 @@ onMounted(() => {
                       type="number"
                       v-model="group.tempCount"
                       min="1"
-                      class="form-input staff-count"
+                      class="form-input staff-count text-right"
                       placeholder="인원"
                   />
                   <button type="button" @click="addStaffToGroup(idx)" class="btn-add-staff">
@@ -755,7 +729,7 @@ onMounted(() => {
                 <div v-if="group.staffList && group.staffList.length > 0" class="staff-list">
                   <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item">
                     <div class="staff-info">
-                      <i class="mdi mdi-account"></i>
+                      <i class="mdi mdi-account-outline"></i>
                       <span class="staff-position-name">{{ staff.name }}</span>
                       <span class="staff-count-badge">{{ staff.count }}명</span>
                     </div>
@@ -784,17 +758,16 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Step 4: 담당자 정보 -->
         <div v-show="currentStep === 4" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-account-tie"></i>
+            <i class="mdi mdi-account-tie-outline"></i>
             <h2>담당자 및 기타 정보</h2>
           </div>
 
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-account"></i>
+                <i class="mdi mdi-account-outline"></i>
                 본사 담당자 이름
               </label>
               <input
@@ -807,7 +780,7 @@ onMounted(() => {
 
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-phone"></i>
+                <i class="mdi mdi-phone-outline"></i>
                 본사 담당자 연락처
               </label>
               <input
@@ -820,7 +793,7 @@ onMounted(() => {
 
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-account-hard-hat"></i>
+                <i class="mdi mdi-account-hard-hat-outline"></i>
                 관리 소장 이름
               </label>
               <input
@@ -834,7 +807,7 @@ onMounted(() => {
 
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-phone"></i>
+                <i class="mdi mdi-phone-outline"></i>
                 관리 소장 연락처
               </label>
               <input
@@ -846,10 +819,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 비고 히스토리 -->
             <div class="form-group full-width">
               <label class="section-label">
-                <i class="mdi mdi-note-text"></i>
+                <i class="mdi mdi-note-text-outline"></i>
                 특이사항 및 메모
               </label>
 
@@ -870,7 +842,7 @@ onMounted(() => {
                   v-model="site.bigo"
                   class="form-textarea"
                   rows="4"
-                  placeholder="추가할 특이사항을 입력하세요 (저장 시 히스토리에 추가됩니다)"
+                  placeholder="추가할 특이사항을 입력하세요"
               ></textarea>
             </div>
           </div>
@@ -892,832 +864,420 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.btn-back {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  cursor: pointer;
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+
+/* === 전역 설정 === */
+.site-register-page {
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* === 페이지 헤더 === */
+.page-header {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.btn-back:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-back i {
-  font-size: 24px;
-}
-
-.page-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 8px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-title i {
-  font-size: 32px;
-  color: #667eea;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.btn-cancel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.btn-cancel:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
-}
-
-.btn-cancel i {
-  font-size: 18px;
-}
-
-/* === 진행 단계 === */
-.steps-container {
-  background: white;
-  border-radius: 16px;
-  padding: 28px;
-  margin-bottom: 28px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.steps-progress {
+  justify-content: space-between;
+  align-items: flex-start;
   margin-bottom: 24px;
 }
 
-.progress-bar {
-  height: 8px;
-  background: #f1f5f9;
-  border-radius: 4px;
-  overflow: hidden;
+.header-left { display: flex; align-items: flex-start; gap: 16px; }
+
+.page-title {
+  font-size: 24px; font-weight: 700; color: #1e293b;
+  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px;
+  letter-spacing: -0.5px;
+}
+.page-title i { font-size: 26px; color: #4f46e5; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
+
+.header-actions { display: flex; gap: 10px; }
+
+.btn-cancel {
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
+  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
+  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.btn-cancel:hover { background: #f8fafc; color: #1e293b; border-color: #cbd5e1; }
+.btn-cancel i { font-size: 16px; }
+
+/* === 진행 단계 (플랫 디자인) === */
+.steps-container {
+  background: white; border-radius: 12px; padding: 24px;
+  margin-bottom: 24px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  transition: width 0.3s ease;
-}
+.steps-progress { margin-bottom: 24px; }
+.progress-bar { height: 6px; background: #f1f5f9; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background-color: #4f46e5; transition: width 0.3s ease; }
 
-.steps-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
+.steps-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 
 .step-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 10px;
-  transition: all 0.2s;
+  display: flex; align-items: center; gap: 12px; padding: 10px;
+  border-radius: 8px; transition: all 0.2s;
 }
-
-.step-item.active {
-  background: #eff6ff;
-}
+.step-item.active { background-color: #eef2ff; }
 
 .step-circle {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: #f1f5f9;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 18px;
-  flex-shrink: 0;
-  transition: all 0.3s;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #f1f5f9; color: #94a3b8; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s;
 }
+.step-item.active .step-circle { background-color: #4f46e5; color: white; }
+.step-item.completed .step-circle { background-color: #10b981; color: white; }
+.step-circle i { font-size: 20px; }
 
-.step-item.active .step-circle {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
+.step-info { display: flex; flex-direction: column; gap: 2px; }
+.step-number { font-size: 11px; color: #94a3b8; font-weight: 600; }
+.step-title { font-size: 13px; color: #1e293b; font-weight: 600; }
 
-.step-item.completed .step-circle {
-  background: #10b981;
-  color: white;
-}
-
-.step-circle i {
-  font-size: 24px;
-}
-
-.step-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.step-number {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.step-title {
-  font-size: 14px;
-  color: #1e293b;
-  font-weight: 600;
-}
-
-.step-item.active .step-number,
-.step-item.active .step-title {
-  color: #667eea;
-}
+.step-item.active .step-number, .step-item.active .step-title { color: #4f46e5; }
 
 /* === 폼 컨테이너 === */
 .form-container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden;
 }
 
-.form-step {
-  padding: 32px;
-}
+.form-step { padding: 32px; }
 
 .step-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 20px;
-  margin-bottom: 28px;
-  border-bottom: 2px solid #f1f5f9;
+  display: flex; align-items: center; gap: 10px; padding-bottom: 16px;
+  margin-bottom: 24px; border-bottom: 1px solid #f1f5f9;
 }
-
-.step-header i {
-  font-size: 32px;
-  color: #667eea;
-}
-
-.step-header h2 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.step-header i { font-size: 24px; color: #4f46e5; }
+.step-header h2 { font-size: 18px; font-weight: 700; color: #1e293b; margin: 0; }
 
 /* === 폼 그리드 === */
 .form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px; margin-bottom: 32px;
+}
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group.full-width { grid-column: 1 / -1; }
+
+.form-label, .section-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: #475569;
+}
+.form-label i, .section-label i { font-size: 16px; color: #4f46e5; }
+.form-label.required::after { content: '*'; color: #ef4444; margin-left: 2px; }
+
+.form-input, .form-select, .form-textarea {
+  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 13px; color: #334155; transition: all 0.2s; background: white; box-sizing: border-box;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+.form-input::placeholder, .form-textarea::placeholder { color: #94a3b8; }
+
+.form-textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+.text-right { text-align: right; }
+
+/* 라디오 그룹 */
+.radio-group { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
+.radio-label {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 8px 16px; border-radius: 6px; border: 1px solid #e2e8f0;
+  transition: all 0.2s; background: white; font-size: 13px; color: #475569;
+}
+.radio-label:hover { border-color: #cbd5e1; background: #f8fafc; color: #1e293b; }
+
+.radio-label input[type="radio"] {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; border: 2px solid #cbd5e1; border-radius: 50%;
+  margin: 0; cursor: pointer; position: relative; transition: all 0.2s;
+}
+.radio-label input[type="radio"]:checked { border-color: #4f46e5; }
+.radio-label input[type="radio"]:checked::after {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 8px; height: 8px; background-color: #4f46e5; border-radius: 50%;
+}
+.radio-label:has(input:checked) { border-color: #4f46e5; background-color: #eef2ff; color: #4f46e5; font-weight: 600; }
+
+/* 면적 입력 및 인라인 체크박스 */
+.area-wrapper { display: flex; gap: 12px; align-items: center; }
+.area-wrapper .form-input { flex: 1; }
+
+.checkbox-inline {
+  display: flex; align-items: center; gap: 6px; font-size: 13px;
+  color: #dc2626; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.checkbox-inline input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+
+/* 주소 검색 */
+.address-search-group { display: flex; gap: 10px; }
+.postal-input { width: 140px; background-color: #f8fafc; }
+
+.btn-search-address {
+  display: flex; align-items: center; gap: 6px; padding: 10px 16px;
+  background-color: #4f46e5; border: none; border-radius: 8px;
+  color: white; font-size: 13px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.btn-search-address:hover { background-color: #4338ca; transform: translateY(-1px); }
+.btn-search-address i { font-size: 16px; }
+
+/* 파일 업로드 박스 */
+/* === 세련된 파일 업로드 박스 === */
+.file-upload-section {
   margin-bottom: 32px;
 }
 
-.form-group {
+.hidden-file-input {
+  display: none; /* 못생긴 기본 input 숨기기 */
+}
+
+.file-upload-box {
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  background-color: #f8fafc;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+/* 마우스 오버 시 인디고 포인트 컬러 */
+.file-upload-box:hover {
+  border-color: #4f46e5;
+  background-color: #eef2ff;
+}
+
+/* 파일이 선택된 상태 (성공적인 그린톤) */
+.file-upload-box.has-file {
+  border-style: solid;
+  border-color: #10b981;
+  background-color: #ecfdf5;
+}
+
+.file-upload-label {
+  display: block;
+  width: 100%;
+  padding: 40px 20px;
+  cursor: pointer;
+  text-align: center;
+}
+
+/* 파일 선택 전 Placeholder */
+.upload-placeholder {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.form-group.full-width {
-  grid-column: 1 / -1;
-}
-
-.form-label,
-.section-label {
-  display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+}
+
+.upload-placeholder i {
+  font-size: 44px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+  transition: color 0.2s ease;
+}
+
+.file-upload-box:hover .upload-placeholder i {
+  color: #4f46e5;
+}
+
+.upload-placeholder p {
+  margin: 0;
+  font-size: 15px;
   font-weight: 600;
   color: #475569;
 }
 
-.form-label i,
-.section-label i {
-  font-size: 16px;
-  color: #667eea;
-}
-
-.form-label.required::after {
-  content: '*';
-  color: #ef4444;
-  margin-left: 4px;
-}
-
-.form-input,
-.form-select,
-.form-textarea {
-  padding: 12px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #334155;
-  transition: all 0.2s;
-  background: white;
-}
-
-.form-input:focus,
-.form-select:focus,
-.form-textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.form-input::placeholder {
+.upload-placeholder span {
+  font-size: 13px;
   color: #94a3b8;
 }
 
-.form-textarea {
-  resize: vertical;
-  min-height: 100px;
-  font-family: inherit;
-}
-
-/* 라디오 그룹 */
-.radio-group {
+/* 파일 선택 후 UI */
+.upload-selected {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.radio-label {
-  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s;
+  gap: 12px;
+}
+
+.selected-file-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   background: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid #10b981;
 }
 
-.radio-label:hover {
-  border-color: #cbd5e1;
-  background: #f8fafc;
+.selected-file-info i {
+  font-size: 24px;
+  color: #ef4444; /* PDF 특유의 붉은색 포인트 */
 }
 
-.radio-label input[type="radio"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-
-.radio-text {
+.file-name {
   font-size: 14px;
-  color: #64748b;
+  font-weight: 600;
+  color: #1e293b;
 }
 
-/* 면적 입력 */
-.area-wrapper {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+.file-change-text {
+  font-size: 13px;
+  color: #10b981;
+  font-weight: 600;
+  text-decoration: underline;
 }
 
-.area-wrapper .form-input {
-  flex: 1;
-}
-
-.checkbox-inline {
+/* 업로드 안내 메시지 */
+.file-success-msg {
+  margin: 12px 0 0 0;
+  font-size: 13px;
+  color: #059669;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  color: #ef4444;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
-.checkbox-inline input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-/* 주소 검색 */
-.address-search-group {
-  display: flex;
-  gap: 12px;
-}
-
-.postal-input {
-  width: 140px;
-}
-
-.btn-search-address {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-}
-
-.btn-search-address:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.btn-search-address i {
-  font-size: 18px;
+.file-success-msg i {
+  font-size: 16px;
 }
 
 /* === 계약 섹션 === */
-.contract-header {
-  margin-bottom: 24px;
-}
+.contract-header { margin-bottom: 20px; }
+.contract-description { font-size: 13px; color: #64748b; margin: 0 0 16px 0; }
 
-.contract-description {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0 0 16px 0;
-}
-
-.contract-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
+.contract-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-add-contract {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: white;
-  border: 2px dashed #cbd5e1;
-  border-radius: 8px;
-  color: #667eea;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  background: white; border: 1px dashed #94a3b8; border-radius: 6px;
+  color: #475569; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;
 }
-
-.btn-add-contract:hover {
-  background: #f8fafc;
-  border-color: #667eea;
-}
-
-.btn-add-contract i {
-  font-size: 16px;
-}
+.btn-add-contract:hover { background: #f8fafc; border-color: #4f46e5; color: #4f46e5; }
+.btn-add-contract i { font-size: 14px; }
 
 .empty-contracts {
-  text-align: center;
-  padding: 60px 20px;
-  background: #fafbfc;
-  border-radius: 12px;
-  border: 2px dashed #e2e8f0;
-  color: #94a3b8;
+  text-align: center; padding: 50px 20px; background: #fafbfc;
+  border-radius: 10px; border: 1px dashed #e2e8f0; color: #94a3b8; margin-bottom: 20px;
 }
-
-.empty-contracts i {
-  font-size: 64px;
-  margin-bottom: 16px;
-  opacity: 0.3;
-}
-
-.empty-contracts p {
-  font-size: 16px;
-  font-weight: 600;
-  color: #64748b;
-  margin: 0 0 8px 0;
-}
-
-.empty-contracts span {
-  font-size: 13px;
-}
+.empty-contracts i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1;}
+.empty-contracts p { font-size: 15px; font-weight: 600; color: #475569; margin: 0 0 6px 0; }
+.empty-contracts span { font-size: 13px; }
 
 /* 계약 카드 */
 .contract-card {
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  margin-bottom: 20px;
-  overflow: hidden;
+  background: white; border: 1px solid #e2e8f0; border-radius: 10px;
+  margin-bottom: 20px; overflow: hidden;
 }
-
 .contract-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
 }
-
-.contract-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.contract-title { display: flex; align-items: center; gap: 12px; }
 
 .contract-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: white;
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  border-radius: 6px; font-size: 12px; font-weight: 600; color: white;
 }
+.badge-경비 { background-color: #3b82f6; }
+.badge-미화 { background-color: #ec4899; }
+.badge-시설 { background-color: #10b981; }
 
-.contract-badge i {
-  font-size: 16px;
-}
-
-.badge-경비 { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-.badge-미화 { background: linear-gradient(135deg, #ec4899 0%, #db2777 100%); }
-.badge-시설 { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-
-.contract-duration {
-  font-size: 13px;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.contract-duration i {
-  font-size: 16px;
-}
-
+.contract-duration { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; font-weight: 500;}
 .btn-remove-contract {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: #fef2f2;
-  border: none;
-  color: #dc2626;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+  width: 28px; height: 28px; border-radius: 6px; background: #fef2f2; border: none;
+  color: #dc2626; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
+.btn-remove-contract:hover { background: #fee2e2; }
 
-.btn-remove-contract:hover {
-  background: #fee2e2;
-}
-
-.btn-remove-contract i {
-  font-size: 18px;
-}
-
-.contract-card-body {
-  padding: 24px;
-}
+.contract-card-body { padding: 24px; }
 
 /* 인원 섹션 */
 .staff-section {
-  margin-top: 24px;
-  padding: 20px;
-  background: #f8fafc;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
+  margin-top: 24px; padding: 20px; background: #f8fafc;
+  border-radius: 10px; border: 1px solid #e2e8f0;
 }
 
-.staff-input-group {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.staff-position {
-  flex: 1;
-}
-
-.staff-count {
-  width: 100px;
-}
+.staff-input-group { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+.staff-position { flex: 1; }
+.staff-count { width: 90px; }
 
 .btn-add-staff {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 20px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  white-space: nowrap;
+  display: flex; align-items: center; gap: 6px; padding: 10px 16px;
+  background-color: #10b981; border: none; border-radius: 8px;
+  color: white; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
+.btn-add-staff:hover { background-color: #059669; }
 
-.btn-add-staff:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-}
-
-.btn-add-staff i {
-  font-size: 16px;
-}
-
-.staff-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
+.staff-list { display: flex; flex-direction: column; gap: 8px; }
 .staff-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: white; border: 1px solid #e2e8f0; border-radius: 8px;
 }
-
-.staff-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-}
-
-.staff-info i {
-  font-size: 18px;
-  color: #667eea;
-}
-
-.staff-position-name {
-  font-size: 14px;
-  color: #1e293b;
-  font-weight: 500;
-}
-
+.staff-info { display: flex; align-items: center; gap: 10px; flex: 1; }
+.staff-info i { font-size: 18px; color: #4f46e5; }
+.staff-position-name { font-size: 13px; color: #1e293b; font-weight: 500; }
 .staff-count-badge {
-  padding: 4px 10px;
-  background: #eff6ff;
-  color: #1e40af;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 3px 8px; background-color: #eff6ff; color: #1e40af;
+  border-radius: 6px; font-size: 12px; font-weight: 600;
 }
-
 .btn-remove-staff {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  background: #fef2f2;
-  border: none;
-  color: #dc2626;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+  width: 24px; height: 24px; border-radius: 6px; background: #fef2f2; border: none;
+  color: #dc2626; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
-
-.btn-remove-staff:hover {
-  background: #fee2e2;
-}
-
-.btn-remove-staff i {
-  font-size: 16px;
-}
+.btn-remove-staff:hover { background: #fee2e2; }
 
 .staff-total {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #1e40af;
-  font-weight: 600;
+  margin-top: 12px; padding: 10px 14px; background-color: #eef2ff;
+  border-radius: 8px; display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: #4f46e5; font-weight: 600;
 }
 
-.staff-total i {
-  font-size: 18px;
-}
-
-/* 메모 히스토리 */
-.memo-history {
-  margin-bottom: 16px;
-  background: #fafbfc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.history-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: white;
-  border-bottom: 1px solid #e2e8f0;
-  font-size: 13px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.history-header i {
-  font-size: 16px;
-}
-
-.history-list {
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 12px;
-}
-
-.history-item {
-  padding: 12px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-
-.history-item:last-child {
-  margin-bottom: 0;
-}
-
-.history-date {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 600;
-  display: block;
-  margin-bottom: 6px;
-}
-
-.history-content {
-  font-size: 13px;
-  color: #334155;
-  line-height: 1.5;
-  margin: 0;
-}
-
-/* === 폼 액션 === */
+/* === 폼 액션 버튼 === */
 .form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 24px;
-  border-top: 1px solid #f1f5f9;
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding-top: 24px; border-top: 1px solid #f1f5f9;
 }
 
-.btn-prev,
-.btn-next,
-.btn-submit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
+.btn-prev, .btn-next, .btn-submit {
+  display: flex; align-items: center; gap: 6px; padding: 10px 20px;
+  border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
 }
 
-.btn-prev {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
+.btn-prev { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-prev:hover { background: #f8fafc; color: #1e293b; }
 
-.btn-prev:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
+.btn-next { background-color: #4f46e5; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-next:hover { background-color: #4338ca; transform: translateY(-1px); }
 
-.btn-next,
-.btn-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
+.btn-submit { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-submit:hover { background-color: #059669; transform: translateY(-1px); }
 
-.btn-next:hover,
-.btn-submit:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-}
-
-.btn-prev i,
-.btn-next i,
-.btn-submit i {
-  font-size: 18px;
-}
-
-/* === 반응형 === */
+/* === 반응형 (Responsive) === */
 @media (max-width: 1024px) {
-  .steps-list {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .steps-list { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
+  .page-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+  .header-actions, .btn-cancel { width: 100%; justify-content: center; }
 
-  .header-actions {
-    width: 100%;
-  }
+  .steps-list { grid-template-columns: 1fr; gap: 8px; }
+  .form-step { padding: 20px; }
+  .form-grid { grid-template-columns: 1fr; }
 
-  .btn-cancel {
-    width: 100%;
-    justify-content: center;
-  }
+  .address-search-group { flex-direction: column; }
+  .postal-input { width: 100%; }
+  .btn-search-address { width: 100%; justify-content: center; }
 
-  .steps-list {
-    grid-template-columns: 1fr;
-  }
+  .area-wrapper { flex-direction: column; align-items: stretch; }
+  .staff-input-group { flex-direction: column; align-items: stretch;}
+  .staff-count { width: 100%; }
+  .btn-add-staff { justify-content: center; }
 
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .address-search-group {
-    flex-direction: column;
-  }
-
-  .postal-input {
-    width: 100%;
-  }
-
-  .btn-search-address {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .area-wrapper {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .staff-input-group {
-    flex-direction: column;
-  }
-
-  .staff-count {
-    width: 100%;
-  }
-
-  .contract-actions {
-    flex-direction: column;
-  }
-
-  .btn-add-contract {
-    width: 100%;
-    justify-content: center;
-  }
+  .contract-actions { flex-direction: column; }
+  .btn-add-contract { width: 100%; justify-content: center; }
+  .form-actions { flex-direction: column; }
+  .btn-prev, .btn-next, .btn-submit { width: 100%; justify-content: center; }
 }
 </style>

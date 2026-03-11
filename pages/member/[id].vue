@@ -86,10 +86,10 @@ const educationHistory = ref([
 
 // 탭 목록
 const tabs = [
-  { id: 'info', name: '기본정보', icon: 'mdi-account' },
-  // { id: 'work', name: '근무이력', icon: 'mdi-briefcase' },
-  { id: 'salary', name: '급여이력', icon: 'mdi-cash' },
-  // { id: 'education', name: '교육이력', icon: 'mdi-school' }
+  { id: 'info', name: '기본정보', icon: 'mdi-account-outline' },
+  // { id: 'work', name: '근무이력', icon: 'mdi-briefcase-outline' },
+  { id: 'salary', name: '급여이력', icon: 'mdi-cash-multiple' },
+  // { id: 'education', name: '교육이력', icon: 'mdi-school-outline' }
 ];
 
 // 나이 계산
@@ -221,7 +221,6 @@ onMounted(() => {
 
 <template>
   <div class="member-detail-page">
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <button @click="goBack" class="btn-back">
@@ -229,7 +228,7 @@ onMounted(() => {
         </button>
         <div>
           <h1 class="page-title">
-            <i class="mdi mdi-account-details"></i>
+            <i class="mdi mdi-account-details-outline"></i>
             직원 상세정보
           </h1>
           <p class="page-subtitle">직원의 상세 정보를 확인하고 관리합니다</p>
@@ -238,11 +237,11 @@ onMounted(() => {
       <div class="header-actions">
         <template v-if="!isEditing">
           <button @click="toggleEdit" class="btn-edit">
-            <i class="mdi mdi-pencil"></i>
+            <i class="mdi mdi-pencil-outline"></i>
             <span>수정</span>
           </button>
           <button @click="deleteEmployee" class="btn-delete">
-            <i class="mdi mdi-delete"></i>
+            <i class="mdi mdi-trash-can-outline"></i>
             <span>삭제</span>
           </button>
         </template>
@@ -259,7 +258,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 프로필 카드 -->
     <div class="profile-card">
       <div class="profile-banner"></div>
       <div class="profile-content">
@@ -269,7 +267,7 @@ onMounted(() => {
             <i v-else class="mdi mdi-account"></i>
           </div>
           <button v-if="isEditing" class="btn-change-photo">
-            <i class="mdi mdi-camera"></i>
+            <i class="mdi mdi-camera-outline"></i>
           </button>
         </div>
 
@@ -277,26 +275,26 @@ onMounted(() => {
           <div class="profile-main">
             <h2 class="profile-name">{{ employee.name }}</h2>
             <span :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">
-              <i :class="['mdi', employee.status == '0' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+              <i :class="['mdi', employee.status == '0' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
               {{ employee.status == 0 ? '재직' : '퇴사' }}
             </span>
           </div>
 
           <div class="profile-details">
             <div class="detail-item">
-              <i class="mdi mdi-card-account-details"></i>
+              <i class="mdi mdi-card-account-details-outline"></i>
               <span>{{ employee.id || '-' }}</span>
             </div>
             <div class="detail-item">
-              <i class="mdi mdi-office-building"></i>
+              <i class="mdi mdi-office-building-outline"></i>
               <span>{{ employee.siteName || '-' }}</span>
             </div>
             <div class="detail-item">
-              <i class="mdi mdi-account-tie"></i>
+              <i class="mdi mdi-account-tie-outline"></i>
               <span>{{ employee.positionName || '-' }}</span>
             </div>
             <div class="detail-item">
-              <i class="mdi mdi-calendar"></i>
+              <i class="mdi mdi-calendar-blank-outline"></i>
               <span>재직기간: {{ workPeriod }}</span>
             </div>
           </div>
@@ -304,8 +302,8 @@ onMounted(() => {
 
         <div class="profile-stats">
           <div class="stat-item">
-            <div class="stat-icon" style="--stat-color: #667eea;">
-              <i class="mdi mdi-calendar-clock"></i>
+            <div class="stat-icon" style="--stat-color: #4f46e5; --stat-bg: #eef2ff;">
+              <i class="mdi mdi-calendar-clock-outline"></i>
             </div>
             <div class="stat-content">
               <span class="stat-label">근속년수</span>
@@ -313,8 +311,8 @@ onMounted(() => {
             </div>
           </div>
           <div class="stat-item">
-            <div class="stat-icon" style="--stat-color: #10b981;">
-              <i class="mdi mdi-calendar-start"></i>
+            <div class="stat-icon" style="--stat-color: #10b981; --stat-bg: #ecfdf5;">
+              <i class="mdi mdi-calendar-start-outline"></i>
             </div>
             <div class="stat-content">
               <span class="stat-label">입사일</span>
@@ -322,8 +320,8 @@ onMounted(() => {
             </div>
           </div>
           <div class="stat-item">
-            <div class="stat-icon" style="--stat-color: #f59e0b;">
-              <i class="mdi mdi-cake-variant"></i>
+            <div class="stat-icon" style="--stat-color: #f59e0b; --stat-bg: #fffbeb;">
+              <i class="mdi mdi-cake-variant-outline"></i>
             </div>
             <div class="stat-content">
               <span class="stat-label">나이</span>
@@ -334,7 +332,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 탭 네비게이션 -->
     <div class="tabs-container">
       <div class="tabs-nav">
         <button
@@ -349,15 +346,12 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 탭 컨텐츠 -->
     <div class="tab-content">
-      <!-- 기본정보 탭 -->
       <div v-show="activeTab === 'info'" class="tab-panel">
         <div class="info-sections">
-          <!-- 개인정보 -->
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-account"></i>
+              <i class="mdi mdi-account-outline"></i>
               <h3>개인정보</h3>
             </div>
             <div class="info-grid">
@@ -432,10 +426,9 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 근무정보 -->
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-briefcase"></i>
+              <i class="mdi mdi-briefcase-outline"></i>
               <h3>근무정보</h3>
             </div>
             <div class="info-grid">
@@ -445,15 +438,6 @@ onMounted(() => {
               </div>
               <div class="info-item">
                 <label>구분</label>
-                <!--select
-                    v-if="isEditing"
-                    v-model="employee.type"
-                    class="info-select"
-                >
-                  <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
-                    {{ employee.type }}
-                  </option>
-                </select-->
                 <span class="info-value">{{ employee.type || '-' }}</span>
               </div>
               <div class="info-item">
@@ -520,17 +504,12 @@ onMounted(() => {
                   <span v-else class="info-value text-red">{{ employee.outReason || '미입력' }}</span>
                 </div>
               </template>
-              <!--div class="info-item">
-                <label>재직기간</label>
-                <span class="info-value">{{ workPeriod }}</span>
-              </div-->
             </div>
           </div>
 
-          <!-- 특이사항 -->
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-alert-circle"></i>
+              <i class="mdi mdi-alert-circle-outline"></i>
               <h3>특이사항</h3>
             </div>
             <div class="info-grid">
@@ -562,7 +541,7 @@ onMounted(() => {
               <div class="info-item">
                 <label>국가유공자</label>
                 <span v-if="employee.patriot === 'Y'" class="badge badge-blue">
-                  <i class="mdi mdi-medal"></i>
+                  <i class="mdi mdi-medal-outline"></i>
                   유공자
                 </span>
                 <span v-else class="info-value text-gray">해당없음</span>
@@ -570,7 +549,7 @@ onMounted(() => {
               <div class="info-item">
                 <label>기초수급자</label>
                 <span v-if="employee.beneficiary === 'Y'" class="badge badge-green">
-                  <i class="mdi mdi-hand-heart"></i>
+                  <i class="mdi mdi-hand-heart-outline"></i>
                   수급자
                 </span>
                 <span v-else class="info-value text-gray">해당없음</span>
@@ -578,7 +557,6 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- 급여정보 -->
           <div class="info-section">
             <div class="section-header">
               <i class="mdi mdi-cash"></i>
@@ -611,14 +589,14 @@ onMounted(() => {
               <div class="info-item">
                 <label>4대보험</label>
                 <span :class="['badge', employee.four_ins === 'Y' ? 'badge-green' : 'badge-gray']">
-                  <i :class="['mdi', employee.four_ins === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+                  <i :class="['mdi', employee.four_ins === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
                   {{ employee.four_ins === 'Y' ? '가입' : '미가입' }}
                 </span>
               </div>
               <div class="info-item">
                 <label>퇴직연금</label>
                 <span :class="['badge', employee.retire_pension === 'Y' ? 'badge-green' : 'badge-gray']">
-                  <i :class="['mdi', employee.retire_pension === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+                  <i :class="['mdi', employee.retire_pension === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
                   {{ employee.retire_pension === 'Y' ? '가입' : '미가입' }}
                 </span>
               </div>
@@ -637,14 +615,14 @@ onMounted(() => {
 
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-file-document-edit"></i>
+              <i class="mdi mdi-file-document-edit-outline"></i>
               <h3>근로 계약 관리</h3>
             </div>
             <div class="contract-box">
               <div class="contract-info-summary">
                 <p>현재 등록된 근로계약서 정보를 확인하고 출력할 수 있습니다.</p>
                 <button @click="isContractModalOpen = true" class="btn-contract-view">
-                  <i class="mdi mdi-file-find"></i>
+                  <i class="mdi mdi-file-find-outline"></i>
                   근로계약서 상세보기
                 </button>
               </div>
@@ -653,36 +631,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 근무이력 탭 -->
-      <!--div v-show="activeTab === 'work'" class="tab-panel">
-        <div class="history-list">
-          <div v-for="(item, index) in workHistory" :key="index" class="history-item">
-            <div class="history-icon">
-              <i class="mdi mdi-briefcase"></i>
-            </div>
-            <div class="history-content">
-              <div class="history-header">
-                <h4>{{ item.site }}</h4>
-                <span :class="['history-status', item.status === '재직' ? 'status-active' : '']">
-                  {{ item.status }}
-                </span>
-              </div>
-              <div class="history-details">
-                <span class="history-period">
-                  <i class="mdi mdi-calendar"></i>
-                  {{ item.period }}
-                </span>
-                <span class="history-position">
-                  <i class="mdi mdi-account-tie"></i>
-                  {{ item.positionName }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div-->
-
-      <!-- 급여이력 탭 -->
       <div v-show="activeTab === 'salary'" class="tab-panel">
         <div class="table-wrapper">
           <table class="history-table">
@@ -705,44 +653,25 @@ onMounted(() => {
           </table>
         </div>
       </div>
-
-      <!-- 교육이력 탭 -->
-      <!--div v-show="activeTab === 'education'" class="tab-panel">
-        <div class="history-list">
-          <div v-for="(item, index) in educationHistory" :key="index" class="history-item">
-            <div class="history-icon">
-              <i class="mdi mdi-school"></i>
-            </div>
-            <div class="history-content">
-              <div class="history-header">
-                <h4>{{ item.title }}</h4>
-                <span class="badge badge-green">{{ item.status }}</span>
-              </div>
-              <div class="history-details">
-                <span class="history-period">
-                  <i class="mdi mdi-calendar"></i>
-                  {{ item.date }}
-                </span>
-                <span class="history-position">
-                  <i class="mdi mdi-clock-outline"></i>
-                  {{ item.duration }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div-->
     </div>
   </div>
 </template>
 
 <style scoped>
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+
+/* === 전역 공통 === */
+.member-detail-page {
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 /* === 페이지 헤더 === */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .header-left {
@@ -752,785 +681,310 @@ onMounted(() => {
 }
 
 .btn-back {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  background: white; border: 1px solid #e2e8f0; color: #475569;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
 
-.btn-back:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-back i {
-  font-size: 24px;
-}
+.btn-back:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+.btn-back i { font-size: 20px; }
 
 .page-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 8px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: 24px; font-weight: 700; color: #1e293b;
+  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px;
+  letter-spacing: -0.5px;
 }
 
-.page-title i {
-  font-size: 32px;
-  color: #667eea;
+.page-title i { font-size: 26px; color: #4f46e5; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
+
+.header-actions { display: flex; gap: 10px; }
+
+/* 공통 버튼 디자인 (그라디언트 제거) */
+.btn-edit, .btn-delete, .btn-cancel, .btn-save {
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
+  border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
 
-.page-subtitle {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0;
-}
+.btn-edit { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-edit:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
 
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
+.btn-delete { background: white; border: 1px solid #fee2e2; color: #dc2626; }
+.btn-delete:hover { background: #fef2f2; border-color: #fecaca; }
 
-.btn-edit,
-.btn-delete,
-.btn-cancel,
-.btn-save {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
+.btn-cancel { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-cancel:hover { background: #f8fafc; color: #1e293b; }
 
-.btn-edit {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
+.btn-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-save:hover { background-color: #059669; transform: translateY(-1px); }
 
-.btn-edit:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-delete {
-  background: white;
-  border: 1px solid #fee2e2;
-  color: #dc2626;
-}
-
-.btn-delete:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-}
-
-.btn-cancel {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
-
-.btn-cancel:hover {
-  background: #f8fafc;
-}
-
-.btn-save {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-}
-
-.btn-save:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
-}
-
-.btn-edit i,
-.btn-delete i,
-.btn-cancel i,
-.btn-save i {
-  font-size: 18px;
-}
+.btn-edit i, .btn-delete i, .btn-cancel i, .btn-save i { font-size: 16px; }
 
 /* === 프로필 카드 === */
 .profile-card {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-  margin-bottom: 28px;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; margin-bottom: 24px;
 }
 
 .profile-banner {
-  height: 120px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 100px;
+  background-color: #6d28d9; /* 솔리드 퍼플 */
 }
 
 .profile-content {
-  padding: 0 32px 32px;
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
+  padding: 0 24px 24px; display: flex; gap: 24px; align-items: flex-start;
 }
 
 .profile-photo-section {
-  position: relative;
-  margin-top: -60px;
+  position: relative; margin-top: -40px;
 }
 
 .profile-photo {
-  width: 120px;
-  height: 120px;
-  border-radius: 20px;
-  background: white;
-  border: 4px solid white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+  width: 100px; height: 100px; border-radius: 16px;
+  background: white; border: 4px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 
-.profile-photo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.profile-photo i {
-  font-size: 64px;
-  color: #cbd5e1;
-}
+.profile-photo img { width: 100%; height: 100%; object-fit: cover; }
+.profile-photo i { font-size: 50px; color: #cbd5e1; }
 
 .btn-change-photo {
-  position: absolute;
-  bottom: -8px;
-  right: -8px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: #667eea;
-  border: 3px solid white;
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  position: absolute; bottom: -4px; right: -4px; width: 34px; height: 34px;
+  border-radius: 50%; background: #4f46e5; border: 3px solid white; color: white;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
+.btn-change-photo:hover { background: #4338ca; transform: scale(1.05); }
+.btn-change-photo i { font-size: 16px; }
 
-.btn-change-photo:hover {
-  background: #5568d3;
-  transform: scale(1.1);
-}
-
-.btn-change-photo i {
-  font-size: 20px;
-}
-
-.profile-info {
-  flex: 1;
-  padding-top: 8px;
-}
+.profile-info { flex: 1; padding-top: 12px; }
 
 .profile-main {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
 }
 
-.profile-name {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.profile-name { font-size: 24px; font-weight: 700; color: #1e293b; margin: 0; }
 
 .status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  border-radius: 6px; font-size: 12px; font-weight: 600;
 }
-
-.status-badge i {
-  font-size: 16px;
-}
-
-.status-active {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.status-inactive {
-  background: #fee2e2;
-  color: #991b1b;
-}
+.status-badge i { font-size: 14px; }
+.status-active { background: #d1fae5; color: #065f46; }
+.status-inactive { background: #fee2e2; color: #991b1b; }
 
 .profile-details {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
+  display: flex; flex-wrap: wrap; gap: 16px;
 }
 
 .detail-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #64748b;
-  font-size: 14px;
+  display: flex; align-items: center; gap: 6px; color: #475569; font-size: 13px; font-weight: 500;
 }
-
-.detail-item i {
-  font-size: 18px;
-  color: #94a3b8;
-}
+.detail-item i { font-size: 16px; color: #94a3b8; }
 
 .profile-stats {
-  display: flex;
-  gap: 24px;
-  padding-top: 8px;
+  display: flex; gap: 20px; padding-top: 12px;
 }
 
-.stat-item {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
+.stat-item { display: flex; gap: 10px; align-items: center; }
 
 .stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: var(--stat-color);
-  opacity: 0.1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
+  width: 44px; height: 44px; border-radius: 10px;
+  background-color: var(--stat-bg, #f1f5f9);
+  display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
+.stat-icon i { font-size: 20px; color: var(--stat-color); }
 
-.stat-icon i {
-  font-size: 24px;
-  color: var(--stat-color);
-  position: absolute;
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.stat-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-}
+.stat-content { display: flex; flex-direction: column; gap: 2px; }
+.stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
+.stat-value { font-size: 14px; font-weight: 700; color: #1e293b; }
 
 /* === 탭 === */
 .tabs-container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  margin-bottom: 28px;
-  overflow: hidden;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); margin-bottom: 24px; overflow: hidden;
 }
 
-.tabs-nav {
-  display: flex;
-  border-bottom: 2px solid #f1f5f9;
-}
+.tabs-nav { display: flex; border-bottom: 1px solid #f1f5f9; }
 
 .tab-button {
-  flex: 1;
-  padding: 16px 24px;
-  background: transparent;
-  border: none;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: all 0.2s;
-  position: relative;
+  flex: 1; padding: 14px 20px; background: transparent; border: none;
+  color: #64748b; font-size: 13px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s; position: relative; outline: none;
 }
-
-.tab-button i {
-  font-size: 18px;
-}
-
-.tab-button:hover {
-  background: #f8fafc;
-  color: #334155;
-}
-
-.tab-button.active {
-  color: #667eea;
-}
-
+.tab-button i { font-size: 16px; }
+.tab-button:hover { background: #f8fafc; color: #334155; }
+.tab-button.active { color: #4f46e5; background: white; }
 .tab-button.active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+  height: 2px; background-color: #4f46e5;
 }
 
 /* === 탭 컨텐츠 === */
 .tab-content {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 32px;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); padding: 24px;
 }
-
-.tab-panel {
-  animation: fadeIn 0.3s;
-}
+.tab-panel { animation: fadeIn 0.3s; }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 /* === 정보 섹션 === */
-.info-sections {
-  display: grid;
-  gap: 24px;
-}
-
+.info-sections { display: grid; gap: 20px; }
 .info-section {
-  border: 1px solid #f1f5f9;
-  border-radius: 12px;
-  padding: 24px;
-  background: #fafbfc;
+  border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; background: white;
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #f1f5f9;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 20px;
+  padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;
 }
-
-.section-header i {
-  font-size: 24px;
-  color: #667eea;
-}
-
-.section-header h3 {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.section-header i { font-size: 20px; color: #4f46e5; }
+.section-header h3 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0; }
 
 .info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;
 }
+.info-item { display: flex; flex-direction: column; gap: 6px; }
+.info-item.full-width { grid-column: 1 / -1; }
 
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.info-item label { font-size: 12px; font-weight: 600; color: #64748b; }
+.info-value { font-size: 14px; color: #1e293b; padding: 8px 0; font-weight: 500; }
 
-.info-item.full-width {
-  grid-column: 1 / -1;
+.info-input, .info-select, .info-textarea {
+  padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 13px; color: #334155; background: white; transition: all 0.2s;
 }
+.info-input:focus, .info-select:focus, .info-textarea:focus {
+  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+.info-textarea { resize: vertical; font-family: inherit; }
 
-.info-item label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.info-value {
-  font-size: 15px;
-  color: #1e293b;
-  padding: 10px 0;
-}
-
-.info-input,
-.info-select,
-.info-textarea {
-  padding: 10px 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #334155;
-  background: white;
-  transition: all 0.2s;
-}
-
-.info-input:focus,
-.info-select:focus,
-.info-textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.info-textarea {
-  resize: vertical;
-  font-family: inherit;
-}
-
-.radio-group-inline {
-  display: flex;
-  gap: 12px;
-  padding: 5px 0;
-}
+/* 라디오 버튼 스타일 */
+.radio-group-inline { display: flex; gap: 12px; padding: 4px 0; }
 
 .radio-label-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid #e2e8f0;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border-radius: 6px; border: 1px solid #e2e8f0; cursor: pointer;
+  font-size: 13px; font-weight: 500; transition: all 0.2s; color: #475569;
 }
 
-.active-label:has(input:checked) {
-  background: #d1fae5;
-  border-color: #10b981;
-  color: #065f46;
-}
+.radio-label-status input { display: none; }
 
-.inactive-label:has(input:checked) {
-  background: #fee2e2;
-  border-color: #ef4444;
-  color: #991b1b;
-}
+.active-label:has(input:checked) { background: #d1fae5; border-color: #10b981; color: #065f46; }
+.inactive-label:has(input:checked) { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
 
 /* 퇴사 강조 스타일 */
-.text-red {
-  color: #dc2626 !important;
-  font-weight: 600;
-}
+.text-red { color: #dc2626 !important; font-weight: 600; }
+.border-red { border-color: #fecaca !important; }
+.border-red:focus { border-color: #dc2626 !important; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important; }
 
-.border-red {
-  border-color: #fecaca !important;
-}
-
-.border-red:focus {
-  border-color: #dc2626 !important;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
-}
-
+/* 인라인 일반 라디오 */
 .radio-label-inline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
+  display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #475569;
 }
-
 .radio-label-inline input {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; border: 2px solid #cbd5e1; border-radius: 50%;
+  margin: 0; cursor: pointer; position: relative; transition: all 0.2s;
+}
+.radio-label-inline input:checked { border-color: #4f46e5; }
+.radio-label-inline input:checked::after {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 8px; height: 8px; background-color: #4f46e5; border-radius: 50%;
 }
 
 /* 배지 */
 .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
+  border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
 }
+.badge i { font-size: 13px; }
 
-.badge i {
-  font-size: 14px;
-}
+.badge-green { background: #d1fae5; color: #065f46; }
+.badge-purple { background: #f3e8ff; color: #7e22ce; }
+.badge-orange { background: #ffedd5; color: #c2410c; }
+.badge-blue { background: #e0f2fe; color: #0369a1; }
+.badge-gray { background: #f1f5f9; color: #475569; }
 
-.badge-green {
-  background: #d1fae5;
-  color: #065f46;
-}
-
-.badge-purple {
-  background: #ede9fe;
-  color: #5b21b6;
-}
-
-.badge-orange {
-  background: #fed7aa;
-  color: #92400e;
-}
-
-.badge-blue {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.badge-gray {
-  background: #f1f5f9;
-  color: #64748b;
-}
-
-.text-gray {
-  color: #94a3b8;
-}
+.text-gray { color: #94a3b8; }
 
 /* === 이력 리스트 === */
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+.history-list { display: flex; flex-direction: column; gap: 12px; }
 
 .history-item {
-  display: flex;
-  gap: 16px;
-  padding: 20px;
-  background: #fafbfc;
-  border: 1px solid #f1f5f9;
-  border-radius: 12px;
-  transition: all 0.2s;
+  display: flex; gap: 14px; padding: 16px;
+  background: white; border: 1px solid #f1f5f9; border-radius: 10px; transition: all 0.2s;
 }
-
-.history-item:hover {
-  background: #f8fafc;
-  border-color: #e2e8f0;
-}
+.history-item:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 .history-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  width: 44px; height: 44px; border-radius: 10px;
+  background-color: #eef2ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
+.history-icon i { font-size: 20px; color: #4f46e5; }
 
-.history-icon i {
-  font-size: 24px;
-  color: white;
-}
-
-.history-content {
-  flex: 1;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.history-header h4 {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.history-content { flex: 1; }
+.history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.history-header h4 { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0; }
 
 .history-status {
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  padding: 4px 10px;
-  background: #f1f5f9;
-  border-radius: 4px;
+  font-size: 11px; font-weight: 600; color: #475569; padding: 3px 8px;
+  background: #f1f5f9; border-radius: 4px;
 }
+.history-status.status-active { background: #d1fae5; color: #065f46; }
 
-.history-status.status-active {
-  background: #d1fae5;
-  color: #065f46;
+.history-details { display: flex; gap: 16px; color: #64748b; font-size: 12px; }
+.history-period, .history-position { display: flex; align-items: center; gap: 4px; }
+
+/* === 이력 테이블 (그라디언트 제거) === */
+.table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch;}
+.history-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 500px; }
+.history-table thead { background-color: #6d28d9; }
+.history-table th { padding: 12px 16px; text-align: left; color: white; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.history-table td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+.history-table tbody tr:hover { background-color: #f8fafc; }
+.history-table td.total { font-weight: 700; color: #4f46e5; }
+
+/* === 근로계약 버튼 === */
+.contract-box { padding: 20px; background: #f8fafc; border-radius: 10px; text-align: center; border: 1px solid #e2e8f0; }
+.contract-info-summary p { font-size: 13px; color: #64748b; margin-bottom: 14px; }
+.btn-contract-view {
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px;
+  background: white; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 8px;
+  font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);
 }
+.btn-contract-view:hover { background: #f1f5f9; border-color: #94a3b8; }
+.btn-contract-view i { font-size: 18px; color: #4f46e5; }
 
-.history-details {
-  display: flex;
-  gap: 20px;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.history-period,
-.history-position {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.history-period i,
-.history-position i {
-  font-size: 16px;
-}
-
-/* === 이력 테이블 === */
-.table-wrapper {
-  overflow-x: auto;
-}
-
-.history-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.history-table thead {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.history-table th {
-  padding: 14px 20px;
-  text-align: left;
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.history-table td {
-  padding: 14px 20px;
-  border-bottom: 1px solid #f1f5f9;
-  color: #334155;
-}
-
-.history-table tbody tr:hover {
-  background: #f8fafc;
-}
-
-.history-table td.total {
-  font-weight: 700;
-  color: #667eea;
-}
-
-/* === 반응형 === */
+/* === 반응형 (Responsive) === */
 @media (max-width: 1024px) {
-  .profile-content {
-    flex-direction: column;
-  }
-
-  .profile-stats {
-    flex-direction: column;
-  }
+  .profile-content { flex-direction: column; gap: 20px; }
+  .profile-photo-section { margin-top: -50px; }
+  .profile-stats { flex-direction: column; width: 100%; gap: 12px; padding-top: 0; }
 }
 
 @media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
+  .page-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
+  .btn-edit, .btn-delete, .btn-cancel, .btn-save { flex: 1; justify-content: center; }
 
-  .header-actions {
-    width: 100%;
-    flex-direction: column;
-  }
+  .tabs-nav { flex-wrap: wrap; }
+  .tab-button { flex: 1 1 50%; border-bottom: 1px solid #f1f5f9; }
+  .tab-button.active::after { bottom: 0; }
 
-  .btn-edit,
-  .btn-delete,
-  .btn-cancel,
-  .btn-save {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .tabs-nav {
-    flex-direction: column;
-  }
-
-  .tab-button.active::after {
-    left: 0;
-    right: auto;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    height: 100%;
-  }
-
-  .info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-stats {
-    width: 100%;
-  }
-}
-
-/* 특이사항 구분선 */
-.full-width.opacity-10 {
-  grid-column: 1 / -1;
-  border: 0;
-  border-top: 1px solid #e2e8f0;
-  margin: 10px 0;
-}
-
-/* 근로계약 버튼 스타일 */
-.contract-box {
-  padding: 20px;
-  background: #f1f5f9;
-  border-radius: 12px;
-  text-align: center;
-}
-
-.contract-info-summary p {
-  font-size: 14px;
-  color: #64748b;
-  margin-bottom: 16px;
-}
-
-.btn-contract-view {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
-  background: #1e293b;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-contract-view:hover {
-  background: #334155;
-  transform: translateY(-2px);
+  .info-grid { grid-template-columns: 1fr; }
+  .profile-details { flex-direction: column; gap: 10px; }
+  .tab-content { padding: 16px; }
+  .info-section { padding: 16px; }
 }
 </style>

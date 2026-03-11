@@ -266,7 +266,6 @@ onMounted(() => {
 
 <template>
   <div class="member-register-page">
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <button @click="handleCancel" class="btn-back">
@@ -274,7 +273,7 @@ onMounted(() => {
         </button>
         <div>
           <h1 class="page-title">
-            <i class="mdi mdi-account-plus"></i>
+            <i class="mdi mdi-account-plus-outline"></i>
             직원 등록
           </h1>
           <p class="page-subtitle">새로운 직원 정보를 등록합니다</p>
@@ -288,7 +287,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 진행 단계 -->
     <div class="steps-container">
       <div class="steps-progress">
         <div class="progress-bar">
@@ -318,21 +316,18 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 폼 컨테이너 -->
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
-        <!-- Step 1: 기본 정보 -->
         <div v-show="currentStep === 1" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-account"></i>
+            <i class="mdi mdi-account-outline"></i>
             <h2>기본 정보</h2>
           </div>
 
           <div class="form-grid">
-            <!-- 구분 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-tag"></i>
+                <i class="mdi mdi-tag-outline"></i>
                 구분
               </label>
               <select v-model="employee.type" required class="form-select">
@@ -343,10 +338,9 @@ onMounted(() => {
               </select>
             </div>
 
-            <!-- 이름 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-account"></i>
+                <i class="mdi mdi-account-outline"></i>
                 이름
               </label>
               <input
@@ -358,10 +352,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 사번 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-card-account-details"></i>
+                <i class="mdi mdi-card-account-details-outline"></i>
                 사번
               </label>
               <input
@@ -373,10 +366,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 비밀번호 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-lock"></i>
+                <i class="mdi mdi-lock-outline"></i>
                 비밀번호
               </label>
               <input
@@ -388,10 +380,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 연락처 -->
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-phone"></i>
+                <i class="mdi mdi-phone-outline"></i>
                 연락처
               </label>
               <input
@@ -402,10 +393,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 이메일 -->
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-email"></i>
+                <i class="mdi mdi-email-outline"></i>
                 이메일
               </label>
               <input
@@ -416,7 +406,6 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 성별 -->
             <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-human-male-female"></i>
@@ -434,10 +423,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 주민번호 -->
             <div class="form-group full-width">
               <label class="form-label required">
-                <i class="mdi mdi-card-account-details-outline"></i>
+                <i class="mdi mdi-badge-account-horizontal-outline"></i>
                 주민번호
               </label>
               <div class="ssn-group">
@@ -460,10 +448,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 생년월일 -->
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-cake-variant"></i>
+                <i class="mdi mdi-cake-variant-outline"></i>
                 생년월일
               </label>
               <input
@@ -473,10 +460,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 주소 -->
             <div class="form-group full-width">
               <label class="form-label">
-                <i class="mdi mdi-home"></i>
+                <i class="mdi mdi-home-outline"></i>
                 주소
               </label>
               <input
@@ -496,15 +482,13 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Step 2: 특이 사항 -->
         <div v-show="currentStep === 2" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-alert-circle"></i>
+            <i class="mdi mdi-alert-circle-outline"></i>
             <h2>특이 사항</h2>
           </div>
 
           <div class="form-grid">
-            <!-- 장애 여부 -->
             <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-wheelchair-accessibility"></i>
@@ -522,10 +506,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 장애등록일 -->
             <div v-if="employee.disability === 'Y'" class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-calendar"></i>
+                <i class="mdi mdi-calendar-outline"></i>
                 장애등록일
               </label>
               <input
@@ -535,7 +518,6 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 장애등급 -->
             <div v-if="employee.disability === 'Y'" class="form-group">
               <label class="form-label">
                 <i class="mdi mdi-format-list-numbered"></i>
@@ -549,10 +531,9 @@ onMounted(() => {
               </select>
             </div>
 
-            <!-- 새터민 여부 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-account-group"></i>
+                <i class="mdi mdi-account-group-outline"></i>
                 새터민 여부
               </label>
               <div class="radio-group">
@@ -567,10 +548,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 국가유공자 여부 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-medal"></i>
+                <i class="mdi mdi-medal-outline"></i>
                 국가유공자 여부
               </label>
               <div class="radio-group">
@@ -585,10 +565,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 청년인턴 여부 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-school"></i>
+                <i class="mdi mdi-school-outline"></i>
                 청년인턴 여부
               </label>
               <div class="radio-group">
@@ -603,10 +582,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 기초수급자 여부 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-hand-heart"></i>
+                <i class="mdi mdi-hand-heart-outline"></i>
                 기초수급자 여부
               </label>
               <div class="radio-group">
@@ -621,7 +599,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 외국인 여부 -->
             <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-earth"></i>
@@ -639,10 +616,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 국적 -->
             <div v-if="employee.foreigner === 'Y'" class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-flag"></i>
+                <i class="mdi mdi-flag-outline"></i>
                 국적
               </label>
               <input
@@ -653,7 +629,6 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 비자 코드 -->
             <div v-if="employee.foreigner === 'Y'" class="form-group">
               <label class="form-label">
                 <i class="mdi mdi-passport"></i>
@@ -667,10 +642,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 비자만료일 -->
             <div v-if="employee.foreigner === 'Y'" class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-calendar-clock"></i>
+                <i class="mdi mdi-calendar-clock-outline"></i>
                 비자만료일
               </label>
               <input
@@ -693,18 +667,16 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Step 3: 근무 정보 -->
         <div v-show="currentStep === 3" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-briefcase"></i>
+            <i class="mdi mdi-briefcase-outline"></i>
             <h2>근무 정보</h2>
           </div>
 
           <div class="form-grid">
-            <!-- 근무 현장 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-office-building"></i>
+                <i class="mdi mdi-office-building-outline"></i>
                 근무 현장
               </label>
               <select v-model="employee.site" required class="form-select">
@@ -715,10 +687,9 @@ onMounted(() => {
               </select>
             </div>
 
-            <!-- 직위 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-account-tie"></i>
+                <i class="mdi mdi-account-tie-outline"></i>
                 직위
               </label>
               <select v-model="employee.position" required class="form-select">
@@ -729,10 +700,9 @@ onMounted(() => {
               </select>
             </div>
 
-            <!-- 입사일 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-calendar-start"></i>
+                <i class="mdi mdi-calendar-start-outline"></i>
                 입사일
               </label>
               <input
@@ -743,10 +713,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 재직 상태 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-account-check"></i>
+                <i class="mdi mdi-account-check-outline"></i>
                 재직 상태
               </label>
               <div class="radio-group">
@@ -761,10 +730,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 퇴사일 -->
             <div v-if="employee.status == 1" class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-calendar-end"></i>
+                <i class="mdi mdi-calendar-end-outline"></i>
                 퇴사일
               </label>
               <input
@@ -775,10 +743,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 근로계약서 보기 버튼 -->
             <div class="form-group full-width">
               <button type="button" @click="showModal = true" class="btn-contract">
-                <i class="mdi mdi-file-document"></i>
+                <i class="mdi mdi-file-document-edit-outline"></i>
                 근로계약서 작성
               </button>
             </div>
@@ -796,18 +763,16 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Step 4: 급여 정보 -->
         <div v-show="currentStep === 4" class="form-step">
           <div class="step-header">
-            <i class="mdi mdi-cash"></i>
+            <i class="mdi mdi-cash-multiple"></i>
             <h2>급여 및 기타 정보</h2>
           </div>
 
           <div class="form-grid">
-            <!-- 은행 -->
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-bank"></i>
+                <i class="mdi mdi-bank-outline"></i>
                 은행
               </label>
               <select v-model="employee.bankName" class="form-select">
@@ -817,10 +782,9 @@ onMounted(() => {
               </select>
             </div>
 
-            <!-- 계좌번호 -->
             <div class="form-group">
               <label class="form-label">
-                <i class="mdi mdi-credit-card"></i>
+                <i class="mdi mdi-credit-card-outline"></i>
                 계좌번호
               </label>
               <input
@@ -831,10 +795,9 @@ onMounted(() => {
               />
             </div>
 
-            <!-- 4대보험 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-shield-check"></i>
+                <i class="mdi mdi-shield-check-outline"></i>
                 4대보험 가입
               </label>
               <div class="radio-group">
@@ -849,10 +812,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 퇴직연금 -->
             <div class="form-group">
               <label class="form-label required">
-                <i class="mdi mdi-piggy-bank"></i>
+                <i class="mdi mdi-piggy-bank-outline"></i>
                 퇴직연금 가입
               </label>
               <div class="radio-group">
@@ -867,10 +829,9 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 비고 -->
             <div class="form-group full-width">
               <label class="form-label">
-                <i class="mdi mdi-note-text"></i>
+                <i class="mdi mdi-note-text-outline"></i>
                 비고
               </label>
               <textarea
@@ -896,12 +857,11 @@ onMounted(() => {
       </div>
     </form>
 
-    <!-- 근로계약서 모달 -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal-container">
         <div class="modal-header">
           <h3 class="modal-title">
-            <i class="mdi mdi-file-document"></i>
+            <i class="mdi mdi-file-document-outline"></i>
             근로계약서
           </h3>
           <button @click="showModal = false" class="modal-close">
@@ -911,13 +871,11 @@ onMounted(() => {
 
         <div class="modal-body">
           <div class="contract-document">
-            <!-- 제목 -->
             <div class="contract-header">
               <h1 class="contract-title">근로계약서 {{ contractYear }}년</h1>
               <p class="contract-date">작성일: {{ todayDate }}</p>
             </div>
 
-            <!-- 서문 -->
             <p class="contract-intro">
               ㈜에코그린티엠 대표이사 백송이(이하 "갑"이라 칭함)과 근로자
               <strong>{{ employee.name }}</strong>
@@ -925,7 +883,6 @@ onMounted(() => {
               다음과 같이 근로계약을 체결한다.
             </p>
 
-            <!-- 제1조 -->
             <div class="contract-section">
               <h4 class="section-title">제1조 (근로계약 기간)</h4>
               <div class="contract-content">
@@ -940,7 +897,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 제2조 -->
             <div class="contract-section">
               <h4 class="section-title">제2조 (근무 장소 및 업무 내용)</h4>
               <div class="contract-content">
@@ -957,7 +913,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 제3조 -->
             <div class="contract-section">
               <h4 class="section-title">제3조 (근로시간 및 휴게)</h4>
               <div class="contract-content">
@@ -966,7 +921,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 제4조 임금 -->
             <div class="contract-section">
               <h4 class="section-title">제4조 (임금)</h4>
               <div class="wage-table-wrapper">
@@ -982,7 +936,7 @@ onMounted(() => {
                     <td v-for="wage in items" :key="wage.itemCd">
                       <input
                           type="text"
-                          class="wage-input"
+                          class="wage-input text-right"
                           v-model="wageInputs[wage.itemCd]"
                           placeholder="0"
                       />
@@ -998,7 +952,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 제5조 -->
             <div class="contract-section">
               <h4 class="section-title">제5조 (휴일 및 휴가)</h4>
               <div class="contract-content">
@@ -1007,7 +960,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 제6조 -->
             <div class="contract-section">
               <h4 class="section-title">제6조 (기타)</h4>
               <div class="contract-content">
@@ -1016,7 +968,6 @@ onMounted(() => {
               </div>
             </div>
 
-            <!-- 서명란 -->
             <div class="signature-section">
               <p class="signature-intro">
                 위 근로계약 내용을 상호 확인하였으며, 이를 증명하기 위하여
@@ -1052,7 +1003,7 @@ onMounted(() => {
               @click="[showModal = false, isContractSaved = true]"
               class="btn-modal-save"
           >
-            <i class="mdi mdi-content-save"></i>
+            <i class="mdi mdi-content-save-outline"></i>
             저장
           </button>
         </div>
@@ -1062,12 +1013,20 @@ onMounted(() => {
 </template>
 
 <style scoped>
+@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+
+/* === 전역 설정 === */
+.member-register-page {
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 /* === 페이지 헤더 === */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .header-left {
@@ -1077,751 +1036,297 @@ onMounted(() => {
 }
 
 .btn-back {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  background: white; border: 1px solid #e2e8f0; color: #475569;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-
-.btn-back:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
-
-.btn-back i {
-  font-size: 24px;
-}
+.btn-back:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+.btn-back i { font-size: 20px; }
 
 .page-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 8px 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  font-size: 24px; font-weight: 700; color: #1e293b;
+  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px;
+  letter-spacing: -0.5px;
 }
+.page-title i { font-size: 26px; color: #4f46e5; }
+.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
 
-.page-title i {
-  font-size: 32px;
-  color: #667eea;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
+.header-actions { display: flex; gap: 10px; }
 
 .btn-cancel {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
+  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
+  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s;
 }
+.btn-cancel:hover { background: #f8fafc; color: #1e293b; border-color: #cbd5e1; }
+.btn-cancel i { font-size: 16px; }
 
-.btn-cancel:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
-}
-
-.btn-cancel i {
-  font-size: 18px;
-}
-
-/* === 진행 단계 === */
+/* === 진행 단계 (그라디언트 제거, 단색화) === */
 .steps-container {
-  background: white;
-  border-radius: 16px;
-  padding: 28px;
-  margin-bottom: 28px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: white; border-radius: 12px; padding: 24px;
+  margin-bottom: 24px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.steps-progress {
-  margin-bottom: 24px;
-}
-
+.steps-progress { margin-bottom: 24px; }
 .progress-bar {
-  height: 8px;
-  background: #f1f5f9;
-  border-radius: 4px;
-  overflow: hidden;
+  height: 6px; background: #f1f5f9; border-radius: 3px; overflow: hidden;
 }
-
 .progress-fill {
-  height: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 100%; background-color: #4f46e5; /* 플랫 인디고 */
   transition: width 0.3s ease;
 }
 
 .steps-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
 }
 
 .step-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 10px;
-  transition: all 0.2s;
+  display: flex; align-items: center; gap: 12px; padding: 10px;
+  border-radius: 8px; transition: all 0.2s;
 }
-
-.step-item.active {
-  background: #eff6ff;
-}
+.step-item.active { background-color: #eef2ff; }
 
 .step-circle {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: #f1f5f9;
-  color: #94a3b8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 18px;
-  flex-shrink: 0;
-  transition: all 0.3s;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #f1f5f9; color: #94a3b8;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s;
 }
+.step-item.active .step-circle { background-color: #4f46e5; color: white; }
+.step-item.completed .step-circle { background-color: #10b981; color: white; }
+.step-circle i { font-size: 20px; }
 
-.step-item.active .step-circle {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
+.step-info { display: flex; flex-direction: column; gap: 2px; }
+.step-number { font-size: 11px; color: #94a3b8; font-weight: 600; }
+.step-title { font-size: 13px; color: #1e293b; font-weight: 600; }
 
-.step-item.completed .step-circle {
-  background: #10b981;
-  color: white;
-}
-
-.step-circle i {
-  font-size: 24px;
-}
-
-.step-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.step-number {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.step-title {
-  font-size: 14px;
-  color: #1e293b;
-  font-weight: 600;
-}
-
-.step-item.active .step-number,
-.step-item.active .step-title {
-  color: #667eea;
-}
+.step-item.active .step-number, .step-item.active .step-title { color: #4f46e5; }
 
 /* === 폼 컨테이너 === */
 .form-container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden;
 }
 
-.form-step {
-  padding: 32px;
-}
+.form-step { padding: 32px; }
 
 .step-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 20px;
-  margin-bottom: 28px;
-  border-bottom: 2px solid #f1f5f9;
+  display: flex; align-items: center; gap: 10px; padding-bottom: 16px;
+  margin-bottom: 24px; border-bottom: 1px solid #f1f5f9;
 }
-
-.step-header i {
-  font-size: 32px;
-  color: #667eea;
-}
-
-.step-header h2 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
+.step-header i { font-size: 24px; color: #4f46e5; }
+.step-header h2 { font-size: 18px; font-weight: 700; color: #1e293b; margin: 0; }
 
 /* === 폼 그리드 === */
 .form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px; margin-bottom: 32px;
 }
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-group.full-width {
-  grid-column: 1 / -1;
-}
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group.full-width { grid-column: 1 / -1; }
 
 .form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #475569;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: #475569;
 }
+.form-label i { font-size: 16px; color: #4f46e5; }
+.form-label.required::after { content: '*'; color: #ef4444; margin-left: 2px; }
 
-.form-label i {
-  font-size: 16px;
-  color: #667eea;
+/* 공통 인풋 스타일 (포커스 링 개선) */
+.form-input, .form-select, .form-textarea {
+  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
+  font-size: 13px; color: #334155; transition: all 0.2s; background: white;
 }
-
-.form-label.required::after {
-  content: '*';
-  color: #ef4444;
-  margin-left: 4px;
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
-
-.form-input,
-.form-select,
-.form-textarea {
-  padding: 12px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #334155;
-  transition: all 0.2s;
-  background: white;
-}
-
-.form-input:focus,
-.form-select:focus,
-.form-textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-.form-input::placeholder {
-  color: #94a3b8;
-}
-
-.form-textarea {
-  resize: vertical;
-  min-height: 100px;
-}
+.form-input::placeholder, .form-textarea::placeholder { color: #94a3b8; }
+.form-textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 
 /* 주민번호 입력 */
-.ssn-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
+.ssn-group { display: flex; align-items: center; gap: 10px; }
+.ssn-input { flex: 1; text-align: center; letter-spacing: 2px; }
+.ssn-separator { font-size: 18px; font-weight: 700; color: #cbd5e1; }
 
-.ssn-input {
-  flex: 1;
-  text-align: center;
-}
-
-.ssn-separator {
-  font-size: 24px;
-  font-weight: 700;
-  color: #cbd5e1;
-}
-
-/* 라디오 그룹 */
-.radio-group {
-  display: flex;
-  gap: 16px;
-  padding: 8px 0;
-}
-
+/* 라디오 그룹 (깔끔하게 변경) */
+.radio-group { display: flex; gap: 12px; padding: 4px 0; }
 .radio-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s;
-  background: white;
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 8px 16px; border-radius: 6px; border: 1px solid #e2e8f0;
+  transition: all 0.2s; background: white; font-size: 13px; color: #475569;
 }
-
-.radio-label:hover {
-  border-color: #cbd5e1;
-  background: #f8fafc;
-}
+.radio-label:hover { border-color: #cbd5e1; background: #f8fafc; color: #1e293b; }
 
 .radio-label input[type="radio"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; border: 2px solid #cbd5e1; border-radius: 50%;
+  margin: 0; cursor: pointer; position: relative; transition: all 0.2s;
 }
-
-.radio-label input[type="radio"]:checked + .radio-text {
-  color: #667eea;
-  font-weight: 600;
+.radio-label input[type="radio"]:checked { border-color: #4f46e5; }
+.radio-label input[type="radio"]:checked::after {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 8px; height: 8px; background-color: #4f46e5; border-radius: 50%;
 }
-
-.radio-text {
-  font-size: 14px;
-  color: #64748b;
-}
+.radio-label:has(input:checked) { border-color: #4f46e5; background-color: #eef2ff; color: #4f46e5; font-weight: 600; }
 
 /* 근로계약서 버튼 */
 .btn-contract {
-  width: 100%;
-  padding: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  border-radius: 10px;
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  transition: all 0.3s;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  width: 100%; padding: 14px; background-color: #1e293b; /* 슬레이트 다크 */
+  border: none; border-radius: 8px; color: white;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
-
-.btn-contract:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-}
-
-.btn-contract i {
-  font-size: 20px;
-}
+.btn-contract:hover { background-color: #334155; transform: translateY(-1px); }
+.btn-contract i { font-size: 18px; }
 
 /* === 폼 액션 버튼 === */
 .form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 24px;
-  border-top: 1px solid #f1f5f9;
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding-top: 24px; border-top: 1px solid #f1f5f9;
 }
 
-.btn-prev,
-.btn-next,
-.btn-submit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
+.btn-prev, .btn-next, .btn-submit {
+  display: flex; align-items: center; gap: 6px; padding: 10px 20px;
+  border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
 }
 
-.btn-prev {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
+.btn-prev { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-prev:hover { background: #f8fafc; color: #1e293b; }
 
-.btn-prev:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-}
+.btn-next { background-color: #4f46e5; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-next:hover { background-color: #4338ca; transform: translateY(-1px); }
 
-.btn-next,
-.btn-submit {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-}
+.btn-submit { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-submit:hover { background-color: #059669; transform: translateY(-1px); }
 
-.btn-next:hover,
-.btn-submit:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-}
-
-.btn-prev i,
-.btn-next i,
-.btn-submit i {
-  font-size: 18px;
-}
+.btn-prev i, .btn-next i, .btn-submit i { font-size: 16px; }
 
 /* === 모달 === */
 .modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 20px;
 }
 
 .modal-container {
-  background: white;
-  border-radius: 16px;
-  width: 100%;
-  max-width: 900px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  background: white; border-radius: 12px; width: 100%; max-width: 850px;
+  max-height: 90vh; display: flex; flex-direction: column;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;
 }
 
 .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 24px 28px;
-  border-bottom: 1px solid #f1f5f9;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+  border-radius: 12px 12px 0 0;
 }
-
-.modal-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.modal-title i {
-  font-size: 24px;
-  color: #667eea;
-}
+.modal-title { font-size: 18px; font-weight: 700; color: #1e293b; margin: 0; display: flex; align-items: center; gap: 8px; }
+.modal-title i { font-size: 22px; color: #4f46e5; }
 
 .modal-close {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: #f8fafc;
-  border: none;
-  color: #64748b;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
+  width: 36px; height: 36px; border-radius: 8px; background: transparent; border: none;
+  color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
 }
+.modal-close:hover { background: #e2e8f0; color: #1e293b; }
+.modal-close i { font-size: 20px; }
 
-.modal-close:hover {
-  background: #e2e8f0;
-  color: #334155;
-}
-
-.modal-close i {
-  font-size: 24px;
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 28px;
-}
-
-.modal-body::-webkit-scrollbar {
-  width: 8px;
-}
-
-.modal-body::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 4px;
-}
-
-.modal-body::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
+.modal-body { flex: 1; overflow-y: auto; padding: 24px; }
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-track { background: #f8fafc; border-radius: 3px; }
+.modal-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
 .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 20px 28px;
-  border-top: 1px solid #f1f5f9;
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 16px 24px; border-top: 1px solid #e2e8f0; background: #f8fafc;
+  border-radius: 0 0 12px 12px;
 }
 
-.btn-modal-cancel,
-.btn-modal-save {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.btn-modal-cancel, .btn-modal-save {
+  padding: 10px 18px; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; gap: 6px;
 }
+.btn-modal-cancel { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-modal-cancel:hover { background: #f1f5f9; color: #1e293b; }
 
-.btn-modal-cancel {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-}
+.btn-modal-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn-modal-save:hover { background-color: #059669; transform: translateY(-1px); }
 
-.btn-modal-cancel:hover {
-  background: #f8fafc;
-}
-
-.btn-modal-save {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-}
-
-.btn-modal-save:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-}
-
-/* === 근로계약서 스타일 === */
+/* === 근로계약서 내부 폼 스타일 === */
 .contract-document {
-  background: white;
-  padding: 40px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.8;
-  color: #334155;
+  background: white; padding: 32px; border: 1px solid #e2e8f0;
+  border-radius: 8px; font-size: 13px; line-height: 1.8; color: #334155;
 }
 
-.contract-header {
-  text-align: center;
-  margin-bottom: 32px;
-}
+.contract-header { text-align: center; margin-bottom: 32px; }
+.contract-title { font-size: 24px; font-weight: 700; color: #1e293b; margin: 0 0 8px 0; letter-spacing: 2px; }
+.contract-date { font-size: 12px; color: #64748b; margin: 0; }
 
-.contract-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 12px 0;
-  letter-spacing: 4px;
-}
-
-.contract-date {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0;
-}
-
-.contract-intro {
-  margin-bottom: 32px;
-  line-height: 2;
-  text-align: justify;
-}
-
-.contract-section {
-  margin-bottom: 28px;
-}
-
+.contract-intro { margin-bottom: 24px; text-align: justify; }
+.contract-section { margin-bottom: 24px; }
 .section-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 16px 0;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #f1f5f9;
+  font-size: 14px; font-weight: 700; color: #1e293b;
+  margin: 0 0 12px 0; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;
 }
 
-.contract-content p {
-  margin: 8px 0;
-}
+.contract-content p { margin: 6px 0; }
 
-.date-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0;
-  flex-wrap: wrap;
-}
+.date-group { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 
-.contract-input,
-.contract-select {
-  padding: 6px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font-size: 14px;
+.contract-input, .contract-select {
+  padding: 4px 8px; border: none; border-bottom: 1px solid #94a3b8;
+  border-radius: 0; font-size: 13px; color: #1e293b; background: transparent; transition: border-color 0.2s;
 }
+.contract-input:focus, .contract-select:focus { outline: none; border-bottom-color: #4f46e5; }
 
-.contract-input:focus,
-.contract-select:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-/* 임금 테이블 */
-.wage-table-wrapper {
-  overflow-x: auto;
-  margin: 16px 0;
-}
-
-.wage-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.wage-table th,
-.wage-table td {
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  text-align: center;
-}
-
-.wage-table thead {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
+/* 임금 테이블 (플랫 헤더 적용) */
+.wage-table-wrapper { overflow-x: auto; margin: 16px 0; }
+.wage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.wage-table th, .wage-table td { padding: 10px; border: 1px solid #e2e8f0; text-align: center; vertical-align: middle; }
+.wage-table thead { background-color: #6d28d9; color: white; }
+.wage-table th { font-weight: 600; white-space: nowrap; }
 
 .wage-input {
-  width: 100px;
-  padding: 6px;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  text-align: right;
+  width: 90px; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;
+  text-align: right; font-size: 12px;
 }
-
-.total-cell {
-  font-weight: 700;
-  color: #667eea;
-  font-size: 14px;
-}
+.wage-input:focus { outline: none; border-color: #4f46e5; }
+.total-cell { font-weight: 700; color: #4f46e5; font-size: 13px; }
+.text-right { text-align: right; }
 
 /* 서명란 */
-.signature-section {
-  margin-top: 48px;
-  padding-top: 32px;
-  border-top: 2px dashed #cbd5e1;
-}
+.signature-section { margin-top: 40px; padding-top: 24px; border-top: 1px dashed #cbd5e1; }
+.signature-intro { text-align: center; margin-bottom: 20px; }
+.signature-date { text-align: center; margin-bottom: 30px; font-size: 15px; }
 
-.signature-intro {
-  text-align: center;
-  margin-bottom: 24px;
-  line-height: 2;
-}
+.signature-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+.party { padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+.party-title { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0 0 10px 0; }
+.party p { margin: 4px 0; font-size: 12px; color: #475569; }
 
-.signature-date {
-  text-align: center;
-  margin-bottom: 32px;
-  font-size: 16px;
-}
-
-.signature-parties {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 40px;
-  margin-top: 32px;
-}
-
-.party {
-  padding: 20px;
-  background: #f8fafc;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-}
-
-.party-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 12px 0;
-}
-
-.party p {
-  margin: 6px 0;
-  font-size: 13px;
-  color: #64748b;
-}
-
-/* === 반응형 === */
+/* === 반응형 (Responsive) === */
 @media (max-width: 1024px) {
-  .steps-list {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .steps-list { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 768px) {
-  .page-header {
-    flex-direction: column;
-    gap: 16px;
-  }
+  .page-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+  .header-actions, .btn-cancel { width: 100%; justify-content: center; }
 
-  .header-actions {
-    width: 100%;
-  }
+  .steps-list { grid-template-columns: 1fr; gap: 8px;}
+  .form-step { padding: 20px; }
+  .form-grid { grid-template-columns: 1fr; }
 
-  .btn-cancel {
-    width: 100%;
-    justify-content: center;
-  }
+  .ssn-group { flex-direction: row; align-items: center; }
+  .ssn-input { min-width: 0; }
 
-  .steps-list {
-    grid-template-columns: 1fr;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .signature-parties {
-    grid-template-columns: 1fr;
-  }
-
-  .ssn-group {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .ssn-input {
-    text-align: left;
-  }
+  .signature-parties { grid-template-columns: 1fr; gap: 20px;}
+  .contract-document { padding: 20px; }
 }
 </style>
