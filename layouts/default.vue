@@ -7,15 +7,20 @@ import axios from "axios";
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-
 // === 1. 상태 및 반응성 변수 ===
 const isProfileOpen = ref(false);
 const miniVariant = ref(false); // PC에서 사이드바 축소 여부
 const mobileMenuOpen = ref(false); // ★ 추가: 모바일에서 사이드바 열림 여부
 const title = ref('에코그린티엠');
 const activeGroup = ref(null);
-const myEmail = authStore.user?.email;
-const myManagerNm = authStore.user?.managerNm;
+
+const cIdx = computed(() => authStore.user?.cIdx ?? null);
+const myEmail = computed(() => authStore.user?.email ?? null);
+const myManagerNm = computed(() => authStore.user?.managerNm ?? null);
+
+watch(() => cIdx, (cIdx) => {
+  if (cIdx) getMenus();
+}, { immediate: true });
 
 // === 2. 메뉴 데이터 ===
 const items = ref([]);
@@ -99,8 +104,7 @@ const buildMenuTree = (flatList) => {
   return tree;
 };
 
-const getMenus = () => {
-  const companyNo = authStore.user?.cIdx;
+const getMenus = (companyNo) => {
   if(!companyNo) return;
   const params = { isMaster: authStore.user?.isMaster, path: route.path };
 
@@ -112,10 +116,6 @@ const getMenus = () => {
       })
       .catch(err => console.error("메뉴 로딩 실패:", err));
 }
-
-onMounted(() => {
-  getMenus();
-})
 </script>
 
 <template>
@@ -145,7 +145,7 @@ onMounted(() => {
         <ul class="eg-menu-list">
           <li v-for="item in items" :key="item.id">
             <NuxtLink v-if="!item.group" :to="item.to" :class="['eg-menu-item', { 'eg-active': isActive(item) }]">
-              <span class="eg-icon">{{item.icon}}</span>
+              <span class="eg-icon"><i :class="['mdi', item.icon]"></i></span>
               <transition name="fade">
                 <span v-show="!miniVariant || mobileMenuOpen" class="eg-title">{{ item.title }}</span>
               </transition>
@@ -156,7 +156,7 @@ onMounted(() => {
                   :class="['eg-menu-item eg-group-item', { 'eg-active-group': activeGroup === item.id || item.child.some(isActive) }]"
                   @click="toggleGroup(item.id)"
               >
-                <span class="eg-icon">{{item.icon}}</span>
+                <span class="eg-icon"><i :class="['mdi', item.icon]"></i></span>
                 <transition name="fade">
                   <span v-show="!miniVariant || mobileMenuOpen" class="eg-title">{{ item.title }}</span>
                 </transition>
@@ -189,7 +189,7 @@ onMounted(() => {
                   :class="['eg-menu-item eg-group-item', { 'eg-active-group': activeGroup === item.id || item.child.some(isActive) }]"
                   @click="toggleGroup(item.id)"
               >
-                <span class="eg-icon"><i :class="item.icon"></i></span>
+                <span class="eg-icon"><i :class="['mdi', item.icon]"></i></span>
                 <transition name="fade">
                   <span v-show="!miniVariant || mobileMenuOpen" class="eg-title">{{ item.title }}</span>
                 </transition>
