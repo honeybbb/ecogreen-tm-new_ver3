@@ -14,8 +14,9 @@ const miniVariant = ref(false); // PC에서 사이드바 축소 여부
 const mobileMenuOpen = ref(false); // ★ 추가: 모바일에서 사이드바 열림 여부
 const title = ref('에코그린티엠');
 const activeGroup = ref(null);
-const myEmail = authStore.user?.email;
-const myManagerNm = authStore.user?.managerNm;
+const userInfo = computed(() => authStore.user);
+const myEmail = computed(() => userInfo.value?.email || '');
+const myManagerNm = computed(() => userInfo.value?.managerNm || '관리자');
 
 // === 2. 메뉴 데이터 ===
 const items = ref([]);
@@ -99,22 +100,41 @@ const buildMenuTree = (flatList) => {
   return tree;
 };
 
-const getMenus = () => {
-  const companyNo = authStore.user?.cIdx;
-  const params = { isMaster: authStore.user?.isMaster, path: route.path };
+const getMenus = async () => {
+  const companyNo = userInfo.value?.cIdx;
+  if (!companyNo) return;
 
-  axios.get(`/api/v1/menu/${companyNo}`, { params })
-      .then(res => {
-        const fullTree = buildMenuTree(res.data.data);
-        systemItems.value = fullTree.filter(item => item.id === 'system');
-        items.value = fullTree.filter(item => item.id !== 'system');
-      })
-      .catch(err => console.error("메뉴 로딩 실패:", err));
-}
+  const params = { isMaster: userInfo.value?.isMaster, path: route.path };
+
+  try {
+    const res = await axios.get(`/api/v1/menu/${companyNo}`, { params });
+
+    if (res.data && res.data.data) {
+      const fullTree = buildMenuTree(res.data.data);
+      systemItems.value = fullTree.filter(item => item.id === 'system');
+      items.value = fullTree.filter(item => item.id !== 'system');
+    }
+  } catch (err) {
+    console.error("메뉴 로딩 실패:", err);
+  }
+};
+
+watch(() => userInfo.value, (newVal) => {
+  if (newVal && newVal.cIdx) {
+    getMenus();
+  }
+}, { immediate: true, deep: true });
+
+// 페이지 이동 시 모바일 메뉴 닫기
+watch(() => route.path, () => {
+  mobileMenuOpen.value = false;
+}, { immediate: true });
 
 onMounted(() => {
-  getMenus();
-})
+  if (userInfo.value?.cIdx) {
+    getMenus();
+  }
+});
 </script>
 
 <template>
