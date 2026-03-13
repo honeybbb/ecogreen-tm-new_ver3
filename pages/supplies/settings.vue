@@ -15,8 +15,21 @@ const searchQuery = ref('');
 
 // 입력 폼 상태
 const newCodeName = ref('');
-const newCodeNumber = ref('');
 const newCodePrice = ref('');
+
+const newCodeNumber = computed(() => {
+  const list = currentCodeList.value;
+  if (!list || list.length === 0) {
+    return selectedSubGroupKey.value ? `${selectedSubGroupKey.value}001` : '';
+  }
+  const lastCode = list.reduce((max, code) => {
+    const currentNum = parseInt(code.itemCd, 10);
+    return currentNum > max ? currentNum : max;
+  }, 0);
+  const nextNum = lastCode + 1;
+  const codeLength = list[0].itemCd.length;
+  return String(nextNum).padStart(codeLength, '0');
+});
 
 // ==========================================
 // 2. 데이터 변환 로직
@@ -171,8 +184,6 @@ const addCode = async () => {
     console.error(err);
   }
 };
-
-const formatPrice = (val) => Number(val).toLocaleString();
 </script>
 
 <template>
@@ -184,12 +195,6 @@ const formatPrice = (val) => Number(val).toLocaleString();
           품목 단가 관리
         </h1>
         <p class="page-subtitle">청소 용품 및 소모품의 표준 단가를 관리합니다</p>
-      </div>
-      <div class="header-actions">
-        <button @click="getCode" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
-        </button>
       </div>
     </div>
 
@@ -209,7 +214,7 @@ const formatPrice = (val) => Number(val).toLocaleString();
           </select>
         </div>
 
-        <div class="filter-spacer"></div>
+        <!--div class="filter-spacer"></div-->
 
         <div class="search-group">
           <div class="search-box">
@@ -231,7 +236,7 @@ const formatPrice = (val) => Number(val).toLocaleString();
             <th><div class="th-content"><i class="mdi mdi-tag-outline"></i><span>품목명</span></div></th>
             <th style="width: 140px;"><div class="th-content"><i class="mdi mdi-check-circle-outline"></i><span>상태</span></div></th>
             <th style="width: 180px;"><div class="th-content justify-end"><i class="mdi mdi-currency-usd"></i><span>단가(원)</span></div></th>
-            <th class="text-center sticky-col" style="width: 180px;"><div class="th-content justify-center"><i class="mdi mdi-cog-outline"></i><span>관리</span></div></th>
+            <th class="text-center" style="width: 180px;"><div class="th-content justify-center"><i class="mdi mdi-cog-outline"></i><span>관리</span></div></th>
           </tr>
           </thead>
           <tbody>
@@ -254,9 +259,9 @@ const formatPrice = (val) => Number(val).toLocaleString();
             </td>
             <td class="text-right">
               <input v-if="code.isEditing" type="number" v-model="code.price" class="input-edit text-right" />
-              <span v-else class="price-value">{{ formatPrice(code.price) }}</span>
+              <span v-else class="price-value">{{ formatCurrency(code.price) }}</span>
             </td>
-            <td class="text-center sticky-col">
+            <td class="text-center">
               <div class="action-buttons">
                 <template v-if="code.isEditing">
                   <button @click="saveCode(code)" class="btn-action btn-save">
@@ -289,11 +294,19 @@ const formatPrice = (val) => Number(val).toLocaleString();
 
           <tr class="add-row">
             <td class="text-center"><div class="add-icon"><i class="mdi mdi-plus-circle-outline"></i></div></td>
-            <td><input type="text" v-model="newCodeNumber" placeholder="코드번호" class="input-add" /></td>
+            <td>
+              <input
+                  type="text"
+                  v-model="newCodeNumber"
+                  disabled
+                  placeholder="코드번호"
+                  class="input-add disabled"
+              />
+            </td>
             <td><input type="text" v-model="newCodeName" placeholder="신규 품목명 입력" class="input-add" /></td>
-            <td><span class="status-badge status-new"><i class="mdi mdi-new-box"></i>신규</span></td>
+            <td><span class="status-badge status-new">신규</span></td>
             <td><input type="number" v-model="newCodePrice" placeholder="단가 입력" class="input-add text-right" @keyup.enter="addCode"/></td>
-            <td class="text-center sticky-col bg-add-row">
+            <td class="text-center bg-add-row">
               <button @click="addCode" class="btn-add-submit"><i class="mdi mdi-plus"></i> 추가하기</button>
             </td>
           </tr>
@@ -317,203 +330,100 @@ const formatPrice = (val) => Number(val).toLocaleString();
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.price-settings-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
-}
-.header-left { flex: 1; }
-.page-title {
-  font-size: 24px; font-weight: 700; color: #1e293b;
-  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px; letter-spacing: -0.5px;
-}
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-.btn-refresh {
-  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-.btn-refresh i { font-size: 16px; }
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 180px; flex: 1;}
-
-.filter-label {
-  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569;
-}
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; cursor: pointer; transition: all 0.2s; height: 42px;
-}
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+/* =========================================
+   페이지 고유 스타일 (공통 CSS 이외)
+========================================= */
 .filter-spacer { flex: 1; }
-
-/* 검색 박스 */
-.search-group { display: flex; gap: 8px; flex: 2; min-width: 280px; align-items: flex-end;}
-.search-box {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-  flex: 1; height: 42px; transition: all 0.2s; box-sizing: border-box;
-}
-.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.search-box i { font-size: 18px; color: #94a3b8; }
-.search-input { flex: 1; border: none; background: transparent; font-size: 13px; color: #334155; outline: none; }
-.search-input::placeholder { color: #94a3b8; }
-.search-clear { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; border-radius: 4px; transition: all 0.2s;}
-.search-clear:hover { background: #e2e8f0; color: #64748b; }
-
-/* === 테이블 영역 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; margin-bottom: 24px;
-}
 
 .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-wrapper::-webkit-scrollbar { height: 8px; }
-.table-wrapper::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
-.table-wrapper::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-track { background: var(--bg-hover); border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-.data-table { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 13px; }
-.data-table thead { background-color: #6d28d9; position: sticky; top: 0; z-index: 10; }
-.data-table th { padding: 14px 16px; text-align: left; font-size: 12px; font-weight: 600; color: white; white-space: nowrap; border-bottom: none;}
-
+/* 데이터 테이블 세부 헤더 아이콘 정렬 */
 .th-content { display: flex; align-items: center; gap: 6px; }
-.justify-center { justify-content: center; }
-.justify-end { justify-content: flex-end; }
 .th-content i { font-size: 14px; opacity: 0.8; }
 
-.data-table td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
-.data-row { transition: background 0.2s; }
-.data-row:hover { background-color: #f8fafc; }
-
-/* 텍스트/유틸 */
-.text-center { text-align: center !important; }
-.text-right { text-align: right !important; }
-
-/* 행 번호 및 텍스트표시 */
+/* 행 번호 및 텍스트표시 (테마 변수 적용) */
 .row-number {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; background: #f1f5f9; border-radius: 6px;
-  font-weight: 600; color: #64748b; font-size: 12px;
+  width: 28px; height: 28px; background: var(--bg-hover); border-radius: 6px;
+  font-weight: 600; color: var(--text-sub); font-size: 12px;
 }
-.code-number {
-  font-family: 'Courier New', monospace; font-weight: 600;
-  color: #4f46e5; background: #eef2ff; padding: 4px 10px; border-radius: 6px; font-size: 12px;
-}
-.code-name { font-weight: 500; color: #1e293b; }
-.price-value { font-family: 'Inter', monospace; font-weight: 700; color: #1e293b; font-size: 14px; }
 
-/* 상태 배지 (플랫 파스텔톤) */
+.code-number {
+  font-weight: 600; color: var(--primary); background: var(--primary-soft);
+  padding: 4px 10px; border-radius: 6px; font-size: 12px;
+}
+.code-name { font-weight: 500; color: var(--text-main); }
+.price-value { font-weight: 700; color: var(--text-main); font-size: 14px; }
+
+/* 상태 배지 */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
   border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
 }
-.status-active { background-color: #d1fae5; color: #065f46; }
-.status-inactive { background-color: #f1f5f9; color: #475569; }
-.status-new { background-color: #eff6ff; color: #1d4ed8; }
+.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
+.status-new { background-color: var(--primary-soft); color: var(--primary); }
 .status-badge i { font-size: 13px; }
 
-/* 입력창 (포커스 링 개선) */
+/* 입력창 (포커스 개선) */
 .input-edit, .input-add, .status-select {
-  width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
-  font-size: 13px; color: #334155; transition: all 0.2s; background: white; box-sizing: border-box;
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
+  font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box;
 }
 .input-edit:focus, .input-add:focus, .status-select:focus {
-  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
 }
-.input-add { background-color: #ffffff; }
+.input-add.disabled { background-color: var(--bg-canvas); color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
 
-/* 액션 버튼 */
+/* 액션 버튼 (테이블 내부) */
 .action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;}
 .btn-action {
   display: flex; align-items: center; gap: 4px; padding: 6px 10px; border: none;
   border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
 
-.btn-edit { background-color: #eef2ff; color: #4f46e5; }
-.btn-edit:hover { background-color: #e0e7ff; color: #4338ca; }
+.btn-edit { background-color: var(--primary-soft); color: var(--primary); }
+.btn-edit:hover { background-color: rgba(59, 130, 246, 0.15); filter: brightness(0.95); }
 
-.btn-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
-.btn-save:hover { background-color: #059669; transform: translateY(-1px); }
+.btn-save { background-color: var(--success); color: var(--text-inverse); height: 100%;}
+.btn-save:hover { background-color: var(--success-hover); transform: translateY(-1px); }
 
-.btn-cancel { background-color: #f1f5f9; color: #475569; }
-.btn-cancel:hover { background-color: #e2e8f0; color: #1e293b; }
+.btn-cancel { background-color: var(--bg-hover); color: var(--text-sub); }
+.btn-cancel:hover { background-color: var(--border-color); color: var(--text-main); }
 
-.btn-delete { background-color: #fef2f2; color: #dc2626; }
-.btn-delete:hover { background-color: #fee2e2; }
+.btn-delete { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.btn-delete:hover { filter: brightness(0.9); }
 
-/* 신규 추가 행 (플랫 스타일) */
-.add-row { background-color: #f0fdf4; border-top: 1px solid #bbf7d0; }
-.add-row:hover { background-color: #dcfce7; }
+/* 신규 추가 행 */
+.add-row { background-color: rgba(16, 185, 129, 0.03); border-top: 1px solid var(--border-color); }
+.add-row:hover { background-color: rgba(16, 185, 129, 0.06); }
 .add-icon { display: flex; align-items: center; justify-content: center; }
-.add-icon i { font-size: 22px; color: #10b981; }
+.add-icon i { font-size: 22px; color: var(--success); }
 
+.bg-add-row { background-color: transparent !important; }
 .btn-add-submit {
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 8px 14px; background-color: #10b981; border: none; border-radius: 6px;
-  color: white; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%;
+  padding: 8px 14px; background-color: var(--success); border: none; border-radius: 6px;
+  color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%;
 }
-.btn-add-submit:hover { background-color: #059669; transform: translateY(-1px); }
-.bg-add-row { background-color: #f0fdf4 !important; }
+.btn-add-submit:hover { background-color: var(--success-hover); transform: translateY(-1px); }
 
-/* Sticky 컬럼 영역 */
-.sticky-col { position: sticky; right: 0; box-shadow: -4px 0 8px rgba(0,0,0,0.03); background: white; z-index: 5;}
-.data-table thead .sticky-col { background-color: #6d28d9; z-index: 15; box-shadow: none; border-left: 1px solid rgba(255,255,255,0.1); }
-.data-row:hover .sticky-col { background-color: #f8fafc; }
-
-/* 빈 상태 */
-.empty-row { background-color: white !important; }
-.empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1; display: block;}
-.empty-state p { font-size: 14px; font-weight: 500; color: #64748b; margin: 0; }
+/* Sticky 컬럼 영역 (필요 시) */
+.sticky-col { position: sticky; right: 0; box-shadow: -4px 0 8px rgba(0,0,0,0.03); background: var(--bg-surface); z-index: 5;}
+.data-table thead .sticky-col { background-color: var(--bg-canvas); z-index: 15; box-shadow: none; border-left: 1px solid var(--border-color); }
+.data-row:hover .sticky-col { background-color: var(--primary-soft); }
 
 /* === 하단 안내 박스 === */
 .info-box {
-  display: flex; gap: 14px; padding: 20px 24px; background-color: #eff6ff;
-  border: 1px solid #bfdbfe; border-radius: 12px; margin-top: 24px; color: #1e40af;
+  display: flex; gap: 14px; padding: 20px 24px; background-color: var(--primary-soft);
+  border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 12px; margin-top: 24px; color: var(--primary);
 }
-.info-box i { font-size: 24px; color: #4f46e5; flex-shrink: 0; margin-top: 2px;}
-.info-content strong { display: block; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+.info-box i { font-size: 24px; color: var(--primary); flex-shrink: 0; margin-top: 2px;}
+.info-content strong { display: block; font-size: 14px; font-weight: 700; margin-bottom: 8px; color: var(--primary); }
 .info-content ul { padding-left: 20px; margin: 0; }
-.info-content li { font-size: 13px; line-height: 1.6; font-weight: 500; color: #1e3a8a;}
-
-
-/* === 반응형 (Responsive) === */
-@media (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group { flex: 1; min-width: calc(50% - 8px); }
-  .search-group { width: 100%; flex: 1 1 100%; }
-}
-
-@media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; }
-  .btn-refresh { flex: 1; justify-content: center; }
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-  .filter-spacer { display: none; }
-
-  .search-group { flex-direction: row; }
-  .search-box { flex: 1; min-width: 0; }
-}
+.info-content li { font-size: 13px; line-height: 1.6; font-weight: 500; color: var(--text-main);}
 </style>

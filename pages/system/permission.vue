@@ -1161,7 +1161,6 @@ onMounted(() => {
 /* 코드 */
 .menu-key,
 .menu-path {
-  font-family: 'Courier New', monospace;
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;

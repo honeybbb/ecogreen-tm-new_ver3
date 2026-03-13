@@ -51,8 +51,6 @@ const getStatusClass = (status) => {
   }
 };
 
-const formatPrice = (price) => (Number(price) || 0).toLocaleString() + '원';
-
 // 6. 모달 로직
 const isModalOpen = ref(false);
 const selectedRequest = ref({});

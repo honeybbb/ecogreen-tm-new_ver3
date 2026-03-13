@@ -186,7 +186,6 @@ const handleLogin = async () => {
 
 /* ── 페이지 레이아웃 ── */
 .page {
-  font-family: 'Noto Sans KR', sans-serif;
   display: grid;
   grid-template-columns: 420px 1fr;
   min-height: 100vh;
@@ -374,7 +373,6 @@ const handleLogin = async () => {
   border: 1.5px solid #e2e8f0;
   border-radius: 10px;
   font-size: 14px;
-  font-family: inherit;
   color: #0f172a;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -444,7 +442,6 @@ const handleLogin = async () => {
   border-radius: 10px;
   font-size: 15px;
   font-weight: 700;
-  font-family: inherit;
   cursor: pointer;
   display: flex;
   align-items: center;

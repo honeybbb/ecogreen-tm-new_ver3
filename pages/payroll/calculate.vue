@@ -1,9 +1,15 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
+import * as XLSX from 'xlsx'; // ← npm install xlsx 필요
 
-const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
+const {
+  siteOptions,
+  typeOptions,
+  fetchSiteOptions,
+  fetchTypeOptions
+} = useApi();
 
 // 1. 상태 관리
 const authStore = useAuthStore();
@@ -21,11 +27,20 @@ const dataMode = ref(''); // 'saved' | 'draft'
 
 const targetCodes = ref({ pension: 4.5, health: 3.545, longTerm: 12.95, employment: 0.9 });
 
+// ── 페이지네이션 상태 ──────────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50);
+const pageSizeOptions = [50, 100, 200, 500];
+
+watch([selectedSite, selectedType, searchTerm, selectedYearMonth], () => {
+  currentPage.value = 1;
+});
+
 // 2. 동적 컬럼
 const payItems = computed(() => items.value.filter(item => item.groupCd === '04001'));
 const deductionItems = computed(() => items.value.filter(item => item.groupCd === '04002'));
 
-// 3. 필터링 및 통계
+// 3. 필터링
 const filteredPayrollList = computed(() =>
     payrollList.value.filter(p => {
       const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
@@ -35,15 +50,46 @@ const filteredPayrollList = computed(() =>
     })
 );
 
-// 전체 선택/해제 로직 (필터링된 리스트 기준)
-const selectAll = computed({
-  get: () => filteredPayrollList.value.length > 0 && filteredPayrollList.value.every(p => p.selected),
-  set: (val) => {
-    filteredPayrollList.value.forEach(p => p.selected = val);
-  }
+const totalPages = computed(() => Math.ceil(filteredPayrollList.value.length / pageSize.value));
+
+const pagedPayrollList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredPayrollList.value.slice(start, start + pageSize.value);
 });
 
-// 전체 합계
+const pageNumbers = computed(() => {
+  const total = totalPages.value;
+  const cur   = currentPage.value;
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = [];
+  const delta = 2;
+  const left  = Math.max(2, cur - delta);
+  const right = Math.min(total - 1, cur + delta);
+  pages.push(1);
+  if (left > 2) pages.push('...');
+  for (let i = left; i <= right; i++) pages.push(i);
+  if (right < total - 1) pages.push('...');
+  pages.push(total);
+  return pages;
+});
+
+const goToPage = (page) => {
+  if (typeof page === 'number' && page >= 1 && page <= totalPages.value) {
+    currentPage.value = page;
+    document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+const markAsDraft = (row) => {
+  row.status = 2;
+  row.selected = true;
+};
+
+const selectAll = computed({
+  get: () => pagedPayrollList.value.length > 0 && pagedPayrollList.value.every(p => p.selected),
+  set: (val) => { pagedPayrollList.value.forEach(p => p.selected = val); }
+});
+
 const statsInfo = computed(() => {
   const total = filteredPayrollList.value.length;
   let gross = 0, ded = 0;
@@ -55,148 +101,144 @@ const statsInfo = computed(() => {
   return { total, gross, ded, net: gross - ded };
 });
 
-const formatCurrency = (v) => new Intl.NumberFormat('ko-KR').format(v ?? 0);
+const rowSummaryMap = computed(() => {
+  const map = new Map();
+  pagedPayrollList.value.forEach(p => {
+    map.set(p.idx, calculateRowSummary(p));
+  });
+  return map;
+});
 
-// 개별 직원의 지급/공제 합계 계산 함수
 const calculateRowSummary = (row) => {
   let gross = 0, ded = 0;
-  if (row.payItems) {
-    payItems.value.forEach(i => {
-      gross += Number(row.payItems[i.itemCd] || 0);
-    });
-  }
-  if (row.deductionItems) {
-    deductionItems.value.forEach(i => {
-      ded += Number(row.deductionItems[i.itemCd] || 0);
-    });
-  }
+  if (row.payItems)       payItems.value.forEach(i => { gross += Number(row.payItems[i.itemCd] || 0); });
+  if (row.deductionItems) deductionItems.value.forEach(i => { ded += Number(row.deductionItems[i.itemCd] || 0); });
   return { gross, ded, net: gross - ded };
 };
 
-// 스마트 급여 자동 계산 로직
 const updatePay = (row) => {
-  if (row.originalBasePay === undefined) {
-    row.originalBasePay = row.payItems['04001001'] || 0;
-  }
-
-  const basePay = row.originalBasePay;
+  if (row.originalBasePay === undefined) row.originalBasePay = row.payItems['04001001'] || 0;
+  const basePay   = row.originalBasePay;
   const scheduled = Number(row.scheduledDays) || 1;
-  const worked = Number(row.workedDays) || 0;
-  const absent = Number(row.absentDays) || 0;
-
+  const worked    = Number(row.workedDays) || 0;
+  const absent    = Number(row.absentDays) || 0;
   const dailyWage = Math.floor(basePay / scheduled);
-
-  if ((worked + absent) < scheduled) {
-    // [중도 퇴사자] 일할 계산
-    row.payItems['04001001'] = dailyWage * worked;
-  } else {
-    // [정상 근로자] 결근 차감
-    row.payItems['04001001'] = basePay - (dailyWage * absent);
-  }
-
+  if ((worked + absent) < scheduled) row.payItems['04001001'] = dailyWage * worked;
+  else                                row.payItems['04001001'] = basePay - (dailyWage * absent);
   calculateInsurances(row);
 };
 
-// ★ 체크된 데이터만 급여 계산 실행
+const resetBasePay = (row) => {
+  row.originalBasePay = row.payItems['04001001'] || 0;
+  calculateInsurances(row);
+};
+
 const fetchCalculatedPay = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
-
-  if (selectedRows.length === 0) {
-    alert('급여를 계산할 직원을 체크해주세요.');
-    return;
-  }
-  if (!selectedYearMonth.value) { alert('급여 연월을 선택해주세요.'); return; }
-
+  if (selectedRows.length === 0) { alert('급여를 계산할 직원을 체크해주세요.'); return; }
+  if (!selectedYearMonth.value)  { alert('급여 연월을 선택해주세요.'); return; }
+  if (items.value.length === 0) await getWageCode();
   isLoading.value = true;
   try {
     const [year, month] = selectedYearMonth.value.split('-');
     const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
-
     if (res.data.result && res.data.data?.length > 0) {
-      selectedRows.forEach(row => {
+      for (const row of selectedRows) {
         const calcData = res.data.data.find(c => c.idx === row.idx);
-
-        if (calcData) {
-          let dbCheckedItems = {};
-          if (calcData.checkedItems) {
-            dbCheckedItems = typeof calcData.checkedItems === 'string'
-                ? JSON.parse(calcData.checkedItems)
-                : calcData.checkedItems;
-          }
-
-          row.payItems = typeof calcData.payItems === 'string' ? JSON.parse(calcData.payItems || '{}') : (calcData.payItems || {});
-          row.deductionItems = {};
-          row.deductionFlags = {};
-          row.workedDays = calcData.workedDays;
-          row.scheduledDays = calcData.scheduledDays;
-
-          deductionItems.value.forEach(i => {
-            row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false;
-          });
-
-          // ★ 상태를 2(임시 계산됨, 저장 대기)로 변경하여 색상이 노란색으로 바뀌게 함
-          row.status = 2;
-
-          updatePay(row);
+        if (!calcData) continue;
+        let dbCheckedItems = {};
+        if (calcData.checkedItems) {
+          dbCheckedItems = typeof calcData.checkedItems === 'string'
+              ? JSON.parse(calcData.checkedItems) : calcData.checkedItems;
         }
-      });
+        row.payItems        = typeof calcData.payItems === 'string'
+            ? JSON.parse(calcData.payItems || '{}') : (calcData.payItems || {});
+        row.deductionItems  = {};
+        row.deductionFlags  = {};
+        row.workedDays      = calcData.workedDays;
+        row.scheduledDays   = calcData.scheduledDays;
+        row.absentDays      = calcData.absentDays;
+        row.originalBasePay = undefined;
+        deductionItems.value.forEach(i => {
+          row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false;
+        });
+        row.status = 2;
+        await updatePayAsync(row);
+      }
       dataMode.value = 'draft';
     }
   } finally { isLoading.value = false; }
 };
 
-const calculateInsurances = (row) => {
+const updatePayAsync = async (row) => {
+  if (row.originalBasePay === undefined) row.originalBasePay = row.payItems['04001001'] || 0;
+  const basePay   = row.originalBasePay;
+  const scheduled = Number(row.scheduledDays) || 1;
+  const worked    = Number(row.workedDays) || 0;
+  const absent    = Number(row.absentDays) || 0;
+  const dailyWage = Math.floor(basePay / scheduled);
+  if ((worked + absent) < scheduled) row.payItems['04001001'] = dailyWage * worked;
+  else                                row.payItems['04001001'] = basePay - (dailyWage * absent);
+  await calculateInsurances(row);
+};
+
+const calculateInsurances = async (row) => {
   let taxablePay = 0;
-  Object.keys(row.payItems || {}).forEach(k => {
-    if (!payItems.value.find(i => i.itemCd === k)?.itemNm.includes('식대')) {
-      taxablePay += Number(row.payItems[k] || 0);
+  payItems.value.forEach(item => {
+    const amt = Number(row.payItems[item.itemCd] || 0);
+    if (item.itemCd === '04001005') {
+      if (amt > 100000) taxablePay += (amt - 100000);
+    } else {
+      taxablePay += amt;
     }
   });
-
-  if(!row.deductionItems) row.deductionItems = {};
-
+  if (!row.deductionItems) row.deductionItems = {};
+  const rates = targetCodes.value;
+  let incomeTax = 0, localTax = 0;
+  if (row.deductionFlags['04002013']) {
+    try {
+      const year = new Date().getFullYear();
+      const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
+        params: { salary: taxablePay, familyCnt: row.familyCnt || 1, year }
+      });
+      incomeTax = taxRes.data?.incomeTax || 0;
+      localTax  = taxRes.data?.localTax  || 0;
+    } catch (e) { console.error('소득세 조회 실패', e); }
+  }
+  let healthAmt = 0;
+  if (row.deductionFlags['04002001']) {
+    healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
+    row.deductionItems['04002001'] = healthAmt;
+  } else {
+    row.deductionItems['04002001'] = 0;
+  }
+  const calc = {
+    '04002002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
+    '04002003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
+    '04002004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
+    '04002013': () => incomeTax,
+    '04002014': () => localTax,
+  };
   deductionItems.value.forEach(i => {
-    let amt = 0;
-
-    if (row.deductionFlags[i.itemCd]) {
-      if (i.itemNm.includes('국민연금')) amt = taxablePay * (targetCodes.value.pension / 100);
-      else if (i.itemNm.includes('건강보험')) amt = taxablePay * (targetCodes.value.health / 100);
-      else if (i.itemNm.includes('장기요양')) {
-        const health = deductionItems.value.find(d => d.itemNm.includes('건강보험'));
-        amt = (row.deductionItems[health?.itemCd] || 0) * (targetCodes.value.longTerm / 100);
-      }
-      else if (i.itemNm.includes('고용보험')) amt = taxablePay * (targetCodes.value.employment / 100);
-    }
-
-    row.deductionItems[i.itemCd] = Math.floor(amt / 10) * 10;
+    if (i.itemCd === '04002001') return;
+    if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
+    const fn = calc[i.itemCd];
+    if (fn) row.deductionItems[i.itemCd] = fn();
   });
 };
 
-// 체크된 데이터만 저장
 const savePayroll = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
-
-  if (selectedRows.length === 0) {
-    alert('저장할 직원을 체크해주세요.');
-    return;
-  }
+  if (selectedRows.length === 0) { alert('저장할 직원을 체크해주세요.'); return; }
   if (!confirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
-
   try {
     const [saveYear, saveMonth] = selectedYearMonth.value.split('-');
-
     await Promise.all(selectedRows.map(row => {
       const c = calculateRowSummary(row);
       return axios.post(`/api/v1/member/payroll/month/${row.idx}`, {
-        mIdx: row.idx,
-        sIdx: row.sIdx,
-        year: saveYear,
-        month: saveMonth,
-        grossPay: c.gross,
-        deductions: c.ded,
-        netPay: c.net,
-        workedDays: row.workedDays,
-        scheduledDays: row.scheduledDays,
+        mIdx: row.idx, sIdx: row.sIdx, year: saveYear, month: saveMonth,
+        grossPay: c.gross, deductions: c.ded, netPay: c.net,
+        workedDays: row.workedDays, scheduledDays: row.scheduledDays,
         payItems: JSON.stringify(row.payItems || {}),
         deductionItems: JSON.stringify(row.deductionItems || {}),
         checkedItems: JSON.stringify(row.deductionFlags || {}),
@@ -205,48 +247,317 @@ const savePayroll = async () => {
     }));
     alert('선택한 직원의 정산 결과가 성공적으로 저장되었습니다.');
     dataMode.value = 'saved';
-    await getPayrollMonth(); // 저장 후 전체 데이터를 DB에서 다시 불러옴 (status가 1로 바뀜)
-  } catch (e) {
-    alert('저장 실패');
-  }
+    await getPayrollMonth();
+  } catch (e) { alert('저장 실패'); }
 };
+
+// ════════════════════════════════════════════════════════════
+// ✅ 지급대장 엑셀 출력 함수 (SheetJS 방식 - npm install xlsx)
+// ════════════════════════════════════════════════════════════
+const exportPayrollExcel = () => {
+  const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value;
+  if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return; }
+
+  const [year, month] = selectedYearMonth.value.split('-');
+  const wb = XLSX.utils.book_new();
+
+  const HEADER_BG = 'E6E6FA'; // 연보라
+  const PAGE_SIZE  = 7;
+  const pages = [];
+  for (let i = 0; i < target.length; i += PAGE_SIZE) {
+    pages.push(target.slice(i, i + PAGE_SIZE));
+  }
+
+  // ── 워크시트 데이터 배열 구성 ─────────────────────────────
+  const wsData = [];
+  const merges = [];
+  const colWidths = [
+    { wch: 1 },   // A
+    { wch: 9.5 }, // B
+    { wch: 3.4 }, // C
+    { wch: 3.4 }, // D
+    { wch: 3.4 }, // E
+    { wch: 3.4 }, // F
+    { wch: 12.3 },// G
+    { wch: 6.7 }, // H
+    { wch: 3.3 }, // I
+    { wch: 2.6 }, // J
+    { wch: 12.4 },// K
+    { wch: 12.3 },// L
+    { wch: 12.6 },// M
+    { wch: 12.6 },// N
+    { wch: 1.0 }, // O
+    { wch: 11.3 },// P
+    { wch: 12.6 },// Q
+    { wch: 6.6 }, // R
+    { wch: 4.9 }, // S
+    { wch: 1.7 }, // T
+    { wch: 2.3 }, // U
+    { wch: 6.3 }, // V
+  ];
+
+  // 헬퍼: 빈 행 추가
+  const emptyRow = () => new Array(22).fill('');
+
+  const addMerge = (rowStart, colStart, rowEnd, colEnd) => {
+    merges.push({ s: { r: rowStart, c: colStart }, e: { r: rowEnd, c: colEnd } });
+  };
+
+  let rowIdx = 0;
+
+  for (let pgIdx = 0; pgIdx < pages.length; pgIdx++) {
+    const pgEmps = pages[pgIdx];
+
+    // ── 1행: 제목 ─────────────────────────────────────
+    const titleRow = emptyRow();
+    titleRow[9] = `${year}년 ${month.padStart(2,'0')}월 급여 지급대장`; // J열(idx=9)
+    wsData.push(titleRow);
+    addMerge(rowIdx, 9, rowIdx, 14); // J:O
+    rowIdx++;
+
+    // ── 2행: 지급일자 ─────────────────────────────────
+    const dateRow = emptyRow();
+    // 지급일자는 현재 날짜 기준 또는 별도 props로
+    const payDate = `${year}년 ${month.padStart(2,'0')}월`;
+    dateRow[9] = `지급일자 : ${year}년 ${String(parseInt(month)+1).padStart(2,'0')}월 10일`;
+    wsData.push(dateRow);
+    addMerge(rowIdx, 9, rowIdx, 14);
+    rowIdx++;
+
+    // ── 3행: 회사명 ───────────────────────────────────
+    const companyRow = emptyRow();
+    // 현장명은 선택된 사이트 기준
+    const siteLabel = selectedSite.value !== '전체'
+        ? (siteOptions.value?.find(s => s.idx == selectedSite.value)?.name || '')
+        : (pgEmps[0]?.siteName || '');
+    companyRow[1] = siteLabel;
+    wsData.push(companyRow);
+    rowIdx++;
+
+    // ── 구분선 행 ─────────────────────────────────────
+    wsData.push(emptyRow()); rowIdx++;
+
+    // ── 그룹 타이틀 행 ───────────────────────────────
+    const groupRow = emptyRow();
+    groupRow[6]  = '지  급  내  역';   // G
+    groupRow[13] = '공   제   내   역'; // N
+    groupRow[17] = '합계';              // R
+    groupRow[20] = '영수인';            // U
+    wsData.push(groupRow);
+    addMerge(rowIdx, 6, rowIdx, 12);  // G:M
+    addMerge(rowIdx, 13, rowIdx, 16); // N:Q
+    addMerge(rowIdx, 17, rowIdx, 19); // R:T
+    addMerge(rowIdx, 20, rowIdx+5, 21); // U:V (6행 병합)
+    rowIdx++;
+
+    // ── 헤더 행 1 (사번행) ────────────────────────────
+    const h1 = emptyRow();
+    h1[1] = '사 원 번 호'; h1[2] = '입 사 일 자';
+    h1[6] = '기본급'; h1[7] = '직책수당';
+    h1[10] = '야간수당'; h1[11] = '연차수당'; h1[12] = '식대';
+    h1[13] = '건강보험'; h1[14] = '장기요양보험'; h1[16] = '국민연금';
+    wsData.push(h1);
+    addMerge(rowIdx, 2, rowIdx, 5);  // C:F
+    addMerge(rowIdx, 7, rowIdx, 9);  // H:J
+    addMerge(rowIdx, 14, rowIdx, 15); // O:P
+    rowIdx++;
+
+    // ── 헤더 행 2 (직위행) ────────────────────────────
+    const h2 = emptyRow();
+    h2[1] = '직위'; h2[2] = '경'; h2[3] = '부'; h2[4] = '7';
+    h2[6] = '기타수당'; h2[7] = '근로자의날수당'; h2[10] = '대근비';
+    h2[13] = '고용보험'; h2[14] = '기타공제'; h2[16] = '환급소득세';
+    wsData.push(h2);
+    addMerge(rowIdx, 2, rowIdx, 3); // C:D
+    addMerge(rowIdx, 4, rowIdx, 5); // E:F
+    addMerge(rowIdx, 7, rowIdx, 9);  // H:J
+    addMerge(rowIdx, 14, rowIdx, 15); // O:P
+    rowIdx++;
+
+    // ── 헤더 행 3 (성명행) ────────────────────────────
+    const h3 = emptyRow();
+    h3[1] = '성명'; h3[2] = '배'; h3[3] = '20'; h3[4] = '60'; h3[5] = '장';
+    h3[13] = '환급주민세'; h3[14] = '신원보증보험료'; h3[16] = '피복비공제';
+    h3[17] = '지급합계';
+    wsData.push(h3);
+    addMerge(rowIdx, 7, rowIdx, 9);  // H:J
+    addMerge(rowIdx, 14, rowIdx, 15); // O:P
+    addMerge(rowIdx, 17, rowIdx, 19); // R:T
+    rowIdx++;
+
+    // ── 헤더 행 4 (근로일수행) ────────────────────────
+    const h4 = emptyRow();
+    h4[1] = '근로일수'; h4[2] = '연장'; h4[4] = '야간';
+    h4[17] = '공제합계';
+    wsData.push(h4);
+    addMerge(rowIdx, 2, rowIdx, 3); addMerge(rowIdx, 4, rowIdx, 5);
+    addMerge(rowIdx, 7, rowIdx, 9);
+    addMerge(rowIdx, 17, rowIdx, 19);
+    rowIdx++;
+
+    // ── 헤더 행 5 (근로시간행) ───────────────────────
+    const h5 = emptyRow();
+    h5[1] = '근로시간수'; h5[2] = '휴일';
+    h5[13] = '소득세'; h5[14] = '지방소득세';
+    h5[17] = '차인지급액';
+    wsData.push(h5);
+    addMerge(rowIdx, 2, rowIdx, 3); addMerge(rowIdx, 4, rowIdx, 5);
+    addMerge(rowIdx, 7, rowIdx, 9);
+    addMerge(rowIdx, 14, rowIdx, 15);
+    addMerge(rowIdx, 17, rowIdx, 19);
+    rowIdx++;
+
+    // ── 직원 데이터 (1인 5행) ────────────────────────
+    for (const emp of pgEmps) {
+      const pay = emp.payItems || {};
+      const ded = emp.deductionItems || {};
+      const s   = calculateRowSummary(emp);
+
+      // emp 행0
+      const e0 = emptyRow();
+      e0[1]=emp.id||''; e0[2]=emp.joinDate||'';
+      e0[6]=n(pay['04001001']); e0[7]=n(pay['04001002']);
+      e0[10]=n(pay['04001003']); e0[11]=n(pay['04001004']); e0[12]=n(pay['04001005']);
+      e0[13]=n(ded['04002001']); e0[14]=n(ded['04002002']); e0[16]=n(ded['04002003']);
+      wsData.push(e0);
+      addMerge(rowIdx,2,rowIdx,5); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
+      rowIdx++;
+
+      // emp 행1
+      const e1 = emptyRow();
+      e1[1]=emp.role||''; e1[2]='0'; e1[3]='0'; e1[4]='0';
+      e1[6]=n(pay['04001006']); e1[13]=n(ded['04002004']); e1[14]=n(ded['04002005']); e1[16]=n(ded['04002006']);
+      wsData.push(e1);
+      addMerge(rowIdx,2,rowIdx,5); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
+      rowIdx++;
+
+      // emp 행2
+      const e2 = emptyRow();
+      e2[1]=emp.staff||emp.name||''; e2[3]='0'; e2[4]='0'; e2[5]='0';
+      e2[13]=n(ded['04002007']); e2[14]=n(ded['04002008']); e2[16]=n(ded['04002009']);
+      e2[17]=n(s.gross);
+      wsData.push(e2);
+      addMerge(rowIdx,3,rowIdx,5); addMerge(rowIdx,7,rowIdx,9);
+      addMerge(rowIdx,14,rowIdx,15); addMerge(rowIdx,17,rowIdx,19);
+      rowIdx++;
+
+      // emp 행3
+      const e3 = emptyRow();
+      e3[1]=String(emp.workedDays||0); e3[2]='0.00'; e3[4]='0.00';
+      e3[17]=n(s.ded);
+      wsData.push(e3);
+      addMerge(rowIdx,2,rowIdx,3); addMerge(rowIdx,4,rowIdx,5);
+      addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,17,rowIdx,19);
+      rowIdx++;
+
+      // emp 행4
+      const e4 = emptyRow();
+      e4[1]='209.00'; e4[2]='0.00';
+      e4[13]=n(ded['04002013']); e4[14]=n(ded['04002014']);
+      e4[17]=n(s.net);
+      wsData.push(e4);
+      addMerge(rowIdx,2,rowIdx,3); addMerge(rowIdx,4,rowIdx,5);
+      addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
+      addMerge(rowIdx,17,rowIdx,19);
+      rowIdx++;
+    }
+
+    // ── 합계 (마지막 페이지에만) ─────────────────────
+    if (pgIdx === pages.length - 1) {
+      const allEmps  = target;
+      const totalG   = allEmps.reduce((s,e) => s + calculateRowSummary(e).gross, 0);
+      const totalD   = allEmps.reduce((s,e) => s + calculateRowSummary(e).ded, 0);
+      const totalN   = allEmps.reduce((s,e) => s + calculateRowSummary(e).net, 0);
+      const payTot   = {}; const dedTot = {};
+      allEmps.forEach(e => {
+        Object.entries(e.payItems||{}).forEach(([k,v]) => payTot[k]=(payTot[k]||0)+n(v));
+        Object.entries(e.deductionItems||{}).forEach(([k,v]) => dedTot[k]=(dedTot[k]||0)+n(v));
+      });
+
+      for (let rep = 0; rep < 2; rep++) {
+        const label = rep === 0 ? '부서계' : '합계';
+        const s0=emptyRow(); s0[1]=label; s0[2]=siteLabel;
+        s0[6]=n(payTot['04001001']); s0[7]=n(payTot['04001002']);
+        s0[13]=n(dedTot['04002001']); s0[14]=n(dedTot['04002002']); s0[16]=n(dedTot['04002003']);
+        wsData.push(s0);
+        addMerge(rowIdx,2,rowIdx,5); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
+        rowIdx++;
+        const s1=emptyRow(); s1[13]=n(dedTot['04002004']);
+        wsData.push(s1); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15); rowIdx++;
+        const s2=emptyRow(); s2[14]=n(dedTot['04002005']); s2[17]=totalG;
+        wsData.push(s2); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15); addMerge(rowIdx,17,rowIdx,19); rowIdx++;
+        const s3=emptyRow(); s3[17]=totalD;
+        wsData.push(s3); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,17,rowIdx,19); rowIdx++;
+        const s4=emptyRow(); s4[2]=`${allEmps.length}명`; s4[13]=n(dedTot['04002013']); s4[14]=n(dedTot['04002014']); s4[17]=totalN;
+        wsData.push(s4); addMerge(rowIdx,2,rowIdx,3); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15); addMerge(rowIdx,17,rowIdx,19); rowIdx++;
+      }
+    }
+
+    // ── 페이지 하단 ──────────────────────────────────
+    wsData.push(emptyRow()); rowIdx++;
+    const fNote = emptyRow(); fNote[1] = '2026년 직장인건강검진 받아주시기 바랍니다.';
+    wsData.push(fNote); rowIdx++;
+    const fContact = emptyRow();
+    fContact[1] = pgEmps[0]?.contact || '';
+    fContact[19] = `${pgIdx+1}/${pages.length}`;
+    wsData.push(fContact); rowIdx++;
+    wsData.push(emptyRow()); rowIdx++;
+  }
+
+  // ── SheetJS 워크시트 생성 ────────────────────────────
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!merges'] = merges;
+  ws['!cols']   = colWidths;
+
+  const sheetName = `pays_${year}m${month.padStart(2,'0')}`;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  const fileName = `지급대장_${year}년${month.padStart(2,'0')}월.xlsx`;
+  XLSX.writeFile(wb, fileName);
+};
+
+// 숫자 변환 헬퍼
+const n = (v) => Number(v || 0);
 
 const getWageCode = async () => {
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     items.value = res.data.data || [];
-  } catch (err) {
-    console.error("항목 로드 실패", err);
-  }
+  } catch (err) { console.error("항목 로드 실패", err); }
+};
+
+const getTaxRate = async () => {
+  const year = new Date().getFullYear();
+  try {
+    const res = await axios.get(`/api/v1/config/tax/rate/${year}`);
+    const list = res.data.data || [];
+    const tax = list.find(t => Number(t.applied_year) === year) || list[0] || {};
+    targetCodes.value = { pension: tax.pension_rate, health: tax.health_rate, longTerm: tax.long_term_care_rate, employment: tax.employment_rate };
+  } catch(e) {}
 };
 
 const getPayrollMonth = async function () {
   const [year, month] = selectedYearMonth.value.split('-');
-  let params = {
-    year: year,
-    month: month,
-  }
-  await axios.get(`/api/v1/member/payroll/month`, { params })
-      .then(res => {
-        if (res.data.data) {
-          payrollList.value = res.data.data.map(item => ({
-            ...item,
-            selected: false,
-            payItems: item.payItems || {},
-            deductionItems: item.deductionItems || {},
-            deductionFlags: item.checkedItems || {}
-          }));
-        } else {
-          payrollList.value = [];
-        }
-      })
+  try {
+    const res = await axios.get(`/api/v1/member/payroll/month`, { params: { year, month } });
+    payrollList.value = res.data.data
+        ? res.data.data.map(item => ({
+          ...item,
+          selected:        false,
+          status:          item.status ?? 0,
+          payItems:        item.payItems       || {},
+          deductionItems:  item.deductionItems || {},
+          deductionFlags:  item.checkedItems   || {},
+          originalBasePay: undefined,
+        }))
+        : [];
+    currentPage.value = 1;
+  } catch (e) { payrollList.value = []; }
 };
 
-onMounted(() => {
-  fetchSiteOptions();
-  fetchTypeOptions();
-  getWageCode();
-  getPayrollMonth()
+onMounted(async () => {
+  await Promise.all([fetchSiteOptions(), fetchTypeOptions(), getTaxRate(), getWageCode()]);
+  await getPayrollMonth();
 });
 </script>
 
@@ -269,36 +580,41 @@ onMounted(() => {
           <i class="mdi mdi-content-save-outline"></i>
           <span>선택 결과 저장</span>
         </button>
+        <!-- ✅ 지급대장 출력 버튼 -->
+        <button @click="exportPayrollExcel" class="btn-export">
+          <i class="mdi mdi-microsoft-excel"></i>
+          <span>지급대장 출력</span>
+        </button>
       </div>
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #4f46e5; --card-bg: #eef2ff;">
+      <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-account-group-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">정산 대상</span>
-          <span class="stat-value">{{ statsInfo.total }}명</span>
+          <span class="stat-value">{{ statsInfo.total }} <small>명</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #10b981; --card-bg: #ecfdf5;">
+      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-cash-plus"></i></div>
         <div class="stat-content">
           <span class="stat-label">지급 합계</span>
-          <span class="stat-value">{{ formatCurrency(statsInfo.gross) }}</span>
+          <span class="stat-value">{{ formatCurrency(statsInfo.gross) }} <small>원</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #ef4444; --card-bg: #fef2f2;">
+      <div class="stat-card" style="--card-color: var(--danger); --card-bg: rgba(239, 68, 68, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-cash-minus"></i></div>
         <div class="stat-content">
           <span class="stat-label">공제 합계</span>
-          <span class="stat-value">{{ formatCurrency(statsInfo.ded) }}</span>
+          <span class="stat-value">{{ formatCurrency(statsInfo.ded) }} <small>원</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: #fffbeb;">
+      <div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-wallet-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">실 지급액</span>
-          <span class="stat-value text-orange">{{ formatCurrency(statsInfo.net) }}</span>
+          <span class="stat-value text-orange">{{ formatCurrency(statsInfo.net) }} <small>원</small></span>
         </div>
       </div>
     </div>
@@ -345,10 +661,18 @@ onMounted(() => {
           <span>급여 정산 내역 ({{ filteredPayrollList.length }}명)</span>
         </div>
 
-        <div class="status-legend">
-          <span class="legend-item"><span class="legend-color calculate-inactive"></span>계산 전</span>
-          <span class="legend-item"><span class="legend-color calculate-draft"></span>저장 대기</span>
-          <span class="legend-item"><span class="legend-color calculate-active"></span>저장 완료</span>
+        <div class="header-right-controls" style="display: flex; align-items: center; gap: 16px;">
+          <div class="status-legend">
+            <span class="legend-item"><span class="legend-color calculate-inactive"></span>계산 전</span>
+            <span class="legend-item"><span class="legend-color calculate-draft"></span>저장 대기</span>
+            <span class="legend-item"><span class="legend-color calculate-active"></span>저장 완료</span>
+          </div>
+          <div class="page-size-select">
+            <label>페이지당</label>
+            <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+              <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -380,62 +704,51 @@ onMounted(() => {
           </tr>
           </thead>
           <tbody>
-          <tr v-for="(p, index) in filteredPayrollList" :key="p.idx" class="data-row">
+          <tr v-for="(p, index) in pagedPayrollList" :key="p.idx" class="data-row">
             <td
                 class="text-center calculate-status transition-colors"
                 :class="{
-                    'calculate-active': p.status == 1,
-                    'calculate-draft': p.status == 2,
+                    'calculate-active':   p.status == 1,
+                    'calculate-draft':    p.status == 2,
                     'calculate-inactive': p.status == 0
                 }">
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="p.selected" class="custom-checkbox" />
               </label>
             </td>
-            <td class="text-center text-gray">{{ index + 1 }}</td>
+            <td class="text-center text-gray">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
             <td class="text-center text-dark">{{ p.siteName }}</td>
             <td class="text-center text-gray">{{ p.role }}</td>
             <td class="text-center text-gray">{{ p.id }}</td>
-            <td class="text-center fw-bold text-dark">{{ p.staff }}</td>
+            <td class="text-center font-bold text-dark member-name">{{ p.staff }}</td>
 
             <td class="text-center">
               <div class="days-input-group">
-                <input
-                    type="number"
-                    class="inline-input days-input"
-                    v-model.number="p.workedDays"
-                    @input="updatePay(p)"
-                    title="실제 일한 일수"
-                />
+                <input type="number" class="inline-input days-input" v-model.number="p.workedDays"
+                       @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
                 <span class="days-separator">/</span>
-                <input
-                    type="number"
-                    class="inline-input days-input"
-                    v-model.number="p.scheduledDays"
-                    @input="updatePay(p)"
-                    title="한 달 기준 근무일수"
-                />
+                <input type="number" class="inline-input days-input" v-model.number="p.scheduledDays"
+                       @input="markAsDraft(p); updatePay(p)" title="한 달 기준 근무일수" />
               </div>
             </td>
 
-            <td class="text-right bg-light-gray fw-bold amount-cell">{{ formatCurrency(calculateRowSummary(p).gross) }}</td>
-            <td class="text-right bg-light-gray fw-bold text-red amount-cell">{{ formatCurrency(calculateRowSummary(p).ded) }}</td>
-            <td class="text-right bg-light-gray fw-bold text-blue amount-cell">{{ formatCurrency(calculateRowSummary(p).net) }}</td>
+            <td class="text-right bg-light-gray font-bold amount-cell">
+              {{ formatCurrency(rowSummaryMap.get(p.idx)?.gross ?? 0) }}
+            </td>
+            <td class="text-right bg-light-gray font-bold text-red amount-cell">
+              {{ formatCurrency(rowSummaryMap.get(p.idx)?.ded ?? 0) }}
+            </td>
+            <td class="text-right bg-light-gray font-bold text-blue amount-cell">
+              {{ formatCurrency(rowSummaryMap.get(p.idx)?.net ?? 0) }}
+            </td>
 
             <td v-for="item in payItems" :key="item.itemCd" class="amount-cell">
-              <input
-                  type="number"
-                  v-model.number="p.payItems[item.itemCd]"
-                  @input="calculateInsurances(p)"
-                  class="inline-input"
-              />
+              <input type="number" v-model.number="p.payItems[item.itemCd]"
+                     @input="markAsDraft(p); resetBasePay(p)" class="inline-input" />
             </td>
             <td v-for="item in deductionItems" :key="item.itemCd" class="amount-cell">
-              <input
-                  type="number"
-                  v-model.number="p.deductionItems[item.itemCd]"
-                  class="inline-input"
-              />
+              <input type="number" v-model.number="p.deductionItems[item.itemCd]"
+                     @input="markAsDraft(p)" class="inline-input" />
             </td>
           </tr>
           <tr v-if="filteredPayrollList.length === 0">
@@ -447,10 +760,10 @@ onMounted(() => {
           </tbody>
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="7" class="text-center"><span class="fw-bold text-dark">전체 합계</span></td>
-            <td class="text-right fw-bold">{{ formatCurrency(statsInfo.gross) }}</td>
-            <td class="text-right fw-bold text-red">{{ formatCurrency(statsInfo.ded) }}</td>
-            <td class="text-right fw-bold text-blue">{{ formatCurrency(statsInfo.net) }}</td>
+            <td colspan="7" class="text-center"><span class="font-bold text-dark">전체 합계</span></td>
+            <td class="text-right font-bold">{{ formatCurrency(statsInfo.gross) }}</td>
+            <td class="text-right font-bold text-red">{{ formatCurrency(statsInfo.ded) }}</td>
+            <td class="text-right font-bold text-blue">{{ formatCurrency(statsInfo.net) }}</td>
             <td :colspan="payItems.length" class="bg-light-gray border-none"></td>
             <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none">
               <div class="net-pay-box">
@@ -462,282 +775,165 @@ onMounted(() => {
           </tfoot>
         </table>
       </div>
+
+      <div class="pagination-bar" v-if="totalPages > 1">
+        <span class="pagination-info">
+          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredPayrollList.length) }} / 총 {{ filteredPayrollList.length }}명
+        </span>
+        <div class="pagination-controls">
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)" title="처음"><i class="mdi mdi-chevron-double-left"></i></button>
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" title="이전"><i class="mdi mdi-chevron-left"></i></button>
+          <template v-for="p in pageNumbers" :key="p">
+            <span v-if="p === '...'" class="page-ellipsis">…</span>
+            <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
+          </template>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" title="다음"><i class="mdi mdi-chevron-right"></i></button>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)" title="마지막"><i class="mdi mdi-chevron-double-right"></i></button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.payroll-calc-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.header-left { flex: 1; }
-.page-title {
-  font-size: 24px; font-weight: 700; color: #1e293b;
-  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px;
-  letter-spacing: -0.5px;
-}
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-
-.btn-calculate, .btn-save {
+/* 지급대장 출력 버튼 */
+.btn-export {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 18px; border: none; border-radius: 8px;
   font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  background-color: #217346; /* 엑셀 그린 */
+  color: #ffffff;
+  box-shadow: var(--shadow-sm);
 }
+.btn-export:hover { filter: brightness(0.88); transform: translateY(-1px); }
+.btn-export i { font-size: 18px; }
 
-/* 계산 버튼 - 옐로우 플랫 */
-.btn-calculate { background-color: #f59e0b; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-calculate:hover { background-color: #d97706; transform: translateY(-1px); }
-
-/* 저장 버튼 - 그린 플랫 */
-.btn-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-save:hover { background-color: #059669; transform: translateY(-1px); }
-.btn-save:disabled { background-color: #cbd5e1; cursor: not-allowed; transform: none; box-shadow: none;}
-
-.btn-calculate i, .btn-save i { font-size: 18px; }
-
-/* === 통계 카드 (플랫 디자인) === */
-.stats-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px; margin-bottom: 24px;
+/* 계산 버튼 */
+.btn-calculate {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  background-color: var(--warning); color: var(--text-inverse); box-shadow: var(--shadow-sm);
 }
+.btn-calculate:hover { filter: brightness(0.9); transform: translateY(-1px); }
+.btn-calculate i { font-size: 18px; }
 
-.stat-card {
-  background: white; border-radius: 12px; padding: 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  display: flex; align-items: center; gap: 16px; transition: all 0.2s;
-}
-.stat-card:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.04); transform: translateY(-2px);}
+.page-size-select { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub); }
 
-.stat-icon {
-  width: 52px; height: 52px; border-radius: 12px;
-  background-color: var(--card-bg, #f1f5f9);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.stat-icon i { font-size: 24px; color: var(--card-color); }
-
-.stat-content { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.stat-label { font-size: 13px; color: #64748b; font-weight: 500; }
-.stat-value { font-size: 22px; font-weight: 700; color: #1e293b; letter-spacing: -0.5px;}
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white; border-radius: 12px; padding: 24px;
-  margin-bottom: 24px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 160px; flex: 1; }
-
-.filter-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #475569;
-}
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; cursor: pointer;
-  transition: all 0.2s; height: 42px; box-sizing: border-box;
-}
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-
-.search-group { display: flex; gap: 8px; flex: 2; min-width: 280px; align-items: flex-end; }
-.search-box {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-  flex: 1; height: 42px; box-sizing: border-box; transition: all 0.2s;
-}
-.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.search-box i { font-size: 20px; color: #94a3b8; }
-.search-input { flex: 1; border: none; background: transparent; font-size: 13px; color: #334155; outline: none; }
-.search-input::placeholder { color: #94a3b8; }
-
-.search-clear {
-  background: none; border: none; color: #94a3b8; cursor: pointer;
-  padding: 4px; border-radius: 4px; transition: all 0.2s; display: flex; align-items: center;
-}
-.search-clear:hover { background: #e2e8f0; color: #64748b; }
-
-/* === 로딩 상태 === */
 .loading-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 60px 20px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 24px;
+  padding: 60px 20px; background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 24px;
 }
 .spinner {
-  width: 40px; height: 40px; border: 3px solid #f1f5f9;
-  border-top-color: #4f46e5; border-radius: 50%; animation: spin 1s linear infinite;
+  width: 40px; height: 40px; border: 3px solid var(--bg-canvas);
+  border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.loading-state p { margin-top: 16px; font-size: 14px; color: #64748b; }
+.loading-state p { margin-top: 16px; font-size: 14px; color: var(--text-sub); }
 
-/* 빈 상태 */
-.empty-state { text-align: center; padding: 60px 20px !important; color: #94a3b8; background: white; }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1; }
-.empty-state p { font-size: 14px; font-weight: 500; color: #64748b; margin: 0; }
-
-/* === 테이블 카드 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; max-width: 100%;
-}
-
-.table-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 24px; border-bottom: 1px solid #e2e8f0; background: #ffffff; flex-wrap: wrap; gap: 12px;
-}
-
-.table-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #1e293b; }
-.table-title i { font-size: 20px; color: #4f46e5; }
-
-/* 상태 범례 */
-.status-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: #475569; font-weight: 500;}
+.status-legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-sub); font-weight: 600;}
 .legend-item { display: flex; align-items: center; gap: 6px; }
-.legend-color { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,0.1); }
+.legend-color { width: 14px; height: 14px; border-radius: 4px; display: inline-block; box-shadow: var(--shadow-sm); }
+.legend-color.calculate-inactive { background-color: var(--bg-canvas); border: 1px solid var(--border-color); }
+.legend-color.calculate-draft { background-color: var(--warning); }
+.legend-color.calculate-active { background-color: var(--success); }
 
 .table-scroll-container {
   overflow: auto; max-width: 100%; max-height: calc(100vh - 380px);
 }
 .table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
-.table-scroll-container::-webkit-scrollbar-track { background: #f8fafc; }
-.table-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* === 데이터 테이블 === */
 .data-table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 13px; }
+.data-table thead { position: sticky; top: 0; z-index: 30; }
+.data-table th:last-child, .data-table td:last-child { border-right: none; }
 
-/* 테이블 헤더 */
-.data-table thead {
-  position: sticky; top: 0; z-index: 30; background-color: #6d28d9; /* 솔리드 다크 퍼플 */
+.group-header-summary, .group-header-pay, .group-header-deduction {
+  background-color: var(--bg-canvas); border-bottom: 1px solid var(--border-color);
 }
-
-.data-table th {
-  padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 600;
-  color: white; white-space: nowrap; border-right: 1px solid rgba(255, 255, 255, 0.1);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.data-table th:last-child { border-right: none; }
-.sub-header { background-color: #5b21b6; }
+.sub-header { background-color: var(--bg-hover); border-bottom: 1px solid var(--border-color); }
 
 .data-table td {
-  padding: 8px 10px; border-bottom: 1px solid #f1f5f9;
-  border-right: 1px solid #f8fafc; vertical-align: middle; word-break: keep-all;
+  padding: 8px 10px; border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--bg-canvas); vertical-align: middle; word-break: keep-all;
 }
-.data-table td:last-child { border-right: none; }
-
-.data-row { transition: background 0.2s; }
-.data-row:hover { background-color: #f8fafc; }
-
-/* 유틸리티 클래스 */
-.text-center { text-align: center !important; }
-.text-right { text-align: right !important; }
-.text-red { color: #dc2626 !important; }
-.text-blue { color: #2563eb !important; }
-.text-orange { color: #d97706 !important; }
-.text-dark { color: #1e293b; }
-.text-gray { color: #64748b; }
-.fw-bold { font-weight: 600; }
-.bg-light-gray { background-color: #f8fafc; }
-.border-none { border: none !important; }
-
 .amount-header, .amount-cell { min-width: 110px; }
 
-/* 일수 입력 폼 그룹 */
+.data-row { background: var(--bg-surface); }
+.data-row:hover { background-color: var(--primary-soft); }
+
+.calculate-status { position: relative; }
+.calculate-inactive { background-color: var(--bg-canvas); }
+.calculate-draft { background-color: rgba(245, 158, 11, 0.15) !important; box-shadow: inset 4px 0 0 var(--warning); }
+.calculate-active { background-color: rgba(16, 185, 129, 0.15) !important; box-shadow: inset 4px 0 0 var(--success); }
+
+.member-name { font-weight: 700; color: var(--primary); }
+.bg-light-gray { background-color: var(--bg-canvas); }
+
 .days-input-group { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .days-input { width: 44px !important; text-align: center; padding: 6px 4px !important;}
-.days-separator { color: #cbd5e1; font-weight: 400; font-size: 14px;}
+.days-separator { color: var(--text-muted); font-weight: 400; font-size: 14px;}
 
-/* 입력창 (플랫 스타일) */
 .inline-input {
   width: 100%; min-width: 90px; padding: 8px 10px; text-align: right;
-  font-size: 13px; font-family: 'Inter', monospace; color: #1e293b;
-  border: 1px solid transparent; border-radius: 6px; background: transparent; transition: all 0.2s;
+  font-size: 13px; color: var(--text-main); font-weight: 500;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
-.inline-input:hover { border-color: #cbd5e1; background: white; }
-.inline-input:focus {
-  outline: none; border-color: #4f46e5; background: white; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
+.inline-input:hover { border-color: var(--border-focus); background: var(--bg-surface); }
+.inline-input:focus { outline: none; border-color: var(--primary); background: var(--bg-surface); box-shadow: 0 0 0 3px var(--primary-soft); }
 
-/* 커스텀 체크박스 */
 .checkbox-wrapper { display: flex; justify-content: center; align-items: center; cursor: pointer; }
 .custom-checkbox {
   appearance: none; -webkit-appearance: none;
-  width: 18px; height: 18px; border: 2px solid #cbd5e1; border-radius: 4px;
-  cursor: pointer; position: relative; transition: all 0.2s; background: white; margin: 0;
+  width: 18px; height: 18px; border: 2px solid var(--border-focus); border-radius: 4px;
+  cursor: pointer; position: relative; background: var(--bg-surface); margin: 0; transition: border-color 0.2s;
 }
-.custom-checkbox:hover { border-color: #94a3b8; }
-.custom-checkbox:checked { border-color: #4f46e5; background-color: #4f46e5; }
+.custom-checkbox:hover { border-color: var(--text-muted); }
+.custom-checkbox:checked { border-color: var(--primary); background-color: var(--primary); }
 .custom-checkbox:checked::after {
   content: ''; position: absolute; top: 2px; left: 5px;
-  width: 4px; height: 8px; border: solid white; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  width: 4px; height: 8px; border: solid var(--text-inverse); border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
 
-/* 헤더용 화이트 체크박스 */
-.header-checkbox { border-color: rgba(255,255,255,0.6); background: transparent; }
-.header-checkbox:hover { border-color: white; }
-.header-checkbox:checked { border-color: white; background-color: white; }
-.header-checkbox:checked::after { border-color: #6d28d9; }
-
-/* ★ 상태 컬럼 (노골적인 원색 대신 파스텔/플랫 톤) */
-.calculate-status { transition: background-color 0.3s ease; }
-.calculate-inactive { background-color: #f1f5f9; } /* 계산 전: 연회색 */
-.calculate-draft { background-color: #fef3c7; border-right: 1px solid #fde68a !important;} /* 계산됨/저장전: 연노랑 */
-.calculate-active { background-color: #e0e7ff; border-right: 1px solid #c7d2fe !important;} /* 저장완료: 연파랑 */
-
-/* Footer (총 합계) */
 .table-footer.sticky-footer {
   position: sticky; bottom: 0; z-index: 25;
-  background-color: #ffffff; border-top: 2px solid #e2e8f0;
-  box-shadow: 0 -4px 6px -1px rgba(0,0,0,0.05);
+  background-color: var(--bg-surface); border-top: 2px solid var(--border-focus);
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
 }
-
 .table-footer td { padding: 14px 10px; font-size: 14px; }
-
 .net-pay-box {
   display: inline-flex; align-items: center; gap: 12px;
-  background-color: #eef2ff; padding: 8px 20px; border-radius: 8px; border: 1px solid #c7d2fe;
+  background-color: var(--primary-soft); padding: 8px 20px; border-radius: 8px; border: 1px solid rgba(37, 99, 235, 0.2);
 }
-.net-pay-label { font-size: 13px; color: #4f46e5; font-weight: 600; }
-.net-pay-value { font-size: 18px; color: #4f46e5; font-weight: 700; letter-spacing: 0.5px;}
+.net-pay-label { font-size: 13px; color: var(--primary); font-weight: 600; }
+.net-pay-value { font-size: 18px; color: var(--primary); font-weight: 700; letter-spacing: 0.5px;}
 
-/* === 반응형 (Responsive) === */
-@media (max-width: 1400px) {
-  .stats-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.pagination-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-top: 1px solid var(--border-color);
+  background: var(--bg-hover); flex-wrap: wrap; gap: 12px;
 }
-
-@media (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group { flex: 1; min-width: calc(33% - 10px); }
-  .search-group { width: 100%; flex: 1 1 100%; }
-  .table-header { flex-direction: column; align-items: flex-start;}
+.pagination-info { font-size: 13px; color: var(--text-sub); }
+.pagination-controls { display: flex; align-items: center; gap: 4px; }
+.page-btn {
+  min-width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-color); border-radius: 7px;
+  background: var(--bg-surface); color: var(--text-sub);
+  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 6px;
 }
+.page-btn:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.page-btn.active { background: var(--primary); border-color: var(--primary); color: var(--text-inverse); font-weight: 700; }
+.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.page-btn i { font-size: 16px; }
+.page-ellipsis { min-width: 30px; text-align: center; font-size: 14px; color: var(--text-muted); letter-spacing: 1px; }
 
 @media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
-  .btn-calculate, .btn-save { flex: 1; justify-content: center; }
-
-  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px;}
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-  .search-group { flex-direction: row; }
-  .search-box { flex: 1; min-width: 0; }
+  .btn-calculate, .btn-export { flex: 1; justify-content: center; }
+  .status-legend { width: 100%; justify-content: space-between; padding: 10px 0; }
+  .header-right-controls { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
 }
 </style>

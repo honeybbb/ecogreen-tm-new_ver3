@@ -53,8 +53,6 @@ const getStatusText = (status) => {
   return '수령 완료';
 };
 
-const formatPrice = (price) => (Number(price) || 0).toLocaleString() + '원';
-
 // 6. 모달 로직 및 상태 변경
 const isModalOpen = ref(false);
 const selectedOrder = ref({});
@@ -99,48 +97,42 @@ onMounted(fetchOrders);
         </h1>
         <p class="page-subtitle">현장별 청소용품 및 피복 신청 현황을 관리하고 승인합니다</p>
       </div>
-      <div class="header-actions">
-        <button @click="fetchOrders" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
-        </button>
-      </div>
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #4f46e5; --card-bg: #eef2ff;">
+      <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-clipboard-text-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">누적 신청</span>
-          <span class="stat-value">{{ stats.total }}건</span>
+          <span class="stat-value">{{ stats.total }}<small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: #fffbeb;">
+      <div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-clock-alert-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">대기 중</span>
-          <span class="stat-value">{{ stats.pending }}건</span>
+          <span class="stat-value">{{ stats.pending }}<small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #0ea5e9; --card-bg: #e0f2fe;">
+      <div class="stat-card" style="--card-color: #0ea5e9; --card-bg: rgba(14, 165, 233, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-truck-delivery-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">배송 중</span>
-          <span class="stat-value">{{ stats.shipping }}건</span>
+          <span class="stat-value">{{ stats.shipping }}<small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #10b981; --card-bg: #ecfdf5;">
+      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-check-decagram-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">완료</span>
-          <span class="stat-value">{{ stats.completed }}건</span>
+          <span class="stat-value">{{ stats.completed }}<small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #8b5cf6; --card-bg: #f3e8ff;">
+      <div class="stat-card" style="--card-color: #8b5cf6; --card-bg: rgba(139, 92, 246, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
         <div class="stat-content">
           <span class="stat-label">총 신청 금액</span>
-          <span class="stat-value text-lg">{{ formatPrice(stats.totalAmount) }}</span>
+          <span class="stat-value">{{ formatCurrency(stats.totalAmount) }}<small>원</small></span>
         </div>
       </div>
     </div>
@@ -194,7 +186,7 @@ onMounted(fetchOrders);
             <th>품목 요약</th>
             <th class="text-right" style="width: 140px;">총 금액</th>
             <th class="text-center" style="width: 100px;">상태</th>
-            <th class="text-center sticky-col" style="width: 100px;">관리</th>
+            <th class="text-center" style="width: 100px;">관리</th>
           </tr>
           </thead>
           <tbody>
@@ -203,7 +195,7 @@ onMounted(fetchOrders);
             <td class="font-bold text-dark">{{ order.siteName }}</td>
             <td>{{ order.applicant }} <span class="staff-id">({{order.memberId }})</span></td>
             <td class="text-blue">{{ order.summary }}</td>
-            <td class="text-right font-bold">{{ formatPrice(order.totalAmount) }}</td>
+            <td class="text-right font-bold">{{ formatCurrency(order.totalAmount) }}</td>
             <td class="text-center">
                 <span :class="[
                     'status-badge', order.status === 0 ? 'status-pending' :
@@ -212,10 +204,10 @@ onMounted(fetchOrders);
                   {{ getStatusText(order.status) }}
                 </span>
             </td>
-            <td class="text-center sticky-col">
+            <td class="text-center-col">
               <button @click="openModal(order)" class="btn-detail">
                 <i class="mdi mdi-eye"></i>
-                <span>상세보기</span>
+                <span>상세</span>
               </button>
             </td>
           </tr>
@@ -273,14 +265,14 @@ onMounted(fetchOrders);
                 <tr v-for="item in selectedOrder.items" :key="item.idx">
                   <td class="font-medium">{{item.categoryName}} - {{ item.itemName }}</td>
                   <td class="text-center">{{ item.qty }}개</td>
-                  <td class="text-right text-gray">{{ formatPrice(item.price) }}</td>
-                  <td class="text-right font-bold">{{ formatPrice(item.price * item.qty) }}</td>
+                  <td class="text-right text-gray">{{ formatCurrency(item.price) }}</td>
+                  <td class="text-right font-bold">{{ formatCurrency(item.price * item.qty) }}</td>
                 </tr>
                 </tbody>
                 <tfoot>
                 <tr>
                   <td colspan="3" class="text-right font-bold">최종 합계 금액</td>
-                  <td class="text-right font-extrabold text-blue-lg">{{ formatPrice(selectedOrder.totalAmount) }}</td>
+                  <td class="text-right font-extrabold text-blue-lg">{{ formatCurrency(selectedOrder.totalAmount) }}</td>
                 </tr>
                 </tfoot>
               </table>
@@ -313,255 +305,97 @@ onMounted(fetchOrders);
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+/* =========================================
+   페이지 고유 스타일 (공통 CSS 제외)
+========================================= */
 
-/* === 전역 설정 === */
-.order-management-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
+.staff-id { font-size: 11px; color: var(--text-muted); margin-left: 4px; font-weight: 400;}
 
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.header-left { flex: 1; }
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 6px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  letter-spacing: -0.5px;
-}
-
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-
-.btn-refresh {
-  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-.btn-refresh i { font-size: 16px; }
-
-/* === 통계 카드 (플랫 디자인) === */
-.stats-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 20px; margin-bottom: 24px;
-}
-
-.stat-card {
-  background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); display: flex; align-items: center; gap: 16px;
-  transition: transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden;
-}
-.stat-card::before {
-  content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
-  background-color: var(--card-color);
-}
-.stat-card:hover { transform: translateY(-2px); border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-
-.stat-icon {
-  width: 48px; height: 48px; border-radius: 12px; background-color: var(--card-bg);
-  display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
-}
-.stat-icon i { font-size: 24px; color: var(--card-color); position: absolute; }
-
-.stat-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
-.stat-value { font-size: 22px; font-weight: 700; color: #1e293b; letter-spacing: -0.5px;}
-.text-lg { font-size: 18px; }
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 160px; }
-
-.filter-label {
-  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569;
-}
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; outline: none; transition: all 0.2s; height: 42px; box-sizing: border-box;
-}
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-
-.search-group { display: flex; gap: 8px; flex: 1; min-width: 280px; align-items: flex-end;}
-.search-box {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: #f8fafc;
-  border: 1px solid #e2e8f0; border-radius: 8px; flex: 1; height: 42px; transition: all 0.2s; box-sizing: border-box;
-}
-.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.search-input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; color: #334155; }
-.search-input::placeholder { color: #94a3b8; }
-.search-box i { font-size: 18px; color: #94a3b8; }
-.search-clear { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; border-radius: 4px; display: flex; align-items: center;}
-.search-clear:hover { background: #e2e8f0; color: #64748b; }
-
-/* === 로딩 및 에러 === */
-.loading-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 60px 20px; background: white; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 24px;
-}
-.spinner {
-  width: 40px; height: 40px; border: 3px solid #f1f5f9; border-top-color: #4f46e5;
-  border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.loading-state p { margin-top: 16px; font-size: 14px; color: #64748b; }
-
-/* === 테이블 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; max-width: 100%;
-}
-.table-header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
-.table-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: #1e293b; }
-.table-title i { font-size: 20px; color: #4f46e5; }
-
-.table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.table-scroll-container::-webkit-scrollbar { height: 8px; }
-.table-scroll-container::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-
-.data-table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
-.data-table thead { background-color: #6d28d9; }
-.data-table th { padding: 14px 16px; color: white; text-align: left; font-size: 12px; font-weight: 600; white-space: nowrap; border-bottom: none;}
-.data-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
-.data-row { transition: background 0.2s; }
-.data-row:hover { background-color: #f8fafc; }
-
-/* 텍스트/유틸 */
-.text-center { text-align: center; }
-.text-right { text-align: right; }
-.text-gray { color: #64748b; font-size: 12px;}
-.text-blue { color: #4f46e5; }
-.text-dark { color: #1e293b; }
-.font-bold { font-weight: 700; }
-.font-medium { font-weight: 500; }
-
-.staff-id { font-size: 11px; color: #94a3b8; margin-left: 4px; font-weight: 400;}
-
-/* 상태 배지 (플랫 파스텔톤) */
+/* 상태 배지 (테마 변수 활용) */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
   border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
 }
-.status-pending { background-color: #fef3c7; color: #b45309; }
-.status-shipping { background-color: #e0f2fe; color: #0369a1; }
-.status-completed { background-color: #d1fae5; color: #065f46; }
-
-/* 액션 버튼 */
-.btn-detail {
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 12px;
-  background-color: #eef2ff; color: #4f46e5; border: none; border-radius: 6px;
-  font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
-}
-.btn-detail:hover { background-color: #e0e7ff; color: #4338ca; }
-.btn-detail i { font-size: 14px; }
-
-/* Sticky 컬럼 */
-.sticky-col { position: sticky; right: 0; box-shadow: -4px 0 8px rgba(0,0,0,0.03); z-index: 5; background: white;}
-.data-table thead .sticky-col { z-index: 15; background-color: #6d28d9; border-left: 1px solid #5b21b6; box-shadow: none;}
-.data-row:hover .sticky-col { background-color: #f8fafc; }
-
-/* 빈 상태 */
-.empty-row { background-color: white !important; }
-.empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1; display: block;}
-.empty-state p { font-size: 14px; font-weight: 500; color: #64748b; margin: 0; }
+.status-pending { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.status-shipping { background-color: rgba(14, 165, 233, 0.1); color: #0ea5e9; } /* 하늘색 */
+.status-completed { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 
 /* === 모달창 스타일 === */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px);
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
 }
 .modal-card {
-  background: white; border-radius: 16px; width: 100%; max-width: 700px; max-height: 90vh;
-  display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); overflow: hidden; border: 1px solid #e2e8f0;
+  background: var(--bg-surface); border-radius: 16px; width: 100%; max-width: 700px; max-height: 90vh;
+  display: flex; flex-direction: column; box-shadow: var(--shadow-md); overflow: hidden; border: 1px solid var(--border-color);
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
 
 /* 모달 헤더 */
 .modal-header {
-  padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;
+  padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-canvas);
 }
-.modal-title { font-size: 16px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px; margin: 0;}
-.modal-title i { color: #4f46e5; font-size: 20px;}
+.modal-title { font-size: 16px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; margin: 0;}
+.modal-title i { color: var(--primary); font-size: 20px;}
+
 .btn-close {
-  background: transparent; border: none; font-size: 20px; color: #94a3b8; cursor: pointer; transition: 0.2s;
+  background: transparent; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; transition: 0.2s;
   display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px;
 }
-.btn-close:hover { background: #e2e8f0; color: #ef4444; }
+.btn-close:hover { background: var(--bg-hover); color: var(--danger); }
 
 /* 모달 바디 */
 .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
 
 .order-info-summary {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
-  background: #f8fafc; padding: 16px 20px; border-radius: 10px; margin-bottom: 24px; border: 1px solid #e2e8f0;
+  background: var(--bg-canvas); padding: 16px 20px; border-radius: 10px; margin-bottom: 24px; border: 1px solid var(--border-color);
 }
 .info-item { display: flex; flex-direction: column; gap: 4px; }
-.info-item .label { font-size: 11px; color: #64748b; font-weight: 600; }
-.info-item .value { font-size: 13px; color: #1e293b; font-weight: 700; }
+.info-item .label { font-size: 11px; color: var(--text-sub); font-weight: 600; }
+.info-item .value { font-size: 13px; color: var(--text-main); font-weight: 700; }
 
 /* 모달 테이블 */
-.item-table-wrapper { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;}
-.item-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.item-table thead { background-color: #f1f5f9; }
-.item-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; color: #475569; }
-.item-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle;}
-.item-table tfoot td { padding: 16px; border-top: 1px solid #e2e8f0; font-size: 14px; background-color: #f8fafc; }
-.text-blue-lg { color: #4f46e5; font-size: 16px; font-weight: 800; font-family: 'Inter', monospace; }
+.item-table-wrapper { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;}
+.item-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--bg-surface); }
+.item-table thead { background-color: var(--bg-hover); border-bottom: 1px solid var(--border-color);}
+.item-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; color: var(--text-sub); }
+.item-table td { padding: 14px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-main); vertical-align: middle;}
+.item-table tfoot td { padding: 16px; font-size: 14px; background-color: var(--bg-canvas); border-bottom: none;}
+
+.text-blue-lg { color: var(--primary); font-size: 16px; font-weight: 800;  }
 .font-extrabold { font-weight: 800; }
 
 /* 모달 푸터 */
 .modal-footer {
-  padding: 16px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0;
+  padding: 16px 24px; background: var(--bg-canvas); border-top: 1px solid var(--border-color);
   display: flex; justify-content: flex-end; align-items: center; gap: 10px; border-radius: 0 0 16px 16px;
 }
 
 .btn-approve {
-  background-color: #f59e0b; color: white; padding: 10px 20px; border-radius: 8px;
-  font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px;
+  background-color: var(--warning); color: var(--text-inverse); padding: 10px 20px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm);
 }
-.btn-approve:hover { background-color: #d97706; transform: translateY(-1px);}
+.btn-approve:hover { filter: brightness(0.9); transform: translateY(-1px);}
 
 .btn-complete {
-  background-color: #10b981; color: white; padding: 10px 20px; border-radius: 8px;
-  font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px;
+  background-color: var(--success); color: var(--text-inverse); padding: 10px 20px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm);
 }
-.btn-complete:hover { background-color: #059669; transform: translateY(-1px);}
+.btn-complete:hover { background-color: var(--success-hover); transform: translateY(-1px);}
 
 .btn-close-modal {
-  background: white; border: 1px solid #e2e8f0; color: #475569; padding: 10px 20px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); padding: 10px 20px;
   border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s;
 }
-.btn-close-modal:hover { background: #f1f5f9; color: #1e293b;}
+.btn-close-modal:hover { background: var(--bg-hover); color: var(--text-main);}
 
 /* 스크롤바 커스텀 */
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* === 반응형 (Responsive) === */
 @media (max-width: 1024px) {
@@ -571,19 +405,6 @@ onMounted(fetchOrders);
 }
 
 @media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; }
-  .btn-refresh { flex: 1; justify-content: center; }
-
-  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-  .filter-select { width: 100%; }
-
-  .search-group { flex-direction: row; }
-  .search-box { flex: 1; min-width: 0; }
-
   .order-info-summary { grid-template-columns: 1fr; gap: 12px; }
 
   .modal-footer { flex-direction: column-reverse; align-items: stretch; gap: 10px;}

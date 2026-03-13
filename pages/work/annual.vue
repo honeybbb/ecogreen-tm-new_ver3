@@ -118,44 +118,38 @@ onMounted(() => {
         </h1>
         <p class="page-subtitle">직원들의 연차 및 휴가 신청 내역을 검토하고 승인합니다</p>
       </div>
-      <div class="header-actions">
-        <button @click="refreshData" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
-        </button>
-      </div>
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #4f46e5; --card-bg: #eef2ff;">
+      <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-file-document-edit-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">전체 신청</span>
-          <span class="stat-value">{{ statsInfo.total }}건</span>
+          <span class="stat-value">{{ statsInfo.total }} <small>건</small></span>
         </div>
       </div>
 
-      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: #fffbeb;">
+      <div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-clock-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">승인 대기</span>
-          <span class="stat-value">{{ statsInfo.pending }}건</span>
+          <span class="stat-value">{{ statsInfo.pending }} <small>건</small></span>
         </div>
       </div>
 
-      <div class="stat-card" style="--card-color: #10b981; --card-bg: #ecfdf5;">
+      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-check-circle-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">승인 완료</span>
-          <span class="stat-value">{{ statsInfo.approved }}건</span>
+          <span class="stat-value">{{ statsInfo.approved }} <small>건</small></span>
         </div>
       </div>
 
-      <div class="stat-card" style="--card-color: #ef4444; --card-bg: #fef2f2;">
+      <div class="stat-card" style="--card-color: var(--danger); --card-bg: rgba(239, 68, 68, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-close-circle-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">반려 내역</span>
-          <span class="stat-value">{{ statsInfo.rejected }}건</span>
+          <span class="stat-value">{{ statsInfo.rejected }} <small>건</small></span>
         </div>
       </div>
     </div>
@@ -225,7 +219,7 @@ onMounted(() => {
             <th class="text-center">사용일수</th>
             <th>신청 사유</th>
             <th>상태</th>
-            <th class="text-center sticky-col">관리</th>
+            <th class="text-center">관리</th>
           </tr>
           </thead>
           <tbody>
@@ -256,7 +250,7 @@ onMounted(() => {
                     {{ getStatusText(req.status) }}
                   </span>
               </td>
-              <td class="text-center sticky-col">
+              <td class="text-center">
                 <div v-if="Number(req.status) === 0" class="action-buttons">
                   <button @click="updateStatus(req.idx, 1)" class="btn-approve" title="승인">
                     <i class="mdi mdi-check"></i>
@@ -267,7 +261,7 @@ onMounted(() => {
                     반려
                   </button>
                 </div>
-                <span v-else class="text-gray text-xs">처리완료</span>
+                <span v-else class="text-gray">처리완료</span>
               </td>
             </tr>
 
@@ -288,204 +282,47 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.member-list-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.header-left { flex: 1; }
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 6px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  letter-spacing: -0.5px;
-}
-
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-
-.btn-refresh {
-  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-.btn-refresh i { font-size: 16px; }
-
-/* === 통계 카드 (플랫 디자인) === */
-.stats-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px; margin-bottom: 24px;
-}
-
-.stat-card {
-  background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); display: flex; align-items: center; gap: 16px;
-  transition: transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden;
-}
-.stat-card::before {
-  content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
-  background-color: var(--card-color);
-}
-.stat-card:hover { transform: translateY(-2px); border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-
-.stat-icon {
-  width: 48px; height: 48px; border-radius: 12px; background-color: var(--card-bg);
-  display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
-}
-.stat-icon i { font-size: 24px; color: var(--card-color); position: absolute; }
-
-.stat-content { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.stat-label { font-size: 12px; color: #64748b; font-weight: 500; }
-.stat-value { font-size: 22px; font-weight: 700; color: #1e293b; letter-spacing: -0.5px;}
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 200px; flex: 1;}
-
-.filter-label {
-  display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569;
-}
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; outline: none; transition: all 0.2s; height: 42px; box-sizing: border-box;
-}
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-
+/* 페이지 고유 스타일 (공통 CSS 이외) */
 .date-range { display: flex; align-items: center; gap: 8px; }
 .date-range input { flex: 1; }
-.date-sep { color: #94a3b8; font-weight: bold; }
-
-/* 검색 그룹 */
-.search-group { display: flex; gap: 8px; flex: 2; min-width: 280px; align-items: flex-end;}
-.search-box {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: #f8fafc;
-  border: 1px solid #e2e8f0; border-radius: 8px; flex: 1; height: 42px; transition: all 0.2s; box-sizing: border-box;
-}
-.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.search-input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; color: #334155; }
-.search-input::placeholder { color: #94a3b8; }
-.search-box i { font-size: 18px; color: #94a3b8; }
-
-.btn-search {
-  display: flex; align-items: center; gap: 6px; background-color: #6d28d9; color: white; border: none;
-  padding: 0 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-  height: 42px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-.btn-search:hover { background-color: #5b21b6; transform: translateY(-1px); }
-.btn-search i { font-size: 16px; }
-
-/* === 테이블 카드 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; max-width: 100%;
-}
-.table-header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
-.table-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: #1e293b; }
-.table-title i { font-size: 20px; color: #4f46e5; }
+.date-sep { color: var(--text-sub); font-weight: bold; }
 
 .table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll-container::-webkit-scrollbar { height: 8px; }
-.table-scroll-container::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-sub); }
 
-/* 데이터 테이블 (단색 헤더) */
-.data-table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
-.data-table thead { background-color: #6d28d9; }
-.data-table th { padding: 14px 16px; color: white; text-align: left; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.data-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: middle; }
-.data-row:hover { background-color: #f8fafc; }
+.data-table {width: 100%; min-width: 100% !important; border-collapse: collapse; font-size: 13px;}
 
-/* 테이블 내부 유틸리티 */
-.text-center { text-align: center; }
-.text-gray { color: #64748b; font-size: 12px; }
-.text-dark { color: #334155; }
-.member-name { font-weight: 600; color: #1e293b; }
-.font-bold { font-weight: 700; }
-.text-blue-600 { color: #2563eb; }
-.text-blue-icon { color: #4f46e5; }
+/* 테이블 내부 텍스트 유틸리티 */
+.member-name { font-weight: 600; color: var(--primary); }
+.text-blue-text { color: var(--primary); }
+.text-blue-icon { color: var(--primary); }
 
-.period-box { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; font-family: 'Inter', monospace;}
-.reason-cell { max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #475569; }
+.period-box { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-sub); }
+.reason-cell { max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-sub); }
 
-/* 상태 배지 (플랫 파스텔톤) */
+/* 상태 배지 (테마 변수 활용) */
 .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
-.status-pending { background-color: #fef3c7; color: #b45309; }
-.status-approved { background-color: #d1fae5; color: #065f46; }
-.status-rejected { background-color: #fee2e2; color: #b91c1c; }
+.status-pending { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.status-approved { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-rejected { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 .status-badge i { font-size: 13px; }
 
-/* 관리 버튼 */
+/* 관리 액션 버튼 */
 .action-buttons { display: flex; gap: 6px; justify-content: center; }
 .btn-approve, .btn-reject {
   display: flex; align-items: center; gap: 4px; padding: 6px 12px;
   border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
-.btn-approve { background-color: #10b981; color: white; }
-.btn-reject { background-color: #ef4444; color: white; }
-.btn-approve:hover { background-color: #059669; transform: translateY(-1px); }
-.btn-reject:hover { background-color: #dc2626; transform: translateY(-1px); }
-
-/* Sticky 컬럼 */
-.sticky-col { position: sticky; right: 0; border-left: 1px solid #e2e8f0; z-index: 5; background: white; }
-.data-table thead .sticky-col { z-index: 15; background-color: #6d28d9; border-left: 1px solid #5b21b6; }
-.data-row:hover .sticky-col { background-color: #f8fafc; }
-.text-xs { font-size: 11px; }
-
-/* 빈 상태 */
-.empty-row { background-color: white; }
-.empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1; display: block;}
-.empty-state p { font-size: 14px; font-weight: 500; color: #64748b; margin: 0; }
-
-/* === 반응형 === */
-@media (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group { flex: 1; min-width: calc(50% - 10px); }
-  .search-group { width: 100%; flex: 1 1 100%; }
-}
+.btn-approve { background-color: var(--success); color: var(--text-inverse); }
+.btn-reject { background-color: var(--danger); color: var(--text-inverse); }
+.btn-approve:hover { background-color: var(--success-hover); transform: translateY(-1px); }
+.btn-reject:hover { filter: brightness(0.9); transform: translateY(-1px); }
 
 @media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
-  .btn-refresh { flex: 1; justify-content: center; }
-
-  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px; }
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-
   .date-range { flex-direction: column; align-items: stretch; }
   .date-sep { display: none; }
-
-  .search-group { flex-direction: row; }
-  .search-box { flex: 1; min-width: 0; }
-  .btn-search { flex-shrink: 0; }
 }
 </style>

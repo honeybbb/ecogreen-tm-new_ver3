@@ -209,12 +209,12 @@ onMounted(() => {
         </h1>
         <p class="page-subtitle">ERP 좌측 메뉴의 구성, 접근 권한, 노출 여부를 통합 관리합니다</p>
       </div>
-      <div class="header-actions">
+      <!--div class="header-actions">
         <button @click="fetchMenus" class="btn-refresh">
           <i class="mdi mdi-refresh"></i>
           <span>새로고침</span>
         </button>
-      </div>
+      </div-->
     </div>
 
     <div class="table-card">
@@ -228,7 +228,7 @@ onMounted(() => {
             <th><div class="th-content"><i class="mdi mdi-link-variant"></i><span>연결 경로</span></div></th>
             <th style="width: 160px;"><div class="th-content"><i class="mdi mdi-lock-outline"></i><span>접근 권한</span></div></th>
             <th style="width: 120px;"><div class="th-content"><i class="mdi mdi-toggle-switch-outline"></i><span>사용 여부</span></div></th>
-            <th class="text-center sticky-col" style="width: 140px;"><div class="th-content justify-center"><span>관리</span></div></th>
+            <th class="text-center" style="width: 140px;"><div class="th-content justify-center"><span>관리</span></div></th>
           </tr>
           </thead>
 
@@ -272,7 +272,7 @@ onMounted(() => {
                 <option value="N">전체 허용</option>
               </select>
               <span v-else :class="['auth-badge', parent.masterOnly === 'Y' ? 'master' : 'all']">
-                    <i :class="['mdi', parent.masterOnly === 'Y' ? 'mdi-shield-lock-outline' : 'mdi-account-group-outline']"></i>
+                    <!--i :class="['mdi', parent.masterOnly === 'Y' ? 'mdi-shield-lock-outline' : 'mdi-account-group-outline']"></i-->
                     {{ parent.masterOnly === 'Y' ? '마스터 전용' : '전체 허용' }}
                   </span>
             </td>
@@ -282,7 +282,7 @@ onMounted(() => {
                 <span class="switch-label">{{ parent.useFl === 'Y' ? 'ON' : 'OFF' }}</span>
               </div>
             </td>
-            <td class="text-center sticky-col bg-parent">
+            <td class="text-center">
               <div class="action-buttons">
                 <template v-if="!parent.isEditing">
                   <button @click="startInlineEdit(parent)" class="btn-action btn-edit">
@@ -290,7 +290,7 @@ onMounted(() => {
                   </button>
                 </template>
                 <template v-else>
-                  <button @click="saveInlineEdit(parent)" class="btn-action btn-save">
+                  <button @click="saveInlineEdit(parent)" class="btn-action btn-save-small">
                     <i class="mdi mdi-check"></i> 저장
                   </button>
                   <button @click="cancelInlineEdit(parent)" class="btn-action btn-cancel">
@@ -335,26 +335,29 @@ onMounted(() => {
             </td>
             <td class="text-gray-sm">{{ child.menuPath }}</td>
             <td>
-              <select v-if="child.isEditing" v-model="child.masterOnly" class="input-select sm">
+              <select v-if="child.isEditing" v-model="child.masterOnly" class="input-select">
                 <option value="Y">마스터 전용</option>
                 <option value="N">전체 허용</option>
               </select>
-              <span v-else :class="['auth-badge sm', child.masterOnly === 'Y' ? 'master' : 'all']">
+              <span v-else :class="['auth-badge', child.masterOnly === 'Y' ? 'master' : 'all']">
                     {{ child.masterOnly === 'Y' ? '마스터 전용' : '전체 허용' }}
                   </span>
             </td>
             <td class="text-center">
-              <div @click="toggleUse(child)" :class="['toggle-switch sm', child.useFl === 'Y' ? 'active' : '']" style="margin: 0 auto;">
-                <div class="switch-handle sm"></div>
+              <div @click="toggleUse(child)" :class="['toggle-switch', child.useFl === 'Y' ? 'active' : '']" style="margin: 0 auto;">
+                <div class="switch-handle"></div>
+                <span class="switch-label">{{ child.useFl === 'Y' ? 'ON' : 'OFF' }}</span>
               </div>
             </td>
-            <td class="text-center sticky-col bg-child">
+            <td class="text-center bg-child">
               <div class="action-buttons">
                 <template v-if="!child.isEditing">
-                  <button @click="startInlineEdit(child)" class="btn-action btn-edit-outline">수정</button>
+                  <button @click="startInlineEdit(child)" class="btn-action btn-edit">
+                    <i class="mdi mdi-pencil-outline"></i> 수정
+                  </button>
                 </template>
                 <template v-else>
-                  <button @click="saveInlineEdit(child)" class="btn-action btn-save-small">저장</button>
+                  <button @click="saveInlineEdit(child)" class="btn-action btn-save-small"><i class="mdi mdi-check"></i> 저장</button>
                   <button @click="cancelInlineEdit(child)" class="btn-action btn-cancel-small"><i class="mdi mdi-close"></i></button>
                 </template>
               </div>
@@ -380,36 +383,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.menu-settings-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px;
-}
-.header-left { flex: 1; }
-.page-title {
-  font-size: 24px; font-weight: 700; color: #1e293b; margin: 0 0 6px 0;
-  display: flex; align-items: center; gap: 10px; letter-spacing: -0.5px;
-}
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-
-.btn-refresh {
-  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-.btn-refresh i { font-size: 16px; }
-
 /* === 테이블 영역 === */
 .table-card {
   background: white; border-radius: 12px; border: 1px solid #e2e8f0;
@@ -421,16 +394,7 @@ onMounted(() => {
 .table-scroll-container::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
 .table-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 
-.data-table { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 13px; }
-
-/* 헤더 (단색 퍼플 적용) */
-.data-table thead { background-color: #6d28d9; position: sticky; top: 0; z-index: 10; }
-.data-table th {
-  padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600;
-  color: white; white-space: nowrap; border-bottom: none;
-}
 .th-content { display: flex; align-items: center; gap: 6px; }
-.justify-center { justify-content: center; }
 .th-content i { font-size: 14px; opacity: 0.8; }
 
 /* 행 배경색 및 패딩 */
@@ -478,7 +442,7 @@ onMounted(() => {
 .parent-name { font-weight: 700; color: #1e293b; font-size: 14px; }
 .child-name { color: #475569; font-weight: 500; font-size: 13px;}
 .menu-key-tag {
-  font-family: 'Courier New', monospace; font-size: 11px; background: #f8fafc;
+  font-size: 11px; background: #f8fafc;
   color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-weight: 500;
 }
 

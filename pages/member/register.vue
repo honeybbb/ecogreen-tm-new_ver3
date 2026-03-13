@@ -268,7 +268,7 @@ onMounted(() => {
   <div class="member-register-page">
     <div class="page-header">
       <div class="header-left">
-        <button @click="handleCancel" class="btn-back">
+        <button @click="handleCancel" class="btn-back" style="padding: 10px;">
           <i class="mdi mdi-arrow-left"></i>
         </button>
         <div>
@@ -288,12 +288,6 @@ onMounted(() => {
     </div>
 
     <div class="steps-container">
-      <div class="steps-progress">
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: progressPercentage + '%' }"></div>
-        </div>
-      </div>
-
       <div class="steps-list">
         <div
             v-for="step in steps"
@@ -318,6 +312,7 @@ onMounted(() => {
 
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
+
         <div v-show="currentStep === 1" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-account-outline"></i>
@@ -848,7 +843,7 @@ onMounted(() => {
               <i class="mdi mdi-arrow-left"></i>
               이전
             </button>
-            <button type="submit" class="btn-submit">
+            <button type="submit" class="btn-submit green">
               <i class="mdi mdi-check"></i>
               등록 완료
             </button>
@@ -996,15 +991,15 @@ onMounted(() => {
         </div>
 
         <div class="modal-footer">
-          <button @click="showModal = false" class="btn-modal-cancel">
+          <button @click="showModal = false" class="btn-cancel">
             닫기
           </button>
           <button
               @click="[showModal = false, isContractSaved = true]"
-              class="btn-modal-save"
+              class="btn-save"
           >
             <i class="mdi mdi-content-save-outline"></i>
-            저장
+            임시 저장
           </button>
         </div>
       </div>
@@ -1013,15 +1008,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.member-register-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -1038,90 +1024,108 @@ onMounted(() => {
 .btn-back {
   width: 42px; height: 42px;
   border-radius: 10px;
-  background: white; border: 1px solid #e2e8f0; color: #475569;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-sub);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-.btn-back:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-.btn-back i { font-size: 20px; }
-
-.page-title {
-  font-size: 24px; font-weight: 700; color: #1e293b;
-  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px;
-  letter-spacing: -0.5px;
+.btn-back:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-focus);
+  color: var(--text-main);
 }
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
+.btn-back i { font-size: 20px; }
 
 .btn-cancel {
   display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  background: white; border: 1px solid #e2e8f0; border-radius: 8px;
-  color: #475569; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-sub);
+  font-size: 13px; font-weight: 600; cursor: pointer;
   transition: all 0.2s;
 }
-.btn-cancel:hover { background: #f8fafc; color: #1e293b; border-color: #cbd5e1; }
+.btn-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+  border-color: var(--border-focus);
+}
 .btn-cancel i { font-size: 16px; }
 
-/* === 진행 단계 (그라디언트 제거, 단색화) === */
-.steps-container {
-  background: white; border-radius: 12px; padding: 24px;
-  margin-bottom: 24px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+.btn-edit {
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px; height: 42px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  box-shadow: var(--shadow-sm); white-space: nowrap;
+  box-sizing: border-box;
 }
+.btn-edit:hover {
+  background-color: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+.btn-edit i { font-size: 16px; }
 
-.steps-progress { margin-bottom: 24px; }
-.progress-bar {
-  height: 6px; background: #f1f5f9; border-radius: 3px; overflow: hidden;
-}
-.progress-fill {
-  height: 100%; background-color: #4f46e5; /* 플랫 인디고 */
-  transition: width 0.3s ease;
+/* =========================================
+   진행 단계 (Steps)
+========================================= */
+.steps-container {
+  background: var(--bg-surface); border-radius: 12px; padding: 24px;
+  margin-bottom: 24px; border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
 }
 
 .steps-list {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+  display: flex; justify-content: space-between; gap: 12px;
 }
 
 .step-item {
-  display: flex; align-items: center; gap: 12px; padding: 10px;
-  border-radius: 8px; transition: all 0.2s;
+  flex: 1; display: flex; align-items: center; gap: 12px; padding: 12px;
+  border-radius: 8px; background: var(--bg-canvas); transition: all 0.2s;
 }
-.step-item.active { background-color: #eef2ff; }
+.step-item.active {
+  background: var(--primary-soft); border: 1px solid var(--primary);
+}
 
 .step-circle {
-  width: 40px; height: 40px; border-radius: 50%;
-  background: #f1f5f9; color: #94a3b8;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--text-muted); color: var(--text-inverse);
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s;
+  font-weight: 700; font-size: 14px; transition: all 0.2s;
 }
-.step-item.active .step-circle { background-color: #4f46e5; color: white; }
-.step-item.completed .step-circle { background-color: #10b981; color: white; }
+.step-item.active .step-circle { background-color: var(--primary); }
+.step-item.completed .step-circle { background-color: var(--success); }
 .step-circle i { font-size: 20px; }
 
 .step-info { display: flex; flex-direction: column; gap: 2px; }
-.step-number { font-size: 11px; color: #94a3b8; font-weight: 600; }
-.step-title { font-size: 13px; color: #1e293b; font-weight: 600; }
+.step-number { font-size: 11px; color: var(--text-sub); font-weight: 600; letter-spacing: 0.5px; }
+.step-title { font-size: 13px; color: var(--text-main); font-weight: 600; }
 
-.step-item.active .step-number, .step-item.active .step-title { color: #4f46e5; }
+.step-item.active .step-number, .step-item.active .step-title { color: var(--primary); }
 
-/* === 폼 컨테이너 === */
+/* =========================================
+   폼 컨테이너 및 그리드
+========================================= */
 .form-container {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden;
+  background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm); overflow: hidden;
 }
 
 .form-step { padding: 32px; }
 
 .step-header {
   display: flex; align-items: center; gap: 10px; padding-bottom: 16px;
-  margin-bottom: 24px; border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 24px; border-bottom: 1px solid var(--border-color);
 }
-.step-header i { font-size: 24px; color: #4f46e5; }
-.step-header h2 { font-size: 18px; font-weight: 700; color: #1e293b; margin: 0; }
+.step-header i { font-size: 24px; color: var(--primary); }
+.step-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
 
-/* === 폼 그리드 === */
 .form-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 24px; margin-bottom: 32px;
@@ -1131,201 +1135,161 @@ onMounted(() => {
 
 .form-label {
   display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #475569;
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
 }
-.form-label i { font-size: 16px; color: #4f46e5; }
-.form-label.required::after { content: '*'; color: #ef4444; margin-left: 2px; }
+.form-label i { font-size: 16px; color: var(--primary); }
+.form-label.required::after { content: '*'; color: var(--danger); margin-left: 2px; }
 
-/* 공통 인풋 스타일 (포커스 링 개선) */
+/* 입력 스타일 */
 .form-input, .form-select, .form-textarea {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; transition: all 0.2s; background: white;
+  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+  font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface);
 }
 .form-input:focus, .form-select:focus, .form-textarea:focus {
-  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
 }
-.form-input::placeholder, .form-textarea::placeholder { color: #94a3b8; }
-.form-textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+.form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
+.form-textarea { resize: vertical; min-height: 80px; }
 
-/* 주민번호 입력 */
+/* 주민번호 그룹 */
 .ssn-group { display: flex; align-items: center; gap: 10px; }
 .ssn-input { flex: 1; text-align: center; letter-spacing: 2px; }
-.ssn-separator { font-size: 18px; font-weight: 700; color: #cbd5e1; }
+.ssn-separator { font-size: 18px; font-weight: 700; color: var(--text-muted); }
 
-/* 라디오 그룹 (깔끔하게 변경) */
+/* 라디오 그룹 */
 .radio-group { display: flex; gap: 12px; padding: 4px 0; }
 .radio-label {
-  display: flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 8px 16px; border-radius: 6px; border: 1px solid #e2e8f0;
-  transition: all 0.2s; background: white; font-size: 13px; color: #475569;
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+  padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color);
+  transition: all 0.2s; background: var(--bg-canvas); font-size: 13px; color: var(--text-sub);
 }
-.radio-label:hover { border-color: #cbd5e1; background: #f8fafc; color: #1e293b; }
+.radio-label:hover { border-color: var(--border-focus); color: var(--text-main); }
 
-.radio-label input[type="radio"] {
-  appearance: none; -webkit-appearance: none;
-  width: 16px; height: 16px; border: 2px solid #cbd5e1; border-radius: 50%;
-  margin: 0; cursor: pointer; position: relative; transition: all 0.2s;
+.radio-label input[type="radio"] { display: none; }
+.radio-label:has(input:checked) {
+  border-color: var(--primary); background-color: var(--primary-soft);
+  color: var(--primary); font-weight: 600;
 }
-.radio-label input[type="radio"]:checked { border-color: #4f46e5; }
-.radio-label input[type="radio"]:checked::after {
-  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 8px; height: 8px; background-color: #4f46e5; border-radius: 50%;
-}
-.radio-label:has(input:checked) { border-color: #4f46e5; background-color: #eef2ff; color: #4f46e5; font-weight: 600; }
 
 /* 근로계약서 버튼 */
 .btn-contract {
-  width: 100%; padding: 14px; background-color: #1e293b; /* 슬레이트 다크 */
-  border: none; border-radius: 8px; color: white;
+  width: 100%; padding: 14px; background-color: var(--header-bg);
+  border: none; border-radius: 8px; color: var(--text-inverse);
   font-size: 14px; font-weight: 600; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  transition: all 0.2s; box-shadow: var(--shadow-sm);
 }
-.btn-contract:hover { background-color: #334155; transform: translateY(-1px); }
+.btn-contract:hover { background-color: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-focus); }
 .btn-contract i { font-size: 18px; }
 
-/* === 폼 액션 버튼 === */
+/* 폼 액션 버튼 */
 .form-actions {
   display: flex; justify-content: flex-end; gap: 10px;
-  padding-top: 24px; border-top: 1px solid #f1f5f9;
+  padding-top: 24px; border-top: 1px solid var(--border-color);
 }
-
-.btn-prev, .btn-next, .btn-submit {
+.btn-prev, .btn-next {
   display: flex; align-items: center; gap: 6px; padding: 10px 20px;
-  border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all 0.2s;
+  border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
 }
+.btn-prev { background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); }
+.btn-prev:hover { background: var(--bg-hover); color: var(--text-main); }
+.btn-next { background-color: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
+.btn-next:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
 
-.btn-prev { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-prev:hover { background: #f8fafc; color: #1e293b; }
-
-.btn-next { background-color: #4f46e5; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-next:hover { background-color: #4338ca; transform: translateY(-1px); }
-
-.btn-submit { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-submit:hover { background-color: #059669; transform: translateY(-1px); }
-
-.btn-prev i, .btn-next i, .btn-submit i { font-size: 16px; }
-
-/* === 모달 === */
+/* =========================================
+   근로계약서 모달 (공통 테마 연동)
+========================================= */
 .modal-overlay {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 1000; padding: 20px;
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px;
 }
 
 .modal-container {
-  background: white; border-radius: 12px; width: 100%; max-width: 850px;
+  background: var(--bg-surface); border-radius: 16px; width: 100%; max-width: 900px;
   max-height: 90vh; display: flex; flex-direction: column;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0;
+  box-shadow: var(--shadow-md); border: 1px solid var(--border-color); overflow: hidden;
 }
 
 .modal-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 20px 24px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
-  border-radius: 12px 12px 0 0;
+  padding: 20px 24px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas);
 }
-.modal-title { font-size: 18px; font-weight: 700; color: #1e293b; margin: 0; display: flex; align-items: center; gap: 8px; }
-.modal-title i { font-size: 22px; color: #4f46e5; }
+.modal-title { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px; }
+.modal-title i { font-size: 22px; color: var(--primary); }
 
 .modal-close {
   width: 36px; height: 36px; border-radius: 8px; background: transparent; border: none;
-  color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+  color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
 }
-.modal-close:hover { background: #e2e8f0; color: #1e293b; }
-.modal-close i { font-size: 20px; }
+.modal-close:hover { background: var(--bg-hover); color: var(--text-main); }
 
-.modal-body { flex: 1; overflow-y: auto; padding: 24px; }
-.modal-body::-webkit-scrollbar { width: 6px; }
-.modal-body::-webkit-scrollbar-track { background: #f8fafc; border-radius: 3px; }
-.modal-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.modal-body { flex: 1; overflow-y: auto; padding: 24px; background: var(--bg-canvas); }
+.modal-body::-webkit-scrollbar { width: 8px; }
+.modal-body::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
 
 .modal-footer {
   display: flex; justify-content: flex-end; gap: 10px;
-  padding: 16px 24px; border-top: 1px solid #e2e8f0; background: #f8fafc;
-  border-radius: 0 0 12px 12px;
+  padding: 16px 24px; border-top: 1px solid var(--border-color); background: var(--bg-surface);
 }
 
-.btn-modal-cancel, .btn-modal-save {
-  padding: 10px 18px; border: none; border-radius: 8px;
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-  display: flex; align-items: center; gap: 6px;
-}
-.btn-modal-cancel { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-modal-cancel:hover { background: #f1f5f9; color: #1e293b; }
-
-.btn-modal-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-modal-save:hover { background-color: #059669; transform: translateY(-1px); }
-
-/* === 근로계약서 내부 폼 스타일 === */
+/* 근로계약서 문서 디자인 */
 .contract-document {
-  background: white; padding: 32px; border: 1px solid #e2e8f0;
-  border-radius: 8px; font-size: 13px; line-height: 1.8; color: #334155;
+  background: var(--bg-surface); padding: 40px; border-radius: 8px;
+  box-shadow: var(--shadow-sm); font-size: 13px; line-height: 1.8; color: var(--text-main);
+  border: 1px solid var(--border-color);
 }
 
-.contract-header { text-align: center; margin-bottom: 32px; }
-.contract-title { font-size: 24px; font-weight: 700; color: #1e293b; margin: 0 0 8px 0; letter-spacing: 2px; }
-.contract-date { font-size: 12px; color: #64748b; margin: 0; }
+.contract-header { text-align: center; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid var(--primary); }
+.contract-title { font-size: 24px; font-weight: 700; color: var(--text-main); margin: 0 0 8px 0; letter-spacing: 4px; }
+.contract-date { font-size: 12px; color: var(--text-sub); margin: 0; }
 
-.contract-intro { margin-bottom: 24px; text-align: justify; }
-.contract-section { margin-bottom: 24px; }
-.section-title {
-  font-size: 14px; font-weight: 700; color: #1e293b;
-  margin: 0 0 12px 0; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;
-}
+.contract-intro { margin-bottom: 24px; padding: 16px; background: var(--bg-canvas); border-left: 4px solid var(--primary); border-radius: 6px; }
+.contract-section { margin-bottom: 24px; padding: 16px; background: var(--bg-canvas); border-radius: 8px;}
+.section-title { font-size: 14px; font-weight: 700; color: var(--text-main); margin: 0 0 12px 0; padding-bottom: 6px; border-bottom: 1px solid var(--border-color); }
+.section-title::before { content: '▣'; color: var(--primary); margin-right: 6px; }
 
 .contract-content p { margin: 6px 0; }
-
 .date-group { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
-
 .contract-input, .contract-select {
-  padding: 4px 8px; border: none; border-bottom: 1px solid #94a3b8;
-  border-radius: 0; font-size: 13px; color: #1e293b; background: transparent; transition: border-color 0.2s;
+  padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px;
+  font-size: 13px; color: var(--text-main); background: var(--bg-surface); transition: border-color 0.2s;
 }
-.contract-input:focus, .contract-select:focus { outline: none; border-bottom-color: #4f46e5; }
+.contract-input:focus, .contract-select:focus { outline: none; border-color: var(--primary); }
 
-/* 임금 테이블 (플랫 헤더 적용) */
-.wage-table-wrapper { overflow-x: auto; margin: 16px 0; }
-.wage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.wage-table th, .wage-table td { padding: 10px; border: 1px solid #e2e8f0; text-align: center; vertical-align: middle; }
-.wage-table thead { background-color: #6d28d9; color: white; }
+/* 임금 테이블 */
+.wage-table-wrapper { overflow-x: auto; margin: 16px 0; border: 1px solid var(--border-color); border-radius: 8px; }
+.wage-table { width: 100%; border-collapse: collapse; font-size: 12px; background: var(--bg-surface);}
+.wage-table th, .wage-table td { padding: 10px; border: 1px solid var(--border-color); text-align: center; vertical-align: middle; }
+.wage-table thead { background-color: var(--primary); color: var(--text-inverse); }
 .wage-table th { font-weight: 600; white-space: nowrap; }
 
 .wage-input {
-  width: 90px; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;
-  text-align: right; font-size: 12px;
+  width: 90px; padding: 6px; border: 1px solid var(--border-color); border-radius: 4px;
+  text-align: right; font-size: 12px; background: var(--bg-surface); color: var(--text-main);
 }
-.wage-input:focus { outline: none; border-color: #4f46e5; }
-.total-cell { font-weight: 700; color: #4f46e5; font-size: 13px; }
-.text-right { text-align: right; }
+.wage-input:focus { outline: none; border-color: var(--primary); }
+.total-cell { font-weight: 700; color: var(--primary); font-size: 13px; background: var(--primary-soft); }
 
 /* 서명란 */
-.signature-section { margin-top: 40px; padding-top: 24px; border-top: 1px dashed #cbd5e1; }
+.signature-section { margin-top: 40px; padding-top: 24px; border-top: 3px double var(--border-focus); }
 .signature-intro { text-align: center; margin-bottom: 20px; }
-.signature-date { text-align: center; margin-bottom: 30px; font-size: 15px; }
+.signature-date { text-align: center; margin-bottom: 30px; font-size: 15px; font-weight: 700;}
 
 .signature-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
-.party { padding: 20px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
-.party-title { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0 0 10px 0; }
-.party p { margin: 4px 0; font-size: 12px; color: #475569; }
+.party { padding: 20px; background: var(--bg-canvas); border-radius: 8px; border: 2px solid var(--border-color); }
+.party-title { font-size: 14px; font-weight: 700; color: var(--text-main); margin: 0 0 10px 0; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+.party p { margin: 6px 0; font-size: 12px; color: var(--text-sub); }
 
-/* === 반응형 (Responsive) === */
+/* 반응형 */
 @media (max-width: 1024px) {
-  .steps-list { grid-template-columns: repeat(2, 1fr); }
+  .steps-list { overflow-x: auto; padding-bottom: 8px; }
+  .step-item { min-width: 160px; }
 }
 
 @media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 16px; align-items: flex-start; }
-  .header-actions, .btn-cancel { width: 100%; justify-content: center; }
-
-  .steps-list { grid-template-columns: 1fr; gap: 8px;}
   .form-step { padding: 20px; }
   .form-grid { grid-template-columns: 1fr; }
-
-  .ssn-group { flex-direction: row; align-items: center; }
-  .ssn-input { min-width: 0; }
-
+  .ssn-group { flex-direction: row; }
   .signature-parties { grid-template-columns: 1fr; gap: 20px;}
   .contract-document { padding: 20px; }
 }

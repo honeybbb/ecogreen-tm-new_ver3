@@ -13,7 +13,7 @@ const allCodeData = {
   '04001': {
     name: '지급 항목',
     icon: 'mdi-plus-circle',
-    color: '#10b981', // 그린
+    color: '#10b981', // 그린 (스크립트 데이터이므로 로직유지)
     codes: ref([]),
   },
   '04002': {
@@ -33,18 +33,12 @@ const newTaxFree = ref(0);
 const newCodeSort = ref(0);
 
 const newCodeNumber = computed(() => {
+  const prefix = selectedGroupKey.value; // e.g. '04001'
   const list = currentCodeList.value;
-  if (!list || list.length === 0) {
-    return selectedGroupKey.value ? `${selectedGroupKey.value}001` : '';
-  }
-  const lastCode = list.reduce((max, code) => {
-    const currentNum = parseInt(code.itemCd, 10);
-    return currentNum > max ? currentNum : max;
-  }, 0);
-
-  const nextNum = lastCode + 1;
-  const codeLength = list[0].itemCd.length;
-  return String(nextNum).padStart(codeLength, '0');
+  if (!list.length) return prefix + '001';
+  const nums = list.map(c => parseInt(c.itemCd.slice(-3)));
+  const next = Math.max(...nums) + 1;
+  return prefix + String(next).padStart(3, '0');
 });
 
 // 3. 옵션 목록 계산
@@ -95,12 +89,14 @@ const getCurrentCodeGroupRef = () => {
 
 // [수정 모드]
 const startEdit = (code) => {
+  code._original = { ...code };  // 원본 백업
   code.isEditing = true;
 };
 
 const cancelEdit = (code) => {
+  Object.assign(code, code._original);  // 원본 복원
+  delete code._original;
   code.isEditing = false;
-  getConfigWage(); // 원래 데이터로 복원
 };
 
 const saveCode = (code) => {
@@ -110,9 +106,9 @@ const saveCode = (code) => {
 };
 
 // [행 삭제]
-const deleteCode = (itemCd) => {
+const deleteCode = async (itemCd) => {
   if (!confirm('정말 삭제하시겠습니까?')) return;
-  axios.delete(`/api/v1/code/${itemCd}`);
+  await axios.delete(`/api/v1/code/${itemCd}`);
   const list = getCurrentCodeGroupRef();
   list.value = list.value.filter(c => c.itemCd !== itemCd);
 };
@@ -252,10 +248,6 @@ onMounted(() => {
         <p class="page-subtitle">급여 지급 항목 및 공제 항목을 설정합니다</p>
       </div>
       <div class="header-actions">
-        <button @click="refreshData" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
-        </button>
         <button @click="saveSubGroup" class="btn-save-all">
           <i class="mdi mdi-content-save-outline"></i>
           <span>전체 저장</span>
@@ -277,7 +269,7 @@ onMounted(() => {
           </select>
         </div>
 
-        <div class="filter-spacer"></div>
+        <!--div class="filter-spacer"></div-->
 
         <div class="search-box">
           <i class="mdi mdi-magnify"></i>
@@ -290,21 +282,6 @@ onMounted(() => {
           <button v-if="searchQuery" @click="searchQuery = ''" class="search-clear">
             <i class="mdi mdi-close"></i>
           </button>
-        </div>
-      </div>
-
-      <div class="selection-info" v-if="currentGroupInfo">
-        <div class="info-badge">
-          <i class="mdi mdi-information-outline"></i>
-          <span>현재 선택: <strong>{{ currentGroupInfo.name }}</strong></span>
-        </div>
-        <div class="count-badge">
-          <i class="mdi mdi-format-list-numbered"></i>
-          <span>총 <strong>{{ currentGroupInfo.count }}</strong>개 항목</span>
-        </div>
-        <div class="active-badge">
-          <i class="mdi mdi-check-circle-outline"></i>
-          <span>활성 <strong>{{ currentGroupInfo.activeCount }}</strong>개</span>
         </div>
       </div>
     </div>
@@ -423,7 +400,7 @@ onMounted(() => {
               </template>
               <template v-else>
                   <span :class="['status-badge', code.useFl === 'Y' ? 'status-active' : 'status-inactive']">
-                    <i :class="['mdi', code.useFl === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
+                    <i :class="['mdi', code.useFl === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
                     {{ code.useFl === 'Y' ? '사용' : '사용안함' }}
                   </span>
               </template>
@@ -520,7 +497,6 @@ onMounted(() => {
             </td>
             <td>
                 <span class="status-badge status-new">
-                  <i class="mdi mdi-new-box"></i>
                   신규
                 </span>
             </td>
@@ -552,199 +528,66 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Material Design Icons */
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.payroll-settings-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.header-left { flex: 1; }
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 6px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  letter-spacing: -0.5px;
-}
-
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-
-.btn-refresh, .btn-save-all {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 18px; border: none; border-radius: 8px;
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-
-.btn-refresh { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-
-.btn-save-all {
-  background-color: #10b981; color: white;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* 진한 그림자, 그라디언트 제거 */
-}
-.btn-save-all:hover { background-color: #059669; transform: translateY(-1px); }
-
-.btn-refresh i, .btn-save-all i { font-size: 18px; }
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white; border-radius: 12px; padding: 24px;
-  margin-bottom: 24px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.filter-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 200px; flex: 1; }
-
-.filter-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #475569;
-}
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; cursor: pointer;
-  transition: all 0.2s; height: 42px; box-sizing: border-box;
-}
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+/* =========================================
+   페이지 고유 스타일 (공통 CSS 이외)
+========================================= */
 
 .filter-spacer { flex: 1; }
 
-/* 검색 박스 */
-.search-box {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px; background: #f8fafc; border: 1px solid #e2e8f0;
-  border-radius: 8px; min-width: 320px; height: 42px; box-sizing: border-box; transition: all 0.2s;
-}
-.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.search-box i { font-size: 20px; color: #94a3b8; }
-
-.search-input {
-  flex: 1; border: none; background: transparent;
-  font-size: 13px; color: #334155; outline: none;
-}
-.search-input::placeholder { color: #94a3b8; }
-
-.search-clear {
-  background: none; border: none; color: #94a3b8; cursor: pointer;
-  padding: 4px; border-radius: 4px; transition: all 0.2s;
-}
-.search-clear:hover { background: #e2e8f0; color: #64748b; }
-
-/* 선택 정보 배지 */
-.selection-info {
-  display: flex; align-items: center; gap: 12px;
-  padding-top: 16px; border-top: 1px solid #f1f5f9; flex-wrap: wrap;
-}
-.info-badge, .count-badge, .active-badge {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: nowrap;
-}
-.info-badge { background-color: #eff6ff; color: #1e40af; }
-.count-badge { background-color: #f1f5f9; color: #475569; }
-.active-badge { background-color: #ecfdf5; color: #065f46; }
-.info-badge i, .count-badge i, .active-badge i { font-size: 15px; }
-
-/* === 테이블 카드 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; margin-bottom: 24px;
-}
-
 .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-wrapper::-webkit-scrollbar { height: 8px; }
-.table-wrapper::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
-.table-wrapper::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-
-/* === 데이터 테이블 === */
-.data-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px;}
-
-.data-table thead { background-color: #6d28d9; } /* 솔리드 퍼플 */
-
-.data-table th {
-  padding: 14px 16px; text-align: left; font-size: 12px;
-  font-weight: 600; color: white; white-space: nowrap;
-}
+.table-wrapper::-webkit-scrollbar-track { background: var(--bg-hover); border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-wrapper::-webkit-scrollbar-thumb:hover { background: var(--text-sub); }
 
 .th-content { display: flex; align-items: center; gap: 6px; }
 .th-content.justify-center { justify-content: center; }
 .th-content i { font-size: 14px; opacity: 0.8; }
 
-.data-table td {
-  padding: 12px 16px; border-bottom: 1px solid #e2e8f0;
-  color: #334155; vertical-align: middle;
-}
-
-.data-row { transition: background 0.2s; }
-.data-row:hover { background-color: #f8fafc; }
-
-.text-center { text-align: center !important; }
-.text-right { text-align: right; }
-
 /* 행 번호 및 코드 표시 */
 .row-number {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; background: #f1f5f9; border-radius: 6px;
-  font-weight: 600; color: #64748b; font-size: 12px;
+  width: 28px; height: 28px; background: var(--bg-hover); border-radius: 6px;
+  font-weight: 600; color: var(--text-sub); font-size: 12px;
 }
 .code-number {
-  font-family: 'Courier New', monospace; font-weight: 600;
-  color: #4f46e5; background: #eff6ff; padding: 4px 10px; border-radius: 6px; font-size: 12px;
+  font-weight: 600; color: var(--primary); background: var(--primary-soft);
+  padding: 4px 10px; border-radius: 6px; font-size: 12px;
 }
-.code-name { font-weight: 500; color: #1e293b; }
+.code-name { font-weight: 500; color: var(--text-main); }
+.sort-number { color: var(--text-main); }
 
 /* 비과세 입력 */
 .tax-input-wrapper { display: flex; align-items: center; gap: 6px; }
 .input-tax {
-  width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
-  font-size: 13px; color: #334155; text-align: right; transition: all 0.2s; box-sizing: border-box;
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
+  font-size: 13px; color: var(--text-main); background: var(--bg-surface); text-align: right; transition: all 0.2s; box-sizing: border-box;
 }
-.input-tax:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.tax-unit { font-size: 12px; color: #64748b; font-weight: 500; }
-.tax-display { color: #475569; font-weight: 500; }
+.input-tax:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.tax-unit { font-size: 12px; color: var(--text-sub); font-weight: 500; }
+.tax-display { color: var(--text-sub); font-weight: 500; }
 
 /* 상태 배지 */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
 }
-.status-new { background-color: #eff6ff; color: #1d4ed8; }
-.status-active { background-color: #d1fae5; color: #065f46; }
-.status-inactive { background-color: #f1f5f9; color: #475569; }
+.status-new { background-color: var(--primary-soft); color: var(--primary); }
+.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
 .status-badge i { font-size: 13px; }
 
 /* 입력 필드 공통 */
 .input-edit, .input-add, .status-select {
-  width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;
-  font-size: 13px; color: #334155; transition: all 0.2s; background: white; box-sizing: border-box;
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
+  font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box;
 }
 .input-edit:focus, .input-add:focus, .status-select:focus {
-  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
 }
+.input-add.disabled { background-color: var(--bg-canvas); color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
 
-.input-add.disabled { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; border-color: transparent; }
-
-/* 액션 버튼 */
+/* 액션 버튼 (테이블 내부) */
 .action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;}
 .btn-action {
   display: flex; align-items: center; gap: 4px; padding: 6px 10px;
@@ -754,64 +597,40 @@ onMounted(() => {
 .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-action i { font-size: 14px; }
 
-.btn-cancel { background-color: #64748b; color: white; }
-.btn-cancel:hover { background-color: #475569; }
+.btn-cancel { background-color: var(--text-sub); color: var(--text-inverse); }
+.btn-cancel:hover { background-color: var(--text-main); }
 
-.btn-edit { background-color: #4f46e5; color: white; }
-.btn-edit:hover:not(:disabled) { background-color: #4338ca; }
+.btn-edit { background-color: var(--primary); color: var(--text-inverse); }
+.btn-edit:hover:not(:disabled) { background-color: var(--primary-hover); }
 
-.btn-delete { background-color: #ef4444; color: white; }
-.btn-delete:hover:not(:disabled) { background-color: #dc2626; }
+.btn-delete { background-color: var(--danger); color: var(--text-inverse); }
+.btn-delete:hover:not(:disabled) { filter: brightness(0.9); }
 
-.btn-save { background-color: #10b981; color: white; }
-.btn-save:hover:not(:disabled) { background-color: #059669; }
+.btn-save { height: 100%}
 
 /* 추가 행 */
-.add-row { background-color: #f0fdf4; border-top: 1px solid #bbf7d0; }
-.add-row:hover { background-color: #dcfce7; }
+.add-row { background-color: rgba(16, 185, 129, 0.03); border-top: 1px solid var(--border-color); }
+.add-row:hover { background-color: rgba(16, 185, 129, 0.06); }
 .add-icon { display: flex; align-items: center; justify-content: center; }
-.add-icon i { font-size: 22px; color: #10b981; }
+.add-icon i { font-size: 22px; color: var(--success); }
 
 .btn-add-submit {
   display: flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 8px 14px; background-color: #10b981; border: none; border-radius: 6px;
-  color: white; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%;
+  padding: 8px 14px; background-color: var(--success); border: none; border-radius: 6px;
+  color: var(--text-inverse); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; width: 100%;
 }
-.btn-add-submit:hover { transform: translateY(-1px); background-color: #059669; }
+.btn-add-submit:hover { transform: translateY(-1px); background-color: var(--success-hover); }
 .btn-add-submit i { font-size: 15px; }
-
-/* 빈 상태 */
-.empty-row { background: white; }
-.empty-state { text-align: center; padding: 50px 20px; color: #94a3b8; }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1;}
-.empty-state p { font-size: 15px; font-weight: 600; color: #475569; margin: 0 0 6px 0; }
-.empty-state span { font-size: 13px; }
 
 /* === 안내 박스 === */
 .info-box {
   display: flex; gap: 14px; padding: 20px;
-  background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1e40af;
+  background-color: var(--primary-soft); border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px; color: var(--primary); margin-top: 24px;
 }
 .info-box i { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
 .info-content { flex: 1; }
-.info-content strong { display: block; font-size: 14px; margin-bottom: 8px; font-weight: 700; }
+.info-content strong { display: block; font-size: 14px; margin-bottom: 8px; font-weight: 700; color: var(--primary); }
 .info-content ul { margin: 0; padding-left: 20px; }
-.info-content li { font-size: 12px; line-height: 1.6; margin-bottom: 4px; color: #1e3a8a; }
-
-/* === 반응형 (Responsive) === */
-@media (max-width: 1024px) {
-  .search-box { flex: 1; min-width: 200px; }
-}
-
-@media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
-  .btn-refresh, .btn-save-all { flex: 1; justify-content: center; }
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
-  .filter-group, .search-box { width: 100%; min-width: 100%; }
-  .filter-spacer { display: none; }
-
-  .selection-info { flex-direction: column; align-items: stretch; gap: 8px; }
-}
+.info-content li { font-size: 12px; line-height: 1.6; margin-bottom: 4px; color: var(--text-main); }
 </style>
