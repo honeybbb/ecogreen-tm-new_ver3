@@ -1,164 +1,208 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import axios from "axios";
 
-// 1. 상태 및 데이터
-const staffList = ref([]); // API에서 받아온 원본 데이터
-const selectedSite = ref('전체'); // 필터용
-const searchName = ref('');     // 검색용
+// 1. 상태 관리
+const isLoading = ref(false);
+const estimates = ref([]);
 
-// 2. 데이터 가져오기 (API 호출)
-const getRetirements = async () => {
-  try {
-    const res = await axios.get('/api/v1/payroll/retirement');
-    staffList.value = res.data.data || [];
-  } catch (error) {
-    console.error("퇴직금 추계액 로딩 실패:", error);
-  }
+// 필터 상태 (추계 기준일)
+const baseDate = ref('2026-12-31'); // 보통 연말 기준으로 많이 추계함
+const selectedSite = ref('전체');
+const selectedType = ref('전체');
+const searchTerm = ref('');
+const filterEligible = ref(false); // 1년 이상(지급대상)만 보기
+
+// 드롭다운 옵션 (더미)
+const siteOptions = ref([{ idx: 1, name: '쌍용플래티넘아파트' }, { idx: 2, name: 'LH 위례 6단지' }]);
+const typeOptions = ref([{ itemCd: '01001001', itemNm: '미화' }, { itemCd: '01001002', itemNm: '경비' }]);
+
+// 2. 더미 데이터 로드
+const fetchList = () => {
+  isLoading.value = true;
+  setTimeout(() => {
+    estimates.value = [
+      { id: 1, siteName: '쌍용플래티넘아파트', type: '01001001', typeNm: '미화', empName: '김갑수', hireDate: '2020-03-01', tenure: '5년 9개월', avgWage: 2100000, estAmount: 12075000, isEligible: true, selected: false },
+      { id: 2, siteName: '쌍용플래티넘아파트', type: '01001002', typeNm: '경비', empName: '이을용', hireDate: '2025-06-15', tenure: '6개월', avgWage: 2400000, estAmount: 0, isEligible: false, selected: false },
+      { id: 3, siteName: 'LH 위례 6단지', type: '01001001', typeNm: '미화', empName: '박병호', hireDate: '2022-01-10', tenure: '3년 11개월', avgWage: 2150000, estAmount: 8420000, isEligible: true, selected: false },
+    ];
+    isLoading.value = false;
+  }, 400);
 };
 
-// 3. 필터링 로직 (검색어 & 현장명)
-// 이미 계산된 데이터 내에서 '보여줄 항목'만 걸러냅니다.
+// 3. 필터링 로직
 const filteredList = computed(() => {
-  return staffList.value.filter(staff => {
-    // 현장명 필터 (API에서 siteName을 준다고 가정)
-    const matchSite = selectedSite.value === '전체' || (staff.siteName && staff.siteName === selectedSite.value);
-    // 이름 검색
-    const matchName = searchName.value === '' || staff.name.includes(searchName.value);
-
-    return matchSite && matchName;
+  return estimates.value.filter(item => {
+    const siteMatch = selectedSite.value === '전체' || item.siteName === siteOptions.value.find(s=>s.idx===selectedSite.value)?.name;
+    const searchMatch = item.empName.includes(searchTerm.value);
+    const eligibleMatch = !filterEligible.value || item.isEligible;
+    return siteMatch && searchMatch && eligibleMatch;
   });
 });
 
-// 4. 합계 계산 (1년 이상 대상자만 집계)
-const summary = computed(() => {
-  // 퇴직금(retirementPay)이 0보다 큰 사람만 필터링 (= 1년 이상 근무자)
-  const eligibleStaff = filteredList.value.filter(staff => staff.retirementPay > 0);
-
-  // 필터링된 인원들의 퇴직금 합계
-  const totalAmount = eligibleStaff.reduce((acc, cur) => acc + cur.retirementPay, 0);
-
+// 4. 통계 계산
+const statsInfo = computed(() => {
+  const eligibleItems = filteredList.value.filter(item => item.isEligible);
+  const totalAmount = eligibleItems.reduce((sum, item) => sum + item.estAmount, 0);
   return {
-    count: eligibleStaff.length, // 지급 대상 인원 수
-    totalAmount                  // 지급 대상 총액
+    totalCount: filteredList.value.length,
+    eligibleCount: eligibleItems.length,
+    totalAmount: totalAmount
   };
 });
 
-// 유틸리티: 금액 포맷
-const formatMoney = (val) => {
-  if (!val) return '0원';
-  return Number(val).toLocaleString() + '원';
-};
+const formatCurrency = (amount) => (amount || 0).toLocaleString();
 
 onMounted(() => {
-  getRetirements();
+  fetchList();
 });
 </script>
 
 <template>
-  <div class="page-container">
+  <div class="estimate-page">
     <div class="page-header">
-      <h2 class="page-title">퇴직금 추계액 관리</h2>
-      <p class="page-subtitle">현재 기준(오늘)으로 산출된 예상 퇴직금 현황입니다.</p>
-    </div>
-
-    <div class="summary-cards">
-      <div class="summary-item">
-        <span class="label">지급 대상자 (1년 이상)</span>
-        <span class="value">{{ summary.count }} 명</span>
+      <div class="header-left">
+        <h1 class="page-title"><i class="mdi mdi-piggy-bank-outline"></i> 퇴직금 추계 내역</h1>
+        <p class="page-subtitle">단지별/직원별 예상 퇴직금을 산정하고 관리합니다.</p>
       </div>
-      <div class="summary-item highlight">
-        <span class="label">퇴직급여 충당 부채총액</span>
-        <span class="value text-red">{{ formatMoney(summary.totalAmount) }}</span>
+      <div class="header-actions">
+        <button class="btn-action btn-excel"><i class="mdi mdi-file-excel-outline"></i> 엑셀 다운로드</button>
       </div>
     </div>
 
-    <div class="table-wrapper">
-      <table class="data-table">
-        <thead>
-        <tr>
-          <!--th>현장</th-->
-          <th>No.</th>
-          <th>이름</th>
-          <th>입사일</th>
-          <th class="text-center">근속일수</th>
-          <th class="text-right">기준 급여(통상)</th>
-          <th class="text-center">지급대상</th>
-          <th class="text-right highlight-th">예상 퇴직금</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr v-for="(staff, i) in filteredList" :key="staff.idx">
-          <!--td>{{ staff.siteName || '-' }}</td-->
-          <td>{{i+1}}</td>
+    <div class="stats-grid">
+      <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
+        <div class="stat-icon"><i class="mdi mdi-account-group-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">총 인원</span>
+          <span class="stat-value">{{ statsInfo.totalCount }}<small>명</small></span>
+        </div>
+      </div>
+      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-check-decagram-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">지급 대상 (1년 이상)</span>
+          <span class="stat-value">{{ statsInfo.eligibleCount }}<small>명</small></span>
+        </div>
+      </div>
+      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: rgba(245, 158, 11, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">총 예상 퇴직금액</span>
+          <span class="stat-value text-orange">{{ formatCurrency(statsInfo.totalAmount) }}<small>원</small></span>
+        </div>
+      </div>
+    </div>
 
-          <td class="font-bold">{{ staff.name }}</td>
+    <div class="filter-panel">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-calendar-search"></i> 추계 기준일</label>
+          <input type="date" v-model="baseDate" class="filter-select" />
+        </div>
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 현장 선택</label>
+          <select v-model="selectedSite" class="filter-select">
+            <option value="전체">전체</option>
+            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
+          </select>
+        </div>
+        <div class="search-group">
+          <div class="search-box">
+            <i class="mdi mdi-magnify"></i>
+            <input type="text" v-model="searchTerm" placeholder="직원명 검색..." class="search-input" />
+          </div>
+        </div>
+      </div>
+      <div class="filter-toggles-row">
+        <label class="toggle-chip" :class="{ active: filterEligible }">
+          <input type="checkbox" v-model="filterEligible">
+          <i class="mdi mdi-filter-check-outline"></i> <span>지급 대상자(1년 이상)만 보기</span>
+        </label>
+      </div>
+    </div>
 
-          <td class="text-gray">{{ staff.inDate }}</td>
-
-          <td class="text-center">
-            {{ Number(staff.workDays).toLocaleString() }}일
-            <span class="text-sm text-gray">
-              ({{ (staff.workDays / 365).toFixed(1) }}년)
-            </span>
-          </td>
-
-          <td class="text-right text-gray-500">
-            {{ formatMoney(staff.baseSalary) }}
-          </td>
-
-          <td class="text-center">
-            <span v-if="staff.workDays >= 365" class="badge badge-green">지급 대상</span>
-            <span v-else class="badge badge-gray">1년 미만</span>
-          </td>
-
-          <td class="text-right font-bold text-red">
-            {{ formatMoney(staff.retirementPay) }}
-          </td>
-        </tr>
-
-        <tr v-if="filteredList.length === 0">
-          <td colspan="7" class="empty-msg">데이터가 없거나 조회 중입니다.</td>
-        </tr>
-        </tbody>
-      </table>
+    <div class="table-card">
+      <div class="table-header">
+        <div class="table-title">
+          <i class="mdi mdi-format-list-bulleted"></i> <span>퇴직금 추계 목록 ({{ filteredList.length }}건)</span>
+        </div>
+      </div>
+      <div class="table-scroll-container">
+        <table class="data-table">
+          <thead>
+          <tr>
+            <th class="text-center" style="width: 50px;">No.</th>
+            <th>현장명</th>
+            <th class="text-center">직책</th>
+            <th class="text-center">이름</th>
+            <th class="text-center">입사일</th>
+            <th class="text-center">근속기간</th>
+            <th class="text-right">3개월 평균임금</th>
+            <th class="text-right">예상 퇴직금액</th>
+            <th class="text-center" style="width: 100px;">상태</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr v-for="(item, index) in filteredList" :key="item.id" class="data-row">
+            <td class="text-center text-gray">{{ index + 1 }}</td>
+            <td class="font-bold">{{ item.siteName }}</td>
+            <td class="text-center"><span class="badge" :class="item.type==='01001001'?'badge-clean':'badge-guard'">{{ item.typeNm }}</span></td>
+            <td class="text-center font-bold">{{ item.empName }}</td>
+            <td class="text-center">{{ item.hireDate }}</td>
+            <td class="text-center text-blue font-bold">{{ item.tenure }}</td>
+            <td class="text-right">{{ formatCurrency(item.avgWage) }}</td>
+            <td class="text-right font-bold" :class="{'text-orange': item.isEligible}">{{ formatCurrency(item.estAmount) }}</td>
+            <td class="text-center">
+                <span class="status-badge" :class="item.isEligible ? 'status-active' : 'status-inactive'">
+                  {{ item.isEligible ? '지급대상' : '1년미만' }}
+                </span>
+            </td>
+          </tr>
+          <tr v-if="filteredList.length === 0" class="empty-row">
+            <td colspan="9">
+              <div class="empty-state"><i class="mdi mdi-text-box-search-outline"></i><p>조회된 추계 내역이 없습니다.</p></div>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
-
 <style scoped>
-/* 기존 스타일 그대로 유지 */
-.page-container { /*padding: 20px;*/ background: #f8fafc; min-height: 100vh; }
-.page-header { margin-bottom: 20px; }
-.page-title { font-size: 1.5rem; font-weight: 700; color: #1e293b; }
-.page-subtitle { color: #64748b; font-size: 0.9rem; margin-top: 5px; }
-
-.summary-cards { display: flex; gap: 20px; margin-bottom: 25px; }
-.summary-item {
-  flex: 1; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0;
-  display: flex; flex-direction: column; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+/* 헤더 및 유틸리티 */
+.header-actions { display: flex; gap: 10px; }
+.btn-excel {
+  background-color: #10b981; color: white; border: none; padding: 10px 16px;
+  border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s;
+  display: flex; align-items: center; gap: 6px; font-size: 13px;
 }
-.summary-item.highlight { border-bottom: 3px solid #ef4444; background: #fef2f2; }
-.summary-item .label { font-size: 0.9rem; color: #64748b; font-weight: 600; }
-.summary-item .value { font-size: 1.4rem; font-weight: 800; color: #0f172a; }
+.btn-excel:hover { background-color: #059669; transform: translateY(-1px); }
 
-.table-wrapper { background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-.data-table th, .data-table td { padding: 14px 12px; border-bottom: 1px solid #f1f5f9; }
-.data-table th { background: #f8fafc; font-weight: 600; text-align: left; color: #475569; }
+/* 배지 공통 */
+.badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.badge-clean { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.badge-guard { background-color: var(--primary-soft); color: var(--primary); }
 
-.highlight-th { background: #fff1f2 !important; color: #991b1b !important; }
-.text-right { text-align: right; }
-.text-center { text-align: center; }
-.font-bold { font-weight: 700; }
-.text-red { color: #dc2626; }
-.text-gray { color: #6b7280; }
-.text-gray-500 { color: #9ca3af; } /* 기준급여용 연한 색 */
-.text-sm { font-size: 0.8rem; }
+.status-badge { padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-inactive { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
-.badge { padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-.badge-green { background: #dcfce7; color: #166534; }
-.badge-gray { background: #f3f4f6; color: #9ca3af; }
+/* 테이블 헤더 커스텀 컬러 */
+.bg-gray-50 { background-color: #f8fafc !important; }
+.bg-red-light { background-color: rgba(239, 68, 68, 0.05) !important; color: var(--danger) !important; }
+.bg-green-light { background-color: rgba(16, 185, 129, 0.05) !important; color: var(--success) !important; }
 
-.empty-msg { text-align: center; padding: 40px; color: #9ca3af; }
+/* 텍스트 컬러 */
+.text-orange { color: #f59e0b; }
+.text-red { color: var(--danger); }
+.text-green { color: var(--success); }
+.text-blue { color: var(--primary); }
+
+/* 스크롤 및 레이아웃 */
+.table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll-container::-webkit-scrollbar { height: 8px; }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+
+/* 기존 common.css에 선언된 클래스들(table-card, stats-grid, filter-panel 등)은 자동으로 상속됩니다! */
 </style>

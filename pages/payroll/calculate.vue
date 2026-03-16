@@ -183,18 +183,22 @@ const updatePayAsync = async (row) => {
 };
 
 const calculateInsurances = async (row) => {
+  // ── 과세 급여 계산 (비과세 한도는 DB option에서 가져옴) ──
   let taxablePay = 0;
   payItems.value.forEach(item => {
-    const amt = Number(row.payItems[item.itemCd] || 0);
-    if (item.itemCd === '04001005') {
-      if (amt > 100000) taxablePay += (amt - 100000);
-    } else {
-      taxablePay += amt;
-    }
+    const amt   = Number(row.payItems[item.itemCd] || 0);
+    const limit = item.taxFreeLimit; // 0이면 비과세 없음
+
+    taxablePay += limit > 0
+        ? Math.max(0, amt - limit)  // 한도 초과분만 과세
+        : amt;                       // 전액 과세
   });
+
+  // ── 보험료 계산 (기존 코드 그대로) ──────────────────────
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
   let incomeTax = 0, localTax = 0;
+
   if (row.deductionFlags['04002013']) {
     try {
       const year = new Date().getFullYear();
@@ -205,6 +209,7 @@ const calculateInsurances = async (row) => {
       localTax  = taxRes.data?.localTax  || 0;
     } catch (e) { console.error('소득세 조회 실패', e); }
   }
+
   let healthAmt = 0;
   if (row.deductionFlags['04002001']) {
     healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
@@ -212,6 +217,7 @@ const calculateInsurances = async (row) => {
   } else {
     row.deductionItems['04002001'] = 0;
   }
+
   const calc = {
     '04002002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
     '04002003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
@@ -219,6 +225,7 @@ const calculateInsurances = async (row) => {
     '04002013': () => incomeTax,
     '04002014': () => localTax,
   };
+
   deductionItems.value.forEach(i => {
     if (i.itemCd === '04002001') return;
     if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
@@ -519,10 +526,23 @@ const exportPayrollExcel = () => {
 // 숫자 변환 헬퍼
 const n = (v) => Number(v || 0);
 
+/*
 const getWageCode = async () => {
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     items.value = res.data.data || [];
+  } catch (err) { console.error("항목 로드 실패", err); }
+};
+
+ */
+const getWageCode = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
+    items.value = (res.data.data || []).map(item => ({
+      ...item,
+      // option이 숫자 문자열이면 파싱, 없거나 0이면 비과세 없음
+      taxFreeLimit: Number(item.option) || 0,
+    }));
   } catch (err) { console.error("항목 로드 실패", err); }
 };
 

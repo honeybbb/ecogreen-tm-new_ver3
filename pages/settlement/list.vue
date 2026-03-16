@@ -1,74 +1,79 @@
 <script setup>
 import { ref, computed, onMounted, reactive, watch } from 'vue';
 import axios from 'axios';
-// import { useRouter } from 'nuxt/app';
 import SettlementModal from '@/components/SettlementModal.vue';
+import SettlementPrintModal from '@/components/SettlementPrintModal.vue';
 
-const {typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions} = useApi();
+const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi();
 
-// 1. 상태 및 검색 조건
+// ── 상태 ─────────────────────────────────────────────
 const isLoading = ref(false);
-const error = ref(null);
+const error     = ref(null);
 const settlements = ref([]);
 
-// 현재 년-월
-const selectedYear = reactive({
-  month: '2026-01',
-});
-const searchTerm = ref('');
-const selectedSite = ref('전체');
-const selectedType = ref('전체');
-
+const selectedYear    = reactive({ month: '2026-01' });
+const searchTerm      = ref('');
+const selectedSite    = ref('전체');
+const selectedType    = ref('전체');
 const filterCompleted = ref(false);
-const filterPending = ref(false);
+const filterPending   = ref(false);
 
-// 2. 정렬 관련 상태
-const sortKey = ref('id');
+const sortKey   = ref('id');
 const sortOrder = ref('desc');
 
-const isModalOpen = ref(false);
-const selectedId = ref(null);
+const isModalOpen         = ref(false);
+const selectedId          = ref(null);
 const initialDataForModal = ref(null);
 
-// ── 페이지네이션 상태 추가 ──────────────────────────────
-const currentPage = ref(1);
-const pageSize    = ref(50); // 한 페이지당 행 수
+const isPrintModalOpen = ref(false);
+const printTargetItems = ref([]);
+
+const currentPage     = ref(1);
+const pageSize        = ref(50);
 const pageSizeOptions = [50, 100, 200, 500];
 
-// 필터 조건 변경 시 1페이지로 리셋
+// ── watch ─────────────────────────────────────────────
 watch([selectedSite, selectedType, searchTerm, filterCompleted, filterPending, selectedYear], () => {
   currentPage.value = 1;
 });
+watch(() => selectedYear.month, fetchList);
 
 const resetFilters = () => {
-  searchTerm.value     = '';
-  selectedSite.value   = '전체';
-  selectedType.value   = '전체';
-  filterPending.value   = false;
-  filterCompleted.value   = false;
+  searchTerm.value = '';
+  selectedSite.value = '전체';
+  selectedType.value = '전체';
+  filterPending.value = false;
+  filterCompleted.value = false;
   currentPage.value = 1;
 };
 
-// 3. API 데이터 호출 및 매핑 로직
-const fetchList = async () => {
+// ── JSON 파싱 헬퍼 ────────────────────────────────────
+function parseJson(val, fallback) {
+  if (!val) return fallback;
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch { return fallback; }
+  }
+  return val;
+}
+
+// ── API 호출 ─────────────────────────────────────────
+async function fetchList() {
   isLoading.value = true;
   error.value = null;
-
   try {
     const params = {
-      year: selectedYear.month.split('-')[0],
-      month: selectedYear.month.split('-')[1],
-    }
-    const res = await axios.get('/api/v1/settle/site/list', { params });
+      year:    selectedYear.month.split('-')[0],
+      month:   selectedYear.month.split('-')[1],
+      docType: 'SERVICE',
+    };
+    const res     = await axios.get('/api/v1/settle/site/list', { params });
     const rawData = res.data.data || [];
 
     setTimeout(() => {
       settlements.value = rawData.map(item => {
-        const site = siteOptions.value.find(s => s.idx === item.sIdx);
+        const site     = siteOptions.value.find(s => s.idx === item.sIdx);
         const siteName = site ? site.name : `알수없는현장(${item.sIdx})`;
-
-        const formattedMonth = String(item.month).padStart(2, '0');
-        const targetMonth = `${item.year}-${formattedMonth}`;
+        const mm       = String(item.month).padStart(2, '0');
 
         let statusText = '진행중';
         if (item.status === 1) statusText = '입금확인';
@@ -76,69 +81,63 @@ const fetchList = async () => {
 
         return {
           ...item,
-          id: item.idx,
-          siteName: siteName,
-          target_month: targetMonth,
+          // billingData / payrollData 항상 객체/배열로 보정
+          billingData: parseJson(item.billingData, {}),
+          payrollData: parseJson(item.payrollData, []),
+          id:           item.idx,
+          siteName,
+          target_month: `${item.year}-${mm}`,
           total_amount: item.grandTotal,
-          statusText: statusText,
-          regDtShort: item.regDt.split(' ')[0],
-          selected: false // 체크박스 선택 상태 추가
+          statusText,
+          regDtShort:   (item.regDt || '').split(' ')[0],
+          selected:     false,
         };
       });
-      currentPage.value = 1; // 조회 완료 시 첫 페이지로
-      isLoading.value = false;
+      currentPage.value = 1;
+      isLoading.value   = false;
     }, 500);
   } catch (e) {
     console.error('리스트 조회 에러:', e);
-    error.value = '데이터를 불러오는 중 오류가 발생했습니다.';
+    error.value     = '데이터를 불러오는 중 오류가 발생했습니다.';
     isLoading.value = false;
   }
-};
+}
 
-// 4. 정렬 토글 핸들러
+// ── 정렬 ─────────────────────────────────────────────
 const toggleSort = (key) => {
   if (sortKey.value === key) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
   } else {
-    sortKey.value = key;
+    sortKey.value   = key;
     sortOrder.value = 'asc';
   }
-  currentPage.value = 1; // 정렬 변경 시 1페이지로 리셋
+  currentPage.value = 1;
 };
 
-// 5. 필터링 + 정렬된 결과 계산
+// ── 필터링 + 정렬 ─────────────────────────────────────
 const filteredSettlements = computed(() => {
   let result = settlements.value.filter(item => {
-    const monthMatch = item.target_month === selectedYear.month;
-    const siteMatch = selectedSite.value === '전체' || item.sIdx === selectedSite.value;
+    const monthMatch  = item.target_month === selectedYear.month;
+    const siteMatch   = selectedSite.value === '전체' || item.sIdx === selectedSite.value;
     const searchMatch = item.siteName.toLowerCase().includes(searchTerm.value.toLowerCase());
-
-    const typeMatch = selectedType.value === '전체' || item.type === selectedType.value;
-
-    let statusMatch = true;
+    const typeMatch   = selectedType.value === '전체' || item.type === selectedType.value;
+    let   statusMatch = true;
     if (filterCompleted.value) statusMatch = item.statusText === '입금확인';
-    if (filterPending.value) statusMatch = item.statusText !== '입금확인';
-
+    if (filterPending.value)   statusMatch = item.statusText !== '입금확인';
     return monthMatch && siteMatch && searchMatch && typeMatch && statusMatch;
   });
 
   result.sort((a, b) => {
-    let modifier = sortOrder.value === 'asc' ? 1 : -1;
-    let valA = a[sortKey.value];
-    let valB = b[sortKey.value];
-
-    if (typeof valA === 'string' && typeof valB === 'string') {
-      return valA.localeCompare(valB) * modifier;
-    }
-    if (valA < valB) return -1 * modifier;
-    if (valA > valB) return  1 * modifier;
-    return 0;
+    const mod = sortOrder.value === 'asc' ? 1 : -1;
+    const vA  = a[sortKey.value], vB = b[sortKey.value];
+    if (typeof vA === 'string' && typeof vB === 'string') return vA.localeCompare(vB) * mod;
+    return (vA < vB ? -1 : vA > vB ? 1 : 0) * mod;
   });
 
   return result;
 });
 
-// ── 페이지네이션 Computed ───────────────────────────
+// ── 페이지네이션 ──────────────────────────────────────
 const totalPages = computed(() => Math.ceil(filteredSettlements.value.length / pageSize.value));
 
 const pagedSettlements = computed(() => {
@@ -147,15 +146,9 @@ const pagedSettlements = computed(() => {
 });
 
 const pageNumbers = computed(() => {
-  const total = totalPages.value;
-  const cur   = currentPage.value;
+  const total = totalPages.value, cur = currentPage.value;
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-
-  const pages = [];
-  const delta = 2;
-  const left  = Math.max(2, cur - delta);
-  const right = Math.min(total - 1, cur + delta);
-
+  const pages = [], left = Math.max(2, cur - 2), right = Math.min(total - 1, cur + 2);
   pages.push(1);
   if (left > 2) pages.push('...');
   for (let i = left; i <= right; i++) pages.push(i);
@@ -171,80 +164,71 @@ const goToPage = (page) => {
   }
 };
 
-// ── 전체 선택/해제 로직 (현재 페이지 기준) ──────────────
+// ── 전체선택 ──────────────────────────────────────────
 const selectAll = computed({
   get: () => pagedSettlements.value.length > 0 && pagedSettlements.value.every(p => p.selected),
-  set: (val) => {
-    pagedSettlements.value.forEach(p => p.selected = val);
-  }
+  set: (val) => pagedSettlements.value.forEach(p => (p.selected = val)),
 });
 
-// ── 선택 항목 삭제 로직 ─────────────────────────────────
-const deleteSelected = async () => {
-  // 현재 체크된 항목들 추출
-  const selectedItems = settlements.value.filter(s => s.selected);
+// ── 선택된 항목 ───────────────────────────────────────
+const selectedItems = computed(() => settlements.value.filter(s => s.selected));
 
-  if (selectedItems.length === 0) {
+// ── 선택 삭제 ─────────────────────────────────────────
+const deleteSelected = async () => {
+  if (!selectedItems.value.length) {
     alert('삭제할 정산 내역을 체크해주세요.');
     return;
   }
-
-  if (!confirm(`선택한 ${selectedItems.length}건의 정산 내역을 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다)`)) {
-    return;
-  }
+  if (!confirm(`선택한 ${selectedItems.value.length}건의 정산 내역을 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다)`)) return;
 
   try {
     isLoading.value = true;
-
-    // 백엔드 API 상황에 맞게 둘 중 하나를 선택하세요.
-    // [방법 1] ID 배열을 한 번에 전송 (백엔드에 일괄 삭제 API가 있는 경우 권장)
-    // const ids = selectedItems.map(item => item.id);
-    // await axios.post('/api/v1/settle/site/delete', { ids });
-
-    // [방법 2] 반복문을 돌며 개별 삭제 요청 (일괄 삭제 API가 없는 경우)
-    await Promise.all(selectedItems.map(item =>
-        axios.delete(`/api/v1/settle/site/${item.id}`)
-    ));
-
+    await Promise.all(selectedItems.value.map(item => axios.delete(`/api/v1/settle/site/${item.id}`)));
     alert('삭제가 완료되었습니다.');
-    await fetchList(); // 삭제 후 목록 리로드
-  } catch (error) {
-    console.error('삭제 오류:', error);
+    await fetchList();
+  } catch (e) {
+    console.error('삭제 오류:', e);
     alert('삭제 중 오류가 발생했습니다.');
   } finally {
     isLoading.value = false;
   }
 };
 
-// 6. 통계 정보 계산
-const statsInfo = computed(() => {
-  const currentMonthData = filteredSettlements.value;
-  const totalCount = currentMonthData.length;
-  const totalAmount = currentMonthData.reduce((sum, item) => sum + (item.total_amount || 0), 0);
-  const completedCount = currentMonthData.filter(item => item.status == 1).length;
-  const pendingCount = totalCount - completedCount;
-
-  return { totalCount, totalAmount, completedCount, pendingCount };
-});
-
-const formatCurrency = (amount) => {
-  return (amount || 0).toLocaleString();
+// ── 출력 ─────────────────────────────────────────────
+const handlePrint = () => {
+  if (!selectedItems.value.length) {
+    alert('출력할 항목을 선택하세요.');
+    return;
+  }
+  printTargetItems.value = selectedItems.value.map(item => ({ ...item }));
+  isPrintModalOpen.value = true;
 };
 
-const handleSearch = () => fetchList();
-const refreshData = () => fetchList();
+// ── 통계 ─────────────────────────────────────────────
+const statsInfo = computed(() => {
+  const d = filteredSettlements.value;
+  return {
+    totalCount:    d.length,
+    totalAmount:   d.reduce((s, i) => s + (i.total_amount || 0), 0),
+    completedCount:d.filter(i => i.status == 1).length,
+    pendingCount:  d.filter(i => i.status != 1).length,
+  };
+});
 
+const formatCurrency = (amount) => (amount || 0).toLocaleString();
+
+// ── 모달 ─────────────────────────────────────────────
 const openCreateModal = () => {
-  selectedId.value = null;
-  initialDataForModal.value = { /* 신규 작성 초기값 */ };
-  isModalOpen.value = true;
+  selectedId.value          = null;
+  initialDataForModal.value = {};
+  isModalOpen.value         = true;
 };
 
 const openEditModal = (id, docType = 'statement') => {
   const item = settlements.value.find(s => s.id === id);
-  selectedId.value = id;
+  selectedId.value          = id;
   initialDataForModal.value = { ...item, defaultTab: docType };
-  isModalOpen.value = true;
+  isModalOpen.value         = true;
 };
 
 onMounted(() => {
@@ -252,12 +236,12 @@ onMounted(() => {
   fetchSiteOptions();
   fetchList();
 });
-
-watch(() => selectedYear.month, fetchList);
 </script>
 
 <template>
   <div class="settlement-list-page">
+
+    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">
@@ -267,10 +251,16 @@ watch(() => selectedYear.month, fetchList);
         <p class="page-subtitle">월별 단지 정산 및 청구 내역을 관리합니다</p>
       </div>
       <div class="header-actions">
-        <button @click="deleteSelected" class="btn-delete" v-if="settlements.some(s => s.selected)">
-          <i class="mdi mdi-trash-can-outline"></i>
-          <span>선택 삭제</span>
-        </button>
+        <template v-if="selectedItems.length > 0">
+          <button @click="handlePrint" class="btn-print">
+            <i class="mdi mdi-printer-outline"></i>
+            <span>출력 ({{ selectedItems.length }}건)</span>
+          </button>
+          <button @click="deleteSelected" class="btn-delete">
+            <i class="mdi mdi-trash-can-outline"></i>
+            <span>선택 삭제</span>
+          </button>
+        </template>
         <button @click="openCreateModal" class="btn-add">
           <i class="mdi mdi-file-document-plus-outline"></i>
           <span>새 정산서 작성</span>
@@ -278,6 +268,7 @@ watch(() => selectedYear.month, fetchList);
       </div>
     </div>
 
+    <!-- 통계 카드 -->
     <div class="stats-grid">
       <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-file-document-multiple-outline"></i></div>
@@ -309,38 +300,35 @@ watch(() => selectedYear.month, fetchList);
       </div>
     </div>
 
+    <!-- 필터 패널 -->
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-calendar-month-outline"></i> 청구 연월</label>
           <input type="month" v-model="selectedYear.month" class="filter-select" />
         </div>
-
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 현장 선택</label>
           <select v-model="selectedSite" class="filter-select">
             <option value="전체">전체</option>
-            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
-              {{ site.name }}
-            </option>
+            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
           </select>
         </div>
-
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-format-list-bulleted-type"></i> 구분</label>
           <select v-model="selectedType" class="filter-select">
             <option value="전체">전체</option>
-            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">
-              {{ opt.itemNm }}
-            </option>
+            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
           </select>
         </div>
-
         <div class="search-group">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
-            <input type="text" v-model="searchTerm" placeholder="현장명으로 검색..." class="search-input" @keyup.enter="handleSearch" />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear"><i class="mdi mdi-close"></i></button>
+            <input type="text" v-model="searchTerm" placeholder="현장명으로 검색..."
+                   class="search-input" @keyup.enter="fetchList" />
+            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+              <i class="mdi mdi-close"></i>
+            </button>
           </div>
           <button @click="resetFilters" class="btn-search" title="필터 초기화">
             <i class="mdi mdi-filter-off"></i>
@@ -366,20 +354,26 @@ watch(() => selectedYear.month, fetchList);
       </div>
     </div>
 
+    <!-- 로딩 -->
     <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
       <p>정산 내역을 불러오는 중...</p>
     </div>
 
+    <!-- 테이블 -->
     <div class="table-card" v-else>
       <div class="table-header">
         <div class="table-title">
           <i class="mdi mdi-format-list-bulleted"></i>
           <span>정산 목록 ({{ filteredSettlements.length }}건)</span>
+          <span v-if="selectedItems.length > 0" class="selected-badge">
+            {{ selectedItems.length }}건 선택됨
+          </span>
         </div>
         <div class="page-size-select">
           <label>페이지당</label>
-          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+          <select v-model="pageSize" @change="currentPage = 1" class="filter-select"
+                  style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
             <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
           </select>
         </div>
@@ -437,14 +431,13 @@ watch(() => selectedYear.month, fetchList);
               </div>
             </th>
             <th class="text-center" style="width: 220px;">
-              <div class="th-content justify-center">
-                <span>관리</span>
-              </div>
+              <div class="th-content justify-center"><span>관리</span></div>
             </th>
           </tr>
           </thead>
           <tbody>
-          <tr v-for="item in pagedSettlements" :key="item.id" class="data-row">
+          <tr v-for="item in pagedSettlements" :key="item.id"
+              class="data-row" :class="{ 'row-selected': item.selected }">
             <td class="text-center">
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="item.selected" class="custom-checkbox" />
@@ -453,21 +446,21 @@ watch(() => selectedYear.month, fetchList);
             <td class="text-center text-gray">{{ item.id }}</td>
             <td class="site-name">{{ item.siteName }}</td>
             <td class="text-center">
-              <span :class="[
-                  'badge', item.type === '01001002' ? 'badge-clean' :
+                <span :class="['badge',
+                  item.type === '01001002' ? 'badge-clean' :
                   item.type === '01001001' ? 'badge-guard' : 'badge-etc']">
-                {{ item.typeNm }}
-              </span>
+                  {{ item.typeNm }}
+                </span>
             </td>
             <td class="text-center">{{ item.target_month }}</td>
             <td class="text-right amount-text">{{ formatCurrency(item.total_amount) }}</td>
             <td class="text-center">
-               <span :class="['status-badge',
-                 item.statusText === '입금확인' ? 'status-active' :
-                 item.statusText === '반려' ? 'status-inactive' : 'status-pending']">
+                <span :class="['status-badge',
+                  item.statusText === '입금확인' ? 'status-active' :
+                  item.statusText === '반려'    ? 'status-inactive' : 'status-pending']">
                   <i :class="['mdi',
                     item.statusText === '입금확인' ? 'mdi-check-circle' :
-                    item.statusText === '반려' ? 'mdi-close-circle' : 'mdi-dots-horizontal-circle']"></i>
+                    item.statusText === '반려'    ? 'mdi-close-circle' : 'mdi-dots-horizontal-circle']"></i>
                   {{ item.statusText }}
                 </span>
             </td>
@@ -495,40 +488,36 @@ watch(() => selectedYear.month, fetchList);
         </table>
       </div>
 
+      <!-- 페이지네이션 -->
       <div class="pagination-bar" v-if="totalPages > 1">
         <span class="pagination-info">
-          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredSettlements.length) }} / 총 {{ filteredSettlements.length }}건
+          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredSettlements.length) }}
+          / 총 {{ filteredSettlements.length }}건
         </span>
-
         <div class="pagination-controls">
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)" title="처음">
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)">
             <i class="mdi mdi-chevron-double-left"></i>
           </button>
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" title="이전">
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">
             <i class="mdi mdi-chevron-left"></i>
           </button>
-
           <template v-for="p in pageNumbers" :key="p">
             <span v-if="p === '...'" class="page-ellipsis">…</span>
-            <button
-                v-else
-                class="page-btn"
-                :class="{ active: p === currentPage }"
-                @click="goToPage(p)"
-            >{{ p }}</button>
+            <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">
+              {{ p }}
+            </button>
           </template>
-
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" title="다음">
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">
             <i class="mdi mdi-chevron-right"></i>
           </button>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)" title="마지막">
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)">
             <i class="mdi mdi-chevron-double-right"></i>
           </button>
         </div>
       </div>
-
     </div>
 
+    <!-- 편집 모달 -->
     <SettlementModal
         v-if="isModalOpen"
         :is-open="isModalOpen"
@@ -538,29 +527,48 @@ watch(() => selectedYear.month, fetchList);
         @save="fetchList"
     />
 
+    <!-- 출력 모달 -->
+    <SettlementPrintModal
+        v-if="isPrintModalOpen"
+        :is-open="isPrintModalOpen"
+        :items="printTargetItems"
+        @close="isPrintModalOpen = false"
+    />
+
   </div>
 </template>
 
 <style scoped>
-/* === 헤더 액션 및 버튼 스타일 === */
 .header-actions { display: flex; gap: 10px; align-items: center; }
+
+.btn-print {
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px;
+  border: 1px solid rgba(14, 165, 233, 0.4); border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; background: rgba(14, 165, 233, 0.08); color: #0ea5e9;
+}
+.btn-print:hover { background: #0ea5e9; color: white; border-color: #0ea5e9; }
+.btn-print i { font-size: 16px; }
 
 .btn-delete {
   display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px;
   border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all 0.2s; background-color: rgba(239, 68, 68, 0.05); color: var(--danger);
 }
-.btn-delete:hover {
-  background-color: var(--danger); color: white; border-color: var(--danger);
-}
+.btn-delete:hover { background-color: var(--danger); color: white; border-color: var(--danger); }
 .btn-delete i { font-size: 16px; }
 
-/* === 체크박스 공통 스타일 === */
-.checkbox-wrapper { display: flex; justify-content: center; align-items: center; cursor: pointer;}
+.row-selected { background-color: var(--primary-soft) !important; }
+
+.selected-badge {
+  font-size: 12px; font-weight: 600; padding: 2px 10px;
+  background: #0ea5e9; color: white; border-radius: 10px; margin-left: 8px;
+}
+
+.checkbox-wrapper { display: flex; justify-content: center; align-items: center; cursor: pointer; }
 .custom-checkbox {
-  appearance: none; -webkit-appearance: none;
-  width: 18px; height: 18px; border: 2px solid var(--border-focus); border-radius: 4px;
-  cursor: pointer; position: relative; transition: all 0.2s; background: var(--bg-surface); margin:0;
+  appearance: none; -webkit-appearance: none; width: 18px; height: 18px;
+  border: 2px solid var(--border-focus); border-radius: 4px; cursor: pointer;
+  position: relative; transition: all 0.2s; background: var(--bg-surface); margin: 0;
 }
 .custom-checkbox:hover { border-color: var(--text-muted); }
 .custom-checkbox:checked { border-color: var(--primary); background-color: var(--primary); }
@@ -570,30 +578,19 @@ watch(() => selectedYear.month, fetchList);
   transform: rotate(45deg);
 }
 
-/* === 로딩 상태 === */
 .spinner {
   width: 40px; height: 40px; border: 3px solid var(--bg-canvas); border-top-color: var(--primary);
   border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* === 테이블 컨트롤 영역 === */
-.table-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-bottom: 1px solid var(--border-color);
-}
-.table-title {
-  display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--text-main);
-}
-.table-title i { font-size: 20px; color: var(--primary); display: none;}
+.table-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border-color); }
+.table-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--text-main); }
+.table-title i { font-size: 20px; color: var(--primary); display: none; }
+.page-size-select { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub); }
 
-.page-size-select {
-  display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub);
-}
-
-/* === 테이블 스크롤 === */
 .table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px;}
+.table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
 .table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
 .table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
 .table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
@@ -601,68 +598,39 @@ watch(() => selectedYear.month, fetchList);
 .th-content { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 .th-content.justify-center { justify-content: center; }
 .th-content.justify-end { justify-content: flex-end; }
-.th-content i { font-size: 14px; opacity: 0.8; color: var(--text-muted); transition: color 0.2s;}
-.sortable:hover .th-content i { color: var(--primary); opacity: 1;}
+.th-content i { font-size: 14px; opacity: 0.8; color: var(--text-muted); transition: color 0.2s; }
+.sortable:hover .th-content i { color: var(--primary); opacity: 1; }
 
-/* 텍스트 정렬 & 유틸리티 */
 .site-name { font-weight: 600; color: var(--text-main); }
 .amount-text { font-weight: 700; color: var(--text-main); font-size: 14px; }
 
-/* 배지 스타일 (직무별 플랫 컬러) */
 .badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; word-break: keep-all; }
 .badge-clean { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .badge-guard { background-color: var(--primary-soft); color: var(--primary); }
-.badge-etc { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.badge-etc   { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
-/* 상태 배지 */
-.status-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
-}
-.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
-.status-pending { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.status-inactive { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.status-active   { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-pending  { background-color: rgba(245, 158, 11, 0.1);  color: var(--warning); }
+.status-inactive { background-color: rgba(239, 68, 68, 0.1);   color: var(--danger); }
 
-/* 액션 버튼 그룹 (내부 고유 버튼) */
 .action-buttons { display: flex; gap: 8px; justify-content: center; }
-.btn-action {
-  display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;
-  border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; white-space: nowrap;
-}
+.btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; white-space: nowrap; }
 .btn-statement { background-color: var(--primary-soft); color: var(--primary); }
-.btn-statement:hover { background-color: rgba(37, 99, 235, 0.15); filter: brightness(0.95); }
+.btn-statement:hover { background-color: rgba(37, 99, 235, 0.15); }
 .btn-details { background-color: var(--bg-canvas); color: var(--text-sub); }
 .btn-details:hover { background-color: var(--border-color); color: var(--text-main); }
 
-/* Sticky 컬럼 (관리 영역) */
-.sticky-col { position: sticky; right: 0; border-left: 1px solid var(--border-color); z-index: 5; background: var(--bg-surface); }
-.data-table thead .sticky-col { z-index: 15; background-color: var(--bg-canvas); border-left: 1px solid var(--border-color); }
-.data-row:hover .sticky-col { background-color: var(--primary-soft); }
-
-/* ── 페이지네이션 바 스타일 ── */
-.pagination-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-top: 1px solid var(--border-color);
-  background: var(--bg-hover); flex-wrap: wrap; gap: 12px;
-}
-
+.pagination-bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-top: 1px solid var(--border-color); background: var(--bg-hover); flex-wrap: wrap; gap: 12px; }
 .pagination-info { font-size: 13px; color: var(--text-sub); }
-
 .pagination-controls { display: flex; align-items: center; gap: 4px; }
-
-.page-btn {
-  min-width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-surface); color: var(--text-sub);
-  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 6px;
-}
+.page-btn { min-width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-surface); color: var(--text-sub); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 6px; }
 .page-btn:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .page-btn.active { background: var(--primary); border-color: var(--primary); color: var(--text-inverse); font-weight: 700; }
 .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .page-btn i { font-size: 16px; }
-
 .page-ellipsis { min-width: 30px; text-align: center; font-size: 14px; color: var(--text-muted); letter-spacing: 1px; }
 
-/* === 반응형 === */
 @media (max-width: 600px) {
   .pagination-bar { justify-content: center; }
   .pagination-info { width: 100%; text-align: center; }

@@ -157,8 +157,10 @@ const onFilterChange = () => { currentPage.value = 1; };
 const getDisabilityStyle = (grade) => {
   const opt = disabledOptions.value.find(o => o.itemNm == grade);
   return {
-    backgroundColor: opt?.option ? `var(--primary-soft)` : 'var(--bg-hover)',
-    color: opt?.option ? `var(--primary)` : 'var(--text-sub)',
+    // backgroundColor: opt?.option ? `var(--primary-soft)` : 'var(--bg-hover)',
+    // color: opt?.option ? `var(--primary)` : 'var(--text-sub)',
+    backgroundColor: opt?.option || 'var(--bg-hover)',
+    color: 'var(--bg-surface)',
     border: 'none',
   };
 };

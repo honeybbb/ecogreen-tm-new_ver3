@@ -24,7 +24,7 @@ const payItems = computed(() => {
   return items.value.filter(item => item.groupCd === '04001');
 });
 
-// ★ [수정됨] 4대보험 키워드만 필터링해서 4개 컬럼만 노출되도록 변경
+// 4대보험 키워드만 필터링해서 4개 컬럼만 노출되도록 변경
 const deductionItems = computed(() => {
   if (!Array.isArray(items.value)) return [];
   const targetKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];

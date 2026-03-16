@@ -383,11 +383,17 @@ a {
 .btn-back {
     width: 42px; height: 42px;
     border-radius: 10px;
-    background: white; border: 1px solid #e2e8f0; color: #475569;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-sub);
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     transition: all 0.2s;
 }
-.btn-back:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
+.btn-back:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-focus);
+    color: var(--text-main);
+}
 .btn-back i { font-size: 20px; }
 
 /* 상세 버튼 */

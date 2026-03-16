@@ -6,6 +6,7 @@ export const useAuthStore = defineStore('auth', () => {
     const token = useCookie('user_token', {
         maxAge: 60 * 60,
         sameSite: 'lax',
+        default: () => null
     });
 
     // 유저 정보도 60분 뒤에 같이 파기되도록 동일하게 설정
