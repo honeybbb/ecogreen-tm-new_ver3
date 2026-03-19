@@ -658,6 +658,7 @@ const refreshData = () => {
 .status-badge i { font-size: 13px; }
 
 /* === 입력 폼 (수정/추가) === */
+/*
 .input-edit, .input-add {
   width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
   font-size: 13px; color: var(--text-main); transition: all 0.2s; box-sizing: border-box;
@@ -673,6 +674,7 @@ const refreshData = () => {
   font-size: 12px; color: var(--text-main); background: var(--bg-surface); cursor: pointer;
 }
 .status-select:focus { border-color: var(--primary); outline: none; }
+ */
 
 /* === 액션 버튼 (테이블 내부) === */
 .action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
@@ -685,7 +687,7 @@ const refreshData = () => {
 .btn-action i { font-size: 14px; }
 
 .btn-save {height: 100% }
-
+/*
 .btn-cancel { background-color: var(--text-sub); color: var(--text-inverse); }
 .btn-cancel:hover { background-color: var(--text-main); }
 
@@ -694,6 +696,8 @@ const refreshData = () => {
 
 .btn-delete { background-color: var(--danger); color: var(--text-inverse); }
 .btn-delete:hover:not(:disabled) { filter: brightness(0.9); }
+
+ */
 
 /* === 추가 행 === */
 .add-row { background-color: rgba(16, 185, 129, 0.03); border-top: 1px solid var(--border-color); }

@@ -1,13 +1,21 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
+import Pagination from "~/components/Pagination.vue";
 
 // 1. 상태 관리
 const searchTerm = ref('');
 const selectedStatus = ref('전체');
 const statusOptions = ['전체', '신청 완료', '배송 중', '수령 완료'];
+
 const rawOrders = ref([]);
 const isLoading = ref(false);
+const error     = ref(null);
+
+// ── 페이지네이션 상태 ──────────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50); // 한 페이지당 행 수
+const pageSizeOptions = [50, 100, 200, 500];
 
 // 2. 통계 데이터 계산
 const stats = computed(() => {
@@ -30,6 +38,17 @@ const filteredOrders = computed(() => {
     return statusMatch && searchMatch;
   });
 });
+
+// ── 페이지네이션 computed ──────────────────────────
+const pagedOrders = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredOrders.value.slice(start, start + pageSize.value);
+});
+
+// 페이지 이동 시 처리할 로직 (스크롤 상단 이동 등)
+const handlePageChange = () => {
+  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
 
 // 4. API 호출
 const fetchOrders = async () => {
@@ -174,6 +193,12 @@ onMounted(fetchOrders);
           <i class="mdi mdi-format-list-bulleted"></i>
           <span>신청 목록 ({{ filteredOrders.length }}건)</span>
         </div>
+        <div class="page-size-select">
+          <label>페이지당</label>
+          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+            <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+          </select>
+        </div>
       </div>
 
       <div class="table-scroll-container">
@@ -190,7 +215,11 @@ onMounted(fetchOrders);
           </tr>
           </thead>
           <tbody>
-          <tr v-for="order in filteredOrders" :key="order.regDt + order.mIdx" class="data-row">
+          <tr
+              v-for="order in pagedOrders"
+              :key="order.regDt + order.mIdx"
+              class="data-row"
+          >
             <td class="text-center text-gray">{{ order.regDt }}</td>
             <td class="font-bold text-dark">{{ order.siteName }}</td>
             <td>{{ order.applicant }} <span class="staff-id">({{order.memberId }})</span></td>
@@ -222,6 +251,13 @@ onMounted(fetchOrders);
           </tbody>
         </table>
       </div>
+
+      <Pagination
+          v-model:currentPage="currentPage"
+          v-model:pageSize="pageSize"
+          :totalCount="filteredOrders.length"
+          @change="handlePageChange"
+      />
     </div>
 
     <transition name="fade">
@@ -305,9 +341,14 @@ onMounted(fetchOrders);
 </template>
 
 <style scoped>
-/* =========================================
-   페이지 고유 스타일 (공통 CSS 제외)
-========================================= */
+/* 페이지 부가 설정 */
+.page-size-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
 
 .staff-id { font-size: 11px; color: var(--text-muted); margin-left: 4px; font-weight: 400;}
 
@@ -333,20 +374,11 @@ onMounted(fetchOrders);
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
 
 /* 모달 헤더 */
-.modal-header {
-  padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-canvas);
-}
-.modal-title { font-size: 16px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; margin: 0;}
-.modal-title i { color: var(--primary); font-size: 20px;}
-
 .btn-close {
   background: transparent; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; transition: 0.2s;
   display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px;
 }
 .btn-close:hover { background: var(--bg-hover); color: var(--danger); }
-
-/* 모달 바디 */
-.modal-body { padding: 24px; overflow-y: auto; flex: 1; }
 
 .order-info-summary {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
@@ -369,8 +401,13 @@ onMounted(fetchOrders);
 
 /* 모달 푸터 */
 .modal-footer {
-  padding: 16px 24px; background: var(--bg-canvas); border-top: 1px solid var(--border-color);
-  display: flex; justify-content: flex-end; align-items: center; gap: 10px; border-radius: 0 0 16px 16px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  border-radius: 0 0 16px 16px;
 }
 
 .btn-approve {

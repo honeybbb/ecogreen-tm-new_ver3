@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from '@/stores/auth';
+import Pagination from "~/components/Pagination.vue";
 
 const { positionOptions, fetchPositionOptions } = useApi();
 const authStore = useAuthStore();
@@ -10,8 +11,14 @@ const authStore = useAuthStore();
 const notices = ref([]);
 const searchTerm = ref('');
 const searchType = ref('title');
+
 const isLoading = ref(false);
 const error = ref(null);
+
+// ── 페이지네이션 상태 ──────────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50); // 한 페이지당 행 수
+const pageSizeOptions = [50, 100, 200, 500];
 
 // 모달 관련 상태
 const isModalOpen = ref(false);
@@ -25,16 +32,76 @@ const form = ref({
   must: false,
 });
 
-// 2. 데이터 가공 (필독 / 일반 분리 및 정렬)
-const pinnedNotices = computed(() => notices.value.filter(n => n.must === 'Y'));
-const normalNotices = computed(() => notices.value.filter(n => n.must === 'N'));
+// 데이터 가공
+const filteredNotices = computed(() => {
+  const query = searchTerm.value.trim().toLowerCase();
 
-// 통계 데이터
+  // 검색어가 없으면 전체 반환
+  if (!query) return notices.value;
+
+  // 선택된 검색 타입(제목, 내용, 작성자)에 따라 필터링
+  return notices.value.filter(notice => {
+    const targetValue = String(notice[searchType.value] || '').toLowerCase();
+    return targetValue.includes(query);
+  });
+});
+
+// 필터링된 목록에서 '필독' 공지만 추출
+const pinnedNotices = computed(() =>
+    filteredNotices.value.filter(n => n.must === 'Y')
+);
+
+// 필터링된 목록에서 '일반' 공지만 추출
+const normalNotices = computed(() =>
+    filteredNotices.value.filter(n => n.must === 'N')
+);
+
+const sortedNotices = computed(() => {
+  // 필독(Y)이 위로, 그 안에서는 최신순(idx 역순) 정렬
+  // 일반(N)은 그 아래로, 최신순 정렬
+  const pinned = notices.value
+      .filter(n => n.must === 'Y')
+      .sort((a, b) => b.idx - a.idx);
+
+  const normal = notices.value
+      .filter(n => n.must === 'N')
+      .sort((a, b) => b.idx - a.idx);
+
+  const combined = [...pinned, ...normal];
+
+  // 검색어 필터링 적용
+  const query = searchTerm.value.trim().toLowerCase();
+  if (!query) return combined;
+
+  return combined.filter(notice => {
+    const targetValue = String(notice[searchType.value] || '').toLowerCase();
+    return targetValue.includes(query);
+  });
+});
+
+// 최종적으로 현재 페이지에 보여줄 데이터
+const pagedNotices = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  const end = start + pageSize.value;
+  return sortedNotices.value.slice(start, end);
+});
+
+// [추가] 검색어나 페이지 사이즈 변경 시 1페이지로 리셋
+watch([searchTerm, searchType, pageSize], () => {
+  currentPage.value = 1;
+});
+
+// 통계 데이터 (전체 결과 기준)
 const stats = computed(() => ({
-  total: notices.value.length,
-  pinned: pinnedNotices.value.length,
-  new: notices.value.filter(n => isNew(n.regDt)).length
+  total: sortedNotices.value.length,
+  pinned: sortedNotices.value.filter(n => n.must === 'Y').length,
+  new: sortedNotices.value.filter(n => isNew(n.regDt)).length
 }));
+
+// 페이지 이동 시 처리할 로직 (스크롤 상단 이동 등)
+const handlePageChange = () => {
+  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
 
 // 3. 메서드
 const isNew = (dateString) => {
@@ -174,7 +241,7 @@ onMounted(() => {
             <input
                 type="text"
                 v-model="searchTerm"
-                @keyup.enter="fetchNotices"
+                @input="fetchNotices"
                 placeholder="찾으시는 공지 내용을 입력하세요..."
                 class="search-input"
             />
@@ -203,8 +270,13 @@ onMounted(() => {
     <div class="table-card" v-if="!isLoading">
       <div class="table-header">
         <div class="table-title">
-          <i class="mdi mdi-format-list-bulleted"></i>
           <span>공지 목록 ({{ notices.length }}건)</span>
+        </div>
+        <div class="page-size-select">
+          <label>페이지당</label>
+          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+            <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+          </select>
         </div>
       </div>
 
@@ -223,51 +295,63 @@ onMounted(() => {
           </thead>
           <tbody>
           <tr
-              v-for="notice in pinnedNotices"
-              :key="'p'+notice.idx"
-              class="row-pinned data-row"
+              v-for="notice in pagedNotices"
+              :key="notice.idx"
+              :class="[notice.must === 'Y' ? 'row-pinned' : 'row-normal', 'data-row']"
               @click="openModal('view', notice)"
           >
-            <td class="text-center"><span class="badge-pinned">필독</span></td>
-            <td class="text-center"><span class="type-tag">{{ notice.type }}</span></td>
-            <td class="text-center"><span class="badge-target">{{ notice.targetName || '전체' }}</span></td>
+            <td class="text-center">
+              <span v-if="notice.must === 'Y'" class="badge-pinned">필독</span>
+              <span v-else class="text-gray">{{ notice.idx }}</span>
+            </td>
+
+            <td class="text-center">
+          <span :class="['type-tag', notice.must === 'Y' ? '' : 'secondary']">
+            {{ notice.type }}
+          </span>
+            </td>
+
+            <td class="text-center">
+          <span :class="['badge-target', notice.must === 'Y' ? '' : 'outline']">
+            {{ notice.targetName || '전체' }}
+          </span>
+            </td>
+
             <td class="title-cell">
               <div class="flex items-center gap-2">
                 <span class="title-text">{{ notice.title }}</span>
                 <span v-if="isNew(notice.regDt)" class="badge-new">NEW</span>
               </div>
             </td>
-            <td><span class="author-name">{{ notice.author }}</span></td>
-            <td class="text-center text-gray">{{ notice.regDt.substring(0, 10) }}</td>
-            <td class="text-center text-gray">{{ notice.views }}</td>
-          </tr>
 
-          <tr v-for="notice in normalNotices" :key="notice.idx" class="row-normal data-row" @click="openModal('view', notice)">
-            <td class="text-center text-gray">{{ notice.idx }}</td>
-            <td class="text-center"><span class="type-tag secondary">{{ notice.type }}</span></td>
-            <td class="text-center"><span class="badge-target outline">{{ notice.targetName || '전체' }}</span></td>
-            <td class="title-cell">
-              <div class="flex items-center gap-2">
-                <span class="title-text">{{ notice.title }}</span>
-                <span v-if="isNew(notice.regDt)" class="badge-new">NEW</span>
-              </div>
+            <td><span class="author-name">{{ notice.author }}</span></td>
+
+            <td class="text-center text-gray">
+              {{ notice.regDt ? notice.regDt.substring(0, 10) : '-' }}
             </td>
-            <td><span class="author-name">{{ notice.author }}</span></td>
-            <td class="text-center text-gray">{{ notice.regDt.substring(0, 10) }}</td>
+
             <td class="text-center text-gray">{{ notice.views }}</td>
           </tr>
 
-          <tr v-if="notices.length === 0">
+          <tr v-if="sortedNotices.length === 0">
             <td colspan="7" class="empty-row">
               <div class="empty-state">
                 <i class="mdi mdi-text-search-variant"></i>
-                <p>게시된 공지사항이 없습니다.</p>
+                <p>조회된 공지사항이 없습니다.</p>
               </div>
             </td>
           </tr>
           </tbody>
         </table>
       </div>
+
+      <Pagination
+          v-model:currentPage="currentPage"
+          v-model:pageSize="pageSize"
+          :totalCount="sortedNotices.length"
+          @change="handlePageChange"
+      />
+
     </div>
 
     <transition name="fade">
@@ -367,9 +451,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* =========================================
-   고유 스타일 (공통 CSS 제외)
-========================================= */
+/* 페이지 부가 설정 */
+.page-size-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
 
 /* === 로딩 상태 === */
 .loading-state, .error-state {
@@ -426,20 +515,11 @@ onMounted(() => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
 
-/* 모달 헤더 */
-.modal-header {
-  padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-canvas);
-}
-.modal-title { font-size: 16px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; margin: 0;}
-.modal-title i { color: var(--primary); font-size: 20px;}
 .btn-close-icon {
   background: transparent; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; transition: 0.2s;
   display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px;
 }
 .btn-close-icon:hover { background: var(--bg-hover); color: var(--danger); }
-
-/* 모달 바디 */
-.modal-body { padding: 24px; overflow-y: auto; flex: 1; }
 
 /* 조회 모드 (View) */
 .view-header-top { border-bottom: 1px solid var(--border-color); padding-bottom: 20px; margin-bottom: 20px; }
@@ -482,8 +562,10 @@ onMounted(() => {
 
 /* 모달 푸터 액션 버튼 */
 .modal-footer {
-  padding: 16px 24px; background: var(--bg-canvas); border-top: 1px solid var(--border-color);
-  display: flex; justify-content: space-between; align-items: center; border-radius: 0 0 16px 16px;
+  padding: 16px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 .footer-right-btns { display: flex; gap: 10px; }
 
@@ -511,6 +593,7 @@ onMounted(() => {
 .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 3px; }
 
 /* === 반응형 === */
+/*
 @media (max-width: 1024px) {
   .filter-row { flex-wrap: wrap; }
   .search-group { width: 100%; min-width: 100%; }
@@ -535,4 +618,5 @@ onMounted(() => {
   .footer-right-btns { width: 100%; display: flex; gap: 10px; }
   .btn-footer-edit, .btn-footer-close, .btn-footer-save { flex: 1; justify-content: center; }
 }
+*/
 </style>

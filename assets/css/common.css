@@ -370,9 +370,18 @@ a {
 }
 .btn-excel:hover, .btn-save:hover, .btn-save-all:hover { background-color: var(--success-hover); transform: translateY(-1px); }
 .btn-excel i, .btn-save i, .btn-save-all i { font-size: 16px; }
-
+/*
 .btn-cancel { background: var(--bg-surface); border: 1px solid var(--border-color) !important; color: var(--text-sub); }
 .btn-cancel:hover { background: var(--bg-hover); color: var(--text-main);}
+ */
+.btn-cancel { background-color: var(--text-sub); color: var(--text-inverse); }
+.btn-cancel:hover { background-color: var(--text-main); }
+
+.btn-edit { background-color: var(--primary); color: var(--text-inverse); }
+.btn-edit:hover:not(:disabled) { background-color: var(--primary-hover); }
+
+.btn-delete { background-color: var(--danger); color: var(--text-inverse); }
+.btn-delete:hover:not(:disabled) { filter: brightness(0.9); }
 
 .btn-submit { background-color: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-sm);}
 .btn-submit:hover { background-color: var(--primary-hover); transform: translateY(-1px);}
@@ -404,6 +413,36 @@ a {
 }
 .btn-detail:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
 .btn-detail i { font-size: 14px; }
+
+.badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.badge-blue { background-color: var(--primary-soft); color: var(--primary); }
+.badge-red { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.badge-gray { background-color: var(--bg-hover); color: var(--text-sub); }
+.badge-green { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+
+/* === 입력 폼 (수정/추가) === */
+.input-edit, .input-add {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
+    font-size: 13px; color: var(--text-main); transition: all 0.2s; box-sizing: border-box;
+}
+.input-edit:focus, .input-add:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
+
+.input-edit { background: var(--bg-surface); }
+.input-add { background: var(--bg-surface); }
+.input-add.disabled { background: var(--bg-canvas); color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
+
+.status-select {
+    padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 6px;
+    font-size: 12px; color: var(--text-main); background: var(--bg-surface); cursor: pointer;
+}
+.status-select:focus { border-color: var(--primary); outline: none; }
 
 /* === 테이블 카드 === */
 .table-card {

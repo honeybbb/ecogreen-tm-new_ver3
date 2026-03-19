@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, reactive, watch } from 'vue';
 import axios from 'axios';
-import AnnualLeaveModal from '@/components/AnnualLeaveModal.vue';
+import EstimateModal from '~/components/estimateModal.vue';
 
 const { siteOptions, fetchSiteOptions } = useApi();
 
@@ -459,7 +459,7 @@ watch(() => selectedYear.month, fetchList);
     </div>
 
     <!-- 모달 -->
-    <AnnualLeaveModal
+    <EstimateModal
         v-if="isModalOpen"
         :is-open="isModalOpen"
         :settlement-id="selectedId"

@@ -577,7 +577,7 @@ onMounted(() => {
 .status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
 .status-badge i { font-size: 13px; }
 
-/* 입력 필드 공통 */
+/* 입력 필드 공통 
 .input-edit, .input-add, .status-select {
   width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
   font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box;
@@ -586,9 +586,11 @@ onMounted(() => {
   outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .input-add.disabled { background-color: var(--bg-canvas); color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
+ */
 
 /* 액션 버튼 (테이블 내부) */
 .action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;}
+
 .btn-action {
   display: flex; align-items: center; gap: 4px; padding: 6px 10px;
   border: none; border-radius: 6px; font-size: 11px; font-weight: 600;
@@ -596,7 +598,7 @@ onMounted(() => {
 }
 .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-action i { font-size: 14px; }
-
+/*
 .btn-cancel { background-color: var(--text-sub); color: var(--text-inverse); }
 .btn-cancel:hover { background-color: var(--text-main); }
 
@@ -605,7 +607,7 @@ onMounted(() => {
 
 .btn-delete { background-color: var(--danger); color: var(--text-inverse); }
 .btn-delete:hover:not(:disabled) { filter: brightness(0.9); }
-
+ */
 .btn-save { height: 100%}
 
 /* 추가 행 */

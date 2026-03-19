@@ -494,9 +494,9 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
             <div class="form-group full-width">
               <input type="text" v-model="site.addressMain" placeholder="기본 주소" required class="form-input" readonly />
             </div>
-            <div class="form-group full-width">
+            <!--div class="form-group full-width">
               <input ref="detailInput" type="text" v-model="site.addressDetail" placeholder="상세 주소 입력" class="form-input" />
-            </div>
+            </div-->
           </div>
           <div class="form-actions">
             <button type="button" @click="prevStep" class="btn-prev"><i class="mdi mdi-arrow-left"></i>이전</button>
@@ -1068,7 +1068,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
 .form-textarea { resize: vertical; min-height: 80px; }
-.text-right { text-align: right; }
 
 .radio-group { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
 .radio-label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color); transition: all 0.2s; background: var(--bg-canvas); font-size: 13px; color: var(--text-sub); }
@@ -1129,7 +1128,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 
 /* 인원 */
 .staff-section { margin-top: 24px; padding: 20px; background: var(--bg-canvas); border-radius: 10px; border: 1px dashed var(--border-color); }
-.staff-input-group { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+.staff-input-group { display: flex; gap: 10px; margin: 16px 0; align-items: center; }
 .staff-position { flex: 1; }
 .staff-count { width: 90px; }
 .btn-add-staff { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background-color: var(--success); border: none; border-radius: 8px; color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: 0.2s; }

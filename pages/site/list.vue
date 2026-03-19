@@ -2,6 +2,7 @@
 import {ref, computed, onMounted} from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from "axios";
+import Pagination from "~/components/Pagination.vue";
 
 const router = useRouter();
 
@@ -16,13 +17,20 @@ const sortOrder = ref('asc');
 
 // 3. 현장 목록 데이터
 const sites = ref([
+    /*
   { idx: 101, name: 'LH 위례 6단지', address: '경기 성남시 수정구 위례광장로 11', manager: '김철수', contract: '2023-01-01 ~ 2024-12-31', status: '운영 중', type: '아파트' },
   { idx: 102, name: '강서 대명 강동', address: '서울 강서구 양천로 1111', manager: '이영희', contract: '2024-05-01 ~ 2026-04-30', status: '운영 중', type: '주상복합' },
   { idx: 103, name: 'LH 율곡 제일 8단지', address: '경기 파주시 교하로 222', manager: '박민수', contract: '2025-01-01 ~ 2026-12-31', status: '준비 중', type: '아파트' },
   { idx: 104, name: '폐지된 현장 A', address: '데이터 없음', manager: '-', contract: '2021-01-01 ~ 2022-12-31', status: '계약 종료', type: '오피스텔' },
+*/
 ]);
 
 const isLoading = ref(false);
+const error = ref(null);
+// ── 페이지네이션 상태 ──────────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50); // 한 페이지당 행 수
+const pageSizeOptions = [50, 100, 200, 500];
 
 // 4. 정렬 토글
 const toggleSort = (key) => {
@@ -69,6 +77,16 @@ const statsInfo = computed(() => {
   return { total, active, preparing, ended };
 });
 
+const pagedSiteList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredSites.value.slice(start, start + pageSize.value);
+});
+
+const handlePageChange = () => {
+  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+
 // 6. 이벤트 핸들러
 const handleSearch = () => {
   console.log('현장 검색 시작:', searchTerm.value, selectedStatus.value);
@@ -76,11 +94,10 @@ const handleSearch = () => {
 
 const getSites = () => {
   isLoading.value = true;
-  const cIdx = 1;
+  const cIdx = useAuthStore().user?.cIdx;
   axios.get(`/api/v1/site/list/${cIdx}`)
       .then(res => {
-        console.log(res.data.data, 'getSites');
-        sites.value = res.data.data;
+        sites.value = res.data.data || [];
       })
       .catch(err => {
         console.error('현장 로드 실패:', err);
@@ -209,6 +226,12 @@ const goToDetail = (id) => router.push(`/site/${id}`);
           <i class="mdi mdi-table"></i>
           <span>현장 목록 ({{ filteredSites.length }}개)</span>
         </div>
+        <div class="page-size-select">
+          <label>페이지당</label>
+          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+            <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+          </select>
+        </div>
       </div>
 
       <div class="table-scroll-container">
@@ -259,7 +282,7 @@ const goToDetail = (id) => router.push(`/site/${id}`);
           </tr>
           </thead>
           <tbody>
-          <tr v-for="site in filteredSites" :key="site.idx" class="data-row">
+          <tr v-for="site in pagedSiteList" :key="site.idx" class="data-row">
             <td>
               <span class="site-id">{{ site.idx }}</span>
             </td>
@@ -324,6 +347,13 @@ const goToDetail = (id) => router.push(`/site/${id}`);
           </tbody>
         </table>
       </div>
+
+      <Pagination
+          v-model:currentPage="currentPage"
+          v-model:pageSize="pageSize"
+          :totalCount="filteredSites.length"
+          @change="handlePageChange"
+      />
     </div>
   </div>
 </template>
@@ -352,6 +382,11 @@ const goToDetail = (id) => router.push(`/site/${id}`);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-state p { margin-top: 16px; font-size: 14px; color: var(--text-sub); }
+
+/* === 테이블 컨트롤 영역 === */
+.page-size-select {
+  display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub);
+}
 
 /* === 테이블 레이아웃 보완 === */
 .table-scroll-container {

@@ -1,6 +1,6 @@
 <script setup>
 /**
- * RetireAnnualModal.vue — 퇴직금·연차 정산 요청서 모달
+ * EstimateModal.vue — 퇴직금·연차 정산 요청서 모달
  *
  * [업데이트 내용]
  * - 연차수당 / 퇴직수당 표를 동적으로 껐다 켤 수 있는 기능 추가 (hasAnnual, hasRetire)

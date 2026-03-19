@@ -24,7 +24,7 @@ const payItems = computed(() => {
   return items.value.filter(item => item.groupCd === '04001');
 });
 
-// 4대보험 키워드만 필터링해서 4개 컬럼만 노출되도록 변경
+// 원본 4대보험 공제항목 (전체)
 const deductionItems = computed(() => {
   if (!Array.isArray(items.value)) return [];
   const targetKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
@@ -33,6 +33,29 @@ const deductionItems = computed(() => {
       item.groupCd === '04002' && targetKeywords.some(keyword => item.itemNm.includes(keyword))
   );
 });
+
+// ==========================================
+// [추가] 공제항목 On/Off 설정 로직
+// ==========================================
+const activeDeductionCodes = ref([]);
+
+// 항목이 로드될 때 기본적으로 모두 체크되도록 초기화
+watch(deductionItems, (newItems) => {
+  if (newItems.length > 0 && activeDeductionCodes.value.length === 0) {
+    activeDeductionCodes.value = newItems.map(item => item.itemCd);
+  }
+}, { immediate: true });
+
+// 사용자가 체크박스로 선택한 항목만 화면 및 계산에 사용됨
+const visibleDeductionItems = computed(() => {
+  return deductionItems.value.filter(item => activeDeductionCodes.value.includes(item.itemCd));
+});
+
+// 체크박스 상태가 변경되면 모든 직원의 급여(공제계/차인지급액)를 재계산
+watch(activeDeductionCodes, () => {
+  formData.value.payrollData.forEach(row => calculateRow(row));
+}, { deep: true });
+// ==========================================
 
 // ==========================================
 // 드래그 앤 드롭 정렬
@@ -47,11 +70,10 @@ const onDragOver = (e, index) => {
   e.preventDefault();
   if (dragIndex.value === null || dragIndex.value === index) return;
 
-  // 배열에서 드래그한 행을 떼어서 목표 위치에 삽입
   const list = formData.value.payrollData;
   const dragged = list.splice(dragIndex.value, 1)[0];
   list.splice(index, 0, dragged);
-  dragIndex.value = index; // 인덱스 갱신
+  dragIndex.value = index;
 };
 
 const onDragEnd = () => {
@@ -59,20 +81,11 @@ const onDragEnd = () => {
 };
 
 const formData = ref({
-  sIdx: '',
-  siteName: '',
-  is_vat: 'N',
-  type: '',
-  target_month: '',
-  docNo: '',
-  billingDt: '',
-  subTotal: 0,
-  vatAmount: 0,
-  grandTotal: 0,
+  sIdx: '', siteName: '', is_vat: 'N', type: '',
+  target_month: '', docNo: '', billingDt: '',
+  subTotal: 0, vatAmount: 0, grandTotal: 0,
   billingData: {
-    summary: '',
-    workerCount: 0,
-    bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
+    summary: '', workerCount: 0, bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
     items: [],
     vatBreakdown: {
       under135: { area: '', unitPrice: '', supply: 0 },
@@ -116,7 +129,6 @@ const initForm = () => {
     if (!data.payrollData) data.payrollData = [];
     if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)' };
     if (!data.billingData.items) data.billingData.items = [];
-
     if (!data.billingData.vatBreakdown) {
       data.billingData.vatBreakdown = {
         under135: { area: '', unitPrice: '', supply: 0 },
@@ -169,7 +181,6 @@ watch(() => props.initialData, () => {
 const addBillingRow = () => {
   formData.value.billingData.items.push({ period: '', category: '', detail: '', amount: 0, note: '' });
 };
-
 const removeBillingRow = (index) => {
   formData.value.billingData.items.splice(index, 1);
   calculateBillingTotal();
@@ -221,24 +232,16 @@ const handleManualBreakdownUpdate = () => {
 // [TAB 2] 급여 세부 내역서 처리 로직
 // ==========================================
 const loadPayrollData = async () => {
-  if (!formData.value.sIdx) {
-    alert('현장을 먼저 선택해주세요.');
-    return;
-  }
+  if (!formData.value.sIdx) { alert('현장을 먼저 선택해주세요.'); return; }
   if (formData.value.payrollData.length > 0) {
     if (!confirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) return;
   }
 
   try {
     const [year, month] = (formData.value.target_month || formData.value.billingDt).split('-');
-
-    // API 호출
     const res = await axios.get(`/api/v1/member/payroll/month`, { params: { year, month } });
-
-    // 선택된 현장(sIdx)과 구분(type)이 일치하는 직원만 필터링
     let result = res.data.data.filter(item => item.type == formData.value.type && item.sIdx == formData.value.sIdx);
 
-    // JSON 데이터 안전 파싱 함수 (null이나 문자열 에러 방지)
     const safeParse = (val) => {
       if (!val) return {};
       if (typeof val === 'string') {
@@ -247,29 +250,25 @@ const loadPayrollData = async () => {
       return val;
     };
 
-    // 필터링된 DB 데이터를 프론트엔드 테이블 폼에 맞게 매핑
     formData.value.payrollData = result.map(item => {
       const parsedDeductions = safeParse(item.deductionItems);
       const parsedPayItems = safeParse(item.payItems);
 
-      // 화면에 노출되는 4대보험 항목들만 공제계에 합산
+      // '활성화된(선택된)' 공제 항목만 합산
       let totalDeduct = 0;
-      deductionItems.value.forEach(dItem => {
+      visibleDeductionItems.value.forEach(dItem => {
         totalDeduct += (Number(parsedDeductions[dItem.itemCd]) || 0);
       });
 
       return {
-        idx: item.idx, // 나중에 개별 저장 시 필요할 수 있으므로 직원 idx 보존
-        empName: item.staff, // DB의 staff -> empName
-        position: item.role || '', // DB의 role -> position (null이면 빈칸)
+        idx: item.idx,
+        empName: item.staff,
+        position: item.role || '',
         grossPay: Number(item.grossPay) || 0,
-        payItems: parsedPayItems, // 급여 자동계산을 위해 payItems도 세팅
+        payItems: parsedPayItems,
         deductionItems: parsedDeductions,
         totalDeduct: totalDeduct,
-        reserves: {
-          annualLeave: 0, // 현재 DB 스키마에 없으므로 0 세팅
-          severance: 0    // 현재 DB 스키마에 없으므로 0 세팅
-        },
+        reserves: { annualLeave: 0, severance: 0 },
         netPay: (Number(item.grossPay) || 0) - totalDeduct
       };
     });
@@ -289,10 +288,8 @@ const loadPayrollData = async () => {
 const addPayrollRow = () => {
   formData.value.payrollData.push({
     empName: '', position: '', grossPay: 0,
-    deductionItems: {},
-    totalDeduct: 0,
-    reserves: { annualLeave: 0, severance: 0 },
-    netPay: 0
+    deductionItems: {}, totalDeduct: 0,
+    reserves: { annualLeave: 0, severance: 0 }, netPay: 0
   });
 };
 
@@ -300,10 +297,10 @@ const removePayrollRow = (index) => {
   if(confirm('이 직원의 데이터를 삭제하시겠습니까?')) formData.value.payrollData.splice(index, 1);
 };
 
-// ★ [수정됨] 엑셀 셀 값을 변경할 때 화면에 노출된 항목들만 재계산
+// 엑셀 셀 값을 변경할 때 화면에 노출된 항목들만 재계산
 const calculateRow = (row) => {
   let totalDeduct = 0;
-  deductionItems.value.forEach(item => {
+  visibleDeductionItems.value.forEach(item => {
     totalDeduct += (Number(row.deductionItems[item.itemCd]) || 0);
   });
 
@@ -311,16 +308,9 @@ const calculateRow = (row) => {
   row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
 };
 
-// 💡 하단 푸터 (총계) 동적 계산 로직
+// 하단 푸터 (총계) 동적 계산
 const payrollTotals = computed(() => {
-  const totals = {
-    grossPay: 0,
-    totalDeduct: 0,
-    netPay: 0,
-    annualLeave: 0,
-    severance: 0,
-    deductionItems: {}
-  };
+  const totals = { grossPay: 0, totalDeduct: 0, netPay: 0, annualLeave: 0, severance: 0, deductionItems: {} };
 
   formData.value.payrollData.forEach(row => {
     totals.grossPay += Number(row.grossPay) || 0;
@@ -329,15 +319,13 @@ const payrollTotals = computed(() => {
     totals.annualLeave += Number(row.reserves?.annualLeave) || 0;
     totals.severance += Number(row.reserves?.severance) || 0;
 
-    if (deductionItems.value) {
-      deductionItems.value.forEach(item => {
-        const code = item.itemCd;
-        if (!totals.deductionItems[code]) totals.deductionItems[code] = 0;
-        if (row.deductionItems && row.deductionItems[code]) {
-          totals.deductionItems[code] += Number(row.deductionItems[code]);
-        }
-      });
-    }
+    visibleDeductionItems.value.forEach(item => {
+      const code = item.itemCd;
+      if (!totals.deductionItems[code]) totals.deductionItems[code] = 0;
+      if (row.deductionItems && row.deductionItems[code]) {
+        totals.deductionItems[code] += Number(row.deductionItems[code]);
+      }
+    });
   });
 
   return totals;
@@ -374,7 +362,6 @@ const handleSave = async () => {
     if (response.data.result) {
       alert('성공적으로 저장되었습니다.');
       emit('save');
-      // closeModal();
     } else {
       alert(`저장 실패: ${response.data.msg}`);
     }
@@ -572,6 +559,15 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
             </div>
           </div>
 
+          <div class="deduction-toggles">
+            <span class="toggle-label"><i class="mdi mdi-filter-variant"></i> 공제항목 표시 설정 :</span>
+            <label v-for="item in deductionItems" :key="item.itemCd" class="toggle-checkbox">
+              <input type="checkbox" :value="item.itemCd" v-model="activeDeductionCodes" />
+              <span>{{ item.itemNm }}</span>
+            </label>
+            <span class="toggle-desc">(체크 해제 시 테이블에서 숨겨지며 공제액 합산에서도 제외됩니다)</span>
+          </div>
+
           <div class="excel-table-wrapper">
             <table class="excel-table">
               <thead>
@@ -580,14 +576,17 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
                 <th rowspan="2" style="min-width:70px;">이름</th>
                 <th rowspan="2" style="min-width:70px;">직책</th>
                 <th rowspan="2" class="bg-blue-light" style="min-width:100px;">지급총액</th>
-                <th :colspan="deductionItems.length || 1" class="bg-red-light">공제항목 (근로자 부담금)</th>
+
+                <th v-if="visibleDeductionItems.length > 0" :colspan="visibleDeductionItems.length" class="bg-red-light">공제항목 (근로자 부담금)</th>
+
                 <th rowspan="2" class="bg-red-light" style="min-width:80px;">공제계</th>
-                <th rowspan="2" class="bg-green-light" style="min-width:100px;">차인지급액</th>
+                <!--th rowspan="2" class="bg-green-light" style="min-width:100px;">차인지급액</th-->
                 <th colspan="2" class="bg-yellow-light">단지 적립금</th>
                 <th rowspan="2" style="min-width:50px;">관리</th>
               </tr>
               <tr>
-                <th v-for="item in deductionItems" :key="item.itemCd" class="bg-red-light" style="min-width:90px;">{{ item.itemNm }}</th>
+                <th v-for="item in visibleDeductionItems" :key="item.itemCd" class="bg-red-light" style="min-width:90px;">{{ item.itemNm }}</th>
+
                 <th class="bg-yellow-light" style="min-width:80px;">연차적립</th>
                 <th class="bg-yellow-light" style="min-width:80px;">퇴직적립</th>
               </tr>
@@ -609,11 +608,13 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
                 <td><input type="text" v-model="row.empName" class="cell-input text-center" placeholder="이름"/></td>
                 <td><input type="text" v-model="row.position" class="cell-input text-center" placeholder="직책"/></td>
                 <td><input type="number" v-model="row.grossPay" @input="calculateRow(row)" class="cell-input text-right font-bold text-blue"/></td>
-                <td v-for="item in deductionItems" :key="item.itemCd">
+
+                <td v-for="item in visibleDeductionItems" :key="item.itemCd">
                   <input type="number" v-model="row.deductionItems[item.itemCd]" @input="calculateRow(row)" class="cell-input text-right"/>
                 </td>
+
                 <td class="text-right font-bold bg-gray-50">{{ formatCurrency(row.totalDeduct) }}</td>
-                <td class="text-right font-bold text-green bg-green-50">{{ formatCurrency(row.netPay) }}</td>
+                <!--td class="text-right font-bold text-green bg-green-50">{{ formatCurrency(row.netPay) }}</td-->
                 <td><input type="number" v-model="row.reserves.annualLeave" class="cell-input text-right"/></td>
                 <td><input type="number" v-model="row.reserves.severance" class="cell-input text-right"/></td>
                 <td class="text-center">
@@ -623,7 +624,7 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
                 </td>
               </tr>
               <tr v-if="formData.payrollData.length === 0">
-                <td :colspan="10 + (deductionItems.length || 0)" class="empty-row">
+                <td :colspan="8 + visibleDeductionItems.length" class="empty-row">
                   등록된 직원 데이터가 없습니다. '데이터 불러오기' 또는 '직원 추가'를 눌러주세요.
                 </td>
               </tr>
@@ -632,11 +633,13 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
               <tr class="bg-gray-50 font-bold" style="font-size: 14px;">
                 <td colspan="3" class="text-center">총 계</td>
                 <td class="text-right text-blue bg-blue-light">{{ formatCurrency(payrollTotals.grossPay) }}</td>
-                <td class="text-right" v-for="item in deductionItems" :key="'foot-'+item.itemCd">
+
+                <td class="text-right" v-for="item in visibleDeductionItems" :key="'foot-'+item.itemCd">
                   {{ formatCurrency(payrollTotals.deductionItems[item.itemCd]) }}
                 </td>
+
                 <td class="text-right text-red bg-red-light">{{ formatCurrency(payrollTotals.totalDeduct) }}</td>
-                <td class="text-right text-green bg-green-light" style="font-size: 15px;">{{ formatCurrency(payrollTotals.netPay) }}</td>
+                <!--td class="text-right text-green bg-green-light" style="font-size: 15px;">{{ formatCurrency(payrollTotals.netPay) }}</td-->
                 <td class="text-right bg-yellow-light" style="color: #a16207;">{{ formatCurrency(payrollTotals.annualLeave) }}</td>
                 <td class="text-right bg-yellow-light" style="color: #a16207;">{{ formatCurrency(payrollTotals.severance) }}</td>
                 <td></td>
@@ -748,6 +751,24 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
 .vat-badge { font-size: 12px; margin-left: 6px; font-weight: normal; }
 .vat-free { color: var(--danger); }
 .vat-taxed { color: var(--primary); }
+
+/* =============================================
+   공제항목 체크박스 컨테이너
+============================================= */
+.deduction-toggles {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 16px;
+  padding: 12px 16px; background: var(--bg-surface); border-radius: 8px; border: 1px dashed var(--border-focus);
+  flex-wrap: wrap;
+}
+.toggle-label { font-size: 13px; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 4px;}
+.toggle-checkbox {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: var(--text-main); font-weight: 500;
+}
+.toggle-checkbox input[type="checkbox"] {
+  accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;
+}
+.toggle-desc { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
 
 /* =============================================
    테이블 공통
@@ -877,6 +898,8 @@ input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-app
   .excel-table thead th { padding: 8px 6px; font-size: 11px; }
   .excel-table td { padding: 4px; }
   .cell-input { font-size: 12px; padding: 3px; }
+  .deduction-toggles { gap: 8px; padding: 10px; }
+  .toggle-desc { display: none; }
 }
 
 @media (max-width: 480px) {

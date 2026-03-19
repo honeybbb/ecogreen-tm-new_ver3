@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import {useAuthStore} from "~/stores/auth.js";
+import Pagination from "~/components/Pagination.vue";
 
 const {
   siteOptions,
@@ -11,15 +12,16 @@ const {
 } = useApi();
 
 // 상태
+const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
+
 const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
+
 const items = ref([]);
 const isLoading = ref(false);
 const error = ref(null);
-
-const authStore = useAuthStore();
-const cIdx = authStore.user?.cIdx;
 
 // ── 페이지네이션 상태 ──────────────────────────────
 const currentPage = ref(1);
@@ -99,37 +101,13 @@ const totalSummary = computed(() => {
 });
 
 // ── 페이지네이션 Computed ───────────────────────────
-const totalPages = computed(() => Math.ceil(filteredPayrollList.value.length / pageSize.value));
-
 const pagedPayrollList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return filteredPayrollList.value.slice(start, start + pageSize.value);
 });
 
-// 페이지 번호 배열 (최대 5개 버튼)
-const pageNumbers = computed(() => {
-  const total = totalPages.value;
-  const cur   = currentPage.value;
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-
-  const pages = [];
-  const delta = 2;
-  const left  = Math.max(2, cur - delta);
-  const right = Math.min(total - 1, cur + delta);
-
-  pages.push(1);
-  if (left > 2) pages.push('...');
-  for (let i = left; i <= right; i++) pages.push(i);
-  if (right < total - 1) pages.push('...');
-  pages.push(total);
-  return pages;
-});
-
-const goToPage = (page) => {
-  if (typeof page === 'number' && page >= 1 && page <= totalPages.value) {
-    currentPage.value = page;
-    document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+const handlePageChange = () => {
+  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 // ── 전체 선택/해제 로직 (현재 페이지 기준) ──────────────
@@ -310,10 +288,11 @@ onMounted(async () => {
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 근무 현장</label>
-          <select v-model="selectedSite" @change="onFilterChange" class="filter-select">
+          <!--select v-model="selectedSite" @change="onFilterChange" class="filter-select">
             <option value="전체">전체</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-          </select>
+          </select-->
+          <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-account-box-outline"></i> 구분</label>
@@ -333,7 +312,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="isLoading" class="loading-state"><div class="spinner"></div><p>불러오는 중...</p></div>
+    <div v-if="isLoading" class="loading-state">
+      <div class="spinner"></div><p>불러오는 중...</p>
+    </div>
 
     <div class="table-card" v-else>
       <div class="table-header">
@@ -442,37 +423,12 @@ onMounted(async () => {
         </table>
       </div>
 
-      <div class="pagination-bar" v-if="totalPages > 1">
-        <span class="pagination-info">
-          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredPayrollList.length) }} / 총 {{ filteredPayrollList.length }}명
-        </span>
-
-        <div class="pagination-controls">
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)" title="처음">
-            <i class="mdi mdi-chevron-double-left"></i>
-          </button>
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" title="이전">
-            <i class="mdi mdi-chevron-left"></i>
-          </button>
-
-          <template v-for="p in pageNumbers" :key="p">
-            <span v-if="p === '...'" class="page-ellipsis">…</span>
-            <button
-                v-else
-                class="page-btn"
-                :class="{ active: p === currentPage }"
-                @click="goToPage(p)"
-            >{{ p }}</button>
-          </template>
-
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" title="다음">
-            <i class="mdi mdi-chevron-right"></i>
-          </button>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)" title="마지막">
-            <i class="mdi mdi-chevron-double-right"></i>
-          </button>
-        </div>
-      </div>
+      <Pagination
+          v-model:currentPage="currentPage"
+          v-model:pageSize="pageSize"
+          :totalCount="filteredPayrollList.length"
+          @change="handlePageChange"
+      />
 
     </div>
   </div>
@@ -603,40 +559,8 @@ onMounted(async () => {
 .net-pay-label { font-size: 13px; color: var(--primary); font-weight: 600; }
 .net-pay-value { font-size: 18px; color: var(--primary); font-weight: 700; letter-spacing: 0.5px;}
 
-/* === 페이지네이션 바 === */
-.pagination-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-top: 1px solid var(--border-color);
-  background: var(--bg-hover); flex-wrap: wrap; gap: 12px;
-}
-
-.pagination-info { font-size: 13px; color: var(--text-sub); }
-
-.pagination-controls { display: flex; align-items: center; gap: 4px; }
-
-.page-btn {
-  min-width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border-color); border-radius: 7px;
-  background: var(--bg-surface); color: var(--text-sub);
-  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 6px;
-}
-.page-btn:hover:not(:disabled) {
-  background: var(--primary-soft); border-color: var(--primary); color: var(--primary);
-}
-.page-btn.active {
-  background: var(--primary); border-color: var(--primary);
-  color: var(--text-inverse); font-weight: 700;
-}
-.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.page-btn i { font-size: 16px; }
-
-.page-ellipsis { min-width: 30px; text-align: center; font-size: 14px; color: var(--text-muted); letter-spacing: 1px; }
-
 /* === 반응형 === */
 @media (max-width: 768px) {
-  .pagination-bar { justify-content: center; }
-  .pagination-info { width: 100%; text-align: center; }
   .status-legend { width: 100%; justify-content: space-between; padding: 10px 0; }
   .header-right-controls { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
 }
