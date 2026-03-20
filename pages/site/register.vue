@@ -22,9 +22,9 @@ const progressPercentage = computed(() => (currentStep.value / totalSteps) * 100
 
 const steps = [
   { number: 1, title: '기본 정보',  icon: 'mdi-office-building-outline' },
-  { number: 2, title: '주소 정보',  icon: 'mdi-map-marker-outline' },
-  { number: 3, title: '계약 정보',  icon: 'mdi-file-document-outline' },
-  { number: 4, title: '담당자 정보', icon: 'mdi-account-tie-outline' }
+  // { number: 2, title: '주소 정보',  icon: 'mdi-map-marker-outline' },
+  { number: 2, title: '계약 정보',  icon: 'mdi-file-document-outline' },
+  { number: 3, title: '담당자 정보', icon: 'mdi-account-tie-outline' }
 ];
 
 const site = ref({
@@ -471,13 +471,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
               </select>
             </div>
           </div>
-          <div class="form-actions">
-            <button type="button" @click="nextStep" class="btn-next">다음 단계<i class="mdi mdi-arrow-right"></i></button>
-          </div>
-        </div>
 
-        <!-- ===== STEP 2: 주소 정보 ===== -->
-        <div v-show="currentStep === 2" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-map-marker-outline"></i><h2>주소 정보</h2>
           </div>
@@ -494,18 +488,15 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
             <div class="form-group full-width">
               <input type="text" v-model="site.addressMain" placeholder="기본 주소" required class="form-input" readonly />
             </div>
-            <!--div class="form-group full-width">
-              <input ref="detailInput" type="text" v-model="site.addressDetail" placeholder="상세 주소 입력" class="form-input" />
-            </div-->
           </div>
+
           <div class="form-actions">
-            <button type="button" @click="prevStep" class="btn-prev"><i class="mdi mdi-arrow-left"></i>이전</button>
             <button type="button" @click="nextStep" class="btn-next">다음 단계<i class="mdi mdi-arrow-right"></i></button>
           </div>
         </div>
 
         <!-- ===== STEP 3: 계약 정보 ===== -->
-        <div v-show="currentStep === 3" class="form-step">
+        <div v-show="currentStep === 2" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-file-document-outline"></i><h2>계약 및 인원 정보</h2>
           </div>
@@ -977,7 +968,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
         </div>
 
         <!-- ===== STEP 4: 담당자 정보 ===== -->
-        <div v-show="currentStep === 4" class="form-step">
+        <div v-show="currentStep === 3" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-account-tie-outline"></i><h2>담당자 및 기타 정보</h2>
           </div>
@@ -1040,7 +1031,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 
 /* 스텝 */
 .steps-container { background: var(--bg-surface); border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
-.steps-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.steps-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .step-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px; transition: all 0.2s; background: var(--bg-canvas); }
 .step-item.active { background-color: var(--primary-soft); border: 1px solid var(--primary); }
 .step-circle { width: 40px; height: 40px; border-radius: 50%; background: var(--text-muted); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s; }

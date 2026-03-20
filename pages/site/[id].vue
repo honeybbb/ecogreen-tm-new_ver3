@@ -1128,12 +1128,6 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="equip-tab-actions">
-          <button type="button" class="btn-add-equip" @click="openEquipModal()">
-            <i class="mdi mdi-plus-circle-outline"></i> 장비 등록
-          </button>
-        </div>
-
         <div v-if="equipmentList.length === 0" class="empty-state">
           <i class="mdi mdi-car-wash"></i>
           <p>등록된 미화/경비 장비가 없습니다</p>

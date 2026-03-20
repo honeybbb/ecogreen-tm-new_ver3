@@ -7,7 +7,8 @@ const props = defineProps({
   siteOptions: Array,
   positionOptions: Array,
   wageItems: Array,
-  employeeType: String
+  employeeType: String,
+  isEditing: Boolean
 });
 
 const emit = defineEmits(['close', 'save']);
@@ -46,7 +47,16 @@ const contractData = ref({
 
 watch(() => props.employeeData, (newData) => {
   if (newData) {
+    // 기본 정보 덮어쓰기
     contractData.value = { ...contractData.value, ...newData };
+
+    // 부모로부터 받은 contract.contractData 값을 wageInputs에 연결
+    if (newData.contract && newData.contract.contractData) {
+      contractData.value.wageInputs = { ...newData.contract.contractData };
+    } else {
+      // 계약 데이터가 없으면 초기화
+      contractData.value.wageInputs = {};
+    }
   }
 }, { immediate: true, deep: true });
 
@@ -82,8 +92,8 @@ const positionName = computed(() => {
 
 const contractType = computed(() => {
   const type = props.employeeType || contractData.value.type;
-  if (type === '01001' || type === 'cleaning') return 'cleaning';
-  if (type === '01002' || type === 'security') return 'security';
+  if (type === '미화' || type === 'cleaning') return 'cleaning';
+  if (type === '경비' || type === 'security') return 'security';
   return 'cleaning';
 });
 
@@ -91,7 +101,17 @@ const isCleaning = computed(() => contractType.value === 'cleaning');
 const isSecurity = computed(() => contractType.value === 'security');
 
 const handleSave = () => {
-  emit('save', contractData.value);
+  const extractedContractData = {
+    // cleaningSchedule: contractData.value.cleaningSchedule,
+    // securitySchedule: contractData.value.securitySchedule,
+    // emergencyContact1: contractData.value.emergencyContact1,
+    // emergencyContact2: contractData.value.emergencyContact2,
+    wageInputs: contractData.value.wageInputs,
+    endDate: contractData.value.endDate
+  };
+
+  // emit('save', contractData.value);
+  emit('save', extractedContractData);
   emit('close');
 };
 
@@ -170,7 +190,7 @@ const handleClose = () => {
             <div class="contract-content">
               <p>
                 "을"은 "갑"의
-                <select v-model="contractData.site" class="inline-select">
+                <select v-model="contractData.site" class="inline-select" disabled>
                   <option value="">선택</option>
                   <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
                     {{ site.name }}
@@ -190,7 +210,7 @@ const handleClose = () => {
                 "을"의 직무는
                 <span class="highlight-text">{{ isCleaning ? '미화직' : '경비직' }}</span>,
                 직책(위)은
-                <select v-model="contractData.position" class="inline-select">
+                <select v-model="contractData.position" class="inline-select" disabled>
                   <option value="">선택</option>
                   <option v-for="pos in positionOptions" :key="pos.itemCd" :value="pos.itemCd">
                     {{ pos.itemNm }}
@@ -222,8 +242,6 @@ const handleClose = () => {
                           type="number"
                           class="wage-input"
                           v-model="contractData.wageInputs[wage.itemCd]"
-                          :placeholder="wage.itemNm.includes('기본급') ? (isCleaning ? '1000000' : '2500000') :
-                                       wage.itemNm.includes('직책') ? (isCleaning ? '50000' : '100000') : '0'"
                       />
                     </td>
                     <td class="total-cell">{{ totalWage.toLocaleString() }}원</td>
@@ -418,19 +436,19 @@ const handleClose = () => {
               <div class="emergency-contacts">
                 <div class="contact-group">
                   <span>성명:</span>
-                  <input type="text" v-model="contractData.emergencyContact1.name" placeholder="홍길동" />
+                  <input type="text" v-model="contractData.emergencyContact1.name" placeholder="" />
                   <span>관계:</span>
-                  <input type="text" v-model="contractData.emergencyContact1.relation" placeholder="부" />
+                  <input type="text" v-model="contractData.emergencyContact1.relation" placeholder="" />
                   <span>연락처:</span>
-                  <input type="tel" v-model="contractData.emergencyContact1.phone" placeholder="010-0000-0000" />
+                  <input type="tel" v-model="contractData.emergencyContact1.phone" placeholder="" />
                 </div>
                 <div class="contact-group">
                   <span>성명:</span>
-                  <input type="text" v-model="contractData.emergencyContact2.name" placeholder="김영희" />
+                  <input type="text" v-model="contractData.emergencyContact2.name" placeholder="" />
                   <span>관계:</span>
-                  <input type="text" v-model="contractData.emergencyContact2.relation" placeholder="모" />
+                  <input type="text" v-model="contractData.emergencyContact2.relation" placeholder="" />
                   <span>연락처:</span>
-                  <input type="tel" v-model="contractData.emergencyContact2.phone" placeholder="010-0000-0000" />
+                  <input type="tel" v-model="contractData.emergencyContact2.phone" placeholder="" />
                 </div>
               </div>
             </div>
@@ -465,7 +483,7 @@ const handleClose = () => {
           <i class="mdi mdi-close"></i>
           닫기
         </button>
-        <button @click="handleSave" class="btn-modal-save">
+        <button v-if="isEditing" @click="handleSave" class="btn-modal-save">
           <i class="mdi mdi-content-save"></i>
           저장
         </button>

@@ -17,6 +17,7 @@ import axios from 'axios'
 import { useRoute, useRouter } from '#app'
 import { useAuthStore } from '~/stores/auth.js'
 import Pagination from '~/components/Pagination.vue'
+import SiteSelect from "~/components/SiteSelect.vue";
 
 // ────────────────────────────────────────────────────────────
 // 공통 유틸
@@ -50,9 +51,9 @@ const { siteOptions, fetchSiteOptions } = useApi()
 // ────────────────────────────────────────────────────────────
 // 탭 관리
 // ────────────────────────────────────────────────────────────
-const TAB_LIST = [
-  { id: 'request', icon: 'mdi-inbox-arrow-down-outline', label: '신청 관리' },
-  { id: 'quota',   icon: 'mdi-chart-donut',              label: '잔여 현황' },
+const tabs = [
+  { id: 'request', icon: 'mdi-inbox-arrow-down-outline', name: '신청 관리' },
+  { id: 'quota',   icon: 'mdi-chart-donut',              name: '잔여 현황' },
 ]
 
 const activeTab = ref(route.query.tab || 'request')
@@ -73,6 +74,7 @@ async function changeTab(id) {
 const reqFilter = ref({
   startDate: firstOfMonth(),
   endDate:   today(),
+  sIdx: '전체',
   status:    '전체',
   keyword:   '',
 })
@@ -100,8 +102,9 @@ const statsReq = computed(() => {
 const filteredReq = computed(() =>
     requests.value.filter(r => {
       const stOk = reqFilter.value.status === '전체' || r.status == reqFilter.value.status
+      const sIdx = reqFilter.value.sIdx === '전체' || reqFilter.value.sIdx === '' || r.sIdx == reqFilter.value.sIdx
       const kwOk = (r.staff || '').includes(reqFilter.value.keyword)
-      return stOk && kwOk
+      return stOk && kwOk && sIdx
     })
 )
 
@@ -352,9 +355,9 @@ async function executeSettle() {
 // 라이프사이클
 // ────────────────────────────────────────────────────────────
 onMounted(async () => {
-  fetchSiteOptions()
+  await fetchSiteOptions()
   await fetchRequests()
-  if (activeTab.value === 'quota') fetchQuotaList()
+  if (activeTab.value === 'quota') await fetchQuotaList()
 })
 </script>
 
@@ -369,17 +372,39 @@ onMounted(async () => {
         </h1>
         <p class="page-subtitle">연차 신청 승인, 잔여 현황, 부여 및 중간정산을 관리합니다</p>
       </div>
+      <!-- 액션바 -->
+      <div class="header-actions" v-if="activeTab === 'quota'">
+        <button @click="openGrant" class="btn-add">
+          <i class="mdi mdi-gift-outline"></i> 연차 부여
+        </button>
+      </div>
+      <!-- 일괄 처리 액션바 -->
+      <div class="header-actions" v-else>
+        <div class="action-bar-left">
+          <transition name="fade">
+            <div v-if="selectedReq.length > 0" class="bulk-actions">
+              <button class="btn-save" @click="bulkUpdateStatus(1)">
+                <!--i class="mdi mdi-check-all"></i--> 일괄 승인
+              </button>
+              <button class="btn-delete" @click="bulkUpdateStatus(2)">
+                <!--i class="mdi mdi-close-circle-outline"></i--> 일괄 반려
+              </button>
+            </div>
+          </transition>
+        </div>
+
+      </div>
     </div>
 
     <!-- ── 탭 ── -->
     <div class="tab-nav">
       <button
-          v-for="tab in TAB_LIST" :key="tab.id"
+          v-for="tab in tabs" :key="tab.id"
           :class="['tab-btn', { active: activeTab === tab.id }]"
           @click="changeTab(tab.id)"
       >
         <i :class="['mdi', tab.icon]"></i>
-        {{ tab.label }}
+        {{ tab.name }}
         <span v-if="tab.id === 'request' && statsReq.pending > 0" class="tab-badge">
           {{ statsReq.pending }}
         </span>
@@ -435,6 +460,10 @@ onMounted(async () => {
             </div>
           </div>
           <div class="filter-group">
+            <label class="filter-label"><span>현장</span></label>
+            <SiteSelect v-model="reqFilter.sIdx" />
+          </div>
+          <div class="filter-group">
             <label class="filter-label"><i class="mdi mdi-list-status"></i> 상태</label>
             <select v-model="reqFilter.status" class="filter-select">
               <option value="전체">전체 상태</option>
@@ -453,23 +482,6 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-      </div>
-
-      <!-- 일괄 처리 액션바 -->
-      <div class="action-bar">
-        <div class="action-bar-left">
-          <transition name="fade">
-            <div v-if="selectedReq.length > 0" class="bulk-actions">
-              <button class="btn-approve-bulk" @click="bulkUpdateStatus(1)">
-                <!--i class="mdi mdi-check-all"></i--> 일괄 승인
-              </button>
-              <button class="btn-reject-bulk" @click="bulkUpdateStatus(2)">
-                <!--i class="mdi mdi-close-circle-outline"></i--> 일괄 반려
-              </button>
-            </div>
-          </transition>
-        </div>
-
       </div>
 
       <!-- 테이블 -->
@@ -606,10 +618,11 @@ onMounted(async () => {
           </div>
           <div class="filter-group">
             <label class="filter-label">현장</label>
-            <select v-model="quotaFilter.sIdx" class="filter-select">
+            <!--select v-model="quotaFilter.sIdx" class="filter-select">
               <option value="전체">전체 현장</option>
               <option v-for="s in siteOptions" :key="s.idx" :value="s.idx">{{ s.name }}</option>
-            </select>
+            </select-->
+            <SiteSelect v-model="quotaFilter.sIdx" />
           </div>
           <div class="search-group">
             <div class="search-box">
@@ -623,15 +636,6 @@ onMounted(async () => {
             </div>
             <button @click="fetchQuotaList" class="btn-search">조회</button>
           </div>
-        </div>
-      </div>
-
-      <!-- 액션바 -->
-      <div class="action-bar">
-        <div class="action-bar-left">
-          <button @click="openGrant" class="btn-add">
-            <i class="mdi mdi-gift-outline"></i> 연차 부여
-          </button>
         </div>
       </div>
 
@@ -661,6 +665,7 @@ onMounted(async () => {
                 <input type="checkbox" v-model="selectAllQuota" class="custom-cb" />
               </th>
               <th>직원명</th>
+              <th>발생년도</th>
               <th>현장</th>
               <th class="text-center">입사일</th>
               <th class="text-center">부여</th>
@@ -691,6 +696,7 @@ onMounted(async () => {
                   <span class="font-bold">{{ item.name }}</span>
                   <span class="badge badge-gray ml-1">{{ item.role }}</span>
                 </td>
+                <td>2026</td>
                 <td class="text-gray text-sm">{{ item.siteName }}</td>
                 <td class="text-center text-gray text-sm">{{ item.inDate }}</td>
                 <td class="text-center">
@@ -870,18 +876,14 @@ onMounted(async () => {
 ──────────────────────────────────────────────────────────── */
 
 /* ── 탭 ── */
-.tab-nav { display:flex; border-bottom:2px solid var(--border-color); margin-bottom:24px; }
-.tab-btn {
-  display:flex; align-items:center; gap:8px;
-  padding:13px 24px; background:transparent; border:none;
-  font-size:14px; font-weight:600; color:var(--text-sub);
-  cursor:pointer; position:relative; transition:color .2s;
-  border-bottom:2px solid transparent; margin-bottom:-2px;
-  font-family:inherit;
-}
-.tab-btn i { font-size:18px; }
-.tab-btn:hover  { color:var(--text-main); }
-.tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+.tab-nav { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); }
+.tab-btn { padding: 10px 20px; border: none; background: none; font-size: 13px; font-weight: 600; color: var(--text-sub); cursor: pointer; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 7px; transition: all .2s; position: relative; bottom: -2px; font-family: inherit; letter-spacing: -.02em; }
+.tab-btn i { font-size: 17px; }
+.tab-btn:hover { background: var(--primary-soft); color: var(--primary); }
+.tab-btn.active { color: var(--primary); background: var(--bg-surface); border: 2px solid var(--border-color); border-bottom: 2px solid var(--bg-surface); }
+.tab-count { background: var(--primary-soft); color: var(--primary); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center; }
+.tab-btn.active .tab-count { background: var(--primary); color: #fff; }
+
 .tab-badge {
   min-width:18px; height:18px; padding:0 5px;
   background:var(--danger); color:#fff;
@@ -911,16 +913,22 @@ onMounted(async () => {
 .date-range { display:flex; align-items:center; gap:8px; }
 
 /* ── 일괄 승인/반려 버튼 ── */
-.btn-approve-bulk, .btn-reject-bulk {
-  display:flex; align-items:center; gap:5px;
-  padding:6px 14px; border:none; border-radius:7px;
-  font-size:12px; font-weight:700; cursor:pointer; transition:all .2s;
-  font-family:inherit;
+.btn-delete {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px;
+  height: 42px;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-inverse);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
 }
-.btn-approve-bulk { background:var(--success); color:#fff; }
-.btn-approve-bulk:hover { background:var(--success-hover); transform:translateY(-1px); }
-.btn-reject-bulk  { background:var(--danger);  color:#fff; }
-.btn-reject-bulk:hover  { filter:brightness(.9); transform:translateY(-1px); }
 
 /* ── 상태 배지 ── */
 .status-badge {
