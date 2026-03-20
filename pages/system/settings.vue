@@ -209,12 +209,6 @@ onMounted(() => {
         </h1>
         <p class="page-subtitle">ERP 좌측 메뉴의 구성, 접근 권한, 노출 여부를 통합 관리합니다</p>
       </div>
-      <!--div class="header-actions">
-        <button @click="fetchMenus" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
-        </button>
-      </div-->
     </div>
 
     <div class="table-card">
@@ -251,7 +245,7 @@ onMounted(() => {
             <td class="text-center">
               <div class="drag-handle-wrap">
                 <i class="mdi mdi-drag drag-icon" title="드래그하여 순서 변경"></i>
-                <input v-if="parent.isEditing" type="number" v-model="parent.sort" class="input-sort">
+                <input v-if="parent.isEditing" type="number" v-model="parent.sort" class="input-edit text-center" style="width: 50px;">
                 <span v-else class="sort-badge">{{ parent.sort }}</span>
               </div>
             </td>
@@ -267,33 +261,32 @@ onMounted(() => {
             </td>
             <td class="text-gray">{{ parent.menuPath }}</td>
             <td>
-              <select v-if="parent.isEditing" v-model="parent.masterOnly" @change="handleParentMasterChange(parent)" class="input-select">
+              <select v-if="parent.isEditing" v-model="parent.masterOnly" @change="handleParentMasterChange(parent)" class="filter-select" style="width: 100%;">
                 <option value="Y">마스터 전용</option>
                 <option value="N">전체 허용</option>
               </select>
               <span v-else :class="['auth-badge', parent.masterOnly === 'Y' ? 'master' : 'all']">
-                    <!--i :class="['mdi', parent.masterOnly === 'Y' ? 'mdi-shield-lock-outline' : 'mdi-account-group-outline']"></i-->
-                    {{ parent.masterOnly === 'Y' ? '마스터 전용' : '전체 허용' }}
-                  </span>
+                  {{ parent.masterOnly === 'Y' ? '마스터 전용' : '전체 허용' }}
+                </span>
             </td>
             <td class="text-center">
-              <div @click="toggleUse(parent)" :class="['toggle-switch', parent.useFl === 'Y' ? 'active' : '']">
-                <div class="switch-handle"></div>
-                <span class="switch-label">{{ parent.useFl === 'Y' ? 'ON' : 'OFF' }}</span>
+              <div @click="toggleUse(parent)" :class="['custom-toggle', parent.useFl === 'Y' ? 'active' : '']">
+                <div class="toggle-handle"></div>
+                <span class="toggle-text">{{ parent.useFl === 'Y' ? 'ON' : 'OFF' }}</span>
               </div>
             </td>
             <td class="text-center">
               <div class="action-buttons">
                 <template v-if="!parent.isEditing">
-                  <button @click="startInlineEdit(parent)" class="btn-action btn-edit">
+                  <button @click="startInlineEdit(parent)" class="btn-detail" style="background-color: var(--primary-soft); color: var(--primary);">
                     <i class="mdi mdi-pencil-outline"></i> 수정
                   </button>
                 </template>
                 <template v-else>
-                  <button @click="saveInlineEdit(parent)" class="btn-action btn-save-small">
+                  <button @click="saveInlineEdit(parent)" class="btn-detail" style="background-color: var(--success); color: white;">
                     <i class="mdi mdi-check"></i> 저장
                   </button>
-                  <button @click="cancelInlineEdit(parent)" class="btn-action btn-cancel">
+                  <button @click="cancelInlineEdit(parent)" class="btn-detail" style="background-color: var(--bg-canvas); color: var(--text-sub);">
                     <i class="mdi mdi-close"></i>
                   </button>
                 </template>
@@ -318,47 +311,47 @@ onMounted(() => {
           >
             <td class="text-center">
               <div class="drag-handle-wrap child-handle">
-                <i class="mdi mdi-drag drag-icon-sm" title="드래그하여 순서 변경"></i>
-                <input v-if="child.isEditing" type="number" v-model="child.sort" class="input-sort">
+                <i class="mdi mdi-drag drag-icon-sm"></i>
+                <input v-if="child.isEditing" type="number" v-model="child.sort" class="input-edit text-center" style="width: 45px; padding: 4px;">
                 <span v-else class="sort-dot">{{ child.sort }}</span>
               </div>
             </td>
-            <td class="text-center">
-              <div class="child-connector"></div>
-            </td>
+            <td class="text-center"><div class="child-connector"></div></td>
             <td class="pl-8">
               <div class="menu-name-wrap">
                 <i class="mdi mdi-subdirectory-arrow-right connector-icon"></i>
-                <input v-if="child.isEditing" type="text" v-model="child.menuNm" class="input-edit-sm">
+                <input v-if="child.isEditing" type="text" v-model="child.menuNm" class="input-edit" style="font-size: 12px;">
                 <span v-else class="child-name">{{ child.menuNm }}</span>
               </div>
             </td>
-            <td class="text-gray-sm">{{ child.menuPath }}</td>
+            <td class="text-gray" style="font-size: 12px;">{{ child.menuPath }}</td>
             <td>
-              <select v-if="child.isEditing" v-model="child.masterOnly" class="input-select">
+              <select v-if="child.isEditing" v-model="child.masterOnly" class="filter-select" style="width: 100%; height: 32px; font-size: 11px;">
                 <option value="Y">마스터 전용</option>
                 <option value="N">전체 허용</option>
               </select>
-              <span v-else :class="['auth-badge', child.masterOnly === 'Y' ? 'master' : 'all']">
-                    {{ child.masterOnly === 'Y' ? '마스터 전용' : '전체 허용' }}
-                  </span>
+              <span v-else :class="['auth-badge', child.masterOnly === 'Y' ? 'master' : 'all']" style="transform: scale(0.9);">
+                  {{ child.masterOnly === 'Y' ? '마스터 전용' : '전체 허용' }}
+                </span>
             </td>
             <td class="text-center">
-              <div @click="toggleUse(child)" :class="['toggle-switch', child.useFl === 'Y' ? 'active' : '']" style="margin: 0 auto;">
-                <div class="switch-handle"></div>
-                <span class="switch-label">{{ child.useFl === 'Y' ? 'ON' : 'OFF' }}</span>
+              <div @click="toggleUse(child)" :class="['custom-toggle sm', child.useFl === 'Y' ? 'active' : '']">
+                <div class="toggle-handle"></div>
+                <span class="toggle-text">{{ child.useFl === 'Y' ? 'ON' : 'OFF' }}</span>
               </div>
             </td>
-            <td class="text-center bg-child">
+            <td class="text-center">
               <div class="action-buttons">
                 <template v-if="!child.isEditing">
-                  <button @click="startInlineEdit(child)" class="btn-action btn-edit">
+                  <button @click="startInlineEdit(child)" class="btn-detail" style="background-color: var(--primary-soft); color: var(--primary);">
                     <i class="mdi mdi-pencil-outline"></i> 수정
                   </button>
                 </template>
                 <template v-else>
-                  <button @click="saveInlineEdit(child)" class="btn-action btn-save-small"><i class="mdi mdi-check"></i> 저장</button>
-                  <button @click="cancelInlineEdit(child)" class="btn-action btn-cancel-small"><i class="mdi mdi-close"></i></button>
+                  <button @click="saveInlineEdit(child)" class="btn-detail" style="background-color: var(--success); color: var(--bg-surface);">
+                    <i class="mdi mdi-check"></i> 저장
+                  </button>
+                  <button @click="cancelInlineEdit(child)" class="btn-detail" style="background-color: var(--bg-canvas); color: var(--text-sub);"><i class="mdi mdi-close"></i></button>
                 </template>
               </div>
             </td>
@@ -368,14 +361,14 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="info-box">
+    <div class="info-box-container">
       <i class="mdi mdi-information-outline"></i>
       <div class="info-content">
         <strong>메뉴 통합 설정 안내</strong>
         <ul>
-          <li><strong>마우스 드래그:</strong> 좌측의 <i class="mdi mdi-drag"></i> 아이콘을 클릭하고 <strong>위아래로 끌어 메뉴 그룹 혹은 하위 메뉴의 노출 순서를 직관적으로 변경</strong>할 수 있습니다.</li>
-          <li><strong>노출 여부:</strong> 'OFF' 처리된 메뉴는 해당 회사 전체 사용자에게 보이지 않습니다.</li>
-          <li><strong>동기화 규칙:</strong> 상위 그룹 메뉴의 권한을 '마스터 전용'으로 변경하면 하위 메뉴들도 자동 동기화됩니다.</li>
+          <li><strong>마우스 드래그:</strong> 좌측의 <i class="mdi mdi-drag"></i> 아이콘을 클릭하여 메뉴 노출 순서를 변경할 수 있습니다.</li>
+          <li><strong>노출 여부:</strong> 'OFF' 처리된 메뉴는 해당 회사 전체 사용자에게 숨겨집니다.</li>
+          <li><strong>동기화 규칙:</strong> 상위 그룹 권한 변경 시 하위 메뉴도 자동 동기화됩니다.</li>
         </ul>
       </div>
     </div>
@@ -383,166 +376,80 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* === 테이블 영역 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; margin-bottom: 24px;
-}
-
+/* 스크롤바 */
 .table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll-container::-webkit-scrollbar { height: 8px; }
-.table-scroll-container::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-canvas); }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
 
-.th-content { display: flex; align-items: center; gap: 6px; }
-.th-content i { font-size: 14px; opacity: 0.8; }
+/* 테이블 커스텀 */
+.th-content { display: flex; align-items: center; gap: 6px; color: var(--text-main); }
+.row-parent { background-color: var(--bg-surface); }
+.row-child { background-color: var(--bg-hover); opacity: 0.9; }
 
-/* 행 배경색 및 패딩 */
-.row-parent, .row-child { transition: background-color 0.2s; }
-.row-parent { background: #fff; border-bottom: 1px solid #e2e8f0; }
-.row-parent:hover { background: #f8fafc; }
-.row-parent td { padding: 14px 16px; vertical-align: middle; }
+/* 드래그 앤 드롭 피드백 */
+.drop-target-tbody { border-top: 2px solid var(--primary) !important; }
+.drop-target-tbody > tr { background-color: var(--primary-soft) !important; }
+.dragging-tbody { opacity: 0.4; }
+.drop-target-child { border-top: 2px solid var(--primary) !important; background-color: var(--primary-soft) !important; }
 
-.row-child { background: #fdfdfd; border-bottom: 1px solid #f1f5f9; }
-.row-child:hover { background: #f8fafc; }
-.row-child td { padding: 10px 16px; font-size: 13px; vertical-align: middle; }
-
-/* === ★ 드래그 앤 드롭 플랫 피드백 ★ === */
-.drop-target-tbody { border-top: 2px solid #4f46e5 !important; }
-.drop-target-tbody > tr { background-color: #eef2ff !important; }
-.dragging-tbody > tr { opacity: 0.5; background-color: #f1f5f9 !important; }
-.dragging-child { opacity: 0.5; background-color: #f1f5f9 !important; }
-.drop-target-child { border-top: 2px solid #4f46e5 !important; background-color: #eef2ff !important; }
-
-/* 드래그 아이콘 및 순서 배지 */
-.drag-handle-wrap { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.child-handle { justify-content: flex-end; padding-right: 10px; }
-.drag-icon { font-size: 20px; color: #cbd5e1; cursor: grab; transition: 0.2s; }
-.drag-icon:hover { color: #4f46e5; }
-.drag-icon:active { cursor: grabbing; color: #4338ca; }
-.drag-icon-sm { font-size: 16px; color: #cbd5e1; cursor: grab; transition: 0.2s; }
-.drag-icon-sm:hover { color: #4f46e5; }
-
-.sort-badge {
-  display: inline-flex; width: 28px; height: 28px; background-color: #f1f5f9; color: #475569;
-  border-radius: 6px; align-items: center; justify-content: center; font-weight: 600; font-size: 12px;
-}
-.sort-dot {
-  display: inline-flex; width: 22px; height: 22px; background-color: #f8fafc; color: #94a3b8;
-  border-radius: 4px; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
-}
-.input-sort {
-  width: 44px; padding: 4px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center;
-  outline: none; font-size: 12px; color: #1e293b; background: white; transition: all 0.2s;
-}
-.input-sort:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-
-/* 메뉴명 & 아이콘 */
-.menu-name-wrap { display: flex; align-items: center; gap: 8px; }
-.parent-name { font-weight: 700; color: #1e293b; font-size: 14px; }
-.child-name { color: #475569; font-weight: 500; font-size: 13px;}
-.menu-key-tag {
-  font-size: 11px; background: #f8fafc;
-  color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-weight: 500;
-}
-
+/* 아이콘 및 텍스트 */
 .icon-box {
-  font-size: 20px; color: #64748b; background: #f1f5f9; width: 36px; height: 36px;
-  border-radius: 8px; display: flex; align-items: center; justify-content: center; margin: 0 auto;
+  width: 36px; height: 36px; border-radius: 8px;
+  background: var(--bg-canvas); color: var(--text-sub);
+  display: flex; align-items: center; justify-content: center; margin: 0 auto;
 }
-.icon-box i { line-height: 1; }
-.connector-icon { color: #cbd5e1; font-size: 18px; }
+.parent-name { color: var(--text-main); font-weight: 700; }
+.child-name { color: var(--text-sub); font-weight: 500; }
+.menu-key-tag { font-size: 11px; background: var(--bg-canvas); color: var(--text-muted); padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
 
-/* 인라인 편집 Input / Select (플랫 링 효과) */
-.input-select {
-  padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-weight: 500;
-  color: #334155; outline: none; background: white; cursor: pointer; width: 110px; transition: all 0.2s;
+/* 드래그 핸들 */
+.drag-icon { font-size: 20px; color: var(--text-muted); cursor: grab; }
+.drag-icon:hover { color: var(--primary); }
+.sort-badge { background: var(--bg-canvas); color: var(--text-main); padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; }
+.sort-dot { background: var(--border-color); color: var(--text-sub); padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+
+/* 커스텀 토글 스위치 (기존 CSS와 충돌 방지를 위해 클래스명 변경) */
+.custom-toggle {
+  width: 52px; height: 26px; background: var(--border-focus); border-radius: 13px;
+  position: relative; cursor: pointer; transition: 0.3s; margin: 0 auto;
 }
-.input-select:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.input-select.sm { padding: 4px 8px; font-size: 11px; width: 100px; }
-
-.input-edit, .input-edit-sm {
-  padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; color: #1e293b;
-  width: 140px; outline: none; transition: all 0.2s;
+.custom-toggle.active { background: var(--success); }
+.toggle-handle {
+  width: 20px; height: 20px; background: var(--bg-surface); border-radius: 50%;
+  position: absolute; top: 3px; left: 3px; transition: 0.3s;
 }
-.input-edit:focus, .input-edit-sm:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.input-edit-sm { font-size: 12px; width: 130px; }
+.custom-toggle.active .toggle-handle { left: 29px; }
+.toggle-text {
+  font-size: 9px; font-weight: 800; color: var(--bg-surface);
+  position: absolute; top: 6px; right: 8px;
+}
+.custom-toggle.active .toggle-text { left: 8px; right: auto; }
+/*
+.custom-toggle.sm { width: 42px; height: 20px; }
+.custom-toggle.sm .toggle-handle { width: 14px; height: 14px; }
+.custom-toggle.sm.active .toggle-handle { left: 25px; }
+ */
 
-/* 권한 배지 (플랫 파스텔톤) */
+/* 권한 배지 */
 .auth-badge {
-  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
-  border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700;
 }
-.auth-badge.master { background-color: #fef2f2; color: #dc2626; }
-.auth-badge.all { background-color: #f0fdf4; color: #16a34a; }
-.auth-badge.sm { padding: 3px 8px; font-size: 10px; }
+.auth-badge.master { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.auth-badge.all { background: var(--primary-soft); color: var(--primary); }
 
-/* 토글 스위치 (플랫) */
-.toggle-switch {
-  width: 56px; background-color: #cbd5e1; border-radius: 20px; position: relative;
-  cursor: pointer; transition: all 0.3s; padding: 4px; margin: 0 auto; box-sizing: border-box;
+/* 하단 정보 박스 */
+.info-box-container {
+  display: flex; gap: 14px; padding: 20px;
+  background: var(--primary-soft); border-radius: 12px;
+  border: 1px solid var(--border-color); margin-top: 20px;
 }
-.toggle-switch.active { background-color: #10b981; }
-.switch-handle {
-  width: 18px; height: 18px; background: white; border-radius: 50%;
-  transition: all 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-.toggle-switch.active .switch-handle { transform: translateX(30px); }
-.switch-label { position: absolute; right: 8px; top: 6px; font-size: 10px; font-weight: 700; color: white; }
-.toggle-switch.active .switch-label { left: 8px; right: auto; }
+.info-box-container i { font-size: 24px; color: var(--primary); }
+.info-content strong { color: var(--text-main); font-size: 14px; margin-bottom: 6px; display: block; }
+.info-content ul { padding-left: 20px; margin: 0; color: var(--text-sub); font-size: 13px; line-height: 1.6; }
 
-.toggle-switch.sm { width: 40px; height: 20px; padding: 3px; }
-.switch-handle.sm { width: 14px; height: 14px; }
-.toggle-switch.sm.active .switch-handle { transform: translateX(20px); }
-
-/* 액션 버튼 관리 */
-.action-buttons { display: flex; justify-content: center; gap: 6px; align-items: center; }
-.btn-action {
-  padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
-  cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 4px; border: none; white-space: nowrap;
-}
-
-.btn-edit { background-color: #eef2ff; color: #4f46e5; }
-.btn-edit:hover { background-color: #e0e7ff; color: #4338ca; }
-.btn-edit-outline { background-color: white; border: 1px solid #cbd5e1; color: #475569; padding: 5px 10px; }
-.btn-edit-outline:hover { border-color: #94a3b8; background: #f8fafc; color: #1e293b;}
-
-.btn-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-save:hover { background-color: #059669; transform: translateY(-1px); }
-.btn-save-small { background-color: #10b981; color: white; padding: 5px 12px; }
-
-.btn-cancel { background-color: #fef2f2; color: #dc2626; padding: 6px 8px; }
-.btn-cancel:hover { background-color: #fee2e2; }
-.btn-cancel-small { background-color: #fef2f2; color: #dc2626; padding: 5px 8px; }
-
-/* Sticky 컬럼 영역 */
-.sticky-col { position: sticky; right: 0; box-shadow: -4px 0 8px rgba(0,0,0,0.03); z-index: 5;}
-.data-table thead .sticky-col { background-color: #6d28d9; z-index: 15; box-shadow: none; border-left: 1px solid rgba(255,255,255,0.1);}
-.bg-parent { background: #fff; border-left: 1px solid #e2e8f0; }
-.row-parent:hover .bg-parent { background: #f8fafc; }
-.bg-child { background: #fdfdfd; border-left: 1px solid #f1f5f9; }
-.row-child:hover .bg-child { background: #f8fafc; }
-
-/* === 하단 정보 박스 === */
-.info-box {
-  display: flex; gap: 14px; padding: 20px 24px; background-color: #eff6ff;
-  border: 1px solid #bfdbfe; border-radius: 12px; margin-top: 24px; color: #1e40af;
-}
-.info-box i { font-size: 24px; color: #4f46e5; flex-shrink: 0; margin-top: 2px;}
-.info-content strong { display: block; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
-.info-content ul { padding-left: 20px; margin: 0; }
-.info-content li { font-size: 13px; line-height: 1.6; font-weight: 500; color: #1e3a8a;}
-
-/* 유틸리티 */
-.text-center { text-align: center; }
-.text-gray { color: #64748b; font-size: 13px;}
-.text-gray-sm { color: #94a3b8; font-size: 12px; }
+/* 공통 유틸리티 */
+.action-buttons { display: flex; gap: 4px; justify-content: center; }
 .pl-8 { padding-left: 32px !important; }
-
-/* === 반응형 (Responsive) === */
-@media (max-width: 1024px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; }
-  .btn-refresh { flex: 1; justify-content: center; }
-}
+.text-gray { color: var(--text-sub); }
 </style>
