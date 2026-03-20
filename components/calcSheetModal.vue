@@ -503,14 +503,13 @@ const printSheet = () => window.print();
   font-size: 15px; font-weight: 700; color: #fff;
   background: transparent; border: 1px solid rgba(255,255,255,.3);
   border-radius: 6px; padding: 6px 12px; width: 100%; max-width: 420px;
-  font-family: inherit;
 }
 .cs-title-inp:focus { outline: none; border-color: #ffd700; }
 .cs-header-right { display: flex; gap: 8px; }
 .cs-btn {
   padding: 7px 16px; border: none; border-radius: 6px;
   font-size: 13px; font-weight: 700; cursor: pointer;
-  font-family: inherit; transition: .15s;
+  transition: .15s;
 }
 .cs-btn-print { background: #2c7a4b; color: #fff; }
 .cs-btn-print:hover { background: #1f5c38; }
@@ -563,7 +562,6 @@ th, td { border: 1px solid #999; padding: 0; vertical-align: middle; }
   flex: 1; min-width: 80px;
   border: 1px solid transparent; font-size: 11px;
   padding: 2px 4px; border-radius: 3px; background: transparent;
-  font-family: inherit;
 }
 .cs-lbl-inp:focus { border-color: #4a6fa5; background: #f0f4ff; outline: none; }
 .cs-row-del {
@@ -577,7 +575,7 @@ th, td { border: 1px solid #999; padding: 0; vertical-align: middle; }
   width: 100%; min-width: 80px;
   border: 1px solid transparent; font-size: 11px;
   text-align: right; padding: 2px 4px; border-radius: 3px;
-  background: transparent; font-family: inherit;
+  background: transparent;
 }
 .cs-val-inp:focus { border-color: #4a6fa5; background: #f0f4ff; outline: none; }
 .cs-val-inp::-webkit-inner-spin-button { opacity: 0; }

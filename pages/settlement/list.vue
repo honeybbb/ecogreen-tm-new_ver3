@@ -5,22 +5,13 @@ import axios from 'axios';
 import SettlementModal from '@/components/SettlementModal.vue';
 
 const {typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions} = useApi();
-// const typeOptions = ref(['청소', '경비', '소독/방역']);}
-// 옵션 데이터 (JSON의 sIdx인 16, 18에 맞춰서 세팅)
-/*
-const siteOptions = ref([
-  { idx: 16, name: '쌍용플래티넘고산' },
-  { idx: 18, name: '위례롯데캐슬' },
-  { idx: 2, name: '답십리래미안' }
-]);
 
- */
 // 1. 상태 및 검색 조건
 const isLoading = ref(false);
 const error = ref(null);
 const settlements = ref([]);
 
-// 현재 년-월 (DB JSON에 맞춰 테스트용으로 2026-01로 세팅)
+// 현재 년-월
 const selectedYear = reactive({
   month: '2026-01',
 });
@@ -39,26 +30,26 @@ const isModalOpen = ref(false);
 const selectedId = ref(null);
 const initialDataForModal = ref(null);
 
-// 백엔드에서 내려주는 실제 JSON 응답 예시
-const mockApiResponse = {
-  "result": true,
-  "data": [
-    {
-      "idx": 5, "sIdx": 16, "cIdx": 1, "year": 2026, "month": 1,
-      "docType": "SERVICE", "docNo": "에코그린 2026-01-29호", "type": "경비",
-      "subTotal": 16800000, "vatAmount": 1680000, "grandTotal": 18480000,
-      "regDt": "2026-03-06 12:01:59", "status": 1
-    },
-    {
-      "idx": 7, "sIdx": 18, "cIdx": 1, "year": 2026, "month": 1,
-      "docType": "SERVICE", "docNo": "에코그린 2026-01-29호", "type": "미화",
-      "subTotal": 38586480, "vatAmount": 3858648, "grandTotal": 42445128,
-      "regDt": "2026-03-06 12:01:59", "status": 0
-    }
-  ]
+// ── 페이지네이션 상태 추가 ──────────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50); // 한 페이지당 행 수
+const pageSizeOptions = [50, 100, 200, 500];
+
+// 필터 조건 변경 시 1페이지로 리셋
+watch([selectedSite, selectedType, searchTerm, filterCompleted, filterPending, selectedYear], () => {
+  currentPage.value = 1;
+});
+
+const resetFilters = () => {
+  searchTerm.value     = '';
+  selectedSite.value   = '전체';
+  selectedType.value   = '전체';
+  filterPending.value   = false;
+  filterCompleted.value   = false;
+  currentPage.value = 1;
 };
 
-// 3. API 데이터 호출 및 매핑 로직 (핵심 변경점)
+// 3. API 데이터 호출 및 매핑 로직
 const fetchList = async () => {
   isLoading.value = true;
   error.value = null;
@@ -68,39 +59,33 @@ const fetchList = async () => {
       year: selectedYear.month.split('-')[0],
       month: selectedYear.month.split('-')[1],
     }
-    // 실제 연동 시 아래 로직 사용
     const res = await axios.get('/api/v1/settle/site/list', { params });
     const rawData = res.data.data || [];
-    console.log(rawData, 'rawData')
 
     setTimeout(() => {
-      //const rawData = mockApiResponse.data;
-
-      // DB 데이터를 프론트엔드 UI 테이블용 데이터로 변환(Mapping)
       settlements.value = rawData.map(item => {
-        // 1) 현장명 매핑
         const site = siteOptions.value.find(s => s.idx === item.sIdx);
         const siteName = site ? site.name : `알수없는현장(${item.sIdx})`;
 
-        // 2) 년월 포맷 매핑 (예: 2026, 1 -> 2026-01)
         const formattedMonth = String(item.month).padStart(2, '0');
         const targetMonth = `${item.year}-${formattedMonth}`;
 
-        // 3) 상태값 매핑 (DB의 int값을 문자열로 변환)
         let statusText = '진행중';
-        if (item.status === 1) statusText = '결재완료';
+        if (item.status === 1) statusText = '입금확인';
         else if (item.status === 2) statusText = '반려';
 
         return {
           ...item,
-          id: item.idx,                       // No. 컬럼용 (idx)
-          siteName: siteName,                 // 찾아낸 현장명
-          target_month: targetMonth,          // YYYY-MM 형태
-          total_amount: item.grandTotal,      // 총 청구금액
-          statusText: statusText,             // 문자열 상태 (결재완료 등)
-          regDtShort: item.regDt.split(' ')[0] // 날짜 시간 중 날짜만 표시 (YYYY-MM-DD)
+          id: item.idx,
+          siteName: siteName,
+          target_month: targetMonth,
+          total_amount: item.grandTotal,
+          statusText: statusText,
+          regDtShort: item.regDt.split(' ')[0],
+          selected: false // 체크박스 선택 상태 추가
         };
       });
+      currentPage.value = 1; // 조회 완료 시 첫 페이지로
       isLoading.value = false;
     }, 500);
   } catch (e) {
@@ -118,21 +103,21 @@ const toggleSort = (key) => {
     sortKey.value = key;
     sortOrder.value = 'asc';
   }
+  currentPage.value = 1; // 정렬 변경 시 1페이지로 리셋
 };
 
-// 5. 필터링 + 정렬된 결과 계산 (필터 조건 변경됨)
+// 5. 필터링 + 정렬된 결과 계산
 const filteredSettlements = computed(() => {
   let result = settlements.value.filter(item => {
     const monthMatch = item.target_month === selectedYear.month;
     const siteMatch = selectedSite.value === '전체' || item.sIdx === selectedSite.value;
     const searchMatch = item.siteName.toLowerCase().includes(searchTerm.value.toLowerCase());
 
-    // JSON 데이터는 '미화' 로 오고 UI는 '청소'일 수 있으므로 유연하게 처리
     const typeMatch = selectedType.value === '전체' || item.type === selectedType.value;
 
     let statusMatch = true;
-    if (filterCompleted.value) statusMatch = item.statusText === '결재완료';
-    if (filterPending.value) statusMatch = item.statusText !== '결재완료';
+    if (filterCompleted.value) statusMatch = item.statusText === '입금확인';
+    if (filterPending.value) statusMatch = item.statusText !== '입금확인';
 
     return monthMatch && siteMatch && searchMatch && typeMatch && statusMatch;
   });
@@ -153,6 +138,84 @@ const filteredSettlements = computed(() => {
   return result;
 });
 
+// ── 페이지네이션 Computed ───────────────────────────
+const totalPages = computed(() => Math.ceil(filteredSettlements.value.length / pageSize.value));
+
+const pagedSettlements = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredSettlements.value.slice(start, start + pageSize.value);
+});
+
+const pageNumbers = computed(() => {
+  const total = totalPages.value;
+  const cur   = currentPage.value;
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const pages = [];
+  const delta = 2;
+  const left  = Math.max(2, cur - delta);
+  const right = Math.min(total - 1, cur + delta);
+
+  pages.push(1);
+  if (left > 2) pages.push('...');
+  for (let i = left; i <= right; i++) pages.push(i);
+  if (right < total - 1) pages.push('...');
+  pages.push(total);
+  return pages;
+});
+
+const goToPage = (page) => {
+  if (typeof page === 'number' && page >= 1 && page <= totalPages.value) {
+    currentPage.value = page;
+    document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+// ── 전체 선택/해제 로직 (현재 페이지 기준) ──────────────
+const selectAll = computed({
+  get: () => pagedSettlements.value.length > 0 && pagedSettlements.value.every(p => p.selected),
+  set: (val) => {
+    pagedSettlements.value.forEach(p => p.selected = val);
+  }
+});
+
+// ── 선택 항목 삭제 로직 ─────────────────────────────────
+const deleteSelected = async () => {
+  // 현재 체크된 항목들 추출
+  const selectedItems = settlements.value.filter(s => s.selected);
+
+  if (selectedItems.length === 0) {
+    alert('삭제할 정산 내역을 체크해주세요.');
+    return;
+  }
+
+  if (!confirm(`선택한 ${selectedItems.length}건의 정산 내역을 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다)`)) {
+    return;
+  }
+
+  try {
+    isLoading.value = true;
+
+    // 백엔드 API 상황에 맞게 둘 중 하나를 선택하세요.
+    // [방법 1] ID 배열을 한 번에 전송 (백엔드에 일괄 삭제 API가 있는 경우 권장)
+    // const ids = selectedItems.map(item => item.id);
+    // await axios.post('/api/v1/settle/site/delete', { ids });
+
+    // [방법 2] 반복문을 돌며 개별 삭제 요청 (일괄 삭제 API가 없는 경우)
+    await Promise.all(selectedItems.map(item =>
+        axios.delete(`/api/v1/settle/site/${item.id}`)
+    ));
+
+    alert('삭제가 완료되었습니다.');
+    await fetchList(); // 삭제 후 목록 리로드
+  } catch (error) {
+    console.error('삭제 오류:', error);
+    alert('삭제 중 오류가 발생했습니다.');
+  } finally {
+    isLoading.value = false;
+  }
+};
+
 // 6. 통계 정보 계산
 const statsInfo = computed(() => {
   const currentMonthData = filteredSettlements.value;
@@ -165,7 +228,7 @@ const statsInfo = computed(() => {
 });
 
 const formatCurrency = (amount) => {
-  return (amount || 0).toLocaleString() + ' 원';
+  return (amount || 0).toLocaleString();
 };
 
 const handleSearch = () => fetchList();
@@ -204,9 +267,9 @@ watch(() => selectedYear.month, fetchList);
         <p class="page-subtitle">월별 단지 정산 및 청구 내역을 관리합니다</p>
       </div>
       <div class="header-actions">
-        <button @click="refreshData" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
+        <button @click="deleteSelected" class="btn-delete" v-if="settlements.some(s => s.selected)">
+          <i class="mdi mdi-trash-can-outline"></i>
+          <span>선택 삭제</span>
         </button>
         <button @click="openCreateModal" class="btn-add">
           <i class="mdi mdi-file-document-plus-outline"></i>
@@ -216,32 +279,32 @@ watch(() => selectedYear.month, fetchList);
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #4f46e5; --card-bg: #eef2ff;">
+      <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-file-document-multiple-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">당월 총 청구건수</span>
-          <span class="stat-value">{{ statsInfo.totalCount }}건</span>
+          <span class="stat-value">{{ statsInfo.totalCount }}<small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #10b981; --card-bg: #ecfdf5;">
+      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
         <div class="stat-content">
           <span class="stat-label">당월 총 청구금액</span>
-          <span class="stat-value">{{ formatCurrency(statsInfo.totalAmount) }}</span>
+          <span class="stat-value">{{ formatCurrency(statsInfo.totalAmount) }}<small>원</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #0ea5e9; --card-bg: #e0f2fe;">
+      <div class="stat-card" style="--card-color: #0ea5e9; --card-bg: rgba(14, 165, 233, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-check-decagram-outline"></i></div>
         <div class="stat-content">
-          <span class="stat-label">결재 완료</span>
-          <span class="stat-value">{{ statsInfo.completedCount }}건</span>
+          <span class="stat-label">입금 확인</span>
+          <span class="stat-value">{{ statsInfo.completedCount }}<small>건</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: #fffbeb;">
+      <div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-clock-outline"></i></div>
         <div class="stat-content">
           <span class="stat-label">진행 중/반려</span>
-          <span class="stat-value">{{ statsInfo.pendingCount }}건</span>
+          <span class="stat-value">{{ statsInfo.pendingCount }}<small>건</small></span>
         </div>
       </div>
     </div>
@@ -279,6 +342,10 @@ watch(() => selectedYear.month, fetchList);
             <input type="text" v-model="searchTerm" placeholder="현장명으로 검색..." class="search-input" @keyup.enter="handleSearch" />
             <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear"><i class="mdi mdi-close"></i></button>
           </div>
+          <button @click="resetFilters" class="btn-search" title="필터 초기화">
+            <i class="mdi mdi-filter-off"></i>
+            <span>초기화</span>
+          </button>
         </div>
       </div>
 
@@ -288,7 +355,7 @@ watch(() => selectedYear.month, fetchList);
           <label class="toggle-chip" :class="{ active: filterCompleted }">
             <input type="checkbox" v-model="filterCompleted" @change="filterPending = false">
             <i class="mdi mdi-check-circle-outline"></i>
-            <span>결재완료만 보기</span>
+            <span>입금확인만 보기</span>
           </label>
           <label class="toggle-chip" :class="{ active: filterPending }">
             <input type="checkbox" v-model="filterPending" @change="filterCompleted = false">
@@ -305,10 +372,28 @@ watch(() => selectedYear.month, fetchList);
     </div>
 
     <div class="table-card" v-else>
+      <div class="table-header">
+        <div class="table-title">
+          <i class="mdi mdi-format-list-bulleted"></i>
+          <span>정산 목록 ({{ filteredSettlements.length }}건)</span>
+        </div>
+        <div class="page-size-select">
+          <label>페이지당</label>
+          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+            <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+          </select>
+        </div>
+      </div>
+
       <div class="table-scroll-container">
         <table class="data-table">
           <thead>
           <tr>
+            <th class="text-center" style="width: 40px;">
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
+              </label>
+            </th>
             <th @click="toggleSort('id')" class="sortable text-center" style="width: 80px;">
               <div class="th-content justify-center">
                 <span>No.</span>
@@ -351,7 +436,7 @@ watch(() => selectedYear.month, fetchList);
                 <i v-if="sortKey === 'regDtShort'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th class="text-center sticky-col" style="width: 220px;">
+            <th class="text-center" style="width: 220px;">
               <div class="th-content justify-center">
                 <span>관리</span>
               </div>
@@ -359,7 +444,12 @@ watch(() => selectedYear.month, fetchList);
           </tr>
           </thead>
           <tbody>
-          <tr v-for="item in filteredSettlements" :key="item.id" class="data-row">
+          <tr v-for="item in pagedSettlements" :key="item.id" class="data-row">
+            <td class="text-center">
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="item.selected" class="custom-checkbox" />
+              </label>
+            </td>
             <td class="text-center text-gray">{{ item.id }}</td>
             <td class="site-name">{{ item.siteName }}</td>
             <td class="text-center">
@@ -369,20 +459,20 @@ watch(() => selectedYear.month, fetchList);
                 {{ item.typeNm }}
               </span>
             </td>
-            <td class="text-center font-medium">{{ item.target_month }}</td>
+            <td class="text-center">{{ item.target_month }}</td>
             <td class="text-right amount-text">{{ formatCurrency(item.total_amount) }}</td>
             <td class="text-center">
                <span :class="['status-badge',
-                 item.statusText === '결재완료' ? 'status-active' :
+                 item.statusText === '입금확인' ? 'status-active' :
                  item.statusText === '반려' ? 'status-inactive' : 'status-pending']">
                   <i :class="['mdi',
-                    item.statusText === '결재완료' ? 'mdi-check-circle' :
+                    item.statusText === '입금확인' ? 'mdi-check-circle' :
                     item.statusText === '반려' ? 'mdi-close-circle' : 'mdi-dots-horizontal-circle']"></i>
                   {{ item.statusText }}
                 </span>
             </td>
             <td class="text-center text-gray">{{ item.regDtShort }}</td>
-            <td class="text-center sticky-col">
+            <td class="text-center">
               <div class="action-buttons">
                 <button @click="openEditModal(item.id, 'statement')" class="btn-action btn-statement">
                   <i class="mdi mdi-file-document-outline"></i> 정산서
@@ -394,7 +484,7 @@ watch(() => selectedYear.month, fetchList);
             </td>
           </tr>
           <tr v-if="filteredSettlements.length === 0" class="empty-row">
-            <td colspan="8">
+            <td colspan="9">
               <div class="empty-state">
                 <i class="mdi mdi-text-box-search-outline"></i>
                 <p>조건에 맞는 정산 내역이 없습니다.</p>
@@ -404,6 +494,39 @@ watch(() => selectedYear.month, fetchList);
           </tbody>
         </table>
       </div>
+
+      <div class="pagination-bar" v-if="totalPages > 1">
+        <span class="pagination-info">
+          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredSettlements.length) }} / 총 {{ filteredSettlements.length }}건
+        </span>
+
+        <div class="pagination-controls">
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)" title="처음">
+            <i class="mdi mdi-chevron-double-left"></i>
+          </button>
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" title="이전">
+            <i class="mdi mdi-chevron-left"></i>
+          </button>
+
+          <template v-for="p in pageNumbers" :key="p">
+            <span v-if="p === '...'" class="page-ellipsis">…</span>
+            <button
+                v-else
+                class="page-btn"
+                :class="{ active: p === currentPage }"
+                @click="goToPage(p)"
+            >{{ p }}</button>
+          </template>
+
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" title="다음">
+            <i class="mdi mdi-chevron-right"></i>
+          </button>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)" title="마지막">
+            <i class="mdi mdi-chevron-double-right"></i>
+          </button>
+        </div>
+      </div>
+
     </div>
 
     <SettlementModal
@@ -419,219 +542,129 @@ watch(() => selectedYear.month, fetchList);
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
+/* === 헤더 액션 및 버튼 스타일 === */
+.header-actions { display: flex; gap: 10px; align-items: center; }
 
-/* === 전역 설정 === */
-.settlement-list-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #334155;
+.btn-delete {
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px;
+  border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; background-color: rgba(239, 68, 68, 0.05); color: var(--danger);
+}
+.btn-delete:hover {
+  background-color: var(--danger); color: white; border-color: var(--danger);
+}
+.btn-delete i { font-size: 16px; }
+
+/* === 체크박스 공통 스타일 === */
+.checkbox-wrapper { display: flex; justify-content: center; align-items: center; cursor: pointer;}
+.custom-checkbox {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px; border: 2px solid var(--border-focus); border-radius: 4px;
+  cursor: pointer; position: relative; transition: all 0.2s; background: var(--bg-surface); margin:0;
+}
+.custom-checkbox:hover { border-color: var(--text-muted); }
+.custom-checkbox:checked { border-color: var(--primary); background-color: var(--primary); }
+.custom-checkbox:checked::after {
+  content: ''; position: absolute; top: 2px; left: 5px;
+  width: 4px; height: 8px; border: solid var(--text-inverse); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.header-left { flex: 1; }
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 6px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  letter-spacing: -0.5px;
-}
-
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-.header-actions { display: flex; gap: 10px; }
-
-.btn-refresh, .btn-add {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 18px; border: none; border-radius: 8px;
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
-}
-
-.btn-refresh { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-refresh:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-
-.btn-add { background-color: #6d28d9; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-add:hover { background-color: #5b21b6; transform: translateY(-1px); }
-
-.btn-refresh i, .btn-add i { font-size: 18px; }
-
-/* === 통계 카드 (플랫 디자인) === */
-.stats-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px; margin-bottom: 24px;
-}
-
-.stat-card {
-  background: white; border-radius: 12px; padding: 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  display: flex; align-items: center; gap: 16px;
-  transition: all 0.2s; position: relative; overflow: hidden;
-}
-
-.stat-card::before {
-  content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
-  background: var(--card-color);
-}
-.stat-card:hover { transform: translateY(-2px); border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
-
-.stat-icon {
-  width: 52px; height: 52px; border-radius: 12px;
-  background-color: var(--card-bg, #f1f5f9);
-  display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
-}
-.stat-icon i { font-size: 24px; color: var(--card-color); position: absolute; }
-
-.stat-content { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.stat-label { font-size: 13px; color: #64748b; font-weight: 500; }
-.stat-value { font-size: 22px; font-weight: 700; color: #1e293b; letter-spacing: -0.5px;}
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.filter-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.filter-group { display: flex; flex-direction: column; gap: 8px; min-width: 160px; flex: 1;}
-
-.filter-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569; }
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; cursor: pointer; transition: all 0.2s;
-  height: 42px; box-sizing: border-box; font-family: inherit;
-}
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-
-/* 검색 그룹 */
-.search-group { display: flex; gap: 8px; flex: 2; min-width: 280px; align-items: flex-end; }
-.search-box {
-  display: flex; align-items: center; gap: 10px; padding: 0 16px;
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; flex: 1; height: 42px; transition: all 0.2s;
-  box-sizing: border-box;
-}
-.search-box:focus-within { background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.search-box i { font-size: 20px; color: #94a3b8; }
-.search-input { flex: 1; border: none; background: transparent; font-size: 13px; color: #334155; outline: none; }
-.search-input::placeholder { color: #94a3b8; }
-.search-clear { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; border-radius: 4px; }
-.search-clear:hover { background: #e2e8f0; color: #64748b; }
-
-/* 필터 토글 */
-.filter-toggles-row {
-  display: flex; align-items: center; gap: 12px; padding-top: 16px; border-top: 1px solid #f1f5f9; margin-top: 16px;
-}
-.toggles-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #64748b; }
-.filter-toggles { display: flex; gap: 10px; flex-wrap: wrap; }
-
-.toggle-chip {
-  display: flex; align-items: center; gap: 6px; padding: 6px 14px;
-  background: white; border: 1px solid #cbd5e1; border-radius: 20px; cursor: pointer;
-  font-size: 12px; font-weight: 500; color: #475569; transition: all 0.2s;
-}
-.toggle-chip input[type="checkbox"] { display: none; }
-.toggle-chip:hover { background: #f8fafc; border-color: #94a3b8; }
-.toggle-chip.active { background: #eef2ff; border-color: #4f46e5; color: #4f46e5; font-weight: 600;}
-
-/* === 로딩 & 에러 상태 === */
-.loading-state, .empty-state { text-align: center; padding: 60px 20px; color: #64748b; background: white; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 24px;}
+/* === 로딩 상태 === */
 .spinner {
-  width: 40px; height: 40px; border: 3px solid #f1f5f9; border-top-color: #4f46e5;
+  width: 40px; height: 40px; border: 3px solid var(--bg-canvas); border-top-color: var(--primary);
   border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.empty-state i { font-size: 48px; color: #cbd5e1; margin-bottom: 12px; display: block;}
-.empty-state p { font-size: 15px; font-weight: 600; color: #475569; margin: 0 0 4px; }
-.empty-row { background-color: white !important; }
+/* === 테이블 컨트롤 영역 === */
+.table-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border-color);
+}
+.table-title {
+  display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--text-main);
+}
+.table-title i { font-size: 20px; color: var(--primary); display: none;}
 
-/* === 테이블 영역 === */
-.table-card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; }
+.page-size-select {
+  display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub);
+}
 
+/* === 테이블 스크롤 === */
 .table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px;}
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-.data-table { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 13px; }
-.data-table thead { background-color: #6d28d9; }
-.data-table th { padding: 12px 16px; font-size: 12px; font-weight: 600; color: white; white-space: nowrap; border-right: 1px solid rgba(255,255,255,0.1);}
-.data-table th:last-child { border-right: none; }
-.data-table th.sortable { cursor: pointer; user-select: none; transition: background 0.2s; }
-.data-table th.sortable:hover { background-color: #5b21b6; }
-
-.th-content { display: flex; align-items: center; gap: 6px; }
-.justify-center { justify-content: center; }
-.justify-end { justify-content: flex-end; }
-
-.data-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; word-break: keep-all;}
-.data-row:hover { background-color: #f8fafc; }
+.th-content { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.th-content.justify-center { justify-content: center; }
+.th-content.justify-end { justify-content: flex-end; }
+.th-content i { font-size: 14px; opacity: 0.8; color: var(--text-muted); transition: color 0.2s;}
+.sortable:hover .th-content i { color: var(--primary); opacity: 1;}
 
 /* 텍스트 정렬 & 유틸리티 */
-.text-center { text-align: center; }
-.text-right { text-align: right; }
-.text-gray { color: #64748b; font-size: 12px; }
-.font-medium { font-weight: 500; font-family: 'Inter', monospace; }
-.site-name { font-weight: 600; color: #1e293b; }
-.amount-text { font-weight: 700; color: #1e293b; font-size: 14px; font-family: 'Inter', monospace;}
+.site-name { font-weight: 600; color: var(--text-main); }
+.amount-text { font-weight: 700; color: var(--text-main); font-size: 14px; }
 
-/* 배지 스타일 (플랫) */
+/* 배지 스타일 (직무별 플랫 컬러) */
 .badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; word-break: keep-all; }
-.badge-clean { background-color: #ecfdf5; color: #059669; }
-.badge-guard { background-color: #eff6ff; color: #2563eb; }
-.badge-etc { background-color: #fef2f2; color: #dc2626; }
+.badge-clean { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.badge-guard { background-color: var(--primary-soft); color: var(--primary); }
+.badge-etc { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
 /* 상태 배지 */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
 }
-.status-active { background-color: #d1fae5; color: #065f46; }
-.status-pending { background-color: #fef3c7; color: #b45309; }
-.status-inactive { background-color: #fee2e2; color: #b91c1c; }
+.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-pending { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.status-inactive { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
-/* 액션 버튼 그룹 */
+/* 액션 버튼 그룹 (내부 고유 버튼) */
 .action-buttons { display: flex; gap: 8px; justify-content: center; }
 .btn-action {
   display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;
   border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; white-space: nowrap;
 }
-.btn-statement { background-color: #e0e7ff; color: #4338ca; }
-.btn-statement:hover { background-color: #c7d2fe; }
-.btn-details { background-color: #f1f5f9; color: #475569; }
-.btn-details:hover { background-color: #e2e8f0; }
+.btn-statement { background-color: var(--primary-soft); color: var(--primary); }
+.btn-statement:hover { background-color: rgba(37, 99, 235, 0.15); filter: brightness(0.95); }
+.btn-details { background-color: var(--bg-canvas); color: var(--text-sub); }
+.btn-details:hover { background-color: var(--border-color); color: var(--text-main); }
 
 /* Sticky 컬럼 (관리 영역) */
-.sticky-col { position: sticky; right: 0; border-left: 1px solid #e2e8f0; z-index: 5; background: white; }
-.data-table thead .sticky-col { z-index: 15; background-color: #6d28d9; border-left: 1px solid #5b21b6; }
-.data-row:hover .sticky-col { background-color: #f8fafc; }
+.sticky-col { position: sticky; right: 0; border-left: 1px solid var(--border-color); z-index: 5; background: var(--bg-surface); }
+.data-table thead .sticky-col { z-index: 15; background-color: var(--bg-canvas); border-left: 1px solid var(--border-color); }
+.data-row:hover .sticky-col { background-color: var(--primary-soft); }
+
+/* ── 페이지네이션 바 스타일 ── */
+.pagination-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-top: 1px solid var(--border-color);
+  background: var(--bg-hover); flex-wrap: wrap; gap: 12px;
+}
+
+.pagination-info { font-size: 13px; color: var(--text-sub); }
+
+.pagination-controls { display: flex; align-items: center; gap: 4px; }
+
+.page-btn {
+  min-width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-surface); color: var(--text-sub);
+  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 6px;
+}
+.page-btn:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.page-btn.active { background: var(--primary); border-color: var(--primary); color: var(--text-inverse); font-weight: 700; }
+.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.page-btn i { font-size: 16px; }
+
+.page-ellipsis { min-width: 30px; text-align: center; font-size: 14px; color: var(--text-muted); letter-spacing: 1px; }
 
 /* === 반응형 === */
-@media (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group { flex: 1; min-width: calc(33% - 10px);}
-  .search-group { width: 100%; flex: 1 1 100%; }
-}
-@media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start;}
-  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap;}
-  .btn-refresh, .btn-add { flex: 1; justify-content: center; }
-
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-  .search-group { flex-direction: row; }
-  .search-box { flex: 1; min-width: 0; }
-  .filter-toggles-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+@media (max-width: 600px) {
+  .pagination-bar { justify-content: center; }
+  .pagination-info { width: 100%; text-align: center; }
 }
 </style>

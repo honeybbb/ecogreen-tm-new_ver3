@@ -7,63 +7,41 @@ const router = useRouter();
 const {
   siteOptions,
   typeOptions,
+  disabledOptions,
   fetchSiteOptions,
-  fetchTypeOptions
+  fetchTypeOptions,
+  fetchDisabledOptions,
 } = useApi();
 
-// 1. 상태 및 검색 조건
-const searchTerm = ref('');
-const selectedSite = ref('전체');
-const selectedType = ref('전체');
-const disabilityOptions = ref([]);
+// ── 상태 ──────────────────────────────────────────
+const searchTerm     = ref('');
+const selectedSite   = ref('전체');
+const selectedType   = ref('전체');
 
-const filterOver65 = ref(false);
+const filterOver65     = ref(false);
 const filterDisability = ref(false);
-const filterForeigner = ref(false);
+const filterForeigner  = ref(false);
 
-// 2. 정렬 관련 상태
-const sortKey = ref('id');
+const sortKey   = ref('id');
 const sortOrder = ref('asc');
 
-// 3. 직원 목록 데이터
-const members = ref([]);
+const members   = ref([]);
 const isLoading = ref(false);
-const error = ref(null);
+const error     = ref(null);
 
-const fetchDisabilityOptions = async (groupCd = '02002') => {
-  try {
-    const res = await axios.get(`/api/v1/code/${groupCd}`);
-    disabilityOptions.value = res.data.data || [];
-  } catch (e) {
-    console.error("장애 코드 로드 실패:", e);
-  }
-};
+// ── 페이지네이션 상태 ──────────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50); // 한 페이지당 행 수
+const pageSizeOptions = [50, 100, 200, 500];
 
-const getDisabilityStyle = (grade) => {
-  const option = disabilityOptions.value.find(opt => opt.itemCd === grade);
-
-  return {
-    backgroundColor: option?.color || '#ede9fe',
-    color: option?.color ? '#ffffff' : '#5b21b6',
-    border: 'none'
-  };
-};
-
-// 4. API 데이터 호출
 const fetchMembers = async () => {
   isLoading.value = true;
   error.value = null;
-
   try {
-    const response = await axios.get('/api/v1/member/list');
-    if (response.data.data.length > 0) {
-      members.value = response.data.data;
-    } else {
-      members.value = [];
-      console.error("API 응답 구조가 예상과 다릅니다.", response.data);
-    }
+    const res = await axios.get('/api/v1/member/list');
+    members.value = res.data.data || [];
   } catch (e) {
-    console.error("직원 목록을 가져오는 데 실패했습니다:", e);
+    console.error('직원 목록 로드 실패:', e);
     error.value = '직원 목록을 불러오는 중 오류가 발생했습니다.';
     members.value = [];
   } finally {
@@ -71,7 +49,7 @@ const fetchMembers = async () => {
   }
 };
 
-// 5. 정렬 토글 핸들러
+// ── 정렬 ──────────────────────────────────────────
 const toggleSort = (key) => {
   if (sortKey.value === key) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
@@ -79,55 +57,48 @@ const toggleSort = (key) => {
     sortKey.value = key;
     sortOrder.value = 'asc';
   }
+  currentPage.value = 1;
 };
 
-// 6. 필터링 + 정렬된 결과 계산
+// ── 필터 초기화 ────────────────────────────────────
+const resetFilters = () => {
+  searchTerm.value     = '';
+  selectedSite.value   = '전체';
+  selectedType.value   = '전체';
+  filterOver65.value     = false;
+  filterDisability.value = false;
+  filterForeigner.value  = false;
+  currentPage.value = 1;
+};
+
 const filteredMembers = computed(() => {
   let result = members.value.filter(member => {
-    const siteMatch = selectedSite.value === '전체' || member.sIdx === selectedSite.value;
+    const siteMatch  = selectedSite.value === '전체' || String(member.sIdx) === String(selectedSite.value);
     const searchMatch = member.name.toLowerCase().includes(searchTerm.value.toLowerCase());
-    const typeMatch = selectedType.value === '전체' || member.type === selectedType.value;
-
-    let ageMatch = true;
-    if (filterOver65.value) {
-      ageMatch = calculateAge(member.birthDt) >= 65;
-    }
-
-    let disabilityMatch = true;
-    if (filterDisability.value) {
-      disabilityMatch = member.disability === 'Y' || member.disability === true;
-    }
-
-    let foreignerMatch = true;
-    if (filterForeigner.value) {
-      foreignerMatch = member.foreigner === 'Y' || member.foreigner === true;
-    }
-
-    return siteMatch && searchMatch && typeMatch && ageMatch && disabilityMatch && foreignerMatch;
+    const typeMatch  = selectedType.value === '전체' || member.type === selectedType.value;
+    const ageMatch   = !filterOver65.value     || calculateAge(member.birthDt) >= 65;
+    const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
+    const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
+    return siteMatch && searchMatch && typeMatch && ageMatch && disaMatch && foreMatch;
   });
 
+  // 기본 정렬 (idx asc, sIdx desc)
   result.sort((a, b) => {
-    if (a.idx !== b.idx) {
-      return a.idx - b.idx;
-    }
-    if (a.sIdx !== b.sIdx) {
-      return b.sIdx - a.sIdx;
-    }
-    return 0;
+    if (a.idx !== b.idx) return a.idx - b.idx;
+    return b.sIdx - a.sIdx;
   });
 
+  // 사용자 정렬
   if (sortKey.value !== 'id') {
     result.sort((a, b) => {
-      let modifier = sortOrder.value === 'asc' ? 1 : -1;
-      let valA = a[sortKey.value];
-      let valB = b[sortKey.value];
-
+      const mod = sortOrder.value === 'asc' ? 1 : -1;
+      const valA = a[sortKey.value];
+      const valB = b[sortKey.value];
       if (typeof valA === 'string' && typeof valB === 'string') {
-        return valA.localeCompare(valB) * modifier;
+        return valA.localeCompare(valB, 'ko') * mod;
       }
-
-      if (valA < valB) return -1 * modifier;
-      if (valA > valB) return  1 * modifier;
+      if (valA < valB) return -1 * mod;
+      if (valA > valB) return  1 * mod;
       return 0;
     });
   }
@@ -135,39 +106,75 @@ const filteredMembers = computed(() => {
   return result;
 });
 
-// 통계 정보
-const statsInfo = computed(() => {
-  const total = filteredMembers.value.length;
-  const active = filteredMembers.value.filter(m => m.status === '재직').length;
-  const over65 = filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 65).length;
-  const disability = filteredMembers.value.filter(m => m.disability === 'Y' || m.disability === true).length;
-  const foreigner = filteredMembers.value.filter(m => m.foreigner === 'Y' || m.foreigner === true).length;
+// ── 통계 ──────────────────────────────────────────
+const statsInfo = computed(() => ({
+  total:      filteredMembers.value.length,
+  active:     filteredMembers.value.filter(m => m.status === '재직').length,
+  over65:     filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 65).length,
+  disability: filteredMembers.value.filter(m => m.disability === 'Y' || m.disability === true).length,
+  foreigner:  filteredMembers.value.filter(m => m.foreigner  === 'Y' || m.foreigner  === true).length,
+}));
 
-  return { total, active, over65, disability, foreigner };
+// ── 페이지네이션 computed ──────────────────────────
+const totalPages = computed(() => Math.ceil(filteredMembers.value.length / pageSize.value));
+
+const pagedMembers = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredMembers.value.slice(start, start + pageSize.value);
 });
 
-// 7. 이벤트 핸들러
-const handleSearch = () => {
-  fetchMembers();
+// 페이지 번호 배열 (최대 5개 버튼)
+const pageNumbers = computed(() => {
+  const total = totalPages.value;
+  const cur   = currentPage.value;
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const pages = [];
+  const delta = 2;
+  const left  = Math.max(2, cur - delta);
+  const right = Math.min(total - 1, cur + delta);
+
+  pages.push(1);
+  if (left > 2)      pages.push('...');
+  for (let i = left; i <= right; i++) pages.push(i);
+  if (right < total - 1) pages.push('...');
+  pages.push(total);
+  return pages;
+});
+
+const goToPage = (page) => {
+  if (typeof page === 'number' && page >= 1 && page <= totalPages.value) {
+    currentPage.value = page;
+    // 테이블 상단으로 스크롤
+    document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+// 필터 변경 시 첫 페이지로
+const onFilterChange = () => { currentPage.value = 1; };
+
+// ── 유틸 ──────────────────────────────────────────
+const getDisabilityStyle = (grade) => {
+  const opt = disabledOptions.value.find(o => o.itemNm == grade);
+  return {
+    backgroundColor: opt?.option ? `var(--primary-soft)` : 'var(--bg-hover)',
+    color: opt?.option ? `var(--primary)` : 'var(--text-sub)',
+    border: 'none',
+  };
 };
 
 const goToRegister = () => router.push('/member/register');
-const goToDetail = (id) => router.push(`/member/${id}`);
+const goToDetail   = (id) => router.push(`/member/${id}`);
 
-const refreshData = () => {
-  fetchMembers();
-};
-
-onMounted(() => {
-  fetchMembers();
-  fetchSiteOptions();
-  fetchTypeOptions();
-  fetchDisabilityOptions();
+onMounted(async () => {
+  await Promise.all([fetchSiteOptions(), fetchTypeOptions(), fetchDisabledOptions()]);
+  await fetchMembers();
 });
 </script>
 
 <template>
   <div class="member-list-page">
+
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">
@@ -177,10 +184,6 @@ onMounted(() => {
         <p class="page-subtitle">전체 직원 정보를 조회하고 관리합니다</p>
       </div>
       <div class="header-actions">
-        <button @click="refreshData" class="btn-refresh">
-          <i class="mdi mdi-refresh"></i>
-          <span>새로고침</span>
-        </button>
         <button @click="goToRegister" class="btn-add">
           <i class="mdi mdi-account-plus"></i>
           <span>직원 등록</span>
@@ -189,53 +192,39 @@ onMounted(() => {
     </div>
 
     <div class="stats-grid">
-      <div class="stat-card" style="--card-color: #4f46e5; --card-bg: #eef2ff;">
-        <div class="stat-icon">
-          <i class="mdi mdi-account-group"></i>
-        </div>
+      <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
+        <div class="stat-icon"><i class="mdi mdi-account-group"></i></div>
         <div class="stat-content">
           <span class="stat-label">전체 직원</span>
-          <span class="stat-value">{{ statsInfo.total }}</span>
+          <span class="stat-value">{{ statsInfo.total }} <small>명</small></span>
         </div>
       </div>
-
-      <div class="stat-card" style="--card-color: #10b981; --card-bg: #ecfdf5;">
-        <div class="stat-icon">
-          <i class="mdi mdi-account-check"></i>
-        </div>
+      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-account-check"></i></div>
         <div class="stat-content">
           <span class="stat-label">재직 중</span>
-          <span class="stat-value">{{ statsInfo.active }}</span>
+          <span class="stat-value">{{ statsInfo.active }} <small>명</small></span>
         </div>
       </div>
-
-      <div class="stat-card" style="--card-color: #ef4444; --card-bg: #fef2f2;">
-        <div class="stat-icon">
-          <i class="mdi mdi-account-clock"></i>
-        </div>
+      <div class="stat-card" style="--card-color: var(--danger); --card-bg: rgba(239, 68, 68, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-account-clock"></i></div>
         <div class="stat-content">
           <span class="stat-label">65세 이상</span>
-          <span class="stat-value">{{ statsInfo.over65 }}</span>
+          <span class="stat-value">{{ statsInfo.over65 }} <small>명</small></span>
         </div>
       </div>
-
-      <div class="stat-card" style="--card-color: #7c3aed; --card-bg: #f3e8ff;">
-        <div class="stat-icon">
-          <i class="mdi mdi-wheelchair-accessibility"></i>
-        </div>
+      <div class="stat-card" style="--card-color: #8b5cf6; --card-bg: rgba(139, 92, 246, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-wheelchair-accessibility"></i></div>
         <div class="stat-content">
           <span class="stat-label">장애인</span>
-          <span class="stat-value">{{ statsInfo.disability }}</span>
+          <span class="stat-value">{{ statsInfo.disability }} <small>명</small></span>
         </div>
       </div>
-
-      <div class="stat-card" style="--card-color: #f59e0b; --card-bg: #fffbeb;">
-        <div class="stat-icon">
-          <i class="mdi mdi-earth"></i>
-        </div>
+      <div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-earth"></i></div>
         <div class="stat-content">
           <span class="stat-label">외국인</span>
-          <span class="stat-value">{{ statsInfo.foreigner }}</span>
+          <span class="stat-value">{{ statsInfo.foreigner }} <small>명</small></span>
         </div>
       </div>
     </div>
@@ -243,31 +232,19 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-office-building"></i>
-            근무 현장
-          </label>
-          <select v-model="selectedSite" class="filter-select">
+          <label class="filter-label"><i class="mdi mdi-office-building"></i> 근무 현장</label>
+          <select v-model="selectedSite" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
-            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
-              {{ site.name }}
-            </option>
+            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
           </select>
         </div>
-
         <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-account-box"></i>
-            구분
-          </label>
-          <select v-model="selectedType" class="filter-select">
+          <label class="filter-label"><i class="mdi mdi-account-box"></i> 구분</label>
+          <select v-model="selectedType" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
-            <option v-for="opt in typeOptions" :key="opt.itemNm" :value="opt.itemNm">
-              {{ opt.itemNm }}
-            </option>
+            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemNm">{{ opt.itemNm }}</option>
           </select>
         </div>
-
         <div class="search-group">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
@@ -276,41 +253,34 @@ onMounted(() => {
                 v-model="searchTerm"
                 placeholder="이름으로 검색..."
                 class="search-input"
-                @keyup.enter="handleSearch"
+                @input="onFilterChange"
+                @keyup.enter="onFilterChange"
             />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+            <button v-if="searchTerm" @click="searchTerm = ''; onFilterChange()" class="search-clear">
               <i class="mdi mdi-close"></i>
             </button>
           </div>
-          <button @click="handleSearch" class="btn-search">
-            <i class="mdi mdi-magnify"></i>
-            <span>검색</span>
+          <button @click="resetFilters" class="btn-search" title="필터 초기화">
+            <i class="mdi mdi-filter-off"></i>
+            <span>초기화</span>
           </button>
         </div>
       </div>
 
       <div class="filter-toggles-row">
-        <span class="toggles-label">
-          <i class="mdi mdi-filter-variant"></i>
-          빠른 필터:
-        </span>
+        <span class="toggles-label"><i class="mdi mdi-filter-variant"></i> 빠른 필터:</span>
         <div class="filter-toggles">
           <label class="toggle-chip" :class="{ active: filterOver65 }">
-            <input type="checkbox" v-model="filterOver65">
-            <i class="mdi mdi-account-clock"></i>
-            <span>65세 이상</span>
+            <input type="checkbox" v-model="filterOver65" @change="onFilterChange">
+            <i class="mdi mdi-account-clock"></i><span>65세 이상</span>
           </label>
-
           <label class="toggle-chip" :class="{ active: filterDisability }">
-            <input type="checkbox" v-model="filterDisability">
-            <i class="mdi mdi-wheelchair-accessibility"></i>
-            <span>장애인</span>
+            <input type="checkbox" v-model="filterDisability" @change="onFilterChange">
+            <i class="mdi mdi-wheelchair-accessibility"></i><span>장애인</span>
           </label>
-
           <label class="toggle-chip" :class="{ active: filterForeigner }">
-            <input type="checkbox" v-model="filterForeigner">
-            <i class="mdi mdi-earth"></i>
-            <span>외국인</span>
+            <input type="checkbox" v-model="filterForeigner" @change="onFilterChange">
+            <i class="mdi mdi-earth"></i><span>외국인</span>
           </label>
         </div>
       </div>
@@ -321,16 +291,22 @@ onMounted(() => {
       <p>데이터를 불러오는 중...</p>
     </div>
 
-    <div v-if="error" class="error-state">
+    <div v-if="error && !isLoading" class="error-state">
       <i class="mdi mdi-alert-circle"></i>
       <p>{{ error }}</p>
     </div>
 
     <div class="table-card" v-if="!isLoading">
-      <div class="table-header">
+      <div class="table-header" style="justify-content: space-between; display: flex;">
         <div class="table-title">
           <i class="mdi mdi-table"></i>
           <span>직원 목록 ({{ filteredMembers.length }}명)</span>
+        </div>
+        <div class="page-size-select">
+          <label>페이지당</label>
+          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+            <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+          </select>
         </div>
       </div>
 
@@ -339,113 +315,56 @@ onMounted(() => {
           <thead>
           <tr>
             <th @click="toggleSort('id')" class="sortable">
-              <div class="th-content">
-                <span>ID</span>
-                <i v-if="sortKey === 'id'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+              <div class="th-content">ID <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
             <th @click="toggleSort('name')" class="sortable">
-              <div class="th-content">
-                <span>이름</span>
-                <i v-if="sortKey === 'name'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+              <div class="th-content">이름 <i v-if="sortKey==='name'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
             <th @click="toggleSort('siteName')" class="sortable">
-              <div class="th-content">
-                <span>현장</span>
-                <i v-if="sortKey === 'siteName'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+              <div class="th-content">현장 <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
             <th @click="toggleSort('position')" class="sortable">
-              <div class="th-content">
-                <span>직책</span>
-                <i v-if="sortKey === 'position'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+              <div class="th-content">직책 <i v-if="sortKey==='position'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
             <th @click="toggleSort('gender')" class="sortable">
-              <div class="th-content">
-                <span>성별</span>
-                <i v-if="sortKey === 'gender'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+              <div class="th-content">성별 <i v-if="sortKey==='gender'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th @click="toggleSort('age')" class="sortable">
-              <div class="th-content">
-                <span>나이</span>
-                <i v-if="sortKey === 'age'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+            <th @click="toggleSort('birthDt')" class="sortable">
+              <div class="th-content">나이 <i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th @click="toggleSort('isForeigner')" class="sortable">
-              <div class="th-content">
-                <span>내/외국인</span>
-                <i v-if="sortKey === 'isForeigner'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+            <th>내/외국인</th>
+            <th>장애여부</th>
+            <th @click="toggleSort('inDate')" class="sortable">
+              <div class="th-content">입사일 <i v-if="sortKey==='inDate'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th @click="toggleSort('isDisabled')" class="sortable">
-              <div class="th-content">
-                <span>장애여부</span>
-                <i v-if="sortKey === 'isDisabled'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+            <th @click="toggleSort('outDate')" class="sortable">
+              <div class="th-content">퇴사일 <i v-if="sortKey==='outDate'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th @click="toggleSort('joinDate')" class="sortable">
-              <div class="th-content">
-                <span>입사일</span>
-                <i v-if="sortKey === 'joinDate'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
-            </th>
-            <th @click="toggleSort('resignDate')" class="sortable">
-              <div class="th-content">
-                <span>퇴사일</span>
-                <i v-if="sortKey === 'resignDate'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
-            </th>
-            <th class="text-center">
-              <div class="th-content justify-center">
-                <span>4대보험</span>
-              </div>
-            </th>
-            <th class="text-center">
-              <div class="th-content justify-center">
-                <span>퇴직연금</span>
-              </div>
-            </th>
-            <th>
-              <div class="th-content">
-                <span>계좌번호</span>
-              </div>
-            </th>
+            <th class="text-center">4대보험</th>
+            <th class="text-center">퇴직연금</th>
+            <th>계좌번호</th>
             <th @click="toggleSort('status')" class="sortable">
-              <div class="th-content">
-                <span>상태</span>
-                <i v-if="sortKey === 'status'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
-              </div>
+              <div class="th-content">상태 <i v-if="sortKey==='status'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th class="text-center sticky-col">
-              <div class="th-content justify-center">
-                <span>관리</span>
-              </div>
-            </th>
+            <th class="text-center">관리</th>
           </tr>
           </thead>
           <tbody>
-          <tr v-for="member in filteredMembers" :key="member.id" class="data-row">
+          <tr v-for="member in pagedMembers" :key="member.idx" class="data-row">
             <td>{{ member.id }}</td>
-            <td class="member-name">{{ member.name }}</td>
+            <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
             <td>{{ member.siteName }}</td>
             <td>{{ member.position }}</td>
-            <td>{{ member.gender == 'M' ? '남':'여' || '-' }}</td>
+            <td>{{ member.gender === 'M' ? '남' : '여' }}</td>
             <td
                 :class="{ 'age-warning': calculateAge(member.birthDt) >= 65 }"
-                :title="calculateAge(member.birthDt) >= 65 ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''"
-            >
+                :title="calculateAge(member.birthDt) >= 65 ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
               {{ calculateAge(member.birthDt) ? calculateAge(member.birthDt) + '세' : '-' }}
             </td>
             <td>
-                <span
-                    v-if="member.foreigner === 'Y' || member.foreigner === true"
-                    class="badge badge-foreigner tooltip-container"
-                >
-                  <i class="mdi mdi-earth"></i>
-                  외국인
+                <span v-if="member.foreigner === 'Y' || member.foreigner === true"
+                      class="badge badge-foreigner tooltip-container">
+                  <i class="mdi mdi-earth"></i> 외국인
                   <span v-if="getMonthsDiff(member.visa_date) <= 5" class="warning-dot">
                     <i class="mdi mdi-alert"></i>
                   </span>
@@ -461,16 +380,10 @@ onMounted(() => {
               <span v-else class="text-gray">내국인</span>
             </td>
             <td>
-                <span
-                    v-if="member.disability === 'Y' || member.disability === true"
-                    class="badge badge-disability tooltip-container"
-                    :style="{
-                    'background-color': member.disability_grade ? member.badgeColor : '',
-                    'color': '#fff'
-                  }"
-                >
-                  <i class="mdi mdi-wheelchair-accessibility"></i>
-                  장애
+                <span v-if="member.disability === 'Y' || member.disability === true"
+                      class="badge tooltip-container"
+                      :style="getDisabilityStyle(member.disability_grade)">
+                  <i class="mdi mdi-wheelchair-accessibility"></i> 장애
                   <span class="tooltip-text">
                     <strong>등급:</strong> {{ member.disability_grade || '-' }}<br>
                     <strong>판정일:</strong> {{ member.disability_date || '-' }}
@@ -481,26 +394,12 @@ onMounted(() => {
             <td>{{ formatDate(member.inDate) }}</td>
             <td>{{ formatDate(member.outDate) }}</td>
             <td class="text-center">
-              <div class="checkbox-wrapper">
-                <input
-                    type="checkbox"
-                    :checked="member.four_ins === 'Y' || member.four_ins === true"
-                    disabled
-                />
-                <i v-if="member.four_ins === 'Y' || member.four_ins === true" class="mdi mdi-check-circle check-icon"></i>
-                <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
-              </div>
+              <i v-if="member.four_ins === 'Y' || member.four_ins === true" class="mdi mdi-check-circle check-icon"></i>
+              <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
             </td>
             <td class="text-center">
-              <div class="checkbox-wrapper">
-                <input
-                    type="checkbox"
-                    :checked="member.retire_pension === 'Y' || member.retire_pension === true"
-                    disabled
-                />
-                <i v-if="member.retire_pension === 'Y' || member.retire_pension === true" class="mdi mdi-check-circle check-icon"></i>
-                <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
-              </div>
+              <i v-if="member.retire_pension === 'Y' || member.retire_pension === true" class="mdi mdi-check-circle check-icon"></i>
+              <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
             </td>
             <td>
               <div v-if="member.accountNo" class="account-info">
@@ -515,10 +414,9 @@ onMounted(() => {
                   {{ member.status }}
                 </span>
             </td>
-            <td class="text-center sticky-col">
+            <td class="text-center">
               <button @click="goToDetail(member.id)" class="btn-detail">
-                <i class="mdi mdi-eye"></i>
-                <span>상세</span>
+                <i class="mdi mdi-eye"></i><span>상세</span>
               </button>
             </td>
           </tr>
@@ -535,441 +433,200 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+
+      <div class="pagination-bar" v-if="totalPages > 1">
+        <span class="pagination-info">
+          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredMembers.length) }} / 총 {{ filteredMembers.length }}명
+        </span>
+
+        <div class="pagination-controls">
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)" title="처음">
+            <i class="mdi mdi-chevron-double-left"></i>
+          </button>
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" title="이전">
+            <i class="mdi mdi-chevron-left"></i>
+          </button>
+
+          <template v-for="p in pageNumbers" :key="p">
+            <span v-if="p === '...'" class="page-ellipsis">…</span>
+            <button
+                v-else
+                class="page-btn"
+                :class="{ active: p === currentPage }"
+                @click="goToPage(p)"
+            >{{ p }}</button>
+          </template>
+
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" title="다음">
+            <i class="mdi mdi-chevron-right"></i>
+          </button>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)" title="마지막">
+            <i class="mdi mdi-chevron-double-right"></i>
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 기본 레이아웃 === */
-.member-list-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* === 페이지 헤더 === */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.header-left { flex: 1; }
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 6px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  letter-spacing: -0.5px;
-}
-
-.page-title i {
-  font-size: 26px;
-  color: #4f46e5; /* 솔리드 포인트 컬러 */
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-}
-
-.btn-refresh, .btn-add {
+/* 페이지 및 테이블 부가 설정 (공통 CSS 이외의 것들만 유지) */
+.page-size-select {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 18px;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  font-size: 12px;
+  color: var(--text-sub);
 }
-
-.btn-refresh {
-  background: white;
-  border: 1px solid #e2e8f0;
-  color: #475569;
-}
-
-.btn-refresh:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  color: #1e293b;
-}
-
-.btn-add {
-  background-color: #6d28d9; /* 그라디언트 제거 -> 단색 보라 */
-  color: white;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* 진한 그림자 제거 */
-}
-
-.btn-add:hover {
-  background-color: #5b21b6;
-  transform: translateY(-1px);
-}
-
-.btn-refresh i, .btn-add i { font-size: 18px; }
-
-/* === 통계 카드 (단색 및 얇은 보더 적용) === */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  transition: all 0.2s;
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; width: 4px; height: 100%;
-  background-color: var(--card-color);
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-}
-
-.stat-icon {
-  width: 48px; height: 48px;
-  border-radius: 12px;
-  background-color: var(--card-bg, #f1f5f9);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
-
-.stat-icon i {
-  font-size: 24px;
-  color: var(--card-color);
-}
-
-.stat-content {
-  flex: 1; display: flex; flex-direction: column; gap: 4px;
-}
-
-.stat-label { font-size: 13px; color: #64748b; font-weight: 500; }
-.stat-value { font-size: 24px; font-weight: 700; color: #1e293b; }
-
-/* === 필터 패널 === */
-.filter-panel {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 24px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.filter-row {
-  display: flex; align-items: flex-end; gap: 16px; margin-bottom: 20px;
-}
-
-.filter-group {
-  display: flex; flex-direction: column; gap: 8px; min-width: 160px;
-}
-
-.filter-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #475569;
-}
-.filter-label i { font-size: 16px; color: #4f46e5; }
-
-.filter-select {
-  padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px;
-  font-size: 13px; color: #334155; background: white; cursor: pointer;
-  transition: all 0.2s; height: 42px; box-sizing: border-box;
-}
-
-.filter-select:hover { border-color: #cbd5e1; }
-.filter-select:focus {
-  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-/* 검색 그룹 */
-.search-group { display: flex; gap: 8px; flex: 1; }
-
-.search-box {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px; background: #f8fafc;
-  border: 1px solid #e2e8f0; border-radius: 8px;
-  flex: 1; height: 42px; box-sizing: border-box; transition: all 0.2s;
-}
-
-.search-box:focus-within {
-  background: white; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-.search-box i { font-size: 20px; color: #94a3b8; }
-
-.search-input {
-  flex: 1; border: none; background: transparent; font-size: 13px; color: #334155; outline: none;
-}
-.search-input::placeholder { color: #94a3b8; }
-
-.search-clear {
-  background: none; border: none; color: #94a3b8; cursor: pointer;
-  padding: 4px; border-radius: 4px; transition: all 0.2s; display: flex; align-items: center;
-}
-.search-clear:hover { background: #e2e8f0; color: #64748b; }
-
-.btn-search {
-  display: flex; align-items: center; gap: 6px; padding: 0 20px; height: 42px;
-  background-color: #6d28d9; border: none; border-radius: 8px; color: white;
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05); white-space: nowrap;
-}
-
-.btn-search:hover { background-color: #5b21b6; transform: translateY(-1px); }
-.btn-search i { font-size: 18px; }
-
-/* 필터 토글 */
-.filter-toggles-row {
-  display: flex; align-items: center; gap: 12px;
-  padding-top: 16px; border-top: 1px solid #f1f5f9;
-}
-
-.toggles-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #64748b;
-}
-
-.filter-toggles { display: flex; gap: 10px; flex-wrap: wrap; }
-
-.toggle-chip {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 14px; background: white; border: 1px solid #cbd5e1;
-  border-radius: 20px; cursor: pointer; transition: all 0.2s;
-  font-size: 12px; font-weight: 500; color: #475569;
-}
-
-.toggle-chip input[type="checkbox"] { display: none; }
-.toggle-chip i { font-size: 16px; }
-
-.toggle-chip:hover { background: #f8fafc; border-color: #94a3b8; }
-
-/* 액티브 시 그라디언트 제외 단색 처리 */
-.toggle-chip.active {
-  background-color: #eef2ff; border-color: #4f46e5; color: #4f46e5;
-}
-
-/* === 로딩 & 에러 상태 === */
-.loading-state, .error-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 60px 20px; background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-}
-
-.spinner {
-  width: 40px; height: 40px; border: 3px solid #f1f5f9;
-  border-top-color: #4f46e5; border-radius: 50%; animation: spin 1s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.loading-state p, .error-state p { margin-top: 16px; font-size: 14px; color: #64748b; }
-.error-state i { font-size: 40px; color: #ef4444; }
-
-/* === 테이블 카드 === */
-.table-card {
-  background: white; border-radius: 12px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); overflow: hidden; max-width: 100%;
-}
-
-.table-header { padding: 18px 24px; border-bottom: 1px solid #e2e8f0; }
-
-.table-title {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 16px; font-weight: 600; color: #1e293b;
-}
-.table-title i { font-size: 20px; color: #4f46e5; }
 
 .table-scroll-container {
-  overflow-x: auto; overflow-y: visible; max-width: 100%;
-  -webkit-overflow-scrolling: touch; max-height: calc(100vh - 420px);
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
 }
-
 .table-scroll-container::-webkit-scrollbar { height: 8px; }
-.table-scroll-container::-webkit-scrollbar-track { background: #f8fafc; border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-sub); }
 
-/* === 데이터 테이블 === */
-.data-table {
-  width: 100%; min-width: 1300px; border-collapse: collapse; font-size: 13px;
+.th-content { display: flex; align-items: center; gap: 4px; }
+
+/* ── 테이블 내 텍스트/아이콘 색상 ── */
+.member-name {
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
 }
+.member-name:hover { text-decoration: underline; }
 
-/* 그라디언트 제거 -> 단색 퍼플 통일 */
-.data-table thead {
-  background-color: #6d28d9; position: sticky; top: 0; z-index: 10;
-}
+.age-warning { color: var(--danger) !important; font-weight: 600; }
 
-.data-table th {
-  padding: 14px 16px; text-align: left; font-size: 12px; font-weight: 600;
-  color: white; white-space: nowrap;
-}
+.check-icon   { font-size: 18px; color: var(--success); }
+.uncheck-icon { font-size: 18px; color: var(--text-muted); }
 
-.data-table th.sortable { cursor: pointer; user-select: none; transition: background 0.2s; }
-.data-table th.sortable:hover { background-color: #5b21b6; }
-
-.th-content { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-.justify-center { justify-content: center; }
-.th-content i { font-size: 14px; opacity: 0.8; }
-
-.data-table td {
-  padding: 12px 16px; border-bottom: 1px solid #e2e8f0;
-  color: #334155; vertical-align: middle;
-}
-
-.data-row { transition: background 0.2s; }
-.data-row:hover { background-color: #f8fafc; }
-
-.text-center { text-align: center !important; }
-
-/* 멤버 이름 */
-.member-name { font-weight: 600; color: #1e293b; }
-
-/* 나이 경고 */
-.age-warning { color: #ef4444 !important; font-weight: 600; }
-
-/* 배지 (플랫하게) */
+/* ── 배지 ── */
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600;
-  white-space: nowrap;
+  padding: 4px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
 }
 .badge i { font-size: 13px; }
+.badge-foreigner { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); } /* 외국인: Warning 계열 */
 
-.badge-foreigner { background-color: #fef3c7; color: #b45309; }
-.badge-disability { background-color: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }
-
-/* 툴팁 */
+/* ── 툴팁 ── */
 .tooltip-container { position: relative; cursor: help; }
 .tooltip-text {
-  visibility: hidden; position: absolute; bottom: 125%; left: 50%;
-  background: #1e293b; color: white; padding: 8px 12px; border-radius: 6px;
-  font-size: 11px; line-height: 1.5; white-space: nowrap; z-index: 100;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); margin-left: -60px;
+  visibility: hidden; opacity: 0;
+  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+  background: var(--header-bg); color: var(--text-inverse);
+  padding: 8px 12px; border-radius: 6px;
+  font-size: 11px; line-height: 1.6; white-space: nowrap;
+  z-index: 100; box-shadow: var(--shadow-md);
+  transition: opacity 0.15s;
+  pointer-events: none;
 }
 .tooltip-text::after {
-  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -5px;
-  border: 5px solid transparent; border-top-color: #1e293b;
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--header-bg);
 }
-.tooltip-container:hover .tooltip-text { visibility: visible; }
+.tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
 
 .warning-dot {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px; background: #ef4444; color: white; border-radius: 50%; margin-left: 4px;
+  width: 14px; height: 14px; background: var(--danger);
+  color: var(--text-inverse); border-radius: 50%; margin-left: 4px;
 }
 .warning-dot i { font-size: 9px; }
+.text-warning-red { color: var(--danger) !important; font-weight: 600; }
 
-.text-warning-red { color: #ef4444 !important; font-weight: 600; }
-
-/* 체크박스 래퍼 */
-.checkbox-wrapper {
-  display: flex; align-items: center; justify-content: center; position: relative;
-}
-.checkbox-wrapper input[type="checkbox"] { opacity: 0; position: absolute; }
-.check-icon { font-size: 18px; color: #10b981; }
-.uncheck-icon { font-size: 18px; color: #cbd5e1; }
-
-/* 계좌 정보 */
+/* ── 계좌 ── */
 .account-info { display: flex; align-items: center; gap: 8px; }
 .bank-badge {
-  padding: 3px 8px; background: #f1f5f9; border-radius: 4px;
-  font-size: 11px; font-weight: 600; color: #475569; white-space: nowrap;
+  padding: 2px 7px; background: var(--bg-canvas); border-radius: 4px; border: 1px solid var(--border-color);
+  font-size: 11px; font-weight: 600; color: var(--text-sub); white-space: nowrap;
 }
-.account-number { font-family: 'Courier New', monospace; font-size: 12px; color: #334155; }
+.account-number { font-size: 12px; color: var(--text-main); }
 
-/* 상태 배지 */
+/* ── 상태 배지 ── */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
 }
-.status-active { background-color: #d1fae5; color: #065f46; }
-.status-inactive { background-color: #fee2e2; color: #b91c1c; }
+.status-active   { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-inactive { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
-/* Sticky 컬럼 (그림자 제거, 보더로 대체) */
-.sticky-col { position: sticky; right: 0; border-left: 1px solid #e2e8f0; background: white; z-index: 5; }
-.data-table thead .sticky-col { z-index: 15; background-color: #6d28d9; border-left: 1px solid #5b21b6; }
-.data-row:hover .sticky-col { background-color: #f8fafc !important; }
-
-/* 상세 버튼 */
-.btn-detail {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 6px 12px; background-color: #4f46e5; border: none; border-radius: 6px;
-  color: white; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
-}
-.btn-detail:hover { background-color: #4338ca; transform: translateY(-1px); }
-.btn-detail i { font-size: 14px; }
-
-/* 텍스트 유틸리티 */
-.text-gray { color: #64748b; font-size: 12px; }
-
-/* 빈 상태 */
-.empty-row { background: white; }
-.empty-state { text-align: center; padding: 50px 20px; color: #94a3b8; }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: #cbd5e1; }
-.empty-state p { font-size: 15px; font-weight: 600; color: #475569; margin: 0 0 6px 0; }
-.empty-state span { font-size: 13px; }
-
-/* === 반응형 (Responsive) === */
-@media (max-width: 1400px) {
-  .stats-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+/* ── 페이지네이션 ── */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-hover);
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
-@media (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group { flex: 1; min-width: calc(50% - 8px); }
-  .search-group { width: 100%; flex: 1 1 100%; }
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-sub);
 }
 
-@media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 14px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row; flex-wrap: wrap; }
-  .btn-refresh, .btn-add { flex: 1; justify-content: center; }
-
-  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px; }
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-
-  /* 모바일 검색창: 인풋과 버튼을 나란히 */
-  .search-group { flex-direction: row; }
-  .search-box { flex: 1; min-width: 0; }
-  .btn-search { flex-shrink: 0; }
-
-  .filter-toggles-row { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .filter-toggles { flex-wrap: wrap; }
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-@media (max-width: 480px) {
-  .stats-grid { grid-template-columns: 1fr; }
+.page-btn {
+  min-width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-color); border-radius: 7px;
+  background: var(--bg-surface); color: var(--text-sub);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+  padding: 0 6px;
+}
+.page-btn:hover:not(:disabled) {
+  background: var(--primary-soft); border-color: var(--primary); color: var(--primary);
+}
+.page-btn.active {
+  background: var(--primary); border-color: var(--primary);
+  color: var(--text-inverse); font-weight: 700;
+}
+.page-btn:disabled {
+  opacity: 0.35; cursor: not-allowed;
+}
+.page-btn i { font-size: 16px; }
+
+.page-ellipsis {
+  min-width: 30px; text-align: center;
+  font-size: 14px; color: var(--text-muted); letter-spacing: 1px;
+}
+
+/* 상태 표시 컴포넌트들 */
+.loading-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 60px 0; color: var(--text-sub); gap: 16px;
+}
+.spinner {
+  width: 32px; height: 32px; border: 3px solid var(--border-color);
+  border-top-color: var(--primary); border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-state {
+  display: flex; align-items: center; gap: 8px; padding: 20px;
+  background: rgba(239, 68, 68, 0.1); color: var(--danger); border-radius: 12px;
+  margin-bottom: 24px; font-weight: 600;
+}
+
+/* ── 반응형 ── */
+@media (max-width: 600px) {
+  .pagination-bar { justify-content: center; }
+  .pagination-info { width: 100%; text-align: center; }
 }
 </style>

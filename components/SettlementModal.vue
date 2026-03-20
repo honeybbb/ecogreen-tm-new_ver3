@@ -374,7 +374,7 @@ const handleSave = async () => {
     if (response.data.result) {
       alert('성공적으로 저장되었습니다.');
       emit('save');
-      closeModal();
+      // closeModal();
     } else {
       alert(`저장 실패: ${response.data.msg}`);
     }
@@ -413,7 +413,6 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
 
       <div class="modal-body">
 
-        <!-- TAB 1: 청구 공문 -->
         <div v-show="activeTab === 'statement'" class="tab-content">
           <div class="document-paper">
             <div class="doc-header text-center">
@@ -422,14 +421,14 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
 
             <div class="form-grid">
               <div class="form-group">
-                <label>현장 선택 <span style="color: #ef4444;">*</span></label>
+                <label>현장 선택 <span class="text-red">*</span></label>
                 <select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
                   <option value="" disabled>현장을 선택해주세요</option>
                   <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>구분 선택 <span style="color: #ef4444;">*</span></label>
+                <label>구분 선택 <span class="text-red">*</span></label>
                 <select v-model="formData.type" class="form-select">
                   <option value="" disabled>구분을 선택해주세요</option>
                   <option v-for="tp in typeOptions" :key="tp.itemCd" :value="tp.itemCd">{{ tp.itemNm }}</option>
@@ -437,29 +436,29 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
               </div>
               <div class="form-group">
                 <label>수신</label>
-                <input type="text" :value="formData.siteName ? formData.siteName + ' 관리사무소' : ''" readonly class="bg-gray" placeholder="현장을 선택하면 자동 입력됩니다" />
+                <input type="text" :value="formData.siteName ? formData.siteName + ' 관리사무소' : ''" readonly class="bg-gray form-input" placeholder="현장을 선택하면 자동 입력됩니다" />
               </div>
               <div class="form-group">
                 <label>문서번호</label>
-                <input type="text" v-model="formData.docNo" placeholder="예: 에코그린 2026-01-09호" />
+                <input type="text" v-model="formData.docNo" class="form-input" placeholder="예: 에코그린 2026-01-09호" />
               </div>
               <div class="form-group">
                 <label>시행일자</label>
-                <input type="date" v-model="formData.billingDt" />
+                <input type="date" v-model="formData.billingDt" class="form-input" />
               </div>
               <div class="form-group">
                 <label>제목</label>
-                <input type="text" v-model="formData.billingData.summary" placeholder="예: 2026년 1월 미화용역비 청구의 건" />
+                <input type="text" v-model="formData.billingData.summary" placeholder="예: 2026년 1월 미화용역비 청구의 건" class="form-input" />
               </div>
             </div>
 
             <div class="doc-message">
               <p>1. 귀 소의 무궁한 발전을 기원합니다.</p>
               <p>2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.</p>
-              <p class="text-center" style="margin-top: 15px;">- 아 래 -</p>
+              <p class="text-center mt-4">- 아 래 -</p>
             </div>
 
-            <div class="table-actions" style="margin-top: 20px;">
+            <div class="table-actions mt-4">
               <h4>
                 <i class="mdi mdi-format-list-checks"></i>
                 청구 내역
@@ -560,7 +559,6 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
           </div>
         </div>
 
-        <!-- TAB 2: 급여 세부 내역서 -->
         <div v-show="activeTab === 'details'" class="tab-content">
           <div class="table-actions">
             <h4><i class="mdi mdi-table-account"></i> 직원별 급여/공제 정산 내역</h4>
@@ -655,326 +653,203 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
 
 <style scoped>
 /* =============================================
-   기본 레이아웃
+   기본 레이아웃 및 모달 (테마 연동)
 ============================================= */
 .modal-overlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-  box-sizing: border-box;
+  z-index: 2000; padding: 16px; box-sizing: border-box;
 }
 
 .modal-container {
-  background: #ffffff;
-  width: 100%;
-  max-width: 1400px;
-  height: 90vh;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  background: var(--bg-surface); width: 100%; max-width: 1400px; height: 90vh;
+  border-radius: 16px; display: flex; flex-direction: column;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); overflow: hidden; border: 1px solid var(--border-color);
 }
 
 /* =============================================
    모달 헤더
 ============================================= */
 .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 20px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #f8fafc;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-wrap: wrap;
 }
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.header-title h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: #1e293b;
-  white-space: nowrap;
-}
+.header-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
 
 .badge {
-  padding: 3px 8px;
-  background: #e0e7ff;
-  color: #4338ca;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+  padding: 3px 8px; background: var(--primary-soft); color: var(--primary);
+  border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap;
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
+.header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
 .btn-save {
-  background: #3b82f6; color: white; border: none;
-  padding: 8px 14px; border-radius: 6px; font-weight: 600;
-  cursor: pointer; transition: 0.2s;
-  display: flex; align-items: center; gap: 6px;
-  font-size: 14px; white-space: nowrap;
+  background: var(--primary); color: var(--text-inverse); border: none;
+  padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s;
+  display: flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap;
 }
-.btn-save:hover { background: #2563eb; }
+.btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
 
 .btn-close {
-  background: none; border: none; font-size: 22px;
-  color: #64748b; cursor: pointer; transition: 0.2s;
-  padding: 4px; line-height: 1;
+  background: none; border: none; font-size: 22px; color: var(--text-muted);
+  cursor: pointer; transition: 0.2s; padding: 4px; line-height: 1; border-radius: 6px;
 }
-.btn-close:hover { color: #ef4444; }
+.btn-close:hover { background: var(--bg-hover); color: var(--danger); }
 
 /* =============================================
    탭
 ============================================= */
 .modal-tabs {
-  display: flex;
-  padding: 0 16px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #ffffff;
-  overflow-x: auto;
-  flex-shrink: 0;
+  display: flex; padding: 0 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); flex-shrink: 0;
 }
-
 .tab-btn {
-  padding: 14px 18px;
-  background: none; border: none;
-  border-bottom: 3px solid transparent;
-  font-size: 14px; font-weight: 600; color: #64748b;
-  cursor: pointer; transition: 0.2s;
-  display: flex; align-items: center; gap: 6px;
-  margin-bottom: -1px; white-space: nowrap;
+  padding: 14px 18px; background: none; border: none; border-bottom: 3px solid transparent;
+  font-size: 14px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: 0.2s;
+  display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap;
 }
-.tab-btn:hover { color: #3b82f6; }
-.tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+.tab-btn:hover { color: var(--text-main); }
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 
 /* =============================================
    모달 바디
 ============================================= */
 .modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  background: #f1f5f9;
-  -webkit-overflow-scrolling: touch;
+  flex: 1; overflow-y: auto; padding: 20px; background: var(--bg-canvas); -webkit-overflow-scrolling: touch;
 }
+.modal-body::-webkit-scrollbar { width: 8px; }
+.modal-body::-webkit-scrollbar-track { background: var(--bg-canvas); }
+.modal-body::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
 
 /* =============================================
    공문(표지) 문서
 ============================================= */
 .document-paper {
-  max-width: 860px;
-  margin: 0 auto;
-  background: white;
-  padding: 32px 28px;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  border: 1px solid #cbd5e1;
+  max-width: 860px; margin: 0 auto; background: var(--bg-surface);
+  padding: 32px 28px; border-radius: 8px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);
 }
-
 .doc-header h1 {
-  font-size: 26px;
-  letter-spacing: 8px;
-  margin-bottom: 32px;
-  border-bottom: 2px solid #1e293b;
-  padding-bottom: 18px;
+  font-size: 26px; letter-spacing: 8px; margin-bottom: 32px;
+  border-bottom: 2px solid var(--text-main); padding-bottom: 18px; color: var(--text-main);
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 20px;
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 6px; }
+.form-input, .form-select {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 6px;
+  font-size: 14px; color: var(--text-main); background: var(--bg-canvas); box-sizing: border-box; outline: none; transition: border-color 0.2s;
 }
+.form-input:focus, .form-select:focus { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary-soft); background: var(--bg-surface);}
+.bg-gray { background-color: var(--bg-hover) !important; color: var(--text-muted); cursor: not-allowed; border-color: transparent;}
 
-.form-group label {
-  display: block; font-size: 13px; font-weight: 600;
-  color: #475569; margin-bottom: 6px;
-}
-
-.form-group input {
-  width: 100%; padding: 9px 12px;
-  border: 1px solid #cbd5e1; border-radius: 6px;
-  font-size: 14px; box-sizing: border-box; outline: none;
-  transition: border-color 0.2s;
-}
-.form-group input:focus { border-color: #667eea; box-shadow: inset 0 0 0 1px #667eea; }
-
-.bg-gray { background-color: #f1f5f9; }
-
-.form-select {
-  width: 100%; padding: 9px 12px;
-  border: 1px solid #cbd5e1; border-radius: 6px;
-  font-size: 14px; box-sizing: border-box;
-  background-color: white; outline: none; transition: 0.2s;
-}
-.form-select:focus { border-color: #667eea; }
-
-.doc-message { margin: 20px 0; line-height: 1.8; color: #334155; font-size: 14px; }
+.doc-message { margin: 20px 0; line-height: 1.8; color: var(--text-main); font-size: 14px; }
 
 .vat-badge { font-size: 12px; margin-left: 6px; font-weight: normal; }
-.vat-free { color: #ef4444; }
-.vat-taxed { color: #3b82f6; }
+.vat-free { color: var(--danger); }
+.vat-taxed { color: var(--primary); }
 
 /* =============================================
    테이블 공통
 ============================================= */
 .table-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;
 }
-
-.table-actions h4 {
-  margin: 0; font-size: 15px; color: #1e293b;
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-}
+.table-actions h4 { margin: 0; font-size: 15px; color: var(--text-main); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.table-actions h4 i { color: var(--primary); font-size: 18px;}
 
 .action-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .btn-add-row {
-  display: flex; align-items: center; gap: 4px;
-  padding: 6px 12px; background: #10b981; color: white;
-  border: none; border-radius: 6px; font-weight: 600;
-  cursor: pointer; font-size: 13px; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; padding: 6px 12px;
+  background: var(--success); color: var(--text-inverse); border: none; border-radius: 6px;
+  font-weight: 600; cursor: pointer; font-size: 13px; white-space: nowrap; transition: 0.2s;
 }
-.btn-add-row:hover { background: #059669; }
+.btn-add-row:hover { background: var(--success-hover); transform: translateY(-1px);}
 
 .btn-load-data {
-  display: flex; align-items: center; gap: 4px;
-  padding: 6px 12px; background: #f8fafc; color: #3b82f6;
-  border: 1px solid #3b82f6; border-radius: 6px; font-weight: 600;
-  cursor: pointer; font-size: 13px; transition: all 0.2s; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px; padding: 6px 12px;
+  background: var(--bg-surface); color: var(--primary); border: 1px solid var(--primary);
+  border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; transition: all 0.2s; white-space: nowrap;
 }
-.btn-load-data:hover { background: #eff6ff; }
+.btn-load-data:hover { background: var(--primary-soft); transform: translateY(-1px);}
 
-/* 테이블 가로 스크롤 래퍼 */
-.table-scroll-wrapper {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  border-radius: 4px;
-}
-
+.table-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 4px; }
 .excel-table-wrapper {
-  background: white; border-radius: 8px;
-  border: 1px solid #cbd5e1; overflow-x: auto;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  -webkit-overflow-scrolling: touch;
+  background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--border-color);
+  overflow-x: auto; box-shadow: var(--shadow-sm); -webkit-overflow-scrolling: touch;
 }
 
 .excel-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.excel-table th, .excel-table td {
-  border: 1px solid #e2e8f0; padding: 6px;
-  vertical-align: middle;
-}
-.excel-table thead th {
-  background: #f8fafc; font-weight: 600;
-  text-align: center; color: #1e293b; padding: 10px 8px;
-  white-space: nowrap;
-}
-
-/* 표지 테이블 */
-/*.statement-table th { background: #1e293b; color: white; border-color: #334155; }
-
- */
+.excel-table th, .excel-table td { border: 1px solid var(--border-color); padding: 6px; vertical-align: middle; }
+.excel-table thead th { background: var(--bg-hover); font-weight: 600; text-align: center; color: var(--text-main); padding: 10px 8px; white-space: nowrap; }
 .statement-table tfoot td { padding: 10px; }
 
 /* =============================================
    계좌 정보
 ============================================= */
 .bank-info {
-  display: flex; align-items: center; gap: 10px;
-  background: #f8fafc; padding: 14px; border-radius: 8px;
-  border: 1px solid #e2e8f0; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 10px; background: var(--bg-canvas);
+  padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap;
 }
-.bank-info label { font-weight: 600; color: #1e293b; white-space: nowrap; }
+.bank-info label { font-weight: 600; color: var(--text-main); white-space: nowrap; }
 .bank-input {
-  flex: 1; min-width: 200px;
-  padding: 8px 12px; border: 1px solid #cbd5e1;
-  border-radius: 6px; font-size: 14px; font-weight: bold;
-  color: #0f172a; outline: none;
+  flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border-focus); border-radius: 6px;
+  font-size: 14px; font-weight: bold; color: var(--text-main); background: var(--bg-surface); outline: none; transition: 0.2s;
 }
+.bank-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
 
 /* =============================================
-   헤더 색상
+   헤더 및 셀 배경 색상 (테마 변수 매핑)
 ============================================= */
-.bg-blue-light { background-color: #e0f2fe !important; color: #0369a1 !important; }
-.bg-red-light { background-color: #fee2e2 !important; color: #b91c1c !important; }
-.bg-green-light { background-color: #dcfce7 !important; color: #15803d !important; }
-.bg-yellow-light { background-color: #fef9c3 !important; color: #a16207 !important; }
-.bg-gray-50 { background-color: #f8fafc; }
-.bg-green-50 { background-color: #f0fdf4; }
+.bg-blue-light { background-color: rgba(59, 130, 246, 0.1) !important; color: #2563eb !important; }
+.bg-red-light { background-color: rgba(239, 68, 68, 0.1) !important; color: #dc2626 !important; }
+.bg-green-light { background-color: rgba(16, 185, 129, 0.1) !important; color: #059669 !important; }
+.bg-yellow-light { background-color: rgba(245, 158, 11, 0.1) !important; color: #b45309 !important; }
+.bg-gray-50 { background-color: var(--bg-canvas); }
+.bg-green-50 { background-color: rgba(16, 185, 129, 0.05); }
 
 /* =============================================
    셀 인풋
 ============================================= */
 .cell-input {
-  width: 100%; border: 1px solid transparent;
-  background: transparent; padding: 4px;
-  font-family: inherit; outline: none; transition: 0.2s;
-  border-radius: 4px; box-sizing: border-box; font-size: 13px;
+  width: 100%; border: 1px solid transparent; background: transparent; padding: 4px;
+  outline: none; transition: 0.2s; border-radius: 4px; box-sizing: border-box; font-size: 13px; color: var(--text-main);
 }
-.cell-input:focus, .cell-input:hover {
-  border-color: #667eea; background: white;
-  box-shadow: inset 0 0 0 1px #667eea;
-}
+.cell-input:focus, .cell-input:hover { border-color: var(--primary); background: var(--bg-surface); }
 
 /* =============================================
    드래그
 ============================================= */
 .drag-handle { cursor: grab; user-select: none; }
-.drag-icon { color: #94a3b8; font-size: 16px; vertical-align: middle; margin-right: 2px; }
-.dragging { opacity: 0.4; background: #e0e7ff !important; }
+.drag-icon { color: var(--text-muted); font-size: 16px; vertical-align: middle; margin-right: 2px; }
+.dragging { opacity: 0.4; background: var(--primary-soft) !important; }
 
 /* =============================================
    기타 유틸
 ============================================= */
-.empty-row { text-align: center; padding: 32px 16px; color: #94a3b8; font-size: 13px; }
+.empty-row { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 13px; }
 .btn-delete-row {
-  background: #fee2e2; color: #ef4444; border: none;
-  padding: 4px; border-radius: 4px; cursor: pointer;
-  transition: 0.2s; display: inline-flex;
-  align-items: center; justify-content: center;
+  background: rgba(239, 68, 68, 0.1); color: var(--danger); border: none;
+  padding: 4px; border-radius: 4px; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center;
 }
-.btn-delete-row:hover { background: #ef4444; color: white; }
+.btn-delete-row:hover { background: var(--danger); color: var(--text-inverse); }
 
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 .font-bold { font-weight: 700; }
 .text-blue { color: #2563eb; }
-.text-red { color: #ef4444; }
-.text-green { color: #16a34a; }
-.text-gray-400 { color: #94a3b8; }
+.text-red { color: var(--danger); }
+.text-green { color: var(--success); }
+.text-gray-400 { color: var(--text-muted); }
 .mt-2 { margin-top: 8px; }
 .mt-4 { margin-top: 16px; }
 .mt-5 { margin-top: 30px; }
 
-input::-webkit-outer-spin-button,
-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* =============================================
-   반응형 - 태블릿 (768px ~ 1024px)
+   반응형
 ============================================= */
 @media (max-width: 1024px) {
   .modal-overlay { padding: 10px; }
@@ -982,54 +857,28 @@ input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   .document-paper { padding: 24px 20px; }
 }
 
-/* =============================================
-   반응형 - 모바일 (~ 768px)
-============================================= */
 @media (max-width: 768px) {
-  /* 모달 전체화면 */
   .modal-overlay { padding: 0; align-items: flex-end; }
-  .modal-container {
-    height: 96vh;
-    border-radius: 16px 16px 0 0;
-    max-width: 100%;
-  }
-
-  /* 헤더 */
+  .modal-container { height: 96vh; border-radius: 16px 16px 0 0; max-width: 100%; }
   .modal-header { padding: 12px 16px; }
   .header-title h2 { font-size: 15px; }
-  .badge { display: none; } /* 모바일에서 뱃지 숨김 */
-
-  /* 탭 */
+  .badge { display: none; }
   .modal-tabs { padding: 0 8px; }
   .tab-btn { padding: 12px 12px; font-size: 13px; }
-  .tab-text { display: none; } /* 아이콘만 표시 */
-
-  /* 바디 */
+  .tab-text { display: none; }
   .modal-body { padding: 12px; }
-
-  /* 공문 문서 */
   .document-paper { padding: 16px 14px; }
   .doc-header h1 { font-size: 18px; letter-spacing: 4px; margin-bottom: 20px; }
-
-  /* form grid: 1열로 */
   .form-grid { grid-template-columns: 1fr; gap: 12px; }
-
-  /* 버튼 텍스트 숨김 (아이콘만) */
   .btn-text { display: none; }
-
   .action-btns { gap: 6px; }
   .btn-add-row, .btn-load-data { padding: 7px 10px; }
-
-  /* 테이블 셀 폰트 */
   .excel-table { font-size: 12px; }
   .excel-table thead th { padding: 8px 6px; font-size: 11px; }
   .excel-table td { padding: 4px; }
   .cell-input { font-size: 12px; padding: 3px; }
 }
 
-/* =============================================
-   반응형 - 소형 모바일 (~ 480px)
-============================================= */
 @media (max-width: 480px) {
   .header-title h2 { font-size: 14px; }
   .modal-body { padding: 8px; }

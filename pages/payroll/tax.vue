@@ -68,7 +68,7 @@ const toggleEdit = () => {
   isEditMode.value = !isEditMode.value;
 };
 
-const handleSave = () => {
+const handleSave = async () => {
   if (confirm('변경된 요율을 저장하시겠습니까?\n산재보험은 회사 부담금 계산에만 영향을 미칩니다.')) {
     const params = {
       applied_year: tempRates.value.appliedYear,
@@ -80,12 +80,10 @@ const handleSave = () => {
     };
 
     try {
-      axios.post('/api/v1/config/tax/rate', params)
-          .then(res => {
-            insuranceRates.value = { ...tempRates.value };
-            isEditMode.value = false;
-            alert('설정이 저장되었습니다.');
-          })
+      await axios.post('/api/v1/config/tax/rate', params);
+      insuranceRates.value = { ...tempRates.value };
+      isEditMode.value = false;
+      alert('설정이 저장되었습니다.');
     } catch (e) {
       console.error(e);
       alert('저장 중 오류가 발생했습니다.');
@@ -131,7 +129,7 @@ onMounted(() => {
         <div>
           <h1 class="page-title">
             <i class="mdi mdi-shield-account-outline"></i>
-            4대보험 요율 설정
+            보험별 요율 설정
           </h1>
           <p class="page-subtitle">근로자 공제 및 회사 부담금 계산의 기준이 되는 요율을 관리합니다</p>
         </div>
@@ -181,13 +179,6 @@ onMounted(() => {
 
     <div class="content-grid">
       <div class="rates-section">
-        <div class="section-header">
-          <h2 class="section-title">
-            <i class="mdi mdi-percent-outline"></i>
-            보험별 요율 설정
-          </h2>
-        </div>
-
         <div class="rates-grid">
           <div class="rate-card">
             <div class="rate-card-header">
@@ -431,145 +422,139 @@ onMounted(() => {
 </template>
 
 <style scoped>
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
-.settings-page {
-  padding: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #334155;
-}
-
-/* === 페이지 헤더 === */
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-.header-left { display: flex; align-items: flex-start; gap: 16px; }
-.page-title {
-  font-size: 24px; font-weight: 700; color: #1e293b;
-  margin: 0 0 6px 0; display: flex; align-items: center; gap: 10px; letter-spacing: -0.5px;
-}
-.page-title i { font-size: 26px; color: #4f46e5; }
-.page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
-
-/* 액션 버튼 (플랫) */
-.header-actions { display: flex; gap: 10px; }
-.btn-edit, .btn-cancel, .btn-save {
+.btn-cancel {
   display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-sub);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s;
 }
+.btn-cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+  border-color: var(--border-focus);
+}
+.btn-cancel i { font-size: 16px; }
 
-.btn-edit { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-edit:hover { background: #f8fafc; border-color: #cbd5e1; color: #1e293b; }
-
-.btn-cancel { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-cancel:hover { background: #f8fafc; color: #1e293b; }
-
-.btn-save { background-color: #10b981; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-.btn-save:hover { background-color: #059669; transform: translateY(-1px); }
-
-.btn-edit i, .btn-cancel i, .btn-save i { font-size: 16px; }
+.btn-edit {
+  display: flex; align-items: center; gap: 6px; padding: 10px 18px; height: 42px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  box-shadow: var(--shadow-sm); white-space: nowrap;
+  box-sizing: border-box;
+}
+.btn-edit:hover {
+  background-color: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+.btn-edit i { font-size: 16px; }
 
 /* === 상단 연도 선택 카드 === */
 .year-selector-card {
-  background: white; border-radius: 12px; padding: 20px 24px;
-  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  background: var(--bg-surface); border-radius: 12px; padding: 20px 24px;
+  border: 1px solid var(--border-color); box-shadow: var(--shadow-sm);
   margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;
 }
 .year-selector-content { display: flex; align-items: center; gap: 16px; }
 .year-icon {
   width: 48px; height: 48px; border-radius: 10px;
-  background-color: #eef2ff; display: flex; align-items: center; justify-content: center;
+  background-color: var(--primary-soft); display: flex; align-items: center; justify-content: center;
 }
-.year-icon i { font-size: 24px; color: #4f46e5; }
+.year-icon i { font-size: 24px; color: var(--primary); }
 .year-info { display: flex; flex-direction: column; gap: 4px; }
-.year-label { font-size: 13px; color: #64748b; font-weight: 600; }
+.year-label { font-size: 13px; color: var(--text-sub); font-weight: 600; }
 .year-select-wrapper { position: relative; display: inline-block; }
 .year-select {
   appearance: none; background: transparent; border: none; font-size: 20px; font-weight: 700;
-  color: #4f46e5; cursor: pointer; padding-right: 28px; outline: none; font-family: inherit;
+  color: var(--primary); cursor: pointer; padding-right: 28px; outline: none;
 }
 .year-select-wrapper i {
   position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  font-size: 24px; color: #4f46e5; pointer-events: none;
+  font-size: 24px; color: var(--primary); pointer-events: none;
 }
-.year-last-updated { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #94a3b8; }
+.year-last-updated { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
 .year-last-updated i { font-size: 16px; }
 
 /* === 메인 그리드 === */
 .content-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; }
 .rates-section { display: flex; flex-direction: column; gap: 20px; }
-.section-header { margin-bottom: 4px; }
-.section-title { font-size: 18px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px; margin: 0; }
-.section-title i { font-size: 20px; color: #4f46e5; }
 
 /* 요율 카드 */
 .rates-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
 .rate-card {
-  background: white; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); transition: all 0.2s;
+  background: var(--bg-surface); border-radius: 12px; padding: 20px; border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm); transition: all 0.2s;
 }
-.rate-card:hover { border-color: #cbd5e1; }
+.rate-card:hover { border-color: var(--border-focus); }
 .rate-card.full-width { grid-column: 1 / -1; }
-.rate-card.company-card { background-color: #fffdfa; border-color: #fde68a; } /* 옅은 앰버 */
+.rate-card.company-card { background-color: rgba(245, 158, 11, 0.02); border-color: rgba(245, 158, 11, 0.3); }
 
 .rate-card-header { display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-start;}
 .rate-icon {
   width: 40px; height: 40px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.rate-icon i { font-size: 20px; color: white; }
+.rate-icon i { font-size: 20px; color: var(--text-inverse); }
 
 /* 각 보험별 플랫 컬러 */
 .rate-icon.pension { background-color: #3b82f6; }
-.rate-icon.health { background-color: #10b981; }
+.rate-icon.health { background-color: var(--success); }
 .rate-icon.longterm { background-color: #8b5cf6; }
-.rate-icon.employment { background-color: #f59e0b; }
-.rate-icon.industrial { background-color: #ef4444; }
+.rate-icon.employment { background-color: var(--warning); }
+.rate-icon.industrial { background-color: var(--danger); }
 
 .rate-title-group { display: flex; flex-direction: column; gap: 4px;}
 .title-with-badge { display: flex; align-items: center; gap: 8px; }
-.rate-title { font-size: 15px; font-weight: 700; color: #1e293b; margin: 0; }
-.rate-description { font-size: 12px; color: #64748b; margin: 0; }
-.rate-description.company-description { color: #b45309; } /* 앰버 텍스트 */
+.rate-title { font-size: 15px; font-weight: 700; color: var(--text-main); margin: 0; }
+.rate-description { font-size: 12px; color: var(--text-sub); margin: 0; }
+.rate-description.company-description { color: var(--warning); }
 
 .company-badge {
   display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
-  background-color: #fef3c7; border: 1px solid #fde68a; border-radius: 6px;
-  font-size: 11px; font-weight: 600; color: #d97706;
+  background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 6px;
+  font-size: 11px; font-weight: 600; color: var(--warning);
 }
 .company-badge i { font-size: 12px; }
 
 /* 입력창 (플랫, 포커스 개선) */
 .rate-input-group { position: relative; margin-bottom: 16px; }
 .rate-input {
-  width: 100%; padding: 10px 36px 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px;
-  font-size: 16px; font-weight: 700; text-align: right; color: #1e293b;
-  transition: all 0.2s; box-sizing: border-box; background: white; font-family: 'Inter', monospace;
+  width: 100%; padding: 10px 36px 10px 14px; border: 1px solid var(--border-focus); border-radius: 8px;
+  font-size: 16px; font-weight: 700; text-align: right; color: var(--text-main);
+  transition: all 0.2s; box-sizing: border-box; background: var(--bg-surface);
 }
-.rate-input:disabled { background-color: #f8fafc; color: #94a3b8; border-color: #e2e8f0;}
-.rate-input:not(:disabled):hover { border-color: #94a3b8; }
-.rate-input:not(:disabled):focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.rate-unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 14px; font-weight: 600; color: #94a3b8; pointer-events: none;}
+.rate-input:disabled { background-color: var(--bg-canvas); color: var(--text-muted); border-color: var(--border-color);}
+.rate-input:not(:disabled):hover { border-color: var(--text-sub); }
+.rate-input:not(:disabled):focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.rate-unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 14px; font-weight: 600; color: var(--text-sub); pointer-events: none;}
 
 /* 프리뷰 영역 */
 .rate-preview {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px; background-color: #f8fafc; border-radius: 8px; border: 1px solid #f1f5f9;
+  padding: 10px 14px; background-color: var(--bg-hover); border-radius: 8px; border: 1px solid var(--bg-canvas);
 }
-.rate-preview.company-preview { background-color: #fffdfa; border-color: #fef3c7;}
-.preview-label { font-size: 12px; color: #64748b; font-weight: 600; }
-.preview-value { font-size: 14px; font-weight: 700; color: #1e293b; font-family: 'Inter', monospace;}
-.preview-value.company-value { color: #d97706; }
+.rate-preview.company-preview { background-color: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.1);}
+.preview-label { font-size: 12px; color: var(--text-sub); font-weight: 600; }
+.preview-value { font-size: 14px; font-weight: 700; color: var(--text-main); }
+.preview-value.company-value { color: var(--warning); }
 
 /* === 우측 시뮬레이션 === */
 .simulation-section { position: sticky; top: 20px; }
 .simulation-card {
-  background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
-  overflow: hidden; border: 1px solid #e2e8f0;
+  background: var(--bg-surface); border-radius: 12px; box-shadow: var(--shadow-md);
+  overflow: hidden; border: 1px solid var(--border-color);
 }
 .simulation-header {
-  padding: 24px; background-color: #6d28d9; /* 플랫 다크 퍼플 */
-  color: white; display: flex; gap: 16px; align-items: center;
+  padding: 24px; background-color: var(--header-bg); /* 다크 네이비 적용 */
+  color: var(--text-inverse); display: flex; gap: 16px; align-items: center;
 }
 .simulation-icon {
   width: 48px; height: 48px; border-radius: 10px;
@@ -579,29 +564,29 @@ onMounted(() => {
 .simulation-title { font-size: 18px; font-weight: 700; margin: 0 0 4px 0; letter-spacing: -0.5px;}
 .simulation-subtitle { font-size: 13px; opacity: 0.8; margin: 0; }
 
-.simulation-input-section { padding: 24px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.input-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 10px; }
-.input-label i { font-size: 16px; color: #4f46e5; }
+.simulation-input-section { padding: 24px; background: var(--bg-canvas); border-bottom: 1px solid var(--border-color); }
+.input-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 10px; }
+.input-label i { font-size: 16px; color: var(--primary); }
 .salary-input-wrapper { position: relative; display: flex; align-items: center; }
 .salary-input {
-  width: 100%; padding: 12px 36px 12px 16px; border: 1px solid #cbd5e1; border-radius: 8px;
-  font-size: 18px; font-weight: 700; color: #1e293b; text-align: right;
-  transition: all 0.2s; background: white; font-family: 'Inter', monospace;
+  width: 100%; padding: 12px 36px 12px 16px; border: 1px solid var(--border-focus); border-radius: 8px;
+  font-size: 18px; font-weight: 700; color: var(--text-main); text-align: right;
+  transition: all 0.2s; background: var(--bg-surface);
 }
-.salary-input:hover { border-color: #94a3b8; }
-.salary-input:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
-.salary-unit { position: absolute; right: 14px; font-size: 15px; font-weight: 600; color: #64748b; pointer-events: none; }
+.salary-input:hover { border-color: var(--text-sub); }
+.salary-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.salary-unit { position: absolute; right: 14px; font-size: 15px; font-weight: 600; color: var(--text-sub); pointer-events: none; }
 
-.simulation-section-card { padding: 24px; border-bottom: 1px solid #e2e8f0; }
+.simulation-section-card { padding: 24px; border-bottom: 1px solid var(--border-color); }
 .simulation-section-card:last-child { border-bottom: none; }
-.simulation-section-card.employee { background: #ffffff; }
-.simulation-section-card.company { background: #fffdfa; }
+.simulation-section-card.employee { background: var(--bg-surface); }
+.simulation-section-card.company { background: rgba(245, 158, 11, 0.02); }
 
 .simulation-section-header {
   display: flex; align-items: center; gap: 8px; margin-bottom: 20px;
 }
-.simulation-section-header i { font-size: 18px; color: #4f46e5; }
-.simulation-section-header h3 { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0; }
+.simulation-section-header i { font-size: 18px; color: var(--primary); }
+.simulation-section-header h3 { font-size: 14px; font-weight: 700; color: var(--text-main); margin: 0; }
 
 .simulation-items { display: flex; flex-direction: column; gap: 14px; }
 .simulation-item { display: flex; justify-content: space-between; align-items: center; }
@@ -609,34 +594,34 @@ onMounted(() => {
 .item-icon {
   width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
 }
-.item-icon i { font-size: 14px; color: white; }
+.item-icon i { font-size: 14px; color: var(--text-inverse); }
 .item-icon.pension { background-color: #3b82f6; }
-.item-icon.health { background-color: #10b981; }
+.item-icon.health { background-color: var(--success); }
 .item-icon.longterm { background-color: #8b5cf6; }
-.item-icon.employment { background-color: #f59e0b; }
-.item-icon.industrial { background-color: #ef4444; }
+.item-icon.employment { background-color: var(--warning); }
+.item-icon.industrial { background-color: var(--danger); }
 
-.item-name { font-size: 13px; color: #475569; font-weight: 500; }
-.item-amount { font-size: 14px; font-weight: 600; color: #1e293b; font-family: 'Inter', monospace;}
-.item-amount.company { color: #d97706; }
+.item-name { font-size: 13px; color: var(--text-sub); font-weight: 500; }
+.item-amount { font-size: 14px; font-weight: 600; color: var(--text-main); }
+.item-amount.company { color: var(--warning); }
 
 .simulation-total {
-  margin-top: 16px; padding-top: 16px; border-top: 1px dashed #cbd5e1;
+  margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border-focus);
   display: flex; justify-content: space-between; align-items: center;
 }
-.total-label { font-size: 14px; font-weight: 700; color: #475569; }
-.total-amount { font-size: 18px; font-weight: 800; color: #4f46e5; font-family: 'Inter', monospace;}
+.total-label { font-size: 14px; font-weight: 700; color: var(--text-sub); }
+.total-amount { font-size: 18px; font-weight: 800; color: var(--primary); }
 
 .simulation-note {
-  margin-top: 16px; padding: 12px; background-color: #fef3c7; border: 1px solid #fde68a;
-  border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b45309; font-weight: 500;
+  margin-top: 16px; padding: 12px; background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--warning); font-weight: 500;
 }
 .simulation-note i { font-size: 16px; }
 
-.net-pay-card { background-color: #eef2ff; border-top: 1px solid #e2e8f0; padding: 24px; text-align: center;}
+.net-pay-card { background-color: var(--primary-soft); border-top: 1px solid var(--border-color); padding: 24px; text-align: center;}
 .net-pay-content { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.net-pay-label { font-size: 13px; color: #4f46e5; font-weight: 700; }
-.net-pay-amount { font-size: 28px; font-weight: 800; color: #4f46e5; font-family: 'Inter', monospace; letter-spacing: -0.5px;}
+.net-pay-label { font-size: 13px; color: var(--primary); font-weight: 700; }
+.net-pay-amount { font-size: 28px; font-weight: 800; color: var(--primary);  letter-spacing: -0.5px;}
 
 /* === 반응형 === */
 @media (max-width: 1200px) {
@@ -644,10 +629,6 @@ onMounted(() => {
   .simulation-section { position: static; }
 }
 @media (max-width: 768px) {
-  .page-header { flex-direction: column; gap: 16px; align-items: flex-start; }
-  .header-actions { width: 100%; flex-direction: row;}
-  .btn-edit, .btn-cancel, .btn-save { flex: 1; justify-content: center; }
-
   .year-selector-card { flex-direction: column; align-items: flex-start; gap: 16px; }
   .rates-grid { grid-template-columns: 1fr; }
 }

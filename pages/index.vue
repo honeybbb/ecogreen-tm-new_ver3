@@ -11,52 +11,53 @@ const startDate = ref('');
 const endDate = ref('');
 const orderCount = ref(0);
 const offCount = ref(0);
+const totalPayrollNet = ref(0); // 이번 달 실지급액 총합
 
-// === [디자인 변경] 기존의 고유 포인트 색상들을 플랫하게 복원 ===
+// stats 변수의 컬러 정의를 common.css의 테마 변수로 매칭
 const stats = ref([
   {
     id:'site',
     title: '총 관리 현장',
     value: 12,
     unit: '개소',
-    icon: 'mdi-office-building',
+    icon: 'mdi-office-building-marker',
     change: '+1',
     changeText: '지난달 대비',
-    color: '#667eea', // 기존 보라색 복원 (그라디언트 없이 사용)
-    bgColor: '#eef2ff'  // 부드러운 배경색
+    color: 'var(--primary)',
+    bgColor: 'var(--primary-soft)'
   },
   {
     id:'member',
     title: '총 근무 인원',
     value: 145,
     unit: '명',
-    icon: 'mdi-account-group',
+    icon: 'mdi-account-group-outline',
     change: '+5',
     changeText: '이번달',
-    color: '#10b981', // 기존 초록색 복원
-    bgColor: '#ecfdf5'
+    color: 'var(--success)',
+    bgColor: 'rgba(16, 185, 129, 0.1)' // success-soft
   },
   {
     id:'payroll',
     title: '이번달 급여 총액',
     value: '3.5억',
     unit: '원',
-    icon: 'mdi-cash-multiple',
+    icon: 'mdi-credit-card-check-outline',
     change: '+2%',
     changeText: '전월 대비',
-    color: '#f59e0b', // 기존 노란색 복원
-    bgColor: '#fffbeb'
+    color: 'var(--warning)',
+    bgColor: 'rgba(245, 158, 11, 0.1)' // warning-soft
   },
   {
     id:'request',
-    title: '승인 대기',
-    value: 0, // computed나 함수에서 업데이트
+    title: '승인 대기 업무',
+    value: 0,
     unit: '건',
-    icon: 'mdi-clock-alert-outline',
+    icon: 'mdi-clipboard-text-clock-outline',
     change: '',
     changeText: '',
-    color: '#ef4444', // 기존 빨간색 복원
-    bgColor: '#fef2f2'
+    color: 'var(--danger)',
+    bgColor: 'rgba(239, 68, 68, 0.1)' // danger-soft
   },
 ]);
 
@@ -94,9 +95,12 @@ const pendingApprovals = computed(() => {
 
 // 4. 현장별 계약/이슈 현황
 const siteStatus = ref([
-  { name: 'LH 위례 6단지', issueCount: 0, contractEnd: '2025-12-31', progress: 80, contract: '2025-01-01 ~ 2025-12-31' },
-  { name: '강서 대명 강동', issueCount: 2, contractEnd: '2025-06-30', progress: 40, contract: '2025-01-01 ~ 2025-06-30' },
-  { name: '판교 테크노밸리', issueCount: 0, contractEnd: '2026-02-28', progress: 95, contract: '2025-01-01 ~ 2026-02-28' },
+  /*
+{ name: 'LH 위례 6단지', issueCount: 0, contractEnd: '2025-12-31', progress: 80, contract: '2025-01-01 ~ 2025-12-31' },
+{ name: '강서 대명 강동', issueCount: 2, contractEnd: '2025-06-30', progress: 40, contract: '2025-01-01 ~ 2025-06-30' },
+{ name: '판교 테크노밸리', issueCount: 0, contractEnd: '2026-02-28', progress: 95, contract: '2025-01-01 ~ 2026-02-28' },
+
+   */
 ]);
 
 // 대청소 관련
@@ -112,15 +116,7 @@ const cleaningSchedules = ref([
   { id: 3, site: '판교 테크노밸리', type: '외벽 유리창 청소', date: '2025-05-01', status: '완료', worker: '외부 용역' },
 ]);
 
-// 최근 활동 로그 (주석 해제 대비 디자인 적용)
-const recentActivities = ref([
-  { id: 1, type: '급여', action: '4월 급여 계산 완료', time: '2시간 전', icon: 'mdi-calculator', color: '#f59e0b' },
-  { id: 2, type: '직원', action: '신규 직원 3명 등록', time: '5시간 전', icon: 'mdi-account-plus', color: '#10b981' },
-  { id: 3, type: '현장', action: '강남 A현장 계약 갱신', time: '1일 전', icon: 'mdi-file-document', color: '#667eea' },
-  { id: 4, type: '공지', action: '안전교육 공지 발송', time: '2일 전', icon: 'mdi-bullhorn', color: '#ef4444' },
-]);
-
-// 유틸리티 함수
+// 유틸리티 함수 (테마 컬러와 연동)
 const getCleaningStatusClass = (status) => {
   if (status === '완료') return 'status-complete';
   if (status === '예정') return 'status-upcoming';
@@ -139,7 +135,7 @@ const getBadgeClass = (category) => {
 
 const getTypeTagClass = (type) => {
   const classes = {
-    '피복신청': 'type-tag-purple',
+    '피복신청': 'type-tag-orange',
     '용품신청': 'type-tag-blue',
     '연차신청': 'type-tag-green'
   };
@@ -147,16 +143,15 @@ const getTypeTagClass = (type) => {
 };
 
 const getProgressColor = (progress) => {
-  if (progress >= 80) return '#ef4444'; // 위험 (레드)
-  if (progress >= 50) return '#f59e0b'; // 진행 (옐로우)
-  return '#10b981'; // 초기 (그린)
+  if (progress >= 80) return 'var(--danger)';
+  if (progress >= 50) return 'var(--warning)';
+  return 'var(--success)';
 };
 
-// [추가] 승인 상태 아이콘 유틸
 const getStatusIconInfo = (status) => {
   if (status == 0) return { icon: 'mdi-clock-outline', class: 'status-pending-icon' };
   if (status == 1) return { icon: 'mdi-check-circle-outline', class: 'status-complete-icon' };
-  return { icon: 'mdi-close-circle-outline', class: 'status-delayed-icon' }; // 반려
+  return { icon: 'mdi-close-circle-outline', class: 'status-delayed-icon' };
 };
 
 // 데이터 가공 로직
@@ -215,8 +210,28 @@ const getMemberData = async () => {
 }
 
 const getPayrollMonth = async () => {
-  console.log('급여 총액 API 호출 위치')
-}
+  const now = new Date();
+  const year = now.getFullYear().toString();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+
+  try {
+    const res = await axios.get(`/api/v1/member/payroll/month`, {
+      params: { year, month }
+    });
+
+    if (res.data.result && res.data.data) {
+      const payrollData = res.data.data;
+      const totalNet = payrollData.reduce((acc, curr) => acc + (Number(curr.netPay) || 0), 0);
+      totalPayrollNet.value = totalNet;
+
+      const payrollStat = stats.value.find(s => s.id === 'payroll');
+      if (payrollStat) {
+        payrollStat.value = totalNet.toLocaleString();
+        payrollStat.changeText = `${year}년 ${month}월 정산 기준`;
+      }
+    }
+  } catch (err) { console.error('이번 달 급여 합계 로드 실패:', err); }
+};
 
 const fetchNotices = () => {
   axios.get('/api/v1/notice/list')
@@ -269,11 +284,11 @@ onMounted(() => {
   getSiteData();
   fetchNotices();
   getMemberData();
+  getPayrollMonth();
   getMemberOff();
   fetchOrders();
 })
 
-// 현재 시간
 const currentTime = ref(new Date().toLocaleString('ko-KR', {
   year: 'numeric',
   month: 'long',
@@ -284,35 +299,35 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
 <template>
   <div class="dashboard-page">
-    <div class="header-section">
-      <div class="welcome-box">
-        <h1 class="welcome-title">
-          <i class="mdi mdi-hand-wave wave-icon"></i>
-          안녕하세요, {{ authStore.user?.managerNm }}님!
+    <div class="page-header">
+      <div class="header-left">
+        <h1 class="page-title">
+          <i class="mdi mdi-view-dashboard-variant-outline"></i>
+          대시보드
         </h1>
-        <p class="welcome-subtitle">오늘도 좋은 하루 보내세요. {{ currentTime }}</p>
+        <p class="page-subtitle">안녕하세요, {{ authStore.user?.managerNm }}님. 현재 시스템 현황입니다. ({{ currentTime }})</p>
       </div>
     </div>
 
-    <div class="kpi-grid">
+    <div class="stats-grid">
       <div
           v-for="(stat, index) in stats"
           :key="index"
-          class="kpi-card"
+          class="stat-card"
           :style="{ '--card-color': stat.color, '--card-bg': stat.bgColor }"
       >
-        <div class="kpi-icon-wrapper">
+        <div class="stat-icon">
           <i :class="['mdi', stat.icon]"></i>
         </div>
-        <div class="kpi-content">
-          <span class="kpi-title">{{ stat.title }}</span>
-          <div class="kpi-value-row">
-            <span class="kpi-value">{{ stat.value }}</span>
-            <span class="kpi-unit">{{ stat.unit }}</span>
+        <div class="stat-content">
+          <span class="stat-label">{{ stat.title }}</span>
+          <div class="stat-value-group">
+            <span class="stat-value">{{ stat.value }}</span>
+            <small class="stat-unit">{{ stat.unit }}</small>
           </div>
-          <div class="kpi-change-row">
-            <span class="kpi-change">{{ stat.change }}</span>
-            <span class="kpi-change-text">{{ stat.changeText }}</span>
+          <div class="stat-footer">
+            <span class="stat-change" v-if="stat.change">{{ stat.change }}</span>
+            <span class="stat-footer-text">{{ stat.changeText }}</span>
           </div>
         </div>
       </div>
@@ -320,175 +335,98 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
     <div class="main-grid">
       <div class="grid-column">
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <i class="mdi mdi-file-sign card-icon"></i>
-              <h3>승인 대기 업무</h3>
-              <span class="count-badge">{{ pendingApprovals.length }}</span>
-            </div>
+        <div class="table-card">
+          <div class="table-header">
+            <h3 class="table-title">
+              <i class="mdi mdi-file-sign"></i>
+              승인 대기 업무
+              <span class="badge-count">{{ pendingApprovals.length }}</span>
+            </h3>
           </div>
-          <div class="card-body">
-            <div class="approval-list">
-              <div
-                  v-for="item in pendingApprovals"
-                  :key="item.id"
-                  class="approval-item"
-              >
-                <div class="approval-left">
-                  <span :class="['type-tag', getTypeTagClass(item.type)]">
-                    {{ item.type }}
-                  </span>
-                  <div class="approval-info">
-                    <div class="approval-title">{{ item.site }}</div>
-                    <div class="approval-sub">
-                      <i class="mdi mdi-account-outline"></i>
-                      {{ item.applicant }}
-                    </div>
+          <div class="list-body">
+            <div v-if="pendingApprovals.length === 0" class="empty-state">
+              <i class="mdi mdi-check-decagram-outline"></i>
+              <p>대기 중인 업무가 없습니다.</p>
+            </div>
+            <div
+                v-for="item in pendingApprovals"
+                :key="item.id"
+                class="list-item"
+            >
+              <div class="item-main">
+                <span :class="['type-tag', getTypeTagClass(item.type)]">{{ item.type }}</span>
+                <div class="item-info">
+                  <div class="item-title">{{ item.site }}</div>
+                  <div class="item-meta">
+                    <span class="meta-user"><i class="mdi mdi-account-outline"></i> {{ item.applicant }}</span>
+                    <span class="meta-date"><i class="mdi mdi-calendar-outline"></i> {{ item.date }}</span>
                   </div>
                 </div>
-                <div class="approval-right">
-                  <div class="approval-date">{{ item.date }}</div>
-                  <span :class="['status-icon', getStatusIconInfo(item.status).class]">
-                    <i :class="['mdi', getStatusIconInfo(item.status).icon]"></i>
-                    {{ item.status == 0 ? '승인대기': item.status == 1 ? '승인' : '반려' }}
-                  </span>
-                </div>
+              </div>
+              <div class="item-action">
+                <button class="btn-detail">상세보기</button>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <i class="mdi mdi-bullhorn card-iconBull"></i>
-              <h3>최신 공지사항</h3>
-            </div>
-            <NuxtLink to="/notice/list" class="btn-text">
-              전체보기
-              <i class="mdi mdi-arrow-right"></i>
-            </NuxtLink>
+        <div class="table-card">
+          <div class="table-header">
+            <h3 class="table-title">최신 공지사항</h3>
           </div>
-          <div class="card-body">
-            <div class="notice-list">
-              <div
-                  v-for="notice in notices"
-                  :key="notice.idx"
-                  class="notice-item"
-              >
-                <div class="notice-header">
-                  <span :class="['badge', getBadgeClass(notice.type)]">
-                    {{ notice.type }}
-                  </span>
-                  <span v-if="notice.isNew" class="new-badge">NEW</span>
-                </div>
-                <div class="notice-title">{{ notice.title }}</div>
-                <div class="notice-footer">
-                  <span class="notice-author">
-                    <i class="mdi mdi-account-circle-outline"></i>
-                    {{ notice.author }}
-                  </span>
-                  <span class="notice-date">
-                    <i class="mdi mdi-calendar-blank-outline"></i>
-                    {{ notice.date }}
-                  </span>
-                </div>
+          <div class="list-body">
+            <div v-for="notice in notices" :key="notice.idx" class="notice-row">
+              <span :class="['badge', getBadgeClass(notice.type)]">{{ notice.type }}</span>
+              <div class="notice-content">
+                <div class="notice-subject">{{ notice.title }}</div>
+                <div class="notice-date">{{ notice.date }}</div>
               </div>
             </div>
           </div>
         </div>
-
       </div>
 
       <div class="grid-column">
-        <div class="card site-card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <i class="mdi mdi-map-marker-radius card-iconGreen"></i>
-              <h3>주요 현장 현황</h3>
-            </div>
-            <NuxtLink to="/site/list" class="btn-icon-cog">
-              <i class="mdi mdi-cog"></i>
-            </NuxtLink>
+        <div class="table-card">
+          <div class="table-header">
+            <h3 class="table-title">주요 현장 계약 현황</h3>
           </div>
-          <div class="card-body">
-            <div class="site-list">
-              <div
-                  v-for="(site, idx) in siteStatus"
-                  :key="idx"
-                  class="site-item"
-              >
-                <div class="site-header">
-                  <div class="site-name-group">
-                    <i class="mdi mdi-office-building site-icon"></i>
-                    <span class="site-name">{{ site.name }}</span>
-                  </div>
-                  <span
-                      v-if="site.issueCount > 0"
-                      class="issue-badge"
-                  >
-                    <i class="mdi mdi-alert-circle"></i>
-                    이슈 {{ site.issueCount }}건
-                  </span>
+          <div class="list-body">
+            <div v-for="(site, idx) in siteStatus" :key="idx" class="site-status-row">
+              <div class="site-top">
+                <span class="site-name">{{ site.name }}</span>
+                <span class="site-progress-num" :style="{ color: getProgressColor(site.progress) }">{{ site.progress }}%</span>
+              </div>
+              <div class="site-mid">
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" :style="{ width: site.progress + '%', background: getProgressColor(site.progress) }"></div>
                 </div>
-                <div class="site-info-row">
-                  <span class="site-meta">
-                    <i class="mdi mdi-calendar-clock"></i>
-                    계약 만료: {{ site.contractEnd }}
-                  </span>
-                  <span class="site-progress-text">{{ site.progress }}%</span>
-                </div>
-                <div class="progress-bar-wrapper">
-                  <div class="progress-bar-bg">
-                    <div
-                        class="progress-bar-fill"
-                        :style="{
-                        width: site.progress + '%',
-                        background: getProgressColor(site.progress)
-                      }"
-                    ></div>
-                  </div>
-                </div>
+              </div>
+              <div class="site-bottom">
+                <span><i class="mdi mdi-clock-end"></i> 종료: {{ site.contractEnd }}</span>
+                <span v-if="site.issueCount > 0" class="text-red"><i class="mdi mdi-alert-circle"></i> 이슈 {{ site.issueCount }}건</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="card cleaning-card">
-          <div class="card-header">
-            <div class="card-title-group">
-              <i class="mdi mdi-broom card-iconBroom"></i>
-              <h3>이번 달 대청소 일정</h3>
-            </div>
-            <span class="sub-badge">
-              완료 {{ cleaningStats.completed }} / 총 {{ cleaningStats.total }}건
-            </span>
+        <div class="table-card">
+          <div class="table-header">
+            <h3 class="table-title">이번 달 대청소 일정</h3>
+            <span class="stat-footer-text">완료 {{ cleaningStats.completed }} / 총 {{ cleaningStats.total }}</span>
           </div>
-          <div class="card-body">
-            <div class="cleaning-list">
-              <div
-                  v-for="item in cleaningSchedules"
-                  :key="item.id"
-                  class="cleaning-item"
-              >
-                <div class="date-box-flat">
-                  <span class="day">{{ item.date.split('-')[2] }}</span>
-                  <span class="month">{{ item.date.split('-')[1] }}월</span>
-                </div>
-                <div class="info-box">
-                  <div class="cleaning-site">{{ item.site }}</div>
-                  <div class="cleaning-type">{{ item.type }}</div>
-                  <div class="cleaning-worker">
-                    <i class="mdi mdi-account-hard-hat"></i>
-                    {{ item.worker }}
-                  </div>
-                </div>
-                <div class="status-box">
-                  <span :class="['status-badge', getCleaningStatusClass(item.status)]">
-                    {{ item.status }}
-                  </span>
-                </div>
+          <div class="list-body">
+            <div v-for="item in cleaningSchedules" :key="item.id" class="cleaning-row">
+              <div class="date-chip">
+                <span class="d-day">{{ item.date.split('-')[2] }}</span>
+                <span class="d-month">{{ item.date.split('-')[1] }}월</span>
+              </div>
+              <div class="cleaning-info">
+                <div class="c-site">{{ item.site }}</div>
+                <div class="c-type">{{ item.type }}</div>
+              </div>
+              <div class="c-status">
+                <span :class="['status-chip', getCleaningStatusClass(item.status)]">{{ item.status }}</span>
               </div>
             </div>
           </div>
@@ -499,314 +437,352 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 </template>
 
 <style scoped>
-/* Material Design Icons */
-@import url('https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css');
-
-/* === 전역 설정 === */
+/* 1. 레이아웃 및 섹션 가이드 */
 .dashboard-page {
   padding: 0;
-  /* 눈의 피로를 줄이기 위한 차분한 베이스 배경색 (옅은회색) */
-  background-color: #f1f5f9;
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-/* === 헤더 섹션 (그라디언트 제거, 플랫 보라색) === */
-.header-section {
+.table-title { margin: 0; }
+
+/* 2. KPI 통계 카드 (common.css 설정 활용) */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.stat-value-group {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.stat-unit {
+  font-size: 14px;
+  color: var(--text-sub);
+  font-weight: 500;
+}
+
+.stat-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.stat-change {
+  font-weight: 700;
+  color: var(--card-color);
+}
+
+.stat-footer-text {
+  color: var(--text-sub);
+}
+
+/* 3. 메인 그리드 설정 */
+.main-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.grid-column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* 4. 리스트 공통 바디 */
+.list-body {
+  padding: 0;
+}
+
+/* 5. 리스트 아이템 스타일 */
+.list-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
-  padding: 30px;
-  /* 그라디언트 제거 -> 원본 보라색 톤 단색 적용 */
-  background-color: #6d28d9;
-  border-radius: 12px;
-  color: white;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
-.welcome-box { flex: 1; }
-.welcome-title { font-size: 26px; font-weight: 700; margin: 0 0 10px 0; display: flex; align-items: center; gap: 12px; }
-.wave-icon { font-size: 30px; color: #fbbf24; animation: wave-animation 2.5s infinite; transform-origin: 70% 70%; }
-.welcome-subtitle { font-size: 15px; opacity: 0.9; margin: 0; }
-
-@keyframes wave-animation {
-  0% { transform: rotate( 0.0deg) }
-  10% { transform: rotate(14.0deg) }
-  20% { transform: rotate(-8.0deg) }
-  30% { transform: rotate(14.0deg) }
-  40% { transform: rotate(-4.0deg) }
-  50% { transform: rotate(10.0deg) }
-  60% { transform: rotate( 0.0deg) }
-  100% { transform: rotate( 0.0deg) }
-}
-
-/* === KPI 카드 (포인트 컬러 활용, 그라디언트 무) === */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
-  margin-bottom: 30px;
-}
-
-.kpi-card {
-  background: white; /* 카드는 화이트로 깔끔하게 */
-  border-radius: 12px;
-  padding: 24px;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  /* 옅은 보더로 카드 구분 */
-  border: 1px solid #e2e8f0;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-/* 왼쪽에 포인트 컬러 바 */
-.kpi-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; width: 4px; height: 100%;
-  background-color: var(--card-color);
-}
-
-.kpi-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-}
-
-.kpi-icon-wrapper {
-  width: 56px; height: 56px;
-  border-radius: 12px;
-  /* 플랫한 연한 배경색 */
-  background-color: var(--card-bg);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-}
-
-.kpi-icon-wrapper i { font-size: 26px; color: var(--card-color); }
-.kpi-content { flex: 1; min-width: 0; }
-.kpi-title { display: block; font-size: 13px; color: #64748b; margin-bottom: 6px; font-weight: 500; }
-.kpi-value-row { display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px; }
-.kpi-value { font-size: 30px; font-weight: 700; color: #1e293b; line-height: 1; }
-.kpi-unit { font-size: 14px; color: #64748b; }
-.kpi-change-row { display: flex; align-items: center; gap: 5px; font-size: 12px; }
-.kpi-change { font-weight: 600; color: var(--card-color); }
-.kpi-change-text { color: #94a3b8; }
-
-/* === 메인 그리드 및 카드 === */
-.main-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
-  gap: 25px;
-  padding-bottom: 30px;
-}
-.grid-column { display: flex; flex-direction: column; gap: 25px; }
-
-.card {
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  overflow: hidden;
-}
-
-.card-header {
-  display: flex; justify-content: space-between; align-items: center;
   padding: 18px 24px;
-  border-bottom: 1px solid #f1f5f9;
-}
-.card-title-group { display: flex; align-items: center; gap: 10px; }
-
-/* 카드별 아이콘 색상 고정 (원본 톤 복원) */
-.card-icon { font-size: 22px; color: #667eea; } /* 보라 */
-.card-iconBull { font-size: 22px; color: #ef4444; } /* 레드 */
-.card-iconGreen { font-size: 22px; color: #10b981; } /* 그린 */
-.card-iconBroom { font-size: 22px; color: #f59e0b; } /* 옐로우 */
-.gray-icon { font-size: 22px; color: #94a3b8; }
-
-.card-header h3 { font-size: 16px; font-weight: 600; color: #1e293b; margin: 0; }
-
-/* 배지 디자인 (그라디언트 제거, 단색 플랫 적용) */
-.count-badge {
-  background-color: #ede9fe; /* 연한보라 */
-  color: #6d28d9; /* 진한보라 */
-  padding: 3px 10px; border-radius: 12px;
-  font-size: 12px; font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.2s ease;
 }
 
-.sub-badge {
-  background-color: #fffbeb; /* 연한노랑 */
-  color: #b45309; /* 진한노랑 */
-  padding: 4px 10px; border-radius: 8px;
-  font-size: 12px; font-weight: 500;
+.list-item:hover {
+  background-color: var(--bg-hover);
 }
 
-.btn-text {
-  display: flex; align-items: center; gap: 4px;
-  color: #4f46e5; font-size: 13px; font-weight: 500;
-  text-decoration: none;
-}
-.btn-icon-cog { color: #94a3b8; border: none; background: none; cursor: pointer; font-size: 18px; }
-.btn-icon-cog:hover { color: #64748b; }
-
-/*.card-body { padding: 24px; }*/
-
-/* === 승인 대기 목록 디자인 === */
-.approval-list { display: flex; flex-direction: column; gap: 12px; }
-
-.approval-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid #f1f5f9;
-  /*
-  background-color: white;
-  border: 1px solid #f1f5f9;
-  border-radius: 10px;
-   */
-}
-/*.approval-item:hover { background-color: #f8fafc; border-color: #e2e8f0; }*/
-
-.approval-left { display: flex; align-items: center; gap: 14px; flex: 1; }
-
-/* 플랫 태그 디자인 */
-.type-tag {
-  padding: 4px 10px; border-radius: 6px;
-  font-size: 11px; font-weight: 600; white-space: nowrap;
-}
-.type-tag-purple { background-color: #f3e8ff; color: #9333ea; }
-.type-tag-blue { background-color: #e0f2fe; color: #0284c7; }
-.type-tag-green { background-color: #d1fae5; color: #059669; }
-
-.approval-info { flex: 1; min-width: 0; }
-.approval-title { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
-.approval-sub { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
-
-.approval-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-.approval-date { font-size: 11px; color: #94a3b8; }
-
-/* 아이콘 중심 상태 표시 */
-.status-icon { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; }
-.status-pending-icon { color: #f59e0b; } /* 대기 - 옐로우 */
-.status-complete-icon { color: #10b981; } /* 승인 - 그린 */
-.status-delayed-icon { color: #ef4444; } /* 반려 - 레드 */
-
-/* === 공지사항 디자인 === */
-.notice-list { display: flex; flex-direction: column; gap: 12px; }
-.notice-item {
-  padding: 16px;
-  border-bottom: 1px solid #f1f5f9;
-  /*
-  background-color: white;
-  border: 1px solid #f1f5f9;
-  border-radius: 10px; cursor: pointer;
-
-   */
-}
-/*.notice-item:hover { background-color: #f8fafc; border-color: #e2e8f0; }*/
-
-.notice-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-/* 플랫 배지 */
-.badge { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
-.badge-blue { background-color: #dbeafe; color: #1e40af; }
-.badge-red { background-color: #fee2e2; color: #b91c1c; }
-.badge-gray { background-color: #f1f5f9; color: #475569; }
-.badge-green { background-color: #d1fae5; color: #065f46; }
-
-.new-badge { color: #ef4444; font-size: 11px; font-weight: 700; }
-.notice-title { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 8px; }
-.notice-footer { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #94a3b8; }
-.notice-author, .notice-date { display: flex; align-items: center; gap: 4px; }
-
-/* === 최근 활동 (주석 해제 대비) === */
-.activity-list { display: flex; flex-direction: column; gap: 16px; }
-.activity-item { display: flex; align-items: center; gap: 14px; }
-.activity-icon-w {
-  width: 36px; height: 36px; border-radius: 10px;
-  background-color: #f1f5f9;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px; flex-shrink: 0;
-}
-.activity-action { font-size: 13px; font-weight: 500; color: #334155; margin-bottom: 2px; }
-.activity-time { font-size: 11px; color: #94a3b8; }
-
-/* === 주요 현장 현황 디자인 === */
-.site-list { display: flex; flex-direction: column; gap: 18px; }
-.site-item {
-  padding: 16px;
-  border-bottom: 1px solid #f1f5f9;
-  /*
-  background-color: white;
-  border: 1px solid #f1f5f9;
-  border-radius: 10px;
-
-   */
+.list-item:last-child {
+  border-bottom: none;
 }
 
-.site-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.site-name-group { display: flex; align-items: center; gap: 8px; }
-.site-icon { font-size: 18px; color: #667eea; }
-.site-name { font-size: 15px; font-weight: 600; color: #1e293b; }
-
-.issue-badge {
-  display: flex; align-items: center; gap: 3px;
-  background-color: #fee2e2; color: #b91c1c;
-  padding: 3px 8px; border-radius: 6px;
-  font-size: 11px; font-weight: 600;
-}
-
-.site-info-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.site-meta { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 4px; }
-.site-progress-text { font-size: 12px; font-weight: 600; color: #1e293b; }
-
-.progress-bar-bg { height: 6px; background-color: #e2e8f0; border-radius: 3px; overflow: hidden; }
-.progress-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
-
-/* === 대청소 일정 디자인 === */
-.cleaning-list { display: flex; flex-direction: column; gap: 12px; }
-.cleaning-item {
+.item-main {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px;
-  border-bottom: 1px solid #f1f5f9;
-  /*
-  background-color: white;
-  border: 1px solid #f1f5f9;
+  flex: 1;
+  min-width: 0;
+}
+
+.item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.item-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 6. 태그 및 배지 디자인 (다크/라이트 테마 변수 활용) */
+.type-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 65px;
+  white-space: nowrap;
+}
+
+/* 촌스러운 보라색 제거 -> ERP 테마 컬러 활용 */
+.type-tag-orange { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.type-tag-blue { background-color: var(--primary-soft); color: var(--primary); }
+.type-tag-green { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.type-tag-gray { background-color: var(--bg-hover); color: var(--text-sub); }
+
+.badge-count {
+  margin-left: 8px;
+  background-color: var(--primary);
+  color: var(--text-inverse);
+  padding: 2px 8px;
   border-radius: 10px;
-
-   */
+  font-size: 11px;
+  font-weight: 700;
 }
 
-/* 그라디언트 제거 -> 원본 보라색 플랫 배경 */
-.date-box-flat {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  width: 54px; height: 54px;
-  background-color: #6d28d9; /* 진한보라 단색 */
-  border-radius: 10px; color: white; flex-shrink: 0;
+/* 7. 공지사항 행 디자인 */
+.notice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.2s;
 }
-.date-box-flat .day { font-size: 22px; font-weight: 700; line-height: 1; }
-.date-box-flat .month { font-size: 11px; margin-top: 3px; opacity: 0.9; }
 
-.info-box { flex: 1; min-width: 0; }
-.cleaning-site { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 3px; }
-.cleaning-type { font-size: 13px; color: #64748b; margin-bottom: 5px; }
-.cleaning-worker { font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px; }
+.notice-row:hover {
+  background-color: var(--bg-hover);
+}
 
-/* 상태 배지 (플랫 톤 고정) */
-.status-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.status-complete { background-color: #d1fae5; color: #065f46; } /* 완료 - 그린 */
-.status-upcoming { background-color: #e0f2fe; color: #0369a1; } /* 예정 - 블루 */
-.status-delayed { background-color: #fee2e2; color: #991b1b; } /* 지연 - 레드 */
+.notice-row:last-child {
+  border-bottom: none;
+}
 
-/* === 반응형 미디어 쿼리 === */
+.notice-content {
+  flex: 1;
+}
+
+.notice-subject {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.notice-date {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge-blue { background-color: var(--primary-soft); color: var(--primary); }
+.badge-red { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.badge-gray { background-color: var(--bg-hover); color: var(--text-sub); }
+.badge-green { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+
+/* 8. 현장 상태 및 진행바 */
+.site-status-row {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.site-status-row:last-child {
+  border-bottom: none;
+}
+
+.site-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.site-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.site-progress-num {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background-color: var(--bg-hover);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.site-bottom {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.site-bottom span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 9. 청소 일정 디자인 */
+.cleaning-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cleaning-row:last-child {
+  border-bottom: none;
+}
+
+.date-chip {
+  width: 50px;
+  height: 50px;
+  background-color: var(--header-bg);
+  color: var(--text-inverse);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.d-day {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.d-month {
+  font-size: 10px;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+.cleaning-info {
+  flex: 1;
+}
+
+.c-site {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.c-type {
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.status-chip {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-complete { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-upcoming { background-color: var(--primary-soft); color: var(--primary); }
+.status-delayed { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+
+/* 상태 아이콘 색상 보정 */
+.status-pending-icon { color: var(--warning); }
+.status-complete-icon { color: var(--success); }
+.status-delayed-icon { color: var(--danger); }
+
+/* 10. 반응형 조정 */
 @media (max-width: 1024px) {
-  .main-grid { grid-template-columns: 1fr; }
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
-  .header-section { flex-direction: column; gap: 15px; align-items: flex-start; padding: 20px; }
-  .kpi-grid { grid-template-columns: 1fr; }
-  .approval-item { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .approval-right { flex-direction: row; width: 100%; justify-content: space-between; }
+  .list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .item-action {
+    width: 100%;
+  }
+  .item-action button {
+    width: 100%;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 </style>
