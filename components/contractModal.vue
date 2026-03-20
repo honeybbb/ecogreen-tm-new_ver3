@@ -477,8 +477,15 @@ const handleClose = () => {
 <style scoped>
 /* 모달 기본 (공통 테마 변수 활용) */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
 }
 
 .modal-container {

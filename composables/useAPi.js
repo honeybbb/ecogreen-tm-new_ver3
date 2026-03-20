@@ -15,7 +15,6 @@ export const useApi = () => {
     const fetchBankOption = async (groupCd = '02001') => {
         try {
             axios.get(`/api/v1/code/group/${groupCd}`).then(res => {
-                console.log(res.data.data, 'getBanks');
                 bankOptions.value = res.data.data
             })
         } catch (e) {

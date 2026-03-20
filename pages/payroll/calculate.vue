@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
-import * as XLSX from 'xlsx'; // ← npm install xlsx 필요
+import * as XLSX from 'xlsx';
+import Pagination from "~/components/Pagination.vue";
 
 const {
   siteOptions,
@@ -50,35 +51,14 @@ const filteredPayrollList = computed(() =>
     })
 );
 
-const totalPages = computed(() => Math.ceil(filteredPayrollList.value.length / pageSize.value));
+const handlePageChange = () => {
+  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
 
 const pagedPayrollList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return filteredPayrollList.value.slice(start, start + pageSize.value);
 });
-
-const pageNumbers = computed(() => {
-  const total = totalPages.value;
-  const cur   = currentPage.value;
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages = [];
-  const delta = 2;
-  const left  = Math.max(2, cur - delta);
-  const right = Math.min(total - 1, cur + delta);
-  pages.push(1);
-  if (left > 2) pages.push('...');
-  for (let i = left; i <= right; i++) pages.push(i);
-  if (right < total - 1) pages.push('...');
-  pages.push(total);
-  return pages;
-});
-
-const goToPage = (page) => {
-  if (typeof page === 'number' && page >= 1 && page <= totalPages.value) {
-    currentPage.value = page;
-    document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-};
 
 const markAsDraft = (row) => {
   row.status = 2;
@@ -183,18 +163,22 @@ const updatePayAsync = async (row) => {
 };
 
 const calculateInsurances = async (row) => {
+  // ── 과세 급여 계산 (비과세 한도는 DB option에서 가져옴) ──
   let taxablePay = 0;
   payItems.value.forEach(item => {
-    const amt = Number(row.payItems[item.itemCd] || 0);
-    if (item.itemCd === '04001005') {
-      if (amt > 100000) taxablePay += (amt - 100000);
-    } else {
-      taxablePay += amt;
-    }
+    const amt   = Number(row.payItems[item.itemCd] || 0);
+    const limit = item.taxFreeLimit; // 0이면 비과세 없음
+
+    taxablePay += limit > 0
+        ? Math.max(0, amt - limit)  // 한도 초과분만 과세
+        : amt;                       // 전액 과세
   });
+
+  // ── 보험료 계산 (기존 코드 그대로) ──────────────────────
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
   let incomeTax = 0, localTax = 0;
+
   if (row.deductionFlags['04002013']) {
     try {
       const year = new Date().getFullYear();
@@ -205,6 +189,7 @@ const calculateInsurances = async (row) => {
       localTax  = taxRes.data?.localTax  || 0;
     } catch (e) { console.error('소득세 조회 실패', e); }
   }
+
   let healthAmt = 0;
   if (row.deductionFlags['04002001']) {
     healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
@@ -212,6 +197,7 @@ const calculateInsurances = async (row) => {
   } else {
     row.deductionItems['04002001'] = 0;
   }
+
   const calc = {
     '04002002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
     '04002003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
@@ -219,6 +205,7 @@ const calculateInsurances = async (row) => {
     '04002013': () => incomeTax,
     '04002014': () => localTax,
   };
+
   deductionItems.value.forEach(i => {
     if (i.itemCd === '04002001') return;
     if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
@@ -519,10 +506,23 @@ const exportPayrollExcel = () => {
 // 숫자 변환 헬퍼
 const n = (v) => Number(v || 0);
 
+/*
 const getWageCode = async () => {
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     items.value = res.data.data || [];
+  } catch (err) { console.error("항목 로드 실패", err); }
+};
+
+ */
+const getWageCode = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
+    items.value = (res.data.data || []).map(item => ({
+      ...item,
+      // option이 숫자 문자열이면 파싱, 없거나 0이면 비과세 없음
+      taxFreeLimit: Number(item.option) || 0,
+    }));
   } catch (err) { console.error("항목 로드 실패", err); }
 };
 
@@ -627,10 +627,11 @@ onMounted(async () => {
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 근무 현장</label>
-          <select v-model="selectedSite" class="filter-select">
+          <!--select v-model="selectedSite" class="filter-select">
             <option value="전체">전체</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-          </select>
+          </select-->
+          <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-account-box-outline"></i> 구분</label>
@@ -776,21 +777,13 @@ onMounted(async () => {
         </table>
       </div>
 
-      <div class="pagination-bar" v-if="totalPages > 1">
-        <span class="pagination-info">
-          {{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredPayrollList.length) }} / 총 {{ filteredPayrollList.length }}명
-        </span>
-        <div class="pagination-controls">
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(1)" title="처음"><i class="mdi mdi-chevron-double-left"></i></button>
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" title="이전"><i class="mdi mdi-chevron-left"></i></button>
-          <template v-for="p in pageNumbers" :key="p">
-            <span v-if="p === '...'" class="page-ellipsis">…</span>
-            <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="goToPage(p)">{{ p }}</button>
-          </template>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" title="다음"><i class="mdi mdi-chevron-right"></i></button>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)" title="마지막"><i class="mdi mdi-chevron-double-right"></i></button>
-        </div>
-      </div>
+      <Pagination
+          v-model:currentPage="currentPage"
+          v-model:pageSize="pageSize"
+          :totalCount="filteredPayrollList.length"
+          @change="handlePageChange"
+      />
+
     </div>
   </div>
 </template>
@@ -910,26 +903,6 @@ onMounted(async () => {
 }
 .net-pay-label { font-size: 13px; color: var(--primary); font-weight: 600; }
 .net-pay-value { font-size: 18px; color: var(--primary); font-weight: 700; letter-spacing: 0.5px;}
-
-.pagination-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; border-top: 1px solid var(--border-color);
-  background: var(--bg-hover); flex-wrap: wrap; gap: 12px;
-}
-.pagination-info { font-size: 13px; color: var(--text-sub); }
-.pagination-controls { display: flex; align-items: center; gap: 4px; }
-.page-btn {
-  min-width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--border-color); border-radius: 7px;
-  background: var(--bg-surface); color: var(--text-sub);
-  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; padding: 0 6px;
-}
-.page-btn:hover:not(:disabled) { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.page-btn.active { background: var(--primary); border-color: var(--primary); color: var(--text-inverse); font-weight: 700; }
-.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.page-btn i { font-size: 16px; }
-.page-ellipsis { min-width: 30px; text-align: center; font-size: 14px; color: var(--text-muted); letter-spacing: 1px; }
 
 @media (max-width: 768px) {
   .btn-calculate, .btn-export { flex: 1; justify-content: center; }

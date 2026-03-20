@@ -2,6 +2,9 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
+import { useRouter } from 'nuxt/app';
+
+const router = useRouter();
 
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
@@ -68,6 +71,7 @@ const rawOffs = ref([]);
 const notices = ref([]);
 
 // 3. 결재/승인 대기 현황
+const pendingList = ref([]);
 const pendingApprovals = computed(() => {
   const orders = rawOrders.value.map(item => ({
     id: `order-${item.idx}`,
@@ -196,7 +200,7 @@ const getSiteData = async () => {
   try {
     const res = await axios.get(`/api/v1/site/list/${cIdx}`);
     const result = res.data.data;
-    if (stats.value[0]) stats.value[0].value = result.length;
+    // if (stats.value[0]) stats.value[0].value = result.length;
     const processedData = calculateProcessed(result.slice(0, 3));
     siteStatus.value = processedData;
   } catch (err) { console.error('현장 로드 실패:', err); }
@@ -279,15 +283,79 @@ const setDefaultDate = () => {
   endDate.value = end;
 };
 
-onMounted(() => {
+// API 호출 통합 및 데이터 매핑
+const fetchDashboardData = async () => {
+  try {
+    // 백엔드에서 만든 통합 API 호출
+    const res = await axios.get(`/api/v1/dashboard/${cIdx}`);
+
+    if (res.data) {
+      const { pending, siteStatus: sStatus, memberStatus: mStatus } = res.data;
+
+      // 1. 상단 통계 카드(KPI) 업데이트
+      stats.value = stats.value.map(stat => {
+        if (stat.id === 'site') {
+          return {
+            ...stat,
+            value: sStatus.totalCount,
+            change: sStatus.increaseCount > 0 ? `+${sStatus.increaseCount}` : sStatus.increaseCount,
+            changeText: '지난달 대비'
+          };
+        }
+        if (stat.id === 'member') {
+          return {
+            ...stat,
+            value: mStatus.totalCount,
+            change: mStatus.increaseCount > 0 ? `+${mStatus.increaseCount}` : mStatus.increaseCount,
+            changeText: '지난달 대비 신규'
+          };
+        }
+        if (stat.id === 'request') {
+          return {
+            ...stat,
+            value: pending.length,
+            change: '',
+            changeText: '승인 대기 중인 업무'
+          };
+        }
+        return stat;
+      });
+
+      // 2. 승인 대기 목록용 데이터는 기존 fetchOrders, getMemberOff를 유지하거나
+      pendingList.value = pending.map(item => ({
+        id: `${item.type}-${item.idx}`,
+        type: item.type === 'order' ? '용품신청' : '연차신청', // 타입 한글화
+        site: item.site,
+        applicant: item.applicant,
+        summary: item.summary,
+        date: item.date,
+        status: item.status,
+        priority: item.type === 'off' ? 'high' : 'normal' // 연차인 경우 우선순위 높음 표시 예시
+      }));
+    }
+  } catch (err) {
+    console.error('대시보드 데이터 로드 실패:', err);
+  }
+};
+
+const goDetail = async (type) => {
+  if(type == '용품신청') {
+    router.push('/supplies/list')
+  } else {
+    router.push('/work/annual')
+  }
+}
+
+onMounted(async () => {
   setDefaultDate();
-  getSiteData();
-  fetchNotices();
-  getMemberData();
-  getPayrollMonth();
-  getMemberOff();
-  fetchOrders();
-})
+  // 모든 API를 병렬로 호출. 하나가 실패해도 나머지는 실행되도록 처리
+  await Promise.allSettled([
+    fetchDashboardData(), // 통계 및 승인대기
+    getSiteData(),        // 계약 현황 리스트
+    fetchNotices(),       // 공지사항
+    getPayrollMonth()     // 급여 총액
+  ]);
+});
 
 const currentTime = ref(new Date().toLocaleString('ko-KR', {
   year: 'numeric',
@@ -340,16 +408,16 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
             <h3 class="table-title">
               <i class="mdi mdi-file-sign"></i>
               승인 대기 업무
-              <span class="badge-count">{{ pendingApprovals.length }}</span>
+              <span class="badge-count">{{ pendingList.length }}</span>
             </h3>
           </div>
           <div class="list-body">
-            <div v-if="pendingApprovals.length === 0" class="empty-state">
+            <div v-if="pendingList.length === 0" class="empty-state">
               <i class="mdi mdi-check-decagram-outline"></i>
               <p>대기 중인 업무가 없습니다.</p>
             </div>
             <div
-                v-for="item in pendingApprovals"
+                v-for="item in pendingList"
                 :key="item.id"
                 class="list-item"
             >
@@ -360,11 +428,12 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                   <div class="item-meta">
                     <span class="meta-user"><i class="mdi mdi-account-outline"></i> {{ item.applicant }}</span>
                     <span class="meta-date"><i class="mdi mdi-calendar-outline"></i> {{ item.date }}</span>
+                    <span class="meta-summary" v-if="item.summary">| {{ item.summary }}</span>
                   </div>
                 </div>
               </div>
               <div class="item-action">
-                <button class="btn-detail">상세보기</button>
+                <button class="btn-detail" @click="goDetail(item.type)">상세보기</button>
               </div>
             </div>
           </div>
@@ -622,19 +691,6 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   font-size: 11px;
   color: var(--text-sub);
 }
-
-.badge {
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.badge-blue { background-color: var(--primary-soft); color: var(--primary); }
-.badge-red { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
-.badge-gray { background-color: var(--bg-hover); color: var(--text-sub); }
-.badge-green { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 
 /* 8. 현장 상태 및 진행바 */
 .site-status-row {

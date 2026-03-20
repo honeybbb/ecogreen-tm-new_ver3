@@ -255,10 +255,10 @@ onMounted(() => {
           <i :class="['mdi', isDarkMode ? 'mdi-weather-sunny' : 'mdi-weather-night']"></i>
         </button>
 
-        <button class="eg-icon-btn eg-notification-btn">
+        <!--button class="eg-icon-btn eg-notification-btn">
           <i class="mdi mdi-bell-outline"></i>
           <span class="eg-badge"></span>
-        </button>
+        </button-->
 
         <div class="eg-profile-menu">
           <button class="eg-profile-btn" @click.stop="toggleProfile">

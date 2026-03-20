@@ -37,7 +37,7 @@ const newCodeNumber = computed(() => {
 const transformCodeData = (rows) => {
   const result = {};
   rows.forEach(row => {
-    const { groupCode, groupName, subCode, subName, detailCode, detailName, price, useFl } = row;
+    const { groupCode, groupName, subCode, subName, detailCode, detailName, price, useFl, sort } = row;
 
     if (!result[groupCode]) {
       result[groupCode] = {
@@ -48,12 +48,13 @@ const transformCodeData = (rows) => {
     }
     const currentGroup = result[groupCode];
 
-    const createCodeObj = (id, name, dbPrice, dbUseFl) => ({
+    const createCodeObj = (id, name, dbPrice, dbUseFl, sort) => ({
       id: id,
       itemCd: id,
       name: name,
       price: dbPrice || 0,
       useFl: dbUseFl,
+      sort: sort,
       isEditing: false
     });
 
@@ -63,9 +64,9 @@ const transformCodeData = (rows) => {
         subGroup = { id: subCode, subName: subName, codes: [] };
         currentGroup.subGroups.push(subGroup);
       }
-      subGroup.codes.push(createCodeObj(detailCode, detailName, price, useFl));
+      subGroup.codes.push(createCodeObj(detailCode, detailName, price, useFl, sort));
     } else if (subCode) {
-      currentGroup.codes.push(createCodeObj(subCode, subName, price, useFl));
+      currentGroup.codes.push(createCodeObj(subCode, subName, price, useFl, sort));
     }
   });
   return result;
@@ -234,6 +235,7 @@ const addCode = async () => {
             <th style="width: 70px;"><div class="th-content justify-center"><i class="mdi mdi-pound"></i><span>No.</span></div></th>
             <th style="width: 160px;"><div class="th-content"><i class="mdi mdi-barcode"></i><span>코드 번호</span></div></th>
             <th><div class="th-content"><i class="mdi mdi-tag-outline"></i><span>품목명</span></div></th>
+            <th><div class="th-content"><i class="mdi mdi-sort-variant"></i><span>순서</span></div></th>
             <th style="width: 140px;"><div class="th-content"><i class="mdi mdi-check-circle-outline"></i><span>상태</span></div></th>
             <th style="width: 180px;"><div class="th-content justify-end"><i class="mdi mdi-currency-usd"></i><span>단가(원)</span></div></th>
             <th class="text-center" style="width: 180px;"><div class="th-content justify-center"><i class="mdi mdi-cog-outline"></i><span>관리</span></div></th>
@@ -246,6 +248,19 @@ const addCode = async () => {
             <td>
               <input v-if="code.isEditing" type="text" v-model="code.name" class="input-edit" />
               <span v-else class="code-name">{{ code.name }}</span>
+            </td>
+            <td>
+              <template v-if="code.isEditing">
+                <input
+                    type="number"
+                    v-model.number="code.sort"
+                    class="input-edit text-center"
+                    min="0"
+                />
+              </template>
+              <template v-else>
+                <span class="sort-number">{{ code.sort }}</span>
+              </template>
             </td>
             <td>
               <select v-if="code.isEditing" v-model="code.useFl" class="status-select">
@@ -370,6 +385,7 @@ const addCode = async () => {
 .status-badge i { font-size: 13px; }
 
 /* 입력창 (포커스 개선) */
+/*
 .input-edit, .input-add, .status-select {
   width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
   font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box;
@@ -378,6 +394,7 @@ const addCode = async () => {
   outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .input-add.disabled { background-color: var(--bg-canvas); color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
+ */
 
 /* 액션 버튼 (테이블 내부) */
 .action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;}
@@ -385,7 +402,8 @@ const addCode = async () => {
   display: flex; align-items: center; gap: 4px; padding: 6px 10px; border: none;
   border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
-
+.btn-save {height: 100%}
+/*
 .btn-edit { background-color: var(--primary-soft); color: var(--primary); }
 .btn-edit:hover { background-color: rgba(59, 130, 246, 0.15); filter: brightness(0.95); }
 
@@ -397,6 +415,7 @@ const addCode = async () => {
 
 .btn-delete { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 .btn-delete:hover { filter: brightness(0.9); }
+ */
 
 /* 신규 추가 행 */
 .add-row { background-color: rgba(16, 185, 129, 0.03); border-top: 1px solid var(--border-color); }

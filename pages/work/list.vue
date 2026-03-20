@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from "axios";
+import SiteSelect from "~/components/SiteSelect.vue";
 
 // API Composable (현장 목록 등)
 const { siteOptions, fetchSiteOptions } = useApi();
@@ -175,9 +176,9 @@ const saveSchedule = async () => {
   try {
     form.value.mIdx = selectedStaff.idx;
     await axios.post(`/api/v1/work/start`, form.value);
-    await fetchSchedules();
     isModalOpen.value = false;
-    isDailyModalOpen.value = true;
+    isDailyModalOpen.value = false;
+    await fetchSchedules();
   } catch (e) {
     alert('등록 중 오류가 발생했습니다.');
   }
@@ -255,10 +256,11 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <select v-model="currentSiteId" class="filter-select">
+          <!--select v-model="currentSiteId" class="filter-select">
             <option value="" disabled>관리할 현장을 선택하세요</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-          </select>
+          </select-->
+          <SiteSelect v-model="currentSiteId" />
         </div>
 
         <div class="search-group" style="justify-content: flex-end;">
@@ -576,12 +578,7 @@ onMounted(() => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
 
-.modal-header {
-  padding: 20px 24px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas);
-  display: flex; justify-content: space-between; align-items: center;
-}
-.modal-title { font-size: 16px; font-weight: 700; margin: 0; color: var(--text-main); display: flex; align-items: center; gap: 8px;}
-.modal-title i { font-size: 20px; }
+
 .modal-close { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 4px;}
 .modal-close:hover { background: var(--bg-hover); color: var(--text-main); }
 
@@ -616,7 +613,11 @@ onMounted(() => {
 .type-option input:checked + .option-card.leave { border-color: var(--danger); color: var(--danger); background: rgba(239, 68, 68, 0.1); }
 .type-option input:checked + .option-card.absent { border-color: var(--text-sub); color: var(--text-sub); background: var(--bg-canvas); }
 
-.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; background: var(--bg-canvas); }
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-color);
+  display: flex; gap: 10px;
+}
 .modal-footer button { flex: 1; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;}
 
 /* 일일 리스트 팝업 (플랫 모던) */

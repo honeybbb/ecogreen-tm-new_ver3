@@ -108,6 +108,7 @@ const handleSubmit = async () => {
 
   const payload = {
     ...employee.value,
+    cIdx: authStore.user?.cIdx,
     wageInputs: wageInputs.value
   };
 
@@ -843,7 +844,7 @@ onMounted(() => {
               <i class="mdi mdi-arrow-left"></i>
               이전
             </button>
-            <button type="submit" class="btn-submit green">
+            <button type="submit" class="btn-save">
               <i class="mdi mdi-check"></i>
               등록 완료
             </button>
@@ -1021,37 +1022,11 @@ onMounted(() => {
   gap: 16px;
 }
 
-.btn-back {
-  width: 42px; height: 42px;
-  border-radius: 10px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  color: var(--text-sub);
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all 0.2s;
-}
-.btn-back:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-focus);
-  color: var(--text-main);
-}
+.btn-back { width: 42px; height: 42px; border-radius: 10px; background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; padding: 0; }
+.btn-back:hover { background: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
 .btn-back i { font-size: 20px; }
-
-.btn-cancel {
-  display: flex; align-items: center; gap: 6px; padding: 10px 18px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  color: var(--text-sub);
-  font-size: 13px; font-weight: 600; cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-cancel:hover {
-  background: var(--bg-hover);
-  color: var(--text-main);
-  border-color: var(--border-focus);
-}
-.btn-cancel i { font-size: 16px; }
+.btn-cancel { display: flex; align-items: center; gap: 6px; padding: 10px 18px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-cancel:hover { background: var(--bg-hover); color: var(--text-main); border-color: var(--border-focus); }
 
 .btn-edit {
   display: flex; align-items: center; gap: 6px; padding: 10px 18px; height: 42px;
@@ -1075,79 +1050,35 @@ onMounted(() => {
 /* =========================================
    진행 단계 (Steps)
 ========================================= */
-.steps-container {
-  background: var(--bg-surface); border-radius: 12px; padding: 24px;
-  margin-bottom: 24px; border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-}
-
-.steps-list {
-  display: flex; justify-content: space-between; gap: 12px;
-}
-
-.step-item {
-  flex: 1; display: flex; align-items: center; gap: 12px; padding: 12px;
-  border-radius: 8px; background: var(--bg-canvas); transition: all 0.2s;
-}
-.step-item.active {
-  background: var(--primary-soft); border: 1px solid var(--primary);
-}
-
-.step-circle {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: var(--text-muted); color: var(--text-inverse);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 14px; transition: all 0.2s;
-}
+.steps-container { background: var(--bg-surface); border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
+.steps-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.step-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px; transition: all 0.2s; background: var(--bg-canvas); }
+.step-item.active { background-color: var(--primary-soft); border: 1px solid var(--primary); }
+.step-circle { width: 40px; height: 40px; border-radius: 50%; background: var(--text-muted); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s; }
 .step-item.active .step-circle { background-color: var(--primary); }
 .step-item.completed .step-circle { background-color: var(--success); }
 .step-circle i { font-size: 20px; }
-
 .step-info { display: flex; flex-direction: column; gap: 2px; }
 .step-number { font-size: 11px; color: var(--text-sub); font-weight: 600; letter-spacing: 0.5px; }
 .step-title { font-size: 13px; color: var(--text-main); font-weight: 600; }
-
 .step-item.active .step-number, .step-item.active .step-title { color: var(--primary); }
 
 /* =========================================
    폼 컨테이너 및 그리드
 ========================================= */
-.form-container {
-  background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm); overflow: hidden;
-}
-
+.form-container { background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); overflow: hidden; }
 .form-step { padding: 32px; }
-
-.step-header {
-  display: flex; align-items: center; gap: 10px; padding-bottom: 16px;
-  margin-bottom: 24px; border-bottom: 1px solid var(--border-color);
-}
+.step-header { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 1px dashed var(--border-color); }
 .step-header i { font-size: 24px; color: var(--primary); }
 .step-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
-
-.form-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px; margin-bottom: 32px;
-}
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px; }
 .form-group { display: flex; flex-direction: column; gap: 8px; }
 .form-group.full-width { grid-column: 1 / -1; }
-
-.form-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: var(--text-sub);
-}
-.form-label i { font-size: 16px; color: var(--primary); }
+.form-label, .section-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-sub); }
+.form-label i, .section-label i { font-size: 16px; color: var(--primary); }
 .form-label.required::after { content: '*'; color: var(--danger); margin-left: 2px; }
-
-/* 입력 스타일 */
-.form-input, .form-select, .form-textarea {
-  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
-  font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface);
-}
-.form-input:focus, .form-select:focus, .form-textarea:focus {
-  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
-}
+.form-input, .form-select, .form-textarea { padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box; }
+.form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
 .form-textarea { resize: vertical; min-height: 80px; }
 
@@ -1281,16 +1212,15 @@ onMounted(() => {
 .party p { margin: 6px 0; font-size: 12px; color: var(--text-sub); }
 
 /* 반응형 */
-@media (max-width: 1024px) {
-  .steps-list { overflow-x: auto; padding-bottom: 8px; }
-  .step-item { min-width: 160px; }
-}
+@media (max-width: 1024px) { .steps-list { grid-template-columns: repeat(2, 1fr); } }
 
 @media (max-width: 768px) {
-  .form-step { padding: 20px; }
+  .steps-list { grid-template-columns: 1fr; gap: 8px; }
+  .form-step { padding: 16px; }
   .form-grid { grid-template-columns: 1fr; }
-  .ssn-group { flex-direction: row; }
+  .ssn-group { flex-direction: row;display: grid; }
   .signature-parties { grid-template-columns: 1fr; gap: 20px;}
   .contract-document { padding: 20px; }
+  .btn-prev, .btn-next, .btn-submit { width: 100%; justify-content: center; }
 }
 </style>

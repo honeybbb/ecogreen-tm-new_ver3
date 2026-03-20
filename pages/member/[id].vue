@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import {ref, computed, onMounted, watch} from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
 import ContractModal from '@/components/contractModal.vue';
@@ -21,7 +21,7 @@ const {
 } = useApi();
 
 // 현재 탭
-const activeTab = ref('info');
+const activeTab = ref(route.query.tab || 'info');
 const isLoading = ref(false);
 // 편집 모드
 const isEditing = ref(false);
@@ -74,9 +74,12 @@ const workHistory = ref([
 
 // 급여 이력
 const salaryHistory = ref([
-  { month: '2024.11', basic: 2100000, allowance: 300000, total: 2400000 },
-  { month: '2024.10', basic: 2100000, allowance: 300000, total: 2400000 },
-  { month: '2024.09', basic: 2100000, allowance: 300000, total: 2400000 }
+    /*
+  { payMonth: '2024.11', basic: 2100000, allowance: 300000, total: 2400000 },
+  { payMonth: '2024.10', basic: 2100000, allowance: 300000, total: 2400000 },
+  { payMonth: '2024.09', basic: 2100000, allowance: 300000, total: 2400000 }
+
+     */
 ]);
 
 // 교육 이력
@@ -90,6 +93,12 @@ const tabs = [
   { id: 'info', name: '기본정보', icon: 'mdi-account-outline' },
   { id: 'salary', name: '급여이력', icon: 'mdi-cash-multiple' },
 ];
+
+const changeTab = async (tabId) => {
+  activeTab.value = tabId;
+  await router.replace({ query: { ...route.query, tab: tabId } });
+};
+
 
 // 나이 계산
 const age = computed(() => {
@@ -127,6 +136,7 @@ const loadEmployeeData = async () => {
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
       contract: rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} }
     };
+    await loadSalaryHistory();
   } catch (error) {
     console.error('직원 정보 로드 실패:', error);
     alert('직원 정보를 불러오는데 실패했습니다.');
@@ -143,9 +153,18 @@ const wageTotal = computed(() => {
 });
 
 const loadSalaryHistory = async () => {
+  // 이미 로드된 데이터가 있다면 다시 호출하지 않음 (선택 사항)
+  if (salaryHistory.value.length > 0 && !isEditing.value) return;
+
   try {
-    const res = await axios.get(`/api/v1/member/payroll/history`);
-    salaryHistory.value = res.data.data || [];
+    const mIdx = employee.value.idx; // loadEmployeeData에서 받아온 실제 DB PK
+    console.log(mIdx)
+    if (!mIdx) return;
+
+    const res = await axios.get(`/api/v1/member/payroll/history/${mIdx}`);
+    if (res.data.result) {
+      salaryHistory.value = res.data.data;
+    }
   } catch (e) {
     console.error('급여 이력 로드 실패:', e);
   }
@@ -170,7 +189,18 @@ const saveEmployee = async () => {
     const payload = {
       ...employee.value,
       outDate: employee.value.outDate,
-      outReason: employee.value.outReason
+      outReason: employee.value.outReason,
+
+      contract: {
+        ...(employee.value.contract || {}), // 기존에 있던 계약 정보 유지
+        sIdx: employee.value.sIdx,          // 선택된 현장 idx
+        type: employee.value.typeCd || employee.value.type
+      },
+
+      // 2. 배치(staffing) 객체 생성 및 sIdx 주입
+      staffing: {
+        sIdx: employee.value.sIdx           // 선택된 현장 idx
+      }
     };
     await axios.put(`/api/v1/member/data/${memberId}`, payload);
 
@@ -209,6 +239,13 @@ const deleteEmployee = async () => {
 const goBack = () => {
   router.push('/member/list');
 };
+
+watch(activeTab, async (newTab) => {
+  console.log(newTab);
+  if (newTab === 'salary') {
+    await loadSalaryHistory();
+  }
+});
 
 onMounted(async () => {
   await Promise.all([
@@ -322,7 +359,7 @@ onMounted(async () => {
             v-for="tab in tabs"
             :key="tab.id"
             :class="['tab-button', { active: activeTab === tab.id }]"
-            @click="activeTab = tab.id"
+            @click="changeTab(tab.id)"
         >
           <i :class="['mdi', tab.icon]"></i>
           <span>{{ tab.name }}</span>
@@ -705,24 +742,31 @@ onMounted(async () => {
         <div v-show="activeTab === 'salary'" class="tab-panel">
           <div v-if="salaryHistory.length === 0" class="empty-state">
             <i class="mdi mdi-cash-off"></i>
-            <p>급여 이력이 없습니다</p>
+            <p>조회된 급여 이력이 없습니다.</p>
           </div>
+
           <div v-else class="table-scroll-container">
             <table class="data-table">
               <thead>
               <tr>
                 <th>지급월</th>
-                <th class="text-right">기본급</th>
-                <th class="text-right">수당</th>
-                <th class="text-right">지급총액</th>
+                <th class="text-right">총 지급액</th>
+                <th class="text-right">공제 합계</th>
+                <th class="text-right">실지급액</th>
               </tr>
               </thead>
               <tbody>
               <tr v-for="(item, i) in salaryHistory" :key="i" class="data-row">
-                <td>{{ item.month }}</td>
+                <td class="fw-bold">{{ item.payMonth }}</td>
                 <td class="text-right">{{ item.basic.toLocaleString() }}원</td>
-                <td class="text-right">{{ item.allowance.toLocaleString() }}원</td>
-                <td class="text-right fw-bold text-primary">{{ item.total.toLocaleString() }}원</td>
+                <td class="text-right text-red">
+                  <span v-if="item.allowance > 0">-</span>{{ item.allowance.toLocaleString() }}원
+                </td>
+                <td class="text-right">
+            <span class="badge badge-primary" style="font-size: 14px;">
+              {{ item.total.toLocaleString() }}원
+            </span>
+                </td>
               </tr>
               </tbody>
             </table>
@@ -739,8 +783,9 @@ onMounted(async () => {
         :position-options="positionOptions"
         :wage-items="[]"
         @close="isContractModalOpen = false"
-        @save="saveContract"
+
     />
+<!--    @save="saveContract"-->
   </div>
 </template>
 
