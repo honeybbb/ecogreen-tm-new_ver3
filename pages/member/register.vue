@@ -3,6 +3,7 @@ import {onMounted, ref, watch, computed} from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from 'axios';
 import {useAuthStore} from "~/stores/auth.js";
+import ContractModal from "~/components/contractModal.vue";
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -33,7 +34,7 @@ const steps = [
   { number: 1, title: '기본 정보', icon: 'mdi-account' },
   { number: 2, title: '특이 사항', icon: 'mdi-alert-circle' },
   { number: 3, title: '근무 정보', icon: 'mdi-briefcase' },
-  { number: 4, title: '급여 정보', icon: 'mdi-cash' }
+  // { number: 4, title: '급여 정보', icon: 'mdi-cash' }
 ];
 
 // 1. 폼 데이터 모델
@@ -97,6 +98,14 @@ const todayDate = computed(() => {
   return `${year}-${month}-${day}`;
 });
 
+const handleContractSave = (savedData) => {
+  // 모달에서 넘어온 데이터 중 wageInputs를 부모의 wageInputs에 저장
+  wageInputs.value = savedData.wageInputs;
+  contractDataTemp.value = savedData;
+
+  alert('근로계약서 내용이 임시 저장되었습니다.');
+};
+
 // 3. 폼 제출 핸들러
 const handleSubmit = async () => {
   if (!employee.value.site) {
@@ -117,7 +126,7 @@ const handleSubmit = async () => {
 
     if (res.data.result) {
       alert(`${employee.value.name} 직원이 성공적으로 등록되었습니다.`);
-      router.push('/member/list');
+      await router.push('/member/list');
     } else {
       alert('등록 실패: ' + (res.data.message || '알 수 없는 오류'));
     }
@@ -675,12 +684,13 @@ onMounted(() => {
                 <i class="mdi mdi-office-building-outline"></i>
                 근무 현장
               </label>
-              <select v-model="employee.site" required class="form-select">
+              <!--select v-model="employee.site" required class="form-select">
                 <option value="">선택하세요</option>
                 <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
                   {{ site.name }}
                 </option>
-              </select>
+              </select-->
+              <SiteSelect v-model="employee.site" required :allow-empty="false" width="100%"/>
             </div>
 
             <div class="form-group">
@@ -738,7 +748,13 @@ onMounted(() => {
                   class="form-input"
               />
             </div>
+          </div>
 
+          <div class="step-header">
+            <i class="mdi mdi-briefcase-outline"></i>
+            <h2>근로 계약서 관리</h2>
+          </div>
+          <div class="form-grid">
             <div class="form-group full-width">
               <button type="button" @click="showModal = true" class="btn-contract">
                 <i class="mdi mdi-file-document-edit-outline"></i>
@@ -747,19 +763,6 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="form-actions">
-            <button type="button" @click="prevStep" class="btn-prev">
-              <i class="mdi mdi-arrow-left"></i>
-              이전
-            </button>
-            <button type="button" @click="nextStep" class="btn-next">
-              다음 단계
-              <i class="mdi mdi-arrow-right"></i>
-            </button>
-          </div>
-        </div>
-
-        <div v-show="currentStep === 4" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-cash-multiple"></i>
             <h2>급여 및 기타 정보</h2>
@@ -849,11 +852,22 @@ onMounted(() => {
               등록 완료
             </button>
           </div>
+
+          <!--div class="form-actions">
+            <button type="button" @click="prevStep" class="btn-prev">
+              <i class="mdi mdi-arrow-left"></i>
+              이전
+            </button>
+            <button type="button" @click="nextStep" class="btn-next">
+              다음 단계
+              <i class="mdi mdi-arrow-right"></i>
+            </button>
+          </div-->
         </div>
       </div>
     </form>
 
-    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+    <!--div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal-container">
         <div class="modal-header">
           <h3 class="modal-title">
@@ -896,7 +910,11 @@ onMounted(() => {
             <div class="contract-section">
               <h4 class="section-title">제2조 (근무 장소 및 업무 내용)</h4>
               <div class="contract-content">
-                <p>1. 근무 장소는
+                <p style="display: flex;">
+                  1. 근무 장소는
+                  <strong>
+                    {{ siteOptions.filter(s => s.idx == employee.site)[0].name }}
+                  </strong>
                   <select v-model="employee.site" class="contract-select">
                     <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
                       {{ site.name }}
@@ -904,7 +922,11 @@ onMounted(() => {
                   </select>
                 </p>
                 <p>2. 직무는
-                  <input type="text" v-model="employee.position" class="contract-input" /> 업무 일체로 한다.
+                  <input type="text" v-model="employee.position" class="contract-input" />
+                  <strong>
+                    {{positionOptions.filter(p => p.itemCd == employee.position)[0].itemNm}}
+                  </strong>
+                  업무 일체로 한다.
                 </p>
               </div>
             </div>
@@ -1004,7 +1026,18 @@ onMounted(() => {
           </button>
         </div>
       </div>
-    </div>
+    </div--> <!--Modal-->
+
+    <ContractModal
+        :is-open="showModal"
+        :employee-data="employee"
+        :employee-type="employee.type"
+        :site-options="siteOptions"
+        :position-options="positionOptions"
+        :wage-items="items"
+        @close="showModal = false"
+        @save="handleContractSave"
+    />
   </div>
 </template>
 
@@ -1051,7 +1084,7 @@ onMounted(() => {
    진행 단계 (Steps)
 ========================================= */
 .steps-container { background: var(--bg-surface); border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
-.steps-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.steps-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .step-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px; transition: all 0.2s; background: var(--bg-canvas); }
 .step-item.active { background-color: var(--primary-soft); border: 1px solid var(--primary); }
 .step-circle { width: 40px; height: 40px; border-radius: 50%; background: var(--text-muted); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s; }

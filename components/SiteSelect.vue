@@ -23,6 +23,7 @@ const props = defineProps({
   multiple:    { type: Boolean, default: false },
   allowEmpty:  { type: Boolean, default: true },
   disabled:    { type: Boolean, default: false },
+  width:       { type: String,  default: '250px' }
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -45,23 +46,23 @@ const options = computed(() => {
   return base
 })
 
-// ────────────────────────────────────────────────────────────
-// 내부 선택값 ↔ 외부 v-model 동기화
-// ────────────────────────────────────────────────────────────
 // 외부는 sIdx(숫자) 또는 '전체' 문자열을 쓰고
-// multiselect 내부는 옵션 객체를 씀 → 변환 필요
+// multiselect 내부는 옵션 객체를 씀
 const innerValue = computed({
   get() {
     if (props.multiple) {
-      // 다중: sIdx 배열 → 객체 배열
       if (!Array.isArray(props.modelValue)) return []
-      return props.modelValue.map(v => options.value.find(o => o.idx === v)).filter(Boolean)
+      // 다중 선택: 타입을 강제로 맞춰서 찾음
+      return props.modelValue.map(v => options.value.find(o => String(o.idx) === String(v))).filter(Boolean)
     }
-    // 단일: '전체' 또는 sIdx → 객체
-    if (props.modelValue === '전체' || props.modelValue === null) {
+
+    // 단일 선택: 전체 또는 빈 값 처리
+    if (props.modelValue === '전체' || props.modelValue === null || props.modelValue === '') {
       return options.value.find(o => o.idx === null) ?? null
     }
-    return options.value.find(o => o.idx === props.modelValue) ?? null
+
+    // 👉 핵심: 양쪽 모두 String()으로 감싸서 숫자(16)와 문자열("16")이 무조건 일치하도록 수정
+    return options.value.find(o => String(o.idx) === String(props.modelValue)) ?? null
   },
   set(val) {
     if (props.multiple) {
@@ -80,6 +81,7 @@ fetchSiteOptions()
 
 <template>
   <Multiselect
+      :style="{ width: props.width }"
       v-model="innerValue"
       :options="options"
       :multiple="multiple"
@@ -140,6 +142,7 @@ fetchSiteOptions()
 
 <style>
 .site-select.multiselect {
+  /*width: 250px;*/
   height: 42px;             /* filter-select height: 42px 일치 */
   min-height: 42px;
   font-family: inherit;
@@ -294,6 +297,11 @@ fetchSiteOptions()
 
 /* ── 기본 카레트(화살표) 숨김 → 커스텀 슬롯으로 대체 ── */
 .site-select .multiselect__select { display: none; }
+
+/* 셀렉트 박스가 닫혀있을 때 검색창(input)의 placeholder 숨김 */
+.site-select:not(.multiselect--active) .multiselect__input::placeholder {
+  color: transparent;
+}
 
 /* ── 커스텀 카레트: filter-select의 브라우저 기본 화살표 위치와 동일 ── */
 .ss-caret {

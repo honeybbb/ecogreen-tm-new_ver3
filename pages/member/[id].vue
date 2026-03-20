@@ -3,9 +3,11 @@ import {ref, computed, onMounted, watch} from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
 import ContractModal from '@/components/contractModal.vue';
+import {useAuthStore} from "~/stores/auth.js";
 
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
 
 const {
   siteOptions,
@@ -65,6 +67,7 @@ const employee = ref({
 
 // 근로계약서 모달 상태 추가
 const isContractModalOpen = ref(false);
+const items = ref([]);
 
 // 근무 이력
 const workHistory = ref([
@@ -136,6 +139,7 @@ const loadEmployeeData = async () => {
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
       contract: rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} }
     };
+    console.log(rawData.sites)
     await loadSalaryHistory();
   } catch (error) {
     console.error('직원 정보 로드 실패:', error);
@@ -151,6 +155,19 @@ const wageTotal = computed(() => {
   if (!data) return 0;
   return Object.values(data).reduce((acc, cur) => acc + (Number(cur) || 0), 0);
 });
+
+
+//지급항목
+const getWageCode = async function () {
+  const cIdx = authStore.user?.cIdx;
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
+    const rawData = res.data.data || [];
+    items.value = rawData.filter(item => item.groupCd === '04001');
+  } catch (err) {
+    console.error("항목 로드 실패", err);
+  }
+}
 
 const loadSalaryHistory = async () => {
   // 이미 로드된 데이터가 있다면 다시 호출하지 않음 (선택 사항)
@@ -228,7 +245,7 @@ const deleteEmployee = async () => {
     const memberId = route.params.id;
     await axios.delete(`/api/v1/member/${memberId}`);
     alert('삭제되었습니다.');
-    router.push('/member/list');
+    await router.push('/member/list');
   } catch (error) {
     console.error('삭제 실패:', error);
     alert('삭제에 실패했습니다.');
@@ -254,6 +271,7 @@ onMounted(async () => {
     fetchTypeOptions(),
     fetchBankOption(),
     fetchDisabledOptions(),
+    getWageCode()
   ]);
   await loadEmployeeData();
 });
@@ -440,9 +458,16 @@ onMounted(async () => {
                 </div>
                 <div class="info-item">
                   <label>근무 현장</label>
-                  <select v-if="isEditing" v-model="employee.sIdx" class="info-select">
+                  <!--select v-if="isEditing" v-model="employee.sIdx" class="info-select">
                     <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-                  </select>
+                  </select-->
+                  <SiteSelect
+                      v-if="isEditing"
+                      v-model="employee.sIdx"
+                      :allow-empty="false"
+                      width="100%"
+                      style="background: var(--bg-canvas) !important; border-radius: 8px !important;"
+                  />
                   <span v-else class="info-value">{{ employee.siteName }}</span>
                 </div>
                 <div class="info-item">
@@ -779,11 +804,13 @@ onMounted(async () => {
     <ContractModal
         :is-open="isContractModalOpen"
         :employee-data="employee"
+        :employee-type="employee.type"
         :site-options="siteOptions"
         :position-options="positionOptions"
-        :wage-items="[]"
+        :wage-items="items"
+        :is-editing="isEditing"
         @close="isContractModalOpen = false"
-
+        @save="handleContractSave"
     />
 <!--    @save="saveContract"-->
   </div>
@@ -1037,8 +1064,13 @@ onMounted(async () => {
 .info-value { font-size: 15px; color: var(--text-main); font-weight: 500; min-height: 24px; display: flex; align-items: center;}
 
 .info-input, .info-select, .info-textarea {
-  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
-  font-size: 14px; color: var(--text-main); background: var(--bg-canvas); transition: all 0.2s;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-main);
+  /*background: var(--bg-canvas); */
+  transition: all 0.2s;
 }
 .info-input:focus, .info-select:focus, .info-textarea:focus {
   outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); background: var(--bg-surface);

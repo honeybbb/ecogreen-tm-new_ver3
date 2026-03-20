@@ -238,7 +238,7 @@ const getPayrollMonth = async () => {
 };
 
 const fetchNotices = () => {
-  axios.get('/api/v1/notice/list')
+  axios.get(`/api/v1/notice/list/${cIdx}`)
       .then(res => {
         notices.value = res.data.data.slice(0, 4);
       })

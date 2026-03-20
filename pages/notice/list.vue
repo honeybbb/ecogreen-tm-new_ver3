@@ -6,6 +6,7 @@ import Pagination from "~/components/Pagination.vue";
 
 const { positionOptions, fetchPositionOptions } = useApi();
 const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
 
 // 1. 상태 데이터
 const notices = ref([]);
@@ -117,7 +118,7 @@ const fetchNotices = async () => {
   isLoading.value = true;
   error.value = null;
   try {
-    const res = await axios.get('/api/v1/notice/list');
+    const res = await axios.get(`/api/v1/notice/list/${cIdx}`);
     if(res.data.data.length > 0) {
       notices.value = res.data.data;
     }else {
@@ -165,6 +166,7 @@ const saveNotice = async () => {
 
   const payload = {
     idx: modalMode.value === 'edit' ? currentNotice.value.idx : undefined,
+    cIdx: cIdx,
     must: form.value.must ? 'Y' : 'N',
     type: form.value.type,
     target: form.value.target,

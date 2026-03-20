@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from "axios";
 import SiteSelect from "~/components/SiteSelect.vue";
+import MemberSelect from "~/components/MemberSelect.vue";
 
 // API Composable (현장 목록 등)
 const { siteOptions, fetchSiteOptions } = useApi();
@@ -260,7 +261,10 @@ onMounted(() => {
             <option value="" disabled>관리할 현장을 선택하세요</option>
             <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
           </select-->
-          <SiteSelect v-model="currentSiteId" />
+          <SiteSelect
+              :allow-empty="false"
+              v-model="currentSiteId"
+          />
         </div>
 
         <div class="search-group" style="justify-content: flex-end;">
@@ -407,13 +411,17 @@ onMounted(() => {
 
             <div class="form-group">
               <label>직원 검색</label>
-              <div class="search-input-wrapper">
+              <MemberSelect
+                  v-model="form.mIdx"
+                  :options="staffList"
+              />
+              <!--div class="search-input-wrapper">
                 <i class="mdi mdi-magnify"></i>
                 <input list="staff-opts" v-model="staffSearchName" placeholder="직원 이름 입력">
                 <datalist id="staff-opts">
                   <option v-for="staff in staffList" :key="staff.idx" :value="staff.name" />
                 </datalist>
-              </div>
+              </div-->
             </div>
 
             <div class="form-group">
