@@ -97,16 +97,35 @@ const calculateRowSummary = (row) => {
 };
 
 const updatePay = (row) => {
-  if (row.originalBasePay === undefined) row.originalBasePay = row.payItems['04001001'] || 0;
-  const basePay   = row.originalBasePay;
-  const scheduled = Number(row.scheduledDays) || 1;
-  const worked    = Number(row.workedDays) || 0;
-  const absent    = Number(row.absentDays) || 0;
-  const dailyWage = Math.floor(basePay / scheduled);
-  if ((worked + absent) < scheduled) row.payItems['04001001'] = dailyWage * worked;
-  else                                row.payItems['04001001'] = basePay - (dailyWage * absent);
-  calculateInsurances(row);
-};
+  backupOriginalPayItems(row)
+
+  if (row.originalBasePay === undefined) {
+    row.originalBasePay = row._originalPayItems['04001001'] || 0
+  }
+
+  const basePay   = row.originalBasePay
+  const scheduled = Number(row.scheduledDays) || 1
+  const worked    = Number(row.workedDays)    || 0
+  const absent    = Number(row.absentDays)    || 0
+
+  if (worked === 0) {
+    payItems.value.forEach(item => {
+      row.payItems[item.itemCd] = 0
+    })
+  } else {
+    // 원본 복원 후 기본급만 일할 계산
+    payItems.value.forEach(item => {
+      row.payItems[item.itemCd] = row._originalPayItems[item.itemCd] || 0
+    })
+
+    const dailyWage = Math.floor(basePay / scheduled)
+    row.payItems['04001001'] = (worked + absent) < scheduled
+        ? dailyWage * worked
+        : basePay - (dailyWage * absent)
+  }
+
+  calculateInsurances(row)
+}
 
 const resetBasePay = (row) => {
   row.originalBasePay = row.payItems['04001001'] || 0;
@@ -124,55 +143,93 @@ const fetchCalculatedPay = async () => {
     const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
     if (res.data.result && res.data.data?.length > 0) {
       for (const row of selectedRows) {
-        const calcData = res.data.data.find(c => c.idx === row.idx);
-        if (!calcData) continue;
-        let dbCheckedItems = {};
+        const calcData = res.data.data.find(c => c.idx === row.idx)
+        if (!calcData) continue
+
+        let dbCheckedItems = {}
         if (calcData.checkedItems) {
           dbCheckedItems = typeof calcData.checkedItems === 'string'
-              ? JSON.parse(calcData.checkedItems) : calcData.checkedItems;
+              ? JSON.parse(calcData.checkedItems)
+              : calcData.checkedItems
         }
-        row.payItems        = typeof calcData.payItems === 'string'
-            ? JSON.parse(calcData.payItems || '{}') : (calcData.payItems || {});
-        row.deductionItems  = {};
-        row.deductionFlags  = {};
-        row.workedDays      = calcData.workedDays;
-        row.scheduledDays   = calcData.scheduledDays;
-        row.absentDays      = calcData.absentDays;
-        row.originalBasePay = undefined;
+
+        // payItems 원본 항상 세팅 (근무일 0여도 기준값 필요)
+        row.payItems = typeof calcData.payItems === 'string'
+            ? JSON.parse(calcData.payItems || '{}')
+            : (calcData.payItems || {})
+
+        row.deductionItems  = {}
+        row.deductionFlags  = {}
+        row.workedDays      = calcData.workedDays    // 0이면 0
+        row.scheduledDays   = calcData.scheduledDays
+        row.absentDays      = calcData.absentDays
+        row.originalBasePay = undefined              // updatePayAsync가 payItems에서 읽음
+
         deductionItems.value.forEach(i => {
-          row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false;
-        });
-        row.status = 2;
-        await updatePayAsync(row);
+          row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false
+        })
+
+        row.status = 2
+        await updatePayAsync(row)  // 여기서 workedDays 0이면 자동으로 0 계산됨
       }
       dataMode.value = 'draft';
     }
   } finally { isLoading.value = false; }
 };
 
+const backupOriginalPayItems = (row) => {
+  if (!row._originalPayItems) {
+    // 최초 1회만 백업
+    row._originalPayItems = { ...row.payItems }
+  }
+}
+
 const updatePayAsync = async (row) => {
-  if (row.originalBasePay === undefined) row.originalBasePay = row.payItems['04001001'] || 0;
-  const basePay   = row.originalBasePay;
-  const scheduled = Number(row.scheduledDays) || 1;
-  const worked    = Number(row.workedDays) || 0;
-  const absent    = Number(row.absentDays) || 0;
-  const dailyWage = Math.floor(basePay / scheduled);
-  if ((worked + absent) < scheduled) row.payItems['04001001'] = dailyWage * worked;
-  else                                row.payItems['04001001'] = basePay - (dailyWage * absent);
-  await calculateInsurances(row);
-};
+  backupOriginalPayItems(row)
+
+  if (row.originalBasePay === undefined) {
+    row.originalBasePay = row._originalPayItems['04001001'] || 0
+  }
+
+  const basePay   = row.originalBasePay
+  const scheduled = Number(row.scheduledDays) || 1
+  const worked    = Number(row.workedDays)    || 0
+  const absent    = Number(row.absentDays)    || 0
+
+  if (worked === 0) {
+    // 근무일 0 → 모든 지급항목 0
+    payItems.value.forEach(item => {
+      row.payItems[item.itemCd] = 0
+    })
+  } else {
+    // 근무일 있음 → 원본 payItems 복원 후 기본급만 일할 계산
+    payItems.value.forEach(item => {
+      row.payItems[item.itemCd] = row._originalPayItems[item.itemCd] || 0
+    })
+
+    const dailyWage = Math.floor(basePay / scheduled)
+    row.payItems['04001001'] = (worked + absent) < scheduled
+        ? dailyWage * worked
+        : basePay - (dailyWage * absent)
+  }
+
+  await calculateInsurances(row)
+}
 
 const calculateInsurances = async (row) => {
   // ── 과세 급여 계산 (비과세 한도는 DB option에서 가져옴) ──
-  let taxablePay = 0;
+  let taxablePay = 0
   payItems.value.forEach(item => {
-    const amt   = Number(row.payItems[item.itemCd] || 0);
-    const limit = item.taxFreeLimit; // 0이면 비과세 없음
+    const amt   = Number(row.payItems[item.itemCd] || 0)
+    const limit = item.taxFreeLimit
+    const taxed = limit > 0 ? Math.max(0, amt - limit) : amt
 
-    taxablePay += limit > 0
-        ? Math.max(0, amt - limit)  // 한도 초과분만 과세
-        : amt;                       // 전액 과세
-  });
+    // ── 확인용 ──
+    console.log(`[${item.itemNm}] 금액=${amt}, 비과세한도=${limit}, 과세금액=${taxed}`)
+
+    taxablePay += taxed
+  })
+  console.log('최종 과세급여:', taxablePay)
 
   // ── 보험료 계산 (기존 코드 그대로) ──────────────────────
   if (!row.deductionItems) row.deductionItems = {};
@@ -516,15 +573,26 @@ const getWageCode = async () => {
 
  */
 const getWageCode = async () => {
-  try {
-    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-    items.value = (res.data.data || []).map(item => ({
-      ...item,
-      // option이 숫자 문자열이면 파싱, 없거나 0이면 비과세 없음
-      taxFreeLimit: Number(item.option) || 0,
-    }));
-  } catch (err) { console.error("항목 로드 실패", err); }
-};
+  const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`)
+  // console.log('API 원본 응답 (첫번째 항목):', res.data.data?.[0])
+  // console.log('식대 항목 원본:', res.data.data?.find(i => i.itemCd?.includes('04001005')))
+
+  items.value = (res.data.data || []).map(item => ({
+    ...item,
+    taxFreeLimit: Number(item.tax_free) || 0,
+  }))
+
+  // ── 확인용 ──
+  /*
+  console.log('payItems 코드 목록:', items.value.filter(i => i.groupCd === '04001').map(i => ({
+    itemCd:       i.itemCd,
+    itemNm:       i.itemNm,
+    option:       i.option,
+    taxFreeLimit: i.taxFreeLimit,
+  })))
+
+   */
+}
 
 const getTaxRate = async () => {
   const year = new Date().getFullYear();
