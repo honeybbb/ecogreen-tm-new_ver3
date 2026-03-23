@@ -264,13 +264,13 @@ onMounted(() => {
           <span class="stat-value">{{ statsInfo.manager }} <small>명</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
+      <!--div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-account-check"></i></div>
         <div class="stat-content">
           <span class="stat-label">재직(활성) 중</span>
           <span class="stat-value">{{ statsInfo.active }} <small>명</small></span>
         </div>
-      </div>
+      </div-->
     </div>
 
     <div class="filter-panel">
