@@ -409,7 +409,7 @@ onMounted(() => {
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-calendar-range-outline"></i> 기준일</label>
-          <input v-model="baseInfo.baseDate" class="filter-select" placeholder="2025.12.31" />
+          <input type="date" v-model="baseInfo.baseDate" class="filter-select" />
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-clock-time-eight-outline"></i> 월 근로시간</label>
@@ -460,7 +460,7 @@ onMounted(() => {
       <div class="table-header">
         <div class="table-title">
           <i class="mdi mdi-office-building-outline"></i>
-          <span>현장 목록 ({{ filteredItems.length }}개소)</span>
+          <span>목록 ({{ filteredItems.length }}개)</span>
           <span v-if="selectedItems.length > 0" class="selected-badge">{{ selectedItems.length }}건 선택됨</span>
         </div>
         <div class="page-size-select">
