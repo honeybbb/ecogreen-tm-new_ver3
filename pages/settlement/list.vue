@@ -5,6 +5,7 @@ import axios from 'axios'
 import SettlementModal      from '@/components/SettlementModal.vue'
 import SettlementPrintModal from '@/components/SettlementPrintModal.vue'
 import EstimateModal        from '~/components/estimateModal.vue'
+import EstimatePrintModal   from '~/components/estimatePrintModal.vue'
 import Pagination           from '~/components/Pagination.vue'
 
 const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi()
@@ -672,6 +673,12 @@ onMounted(async () => {
         :items="printTargetItems"
         @close="isPrintModalOpen = false"
     />
+    <EstimatePrintModal
+        v-if="isPrintModalOpen && printModalType !== 'SERVICE'"
+        :is-open="isPrintModalOpen"
+        :items="printTargetItems"
+        @close="isPrintModalOpen = false"
+      />
   </div>
 </template>
 

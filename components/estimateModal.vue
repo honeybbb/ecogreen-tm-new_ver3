@@ -9,6 +9,7 @@
  */
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
+import * as XLSX from 'xlsx'
 import { useAuthStore } from '~/stores/auth.js';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
@@ -238,13 +239,119 @@ const handleSave = async () => {
     isSaving.value = false;
   }
 };
+// exportToExcel 함수 추가
+const exportToExcel = () => {
+  if (!hasAnnual.value && !hasRetire.value) {
+    alert('출력할 정산 내역이 없습니다.')
+    return
+  }
 
+  const wb        = XLSX.utils.book_new()
+  const siteName  = formData.value.siteName  || '현장미지정'
+  const billingDt = formData.value.billingDt || ''
+  const fileName  = `연차퇴직정산_${siteName}_${billingDt}.xlsx`
+
+  // ── 시트1: 청구 공문 기본 정보 ────────────────────────
+  const rows = []
+
+  rows.push(['청 구 공 문'])
+  rows.push([])
+  rows.push(['수신',     formData.value.siteName ? formData.value.siteName + ' 관리사무소' : ''])
+  rows.push(['문서번호', formData.value.docNo    || ''])
+  rows.push(['시행일자', formData.value.billingDt || ''])
+  rows.push(['제목',     formData.value.summary   || ''])
+  rows.push([])
+  rows.push(['1. 귀 소의 무궁한 발전을 기원합니다.'])
+  rows.push(['2. 단지에 적립된 적립금 중 재직자의 미사용 연차수당 및 퇴직수당을 지급하고자 아래와 같이 요청하오니 검토하시여 결재를 부탁드립니다.'])
+  rows.push([])
+  rows.push(['- 아 래 -'])
+  rows.push([])
+
+  // ── 연차수당 표 ────────────────────────────────────────
+  if (hasAnnual.value) {
+    rows.push(['[연차수당 정산 내역]'])
+    rows.push(['구분', '이름', '직책', '생년월일', '입사일', '퇴사일', '중간정산일', '정산기간', '산출근거', '금액(원)', '비고'])
+
+    formData.value.annualItems.forEach((item, i) => {
+      rows.push([
+        i + 1,
+        item.empName  || '',
+        item.position || '',
+        item.birthDt  || '',
+        item.joinDate || '',
+        item.endDate  || '',
+        item.middleDt || '',
+        item.period   || '',
+        item.basis    || '',
+        Number(item.amount) || 0,
+        item.note     || '',
+      ])
+    })
+
+    rows.push(['', '', '', '', '', '', '', '', '연차수당 소계', annualTotal.value, ''])
+    rows.push([])
+  }
+
+  // ── 퇴직수당 표 ────────────────────────────────────────
+  if (hasRetire.value) {
+    rows.push(['[퇴직수당 정산 내역]'])
+    rows.push(['구분', '이름', '직책', '생년월일', '입사일', '퇴사일', '중간정산일', '정산기간', '산출근거', '금액(원)', '비고'])
+
+    formData.value.retireItems.forEach((item, i) => {
+      rows.push([
+        i + 1,
+        item.empName  || '',
+        item.position || '',
+        item.birthDt  || '',
+        item.joinDate || '',
+        item.endDate  || '',
+        item.middleDt || '',
+        item.period   || '',
+        item.basis    || '',
+        Number(item.amount) || 0,
+        item.note     || '',
+      ])
+    })
+
+    rows.push(['', '', '', '', '', '', '', '', '퇴직수당 소계', retireTotal.value, ''])
+    rows.push([])
+  }
+
+  // ── 합계 및 하단 정보 ──────────────────────────────────
+  if (hasAnnual.value && hasRetire.value) {
+    rows.push(['', '', '', '', '', '', '', '', '총 합계', grandTotal.value, ''])
+    rows.push([])
+  }
+
+  rows.push(['입금계좌', formData.value.bankInfo   || ''])
+  rows.push(['첨부',     formData.value.attachment || ''])
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  ws['!cols'] = [
+    { wch: 6  },  // 구분
+    { wch: 10 },  // 이름
+    { wch: 8  },  // 직책
+    { wch: 10 },  // 생년월일
+    { wch: 12 },  // 입사일
+    { wch: 12 },  // 퇴사일
+    { wch: 12 },  // 중간정산일
+    { wch: 18 },  // 정산기간
+    { wch: 24 },  // 산출근거
+    { wch: 14 },  // 금액
+    { wch: 20 },  // 비고
+  ]
+
+  XLSX.utils.book_append_sheet(wb, ws, '연차퇴직정산')
+  XLSX.writeFile(wb, fileName)
+}
 const closeModal = () => emit('close');
 const fc = (v) => Number(v || 0).toLocaleString();
 
-onMounted(() => {
-  fetchSiteOptions();
-  fetchTypeOptions();
+onMounted(async () => {
+  await Promise.all([
+    fetchSiteOptions(),
+    fetchTypeOptions()
+  ]);
 });
 </script>
 
@@ -258,6 +365,10 @@ onMounted(() => {
           <span class="badge">{{ formData.siteName || '현장 미지정' }} ({{ formData.target_month || '연월 미지정' }})</span>
         </div>
         <div class="header-actions">
+          <button class="btn-excel" @click="exportToExcel">
+            <i class="mdi mdi-microsoft-excel"></i>
+            <span>엑셀 저장</span>
+          </button>
           <button class="btn-save" @click="handleSave" :disabled="isSaving"><i class="mdi mdi-content-save"></i><span>{{ isSaving ? '저장 중...' : '저장하기' }}</span></button>
           <button class="btn-close" @click="closeModal"><i class="mdi mdi-close"></i></button>
         </div>
