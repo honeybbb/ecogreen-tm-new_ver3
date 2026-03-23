@@ -338,7 +338,7 @@ onMounted(() => {
         </template>
 
         <!-- 엑셀 출력 드롭다운 -->
-        <div class="export-wrap" v-click-outside="() => isExportMenuOpen = false">
+        <!--div class="export-wrap" v-click-outside="() => isExportMenuOpen = false">
           <button class="btn-excel" @click="isExportMenuOpen = !isExportMenuOpen" :disabled="isExporting">
             <i :class="isExporting ? 'mdi mdi-loading mdi-spin' : 'mdi mdi-file-excel-outline'"></i>
             {{ isExporting ? '생성 중...' : '엑셀 출력' }}
@@ -355,7 +355,7 @@ onMounted(() => {
               <div><span class="em-title">전체 현장 출력</span><span class="em-sub">요약 시트 + 현장별 시트</span></div>
             </button>
           </div>
-        </div>
+        </div-->
 
         <button @click="openAdd(activeSection)" class="btn-add">
           <i class="mdi mdi-plus"></i>
