@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
-import * as XLSX from 'xlsx';
+// import * as XLSX from 'xlsx';
+import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/Pagination.vue";
 
 const {
@@ -299,266 +300,455 @@ const savePayroll = async () => {
 // ✅ 지급대장 엑셀 출력 함수 (SheetJS 방식 - npm install xlsx)
 // ════════════════════════════════════════════════════════════
 const exportPayrollExcel = () => {
-  const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value;
-  if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return; }
+  const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value
+  if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return }
 
-  const [year, month] = selectedYearMonth.value.split('-');
-  const wb = XLSX.utils.book_new();
+  const [year, month] = selectedYearMonth.value.split('-')
+  const wb = XLSX.utils.book_new()
 
-  const HEADER_BG = 'E6E6FA'; // 연보라
-  const PAGE_SIZE  = 7;
-  const pages = [];
-  for (let i = 0; i < target.length; i += PAGE_SIZE) {
-    pages.push(target.slice(i, i + PAGE_SIZE));
+  // ── 현장별 그룹핑 → 7명씩 페이지 분할 ───────────────────
+  const siteGroups = []
+  target.forEach(emp => {
+    const last = siteGroups[siteGroups.length - 1]
+    if (!last || last[0].siteName !== emp.siteName) siteGroups.push([emp])
+    else last.push(emp)
+  })
+
+  const PAGE_SIZE = 7
+  const pages = []
+  siteGroups.forEach(group => {
+    for (let i = 0; i < group.length; i += PAGE_SIZE) {
+      pages.push({
+        emps:        group.slice(i, i + PAGE_SIZE),
+        siteName:    group[0].siteName,
+        isLastPage:  i + PAGE_SIZE >= group.length,
+        siteGroup:   group,
+      })
+    }
+  })
+
+  // ── 스타일 상수 ───────────────────────────────────────────
+  const FH = { patternType: 'solid', fgColor: { rgb: 'E6E6FA' } }  // 헤더 배경
+  const FN = { patternType: 'none' }                                 // 배경 없음
+
+  const FB  = { name: '맑은 고딕', sz: 9, bold: true }
+  const FN9 = { name: '맑은 고딕', sz: 9 }
+
+  const AC = { horizontal: 'center',      vertical: 'center' }
+  const AR = { horizontal: 'right',       vertical: 'center' }
+  const AL = { horizontal: 'left',        vertical: 'center' }
+  const AD = { horizontal: 'distributed', vertical: 'center' }
+
+  const T = (s) => ({ style: s })
+  const TN = T(null)
+  const TT = T('thin')
+  const TM = T('medium')
+  const TD = T('double')
+
+  const bd = (t, b, l, r) => ({ top: t, bottom: b, left: l, right: r })
+
+  // 자주 쓰는 테두리
+  const B = {
+    // 헤더
+    hOL:  bd(TT, TT, TM, TT),   // 헤더 외곽 왼쪽
+    hSL:  bd(TT, TT, TD, TT),   // 헤더 구역 왼쪽
+    hSR:  bd(TT, TT, TT, TD),   // 헤더 구역 오른쪽
+    hMid: bd(TT, TT, TT, TT),   // 헤더 내부
+    // 데이터 첫행
+    d0OL:  bd(TM, TT, TM, TT),
+    d0SL:  bd(TM, TT, TD, TT),
+    d0SR:  bd(TM, TT, TT, TD),
+    d0Mid: bd(TM, TT, TT, TT),
+    d0OR:  bd(TM, TT, TT, TM),
+    // 데이터 중간행
+    dOL:  bd(TT, TT, TM, TT),
+    dSL:  bd(TT, TT, TD, TT),
+    dSR:  bd(TT, TT, TT, TD),
+    dMid: bd(TT, TT, TT, TT),
+    dOR:  bd(TT, TT, TT, TM),
+    // 데이터 마지막행
+    dbOL:  bd(TT, TM, TM, TT),
+    dbSL:  bd(TT, TM, TD, TT),
+    dbSR:  bd(TT, TM, TT, TD),
+    dbMid: bd(TT, TM, TT, TT),
+    dbOR:  bd(TT, TM, TT, TM),
   }
 
-  // ── 워크시트 데이터 배열 구성 ─────────────────────────────
-  const wsData = [];
-  const merges = [];
-  const colWidths = [
-    { wch: 1 },   // A
-    { wch: 9.5 }, // B
-    { wch: 3.4 }, // C
-    { wch: 3.4 }, // D
-    { wch: 3.4 }, // E
-    { wch: 3.4 }, // F
-    { wch: 12.3 },// G
-    { wch: 6.7 }, // H
-    { wch: 3.3 }, // I
-    { wch: 2.6 }, // J
-    { wch: 12.4 },// K
-    { wch: 12.3 },// L
-    { wch: 12.6 },// M
-    { wch: 12.6 },// N
-    { wch: 1.0 }, // O
-    { wch: 11.3 },// P
-    { wch: 12.6 },// Q
-    { wch: 6.6 }, // R
-    { wch: 4.9 }, // S
-    { wch: 1.7 }, // T
-    { wch: 2.3 }, // U
-    { wch: 6.3 }, // V
-  ];
+  // 셀 생성 헬퍼
+  const c = (v, font, fill, align, border) => ({
+    v: v ?? '', t: typeof v === 'number' ? 'n' : 's',
+    s: { font, fill, alignment: align, border }
+  })
+  const hc  = (v, font = FN9, align = AC, border = B.hMid) => c(v, font, FH, align, border)
+  const dc  = (v, font = FN9, align = AC, border = B.dMid) => c(v, font, FN, align, border)
+  const nc  = (v, border = B.dOL) => ({
+    v: Number(v || 0), t: 'n', z: '#,##0',
+    s: { font: FN9, fill: FN, alignment: AR, border }
+  })
+  const ec  = () => new Array(22).fill(null).map(() => ({ v: '', t: 's', s: { font: FN9, fill: FN } }))
 
-  // 헬퍼: 빈 행 추가
-  const emptyRow = () => new Array(22).fill('');
+  const wsData = []
+  const merges = []
+  const mg = (rs, cs, re, ce) => merges.push({ s: { r: rs, c: cs }, e: { r: re, c: ce } })
+  let R = 0
 
-  const addMerge = (rowStart, colStart, rowEnd, colEnd) => {
-    merges.push({ s: { r: rowStart, c: colStart }, e: { r: rowEnd, c: colEnd } });
-  };
-
-  let rowIdx = 0;
-
+  // ── 페이지 루프 ───────────────────────────────────────────
   for (let pgIdx = 0; pgIdx < pages.length; pgIdx++) {
-    const pgEmps = pages[pgIdx];
+    const { emps: pgEmps, siteName: siteLabel, isLastPage, siteGroup } = pages[pgIdx]
 
-    // ── 1행: 제목 ─────────────────────────────────────
-    const titleRow = emptyRow();
-    titleRow[9] = `${year}년 ${month.padStart(2,'0')}월 급여 지급대장`; // J열(idx=9)
-    wsData.push(titleRow);
-    addMerge(rowIdx, 9, rowIdx, 14); // J:O
-    rowIdx++;
+    // 현장 내 페이지 번호
+    const sitePages    = pages.filter(p => p.siteName === siteLabel)
+    const sitePageNo   = sitePages.findIndex((_, i) => pages.indexOf(sitePages[i]) === pgIdx) + 1
+    const siteTotalPg  = sitePages.length
 
-    // ── 2행: 지급일자 ─────────────────────────────────
-    const dateRow = emptyRow();
-    // 지급일자는 현재 날짜 기준 또는 별도 props로
-    const payDate = `${year}년 ${month.padStart(2,'0')}월`;
-    dateRow[9] = `지급일자 : ${year}년 ${String(parseInt(month)+1).padStart(2,'0')}월 10일`;
-    wsData.push(dateRow);
-    addMerge(rowIdx, 9, rowIdx, 14);
-    rowIdx++;
+    // ── 제목 ────────────────────────────────────────────────
+    const r0 = ec()
+    r0[9] = { v: `${year}년 ${month.padStart(2,'0')}월 급여 지급대장`, t: 's',
+      s: { font: { name: '맑은 고딕', sz: 13, bold: true }, fill: FN, alignment: AC } }
+    wsData.push(r0); mg(R,9,R,14); R++
 
-    // ── 3행: 회사명 ───────────────────────────────────
-    const companyRow = emptyRow();
-    // 현장명은 선택된 사이트 기준
-    const siteLabel = selectedSite.value !== '전체'
-        ? (siteOptions.value?.find(s => s.idx == selectedSite.value)?.name || '')
-        : (pgEmps[0]?.siteName || '');
-    companyRow[1] = siteLabel;
-    wsData.push(companyRow);
-    rowIdx++;
+    // ── 지급일자 ────────────────────────────────────────────
+    const r1 = ec()
+    r1[9] = { v: `지급일자 : ${year}년 ${String(parseInt(month)+1).padStart(2,'0')}월 10일`, t: 's',
+      s: { font: FN9, fill: FN, alignment: AC } }
+    wsData.push(r1); mg(R,9,R,14); R++
 
-    // ── 구분선 행 ─────────────────────────────────────
-    wsData.push(emptyRow()); rowIdx++;
+    // ── 현장명 ──────────────────────────────────────────────
+    const r2 = ec()
+    r2[1] = { v: siteLabel, t: 's', s: { font: FN9, fill: FN, alignment: AL } }
+    wsData.push(r2); R++
 
-    // ── 그룹 타이틀 행 ───────────────────────────────
-    const groupRow = emptyRow();
-    groupRow[6]  = '지  급  내  역';   // G
-    groupRow[13] = '공   제   내   역'; // N
-    groupRow[17] = '합계';              // R
-    groupRow[20] = '영수인';            // U
-    wsData.push(groupRow);
-    addMerge(rowIdx, 6, rowIdx, 12);  // G:M
-    addMerge(rowIdx, 13, rowIdx, 16); // N:Q
-    addMerge(rowIdx, 17, rowIdx, 19); // R:T
-    addMerge(rowIdx, 20, rowIdx+5, 21); // U:V (6행 병합)
-    rowIdx++;
+    // ── 빈 행 ───────────────────────────────────────────────
+    wsData.push(ec()); R++
 
-    // ── 헤더 행 1 (사번행) ────────────────────────────
-    const h1 = emptyRow();
-    h1[1] = '사 원 번 호'; h1[2] = '입 사 일 자';
-    h1[6] = '기본급'; h1[7] = '직책수당';
-    h1[10] = '야간수당'; h1[11] = '연차수당'; h1[12] = '식대';
-    h1[13] = '건강보험'; h1[14] = '장기요양보험'; h1[16] = '국민연금';
-    wsData.push(h1);
-    addMerge(rowIdx, 2, rowIdx, 5);  // C:F
-    addMerge(rowIdx, 7, rowIdx, 9);  // H:J
-    addMerge(rowIdx, 14, rowIdx, 15); // O:P
-    rowIdx++;
+    // ── 그룹 타이틀 행 ──────────────────────────────────────
+    const rG = ec()
+    rG[1]  = hc('', FN9, AC, bd(TM,TT,TM,TT))
+    rG[2]  = hc('', FN9, AC, bd(TM,TT,TT,TD))
+    rG[3]  = hc('', FN9, AC, bd(TM,TT,TT,TT))
+    rG[4]  = hc('', FN9, AC, bd(TM,TT,TT,TT))
+    rG[5]  = hc('', FN9, AC, bd(TM,TT,TT,TD))
+    rG[6]  = hc('지  급  내  역', FB, AC, bd(TM,TT,TD,TD))
+    for (let i = 7; i <= 12; i++) rG[i] = hc('', FB, AC, bd(TM,TT,TT, i===12 ? TD : TT))
+    rG[13] = hc('공   제   내   역', FB, AC, bd(TM,TT,TD,TD))
+    for (let i = 14; i <= 16; i++) rG[i] = hc('', FB, AC, bd(TM,TT,TT, i===16 ? TD : TT))
+    rG[17] = hc('합계', FN9, AC, bd(TM,TT,TD,TT))
+    rG[18] = hc('', FN9, AC, bd(TM,TT,TT,TT))
+    rG[19] = hc('', FN9, AC, bd(TM,TT,TT,TT))
+    rG[20] = hc('영수인', FN9, AC, bd(TM,TT,TT,TT))
+    rG[21] = hc('', FN9, AC, bd(TM,TT,TT,TM))
+    wsData.push(rG)
+    mg(R,1,R,1); mg(R,2,R,5); mg(R,6,R,12); mg(R,13,R,16)
+    mg(R,17,R,19); mg(R,20,R+5,21); R++
 
-    // ── 헤더 행 2 (직위행) ────────────────────────────
-    const h2 = emptyRow();
-    h2[1] = '직위'; h2[2] = '경'; h2[3] = '부'; h2[4] = '7';
-    h2[6] = '기타수당'; h2[7] = '근로자의날수당'; h2[10] = '대근비';
-    h2[13] = '고용보험'; h2[14] = '기타공제'; h2[16] = '환급소득세';
-    wsData.push(h2);
-    addMerge(rowIdx, 2, rowIdx, 3); // C:D
-    addMerge(rowIdx, 4, rowIdx, 5); // E:F
-    addMerge(rowIdx, 7, rowIdx, 9);  // H:J
-    addMerge(rowIdx, 14, rowIdx, 15); // O:P
-    rowIdx++;
+    // ── 헤더 5행 ────────────────────────────────────────────
+    // 행0: 사원번호 / 기본급 / 야간 / 식대 / 건강 / 장기요양 / 국민연금
+    const h0 = ec()
+    h0[1]  = hc('사 원 번 호', FN9, AC, bd(TT,TT,TM,TT))
+    h0[2]  = hc('입 사 일 자', FN9, AC, bd(TT,TT,TT,TD))
+    for (let i=3;i<=5;i++) h0[i] = hc('',FN9,AC,bd(TT,TT,TT,i===5?TD:TT))
+    h0[6]  = hc('기본급',    FB, AD, B.hSL)
+    h0[7]  = hc('직책수당',  FB, AD, B.hMid)
+    for (let i=8;i<=9;i++) h0[i] = hc('',FB,AD,B.hMid)
+    h0[10] = hc('야간수당',  FB, AD, B.hMid)
+    h0[11] = hc('연차수당',  FB, AD, B.hMid)
+    h0[12] = hc('식대',      FB, AD, B.hSR)
+    h0[13] = hc('건강보험',  FB, AD, B.hSL)
+    h0[14] = hc('장기요양보험',FB,AD, B.hMid)
+    h0[15] = hc('',          FB, AD, B.hMid)
+    h0[16] = hc('국민연금',  FB, AD, B.hSR)
+    h0[17] = hc('',FN9,AD,bd(TT,TT,TD,TT))
+    h0[18] = hc('',FN9,AD,B.hMid); h0[19] = hc('',FN9,AD,B.hMid)
+    h0[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h0[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
+    wsData.push(h0); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-    // ── 헤더 행 3 (성명행) ────────────────────────────
-    const h3 = emptyRow();
-    h3[1] = '성명'; h3[2] = '배'; h3[3] = '20'; h3[4] = '60'; h3[5] = '장';
-    h3[13] = '환급주민세'; h3[14] = '신원보증보험료'; h3[16] = '피복비공제';
-    h3[17] = '지급합계';
-    wsData.push(h3);
-    addMerge(rowIdx, 7, rowIdx, 9);  // H:J
-    addMerge(rowIdx, 14, rowIdx, 15); // O:P
-    addMerge(rowIdx, 17, rowIdx, 19); // R:T
-    rowIdx++;
+    // 행1: 직위 / 기타수당 / 대근비 / 고용보험 / 기타공제 / 환급소득세
+    const h1 = ec()
+    h1[1]  = hc('직위',      FN9, AD, bd(TT,TT,TM,TT))
+    h1[2]  = hc('경',        FN9, AC, B.hMid)
+    h1[3]  = hc('부',        FN9, AC, B.hMid)
+    h1[4]  = hc('7',         FN9, AC, B.hMid)
+    h1[5]  = hc('',          FN9, AC, bd(TT,TT,TT,TD))
+    h1[6]  = hc('기타수당',  FB, AD, B.hSL)
+    h1[7]  = hc('근로자의날수당',FB,AD,B.hMid)
+    for (let i=8;i<=9;i++) h1[i]=hc('',FB,AD,B.hMid)
+    h1[10] = hc('대근비',    FB, AD, B.hMid)
+    h1[11] = hc('',          FB, AD, B.hMid)
+    h1[12] = hc('',          FB, AD, B.hSR)
+    h1[13] = hc('고용보험',  FB, AD, B.hSL)
+    h1[14] = hc('기타공제',  FB, AD, B.hMid)
+    h1[15] = hc('',          FB, AD, B.hMid)
+    h1[16] = hc('환급소득세',FB, AD, B.hSR)
+    h1[17] = hc('',FN9,AD,bd(TT,TT,TD,TT))
+    h1[18] = hc('',FN9,AD,B.hMid); h1[19] = hc('',FN9,AD,B.hMid)
+    h1[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h1[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
+    wsData.push(h1); mg(R,2,R,3); mg(R,4,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-    // ── 헤더 행 4 (근로일수행) ────────────────────────
-    const h4 = emptyRow();
-    h4[1] = '근로일수'; h4[2] = '연장'; h4[4] = '야간';
-    h4[17] = '공제합계';
-    wsData.push(h4);
-    addMerge(rowIdx, 2, rowIdx, 3); addMerge(rowIdx, 4, rowIdx, 5);
-    addMerge(rowIdx, 7, rowIdx, 9);
-    addMerge(rowIdx, 17, rowIdx, 19);
-    rowIdx++;
+    // 행2: 성명 / 환급주민세 / 신원보증 / 피복비 / 지급합계
+    const h2 = ec()
+    h2[1]  = hc('성명',      FN9, AD, bd(TT,TT,TM,TT))
+    h2[2]  = hc('배',        FN9, AC, B.hMid)
+    h2[3]  = hc('20 ',       FN9, AC, B.hMid)
+    h2[4]  = hc('60 ',       FN9, AC, B.hMid)
+    h2[5]  = hc('장',        FN9, AC, bd(TT,TT,TT,TD))
+    for (let i=6;i<=12;i++) h2[i]=hc('',FB,AD, i===6?B.hSL:i===12?B.hSR:B.hMid)
+    h2[13] = hc('환급주민세',FB, AD, B.hSL)
+    h2[14] = hc('신원보증보험료',FB,AD,B.hMid)
+    h2[15] = hc('',          FB, AD, B.hMid)
+    h2[16] = hc('피복비공제',FB, AD, B.hSR)
+    h2[17] = hc('지급합계',  FN9,AD,bd(TT,TT,TD,TT))
+    h2[18] = hc('',FN9,AD,B.hMid); h2[19] = hc('',FN9,AD,B.hMid)
+    h2[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h2[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
+    wsData.push(h2); mg(R,7,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-    // ── 헤더 행 5 (근로시간행) ───────────────────────
-    const h5 = emptyRow();
-    h5[1] = '근로시간수'; h5[2] = '휴일';
-    h5[13] = '소득세'; h5[14] = '지방소득세';
-    h5[17] = '차인지급액';
-    wsData.push(h5);
-    addMerge(rowIdx, 2, rowIdx, 3); addMerge(rowIdx, 4, rowIdx, 5);
-    addMerge(rowIdx, 7, rowIdx, 9);
-    addMerge(rowIdx, 14, rowIdx, 15);
-    addMerge(rowIdx, 17, rowIdx, 19);
-    rowIdx++;
+    // 행3: 근로일수 / 공제합계
+    const h3 = ec()
+    h3[1]  = hc('근로일수',  FN9, AD, bd(TT,TT,TM,TT))
+    h3[2]  = hc('연장',      FN9, AD, B.hMid)
+    h3[3]  = hc('',          FN9, AD, B.hMid)
+    h3[4]  = hc('야간',      FN9, AD, B.hMid)
+    h3[5]  = hc('',          FN9, AD, bd(TT,TT,TT,TD))
+    for (let i=6;i<=12;i++) h3[i]=hc('',FB,AD, i===6?B.hSL:i===12?B.hSR:B.hMid)
+    for (let i=13;i<=16;i++) h3[i]=hc('',FB,AD, i===13?B.hSL:i===16?B.hSR:B.hMid)
+    h3[17] = hc('공제합계',  FN9,AD,bd(TT,TT,TD,TT))
+    h3[18] = hc('',FN9,AD,B.hMid); h3[19] = hc('',FN9,AD,B.hMid)
+    h3[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h3[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
+    wsData.push(h3); mg(R,2,R,3); mg(R,4,R,5); mg(R,7,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-    // ── 직원 데이터 (1인 5행) ────────────────────────
+    // 행4: 근로시간수 / 소득세 / 지방소득세 / 차인지급액
+    const h4 = ec()
+    h4[1]  = hc('근로시간수',FN9, AD, bd(TT,TT,TM,TT))
+    h4[2]  = hc('휴일',      FN9, AD, B.hMid)
+    h4[3]  = hc('',          FN9, AD, B.hMid)
+    h4[4]  = hc('',          FN9, AD, B.hMid)
+    h4[5]  = hc('',          FN9, AD, bd(TT,TT,TT,TD))
+    for (let i=6;i<=12;i++) h4[i]=hc('',FB,AD, i===6?B.hSL:i===12?B.hSR:B.hMid)
+    h4[13] = hc('소득세',    FB, AD, B.hSL)
+    h4[14] = hc('지방소득세',FB, AD, B.hMid)
+    h4[15] = hc('',          FB, AD, B.hMid)
+    h4[16] = hc('',          FB, AD, B.hSR)
+    h4[17] = hc('차인지급액',FN9,AD,bd(TT,TT,TD,TT))
+    h4[18] = hc('',FN9,AD,B.hMid); h4[19] = hc('',FN9,AD,B.hMid)
+    h4[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h4[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
+    wsData.push(h4); mg(R,2,R,3); mg(R,4,R,5); mg(R,7,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
+
+    // ── 직원 데이터 (1인 5행) ────────────────────────────────
     for (const emp of pgEmps) {
-      const pay = emp.payItems || {};
-      const ded = emp.deductionItems || {};
-      const s   = calculateRowSummary(emp);
+      const pay = emp.payItems || {}
+      const ded = emp.deductionItems || {}
+      const s   = calculateRowSummary(emp)
 
-      // emp 행0
-      const e0 = emptyRow();
-      e0[1]=emp.id||''; e0[2]=emp.joinDate||'';
-      e0[6]=n(pay['04001001']); e0[7]=n(pay['04001002']);
-      e0[10]=n(pay['04001003']); e0[11]=n(pay['04001004']); e0[12]=n(pay['04001005']);
-      e0[13]=n(ded['04002001']); e0[14]=n(ded['04002002']); e0[16]=n(ded['04002003']);
-      wsData.push(e0);
-      addMerge(rowIdx,2,rowIdx,5); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
-      rowIdx++;
+      // 직원 행0 — 사번 / 입사일 / 기본급 / 직책 / 야간 / 연차 / 식대 / 건강 / 장기 / 국민
+      const e0 = ec()
+      e0[1]  = dc(emp.id||'',     FN9, AC, B.d0OL)
+      e0[2]  = dc(emp.inDate||'', FN9, AC, bd(TM,TT,TT,TD))
+      e0[3]  = dc('',FN9,AC,bd(TM,TT,TT,TT))
+      e0[4]  = dc('',FN9,AC,bd(TM,TT,TT,TT))
+      e0[5]  = dc('',FN9,AC,bd(TM,TT,TT,TD))
+      e0[6]  = nc(pay['04001001'], B.d0SL)
+      e0[7]  = nc(pay['04001002'], B.d0Mid)
+      e0[8]  = dc('',FN9,AC,B.d0Mid)
+      e0[9]  = dc('',FN9,AC,B.d0Mid)
+      e0[10] = nc(pay['04001003'], B.d0Mid)
+      e0[11] = nc(pay['04001004'], B.d0Mid)
+      e0[12] = nc(pay['04001005'], B.d0SR)
+      e0[13] = nc(ded['04002001'], B.d0SL)
+      e0[14] = nc(ded['04002002'], B.d0Mid)
+      e0[15] = dc('',FN9,AC,B.d0Mid)
+      e0[16] = nc(ded['04002003'], B.d0SR)
+      e0[17] = dc('',FN9,AC,bd(TM,TT,TD,TT))
+      e0[18] = dc('',FN9,AC,B.d0Mid); e0[19] = dc('',FN9,AC,B.d0Mid)
+      e0[20] = dc('',FN9,AC,B.d0Mid); e0[21] = dc('',FN9,AC,B.d0OR)
+      wsData.push(e0); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-      // emp 행1
-      const e1 = emptyRow();
-      e1[1]=emp.role||''; e1[2]='0'; e1[3]='0'; e1[4]='0';
-      e1[6]=n(pay['04001006']); e1[13]=n(ded['04002004']); e1[14]=n(ded['04002005']); e1[16]=n(ded['04002006']);
-      wsData.push(e1);
-      addMerge(rowIdx,2,rowIdx,5); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
-      rowIdx++;
+      // 직원 행1 — 직위 / 기타수당 / 고용보험
+      const e1 = ec()
+      e1[1]  = dc(emp.role||'', FN9, AC, B.dOL)
+      e1[2]  = dc('0',FN9,AC,B.dMid); e1[3]=dc('0',FN9,AC,B.dMid)
+      e1[4]  = dc('0',FN9,AC,B.dMid); e1[5]=dc('',FN9,AC,B.dSR)
+      e1[6]  = nc(pay['04001006'], B.dSL)
+      e1[7]  = dc('',FN9,AC,B.dMid); e1[8]=dc('',FN9,AC,B.dMid); e1[9]=dc('',FN9,AC,B.dMid)
+      e1[10] = dc('',FN9,AC,B.dMid); e1[11]=dc('',FN9,AC,B.dMid); e1[12]=dc('',FN9,AC,B.dSR)
+      e1[13] = nc(ded['04002004'], B.dSL)
+      e1[14] = nc(ded['04002005'], B.dMid)
+      e1[15] = dc('',FN9,AC,B.dMid)
+      e1[16] = nc(ded['04002006'], B.dSR)
+      e1[17] = dc('',FN9,AC,bd(TT,TT,TD,TT))
+      e1[18] = dc('',FN9,AC,B.dMid); e1[19]=dc('',FN9,AC,B.dMid)
+      e1[20] = dc('',FN9,AC,B.dMid); e1[21]=dc('',FN9,AC,B.dOR)
+      wsData.push(e1); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-      // emp 행2
-      const e2 = emptyRow();
-      e2[1]=emp.staff||emp.name||''; e2[3]='0'; e2[4]='0'; e2[5]='0';
-      e2[13]=n(ded['04002007']); e2[14]=n(ded['04002008']); e2[16]=n(ded['04002009']);
-      e2[17]=n(s.gross);
-      wsData.push(e2);
-      addMerge(rowIdx,3,rowIdx,5); addMerge(rowIdx,7,rowIdx,9);
-      addMerge(rowIdx,14,rowIdx,15); addMerge(rowIdx,17,rowIdx,19);
-      rowIdx++;
+      // 직원 행2 — 성명 / 환급주민세 / 신원보증 / 피복비 / 지급합계
+      const e2 = ec()
+      e2[1]  = dc(emp.staff||'', FN9, AC, B.dOL)
+      e2[2]  = dc('',FN9,AC,B.dMid); e2[3]=dc('0',FN9,AC,B.dMid)
+      e2[4]  = dc('0',FN9,AC,B.dMid); e2[5]=dc('0',FN9,AC,B.dSR)
+      e2[6]  = dc('',FN9,AC,B.dSL)
+      e2[7]  = dc('',FN9,AC,B.dMid); e2[8]=dc('',FN9,AC,B.dMid); e2[9]=dc('',FN9,AC,B.dMid)
+      e2[10] = dc('',FN9,AC,B.dMid); e2[11]=dc('',FN9,AC,B.dMid); e2[12]=dc('',FN9,AC,B.dSR)
+      e2[13] = nc(ded['04002007'], B.dSL)
+      e2[14] = nc(ded['04002008'], B.dMid)
+      e2[15] = dc('',FN9,AC,B.dMid)
+      e2[16] = nc(ded['04002009'], B.dSR)
+      e2[17] = nc(s.gross, bd(TT,TT,TD,TT))
+      e2[18] = dc('',FN9,AC,B.dMid); e2[19]=dc('',FN9,AC,B.dMid)
+      e2[20] = dc('',FN9,AC,B.dMid); e2[21]=dc('',FN9,AC,B.dOR)
+      wsData.push(e2); mg(R,3,R,5); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-      // emp 행3
-      const e3 = emptyRow();
-      e3[1]=String(emp.workedDays||0); e3[2]='0.00'; e3[4]='0.00';
-      e3[17]=n(s.ded);
-      wsData.push(e3);
-      addMerge(rowIdx,2,rowIdx,3); addMerge(rowIdx,4,rowIdx,5);
-      addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,17,rowIdx,19);
-      rowIdx++;
+      // 직원 행3 — 근로일수 / 공제합계
+      const e3 = ec()
+      e3[1]  = dc(String(emp.workedDays||0), FN9, AC, B.dOL)
+      e3[2]  = dc('0.00',FN9,AC,B.dMid); e3[3]=dc('',FN9,AC,B.dMid)
+      e3[4]  = dc('0.00',FN9,AC,B.dMid); e3[5]=dc('',FN9,AC,B.dSR)
+      e3[6]  = dc('',FN9,AC,B.dSL)
+      e3[7]  = dc('',FN9,AC,B.dMid); e3[8]=dc('',FN9,AC,B.dMid); e3[9]=dc('',FN9,AC,B.dMid)
+      e3[10] = dc('',FN9,AC,B.dMid); e3[11]=dc('',FN9,AC,B.dMid); e3[12]=dc('',FN9,AC,B.dSR)
+      e3[13] = dc('',FN9,AC,B.dSL)
+      e3[14] = dc('',FN9,AC,B.dMid); e3[15]=dc('',FN9,AC,B.dMid); e3[16]=dc('',FN9,AC,B.dSR)
+      e3[17] = nc(s.ded, bd(TT,TT,TD,TT))
+      e3[18] = dc('',FN9,AC,B.dMid); e3[19]=dc('',FN9,AC,B.dMid)
+      e3[20] = dc('',FN9,AC,B.dMid); e3[21]=dc('',FN9,AC,B.dOR)
+      wsData.push(e3); mg(R,2,R,3); mg(R,4,R,5); mg(R,6,R,9); mg(R,17,R,19); R++
 
-      // emp 행4
-      const e4 = emptyRow();
-      e4[1]='209.00'; e4[2]='0.00';
-      e4[13]=n(ded['04002013']); e4[14]=n(ded['04002014']);
-      e4[17]=n(s.net);
-      wsData.push(e4);
-      addMerge(rowIdx,2,rowIdx,3); addMerge(rowIdx,4,rowIdx,5);
-      addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
-      addMerge(rowIdx,17,rowIdx,19);
-      rowIdx++;
+      // 직원 행4 — 근로시간수 / 소득세 / 지방소득세 / 차인지급액
+      const e4 = ec()
+      e4[1]  = dc('209.00', FN9, AC, B.dbOL)
+      e4[2]  = dc('0.00',FN9,AC,B.dbMid); e4[3]=dc('',FN9,AC,B.dbMid)
+      e4[4]  = dc('',FN9,AC,B.dbMid); e4[5]=dc('',FN9,AC,B.dbSR)
+      e4[6]  = dc('',FN9,AC,B.dbSL)
+      e4[7]  = dc('',FN9,AC,B.dbMid); e4[8]=dc('',FN9,AC,B.dbMid); e4[9]=dc('',FN9,AC,B.dbMid)
+      e4[10] = dc('',FN9,AC,B.dbMid); e4[11]=dc('',FN9,AC,B.dbMid); e4[12]=dc('',FN9,AC,B.dbSR)
+      e4[13] = nc(ded['04002013'], B.dbSL)
+      e4[14] = nc(ded['04002014'], B.dbMid)
+      e4[15] = dc('',FN9,AC,B.dbMid)
+      e4[16] = dc('',FN9,AC,B.dbSR)
+      e4[17] = nc(s.net, bd(TT,TM,TD,TT))
+      e4[18] = dc('',FN9,AC,B.dbMid); e4[19]=dc('',FN9,AC,B.dbMid)
+      e4[20] = dc('',FN9,AC,B.dbMid); e4[21]=dc('',FN9,AC,B.dbOR)
+      wsData.push(e4); mg(R,2,R,3); mg(R,4,R,5); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
     }
 
-    // ── 합계 (마지막 페이지에만) ─────────────────────
-    if (pgIdx === pages.length - 1) {
-      const allEmps  = target;
-      const totalG   = allEmps.reduce((s,e) => s + calculateRowSummary(e).gross, 0);
-      const totalD   = allEmps.reduce((s,e) => s + calculateRowSummary(e).ded, 0);
-      const totalN   = allEmps.reduce((s,e) => s + calculateRowSummary(e).net, 0);
-      const payTot   = {}; const dedTot = {};
+    // ── 합계 (현장 마지막 페이지만) ─────────────────────────
+    if (isLastPage) {
+      const allEmps = siteGroup
+      const totalG  = allEmps.reduce((s,e) => s + calculateRowSummary(e).gross, 0)
+      const totalD  = allEmps.reduce((s,e) => s + calculateRowSummary(e).ded,   0)
+      const totalN  = allEmps.reduce((s,e) => s + calculateRowSummary(e).net,   0)
+      const payTot  = {}; const dedTot = {}
       allEmps.forEach(e => {
-        Object.entries(e.payItems||{}).forEach(([k,v]) => payTot[k]=(payTot[k]||0)+n(v));
-        Object.entries(e.deductionItems||{}).forEach(([k,v]) => dedTot[k]=(dedTot[k]||0)+n(v));
-      });
+        Object.entries(e.payItems||{}).forEach(([k,v]) => payTot[k]=(payTot[k]||0)+n(v))
+        Object.entries(e.deductionItems||{}).forEach(([k,v]) => dedTot[k]=(dedTot[k]||0)+n(v))
+      })
 
       for (let rep = 0; rep < 2; rep++) {
-        const label = rep === 0 ? '부서계' : '합계';
-        const s0=emptyRow(); s0[1]=label; s0[2]=siteLabel;
-        s0[6]=n(payTot['04001001']); s0[7]=n(payTot['04001002']);
-        s0[13]=n(dedTot['04002001']); s0[14]=n(dedTot['04002002']); s0[16]=n(dedTot['04002003']);
-        wsData.push(s0);
-        addMerge(rowIdx,2,rowIdx,5); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15);
-        rowIdx++;
-        const s1=emptyRow(); s1[13]=n(dedTot['04002004']);
-        wsData.push(s1); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15); rowIdx++;
-        const s2=emptyRow(); s2[14]=n(dedTot['04002005']); s2[17]=totalG;
-        wsData.push(s2); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15); addMerge(rowIdx,17,rowIdx,19); rowIdx++;
-        const s3=emptyRow(); s3[17]=totalD;
-        wsData.push(s3); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,17,rowIdx,19); rowIdx++;
-        const s4=emptyRow(); s4[2]=`${allEmps.length}명`; s4[13]=n(dedTot['04002013']); s4[14]=n(dedTot['04002014']); s4[17]=totalN;
-        wsData.push(s4); addMerge(rowIdx,2,rowIdx,3); addMerge(rowIdx,7,rowIdx,9); addMerge(rowIdx,14,rowIdx,15); addMerge(rowIdx,17,rowIdx,19); rowIdx++;
+        const label = rep === 0 ? '부서계' : '합계'
+
+        // 합계 행0
+        const s0 = ec()
+        s0[1]  = dc(label,     FB, AC, B.d0OL)
+        s0[2]  = dc(siteLabel, FB, AC, bd(TM,TT,TT,TD))
+        s0[3]  = dc('',FN9,AC,bd(TM,TT,TT,TT)); s0[4]=dc('',FN9,AC,bd(TM,TT,TT,TT)); s0[5]=dc('',FN9,AC,bd(TM,TT,TT,TD))
+        s0[6]  = nc(payTot['04001001'], B.d0SL)
+        s0[7]  = nc(payTot['04001002'], B.d0Mid)
+        s0[8]  = dc('',FN9,AC,B.d0Mid); s0[9]=dc('',FN9,AC,B.d0Mid)
+        s0[10] = dc('',FN9,AC,B.d0Mid); s0[11]=dc('',FN9,AC,B.d0Mid); s0[12]=dc('',FN9,AC,B.d0SR)
+        s0[13] = nc(dedTot['04002001'], B.d0SL)
+        s0[14] = nc(dedTot['04002002'], B.d0Mid)
+        s0[15] = dc('',FN9,AC,B.d0Mid)
+        s0[16] = nc(dedTot['04002003'], B.d0SR)
+        s0[17] = dc('',FN9,AC,bd(TM,TT,TD,TT))
+        s0[18] = dc('',FN9,AC,B.d0Mid); s0[19]=dc('',FN9,AC,B.d0Mid)
+        s0[20] = dc('',FN9,AC,B.d0Mid); s0[21]=dc('',FN9,AC,B.d0OR)
+        wsData.push(s0); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
+
+        // 합계 행1
+        const s1 = ec()
+        s1[1]  = dc('',FN9,AC,B.dOL)
+        s1[2]  = dc('',FN9,AC,B.dSR); // C:F 병합
+        s1[6]  = dc('',FN9,AC,B.dSL)
+        s1[7]  = dc('',FN9,AC,B.dMid); s1[8]=dc('',FN9,AC,B.dMid); s1[9]=dc('',FN9,AC,B.dMid)
+        s1[12] = dc('',FN9,AC,B.dSR)
+        s1[13] = nc(dedTot['04002004'], B.dSL)
+        s1[14] = dc('',FN9,AC,B.dMid); s1[15]=dc('',FN9,AC,B.dMid); s1[16]=dc('',FN9,AC,B.dSR)
+        s1[17] = dc('',FN9,AC,bd(TT,TT,TD,TT))
+        s1[18] = dc('',FN9,AC,B.dMid); s1[19]=dc('',FN9,AC,B.dMid)
+        s1[20] = dc('',FN9,AC,B.dMid); s1[21]=dc('',FN9,AC,B.dOR)
+        wsData.push(s1); mg(R,2,R,5); mg(R,6,R,9); mg(R,14,R,15); R++
+
+        // 합계 행2 — 기타공제 / 지급합계
+        const s2 = ec()
+        s2[1]  = dc('',FN9,AC,B.dOL)
+        s2[2]  = dc('',FN9,AC,B.dSR)
+        s2[6]  = dc('',FN9,AC,B.dSL)
+        s2[7]  = dc('',FN9,AC,B.dMid); s2[8]=dc('',FN9,AC,B.dMid); s2[9]=dc('',FN9,AC,B.dMid)
+        s2[12] = dc('',FN9,AC,B.dSR)
+        s2[13] = dc('',FN9,AC,B.dSL)
+        s2[14] = nc(dedTot['04002005'], B.dMid)
+        s2[15] = dc('',FN9,AC,B.dMid); s2[16]=dc('',FN9,AC,B.dSR)
+        s2[17] = nc(totalG, bd(TT,TT,TD,TT))
+        s2[18] = dc('',FN9,AC,B.dMid); s2[19]=dc('',FN9,AC,B.dMid)
+        s2[20] = dc('',FN9,AC,B.dMid); s2[21]=dc('',FN9,AC,B.dOR)
+        wsData.push(s2); mg(R,2,R,5); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
+
+        // 합계 행3 — 공제합계
+        const s3 = ec()
+        s3[1]  = dc('',FN9,AC,B.dOL)
+        s3[2]  = dc('',FN9,AC,B.dSR)
+        s3[6]  = dc('',FN9,AC,B.dSL)
+        s3[7]  = dc('',FN9,AC,B.dMid); s3[8]=dc('',FN9,AC,B.dMid); s3[9]=dc('',FN9,AC,B.dMid)
+        s3[12] = dc('',FN9,AC,B.dSR)
+        s3[13] = dc('',FN9,AC,B.dSL)
+        s3[14] = dc('',FN9,AC,B.dMid); s3[15]=dc('',FN9,AC,B.dMid); s3[16]=dc('',FN9,AC,B.dSR)
+        s3[17] = nc(totalD, bd(TT,TT,TD,TT))
+        s3[18] = dc('',FN9,AC,B.dMid); s3[19]=dc('',FN9,AC,B.dMid)
+        s3[20] = dc('',FN9,AC,B.dMid); s3[21]=dc('',FN9,AC,B.dOR)
+        wsData.push(s3); mg(R,2,R,5); mg(R,6,R,9); mg(R,17,R,19); R++
+
+        // 합계 행4 — 소득세 / 지방소득세 / 차인지급액
+        const s4 = ec()
+        s4[1]  = dc('',     FN9, AC, B.dbOL)
+        s4[2]  = dc(`${allEmps.length}명`, FB, AC, B.dbMid)
+        s4[3]  = dc('',FN9,AC,B.dbMid); s4[4]=dc('',FN9,AC,B.dbMid); s4[5]=dc('',FN9,AC,B.dbSR)
+        s4[6]  = dc('',FN9,AC,B.dbSL)
+        s4[7]  = dc('',FN9,AC,B.dbMid); s4[8]=dc('',FN9,AC,B.dbMid); s4[9]=dc('',FN9,AC,B.dbMid)
+        s4[12] = dc('',FN9,AC,B.dbSR)
+        s4[13] = nc(dedTot['04002013'], B.dbSL)
+        s4[14] = nc(dedTot['04002014'], B.dbMid)
+        s4[15] = dc('',FN9,AC,B.dbMid); s4[16]=dc('',FN9,AC,B.dbSR)
+        s4[17] = nc(totalN, bd(TT,TM,TD,TT))
+        s4[18] = dc('',FN9,AC,B.dbMid); s4[19]=dc('',FN9,AC,B.dbMid)
+        s4[20] = dc('',FN9,AC,B.dbMid); s4[21]=dc('',FN9,AC,B.dbOR)
+        wsData.push(s4); mg(R,2,R,3); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
       }
     }
 
-    // ── 페이지 하단 ──────────────────────────────────
-    wsData.push(emptyRow()); rowIdx++;
-    const fNote = emptyRow(); fNote[1] = '2026년 직장인건강검진 받아주시기 바랍니다.';
-    wsData.push(fNote); rowIdx++;
-    const fContact = emptyRow();
-    fContact[1] = pgEmps[0]?.contact || '';
-    fContact[19] = `${pgIdx+1}/${pages.length}`;
-    wsData.push(fContact); rowIdx++;
-    wsData.push(emptyRow()); rowIdx++;
+    // ── 하단 ─────────────────────────────────────────────────
+    wsData.push(ec()); R++
+    const fNote = ec()
+    fNote[1] = { v: '2026년 직장인건강검진 받아주시기 바랍니다.', t: 's',
+      s: { font: FN9, fill: FN, alignment: AL } }
+    wsData.push(fNote); R++
+    const fFoot = ec()
+    fFoot[1]  = { v: pgEmps[0]?.contact || '', t: 's', s: { font: FN9, fill: FN, alignment: AL } }
+    fFoot[19] = { v: `${sitePageNo}/${siteTotalPg}`, t: 's', s: { font: FN9, fill: FN, alignment: AR } }
+    wsData.push(fFoot); R++
+    wsData.push(ec()); R++
   }
 
-  // ── SheetJS 워크시트 생성 ────────────────────────────
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws['!merges'] = merges;
-  ws['!cols']   = colWidths;
+  // ── 워크시트 생성 ─────────────────────────────────────────
+  const ws = XLSX.utils.aoa_to_sheet(wsData)
+  ws['!merges'] = merges
+  ws['!cols'] = [
+    {wch:1},{wch:9.5},{wch:3.4},{wch:3.4},{wch:3.4},{wch:3.4},
+    {wch:12.3},{wch:6.7},{wch:3.3},{wch:2.6},{wch:12.4},{wch:12.3},
+    {wch:12.6},{wch:12.6},{wch:1.0},{wch:11.3},{wch:12.6},
+    {wch:6.6},{wch:4.9},{wch:1.7},{wch:2.3},{wch:6.3},
+  ]
 
-  const sheetName = `pays_${year}m${month.padStart(2,'0')}`;
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
-  const fileName = `지급대장_${year}년${month.padStart(2,'0')}월.xlsx`;
-  XLSX.writeFile(wb, fileName);
-};
+  const sheetName = `pays_${year}m${month.padStart(2,'0')}`
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  XLSX.writeFile(wb, `지급대장_${year}년${month.padStart(2,'0')}월.xlsx`)
+}
 
 // 숫자 변환 헬퍼
 const n = (v) => Number(v || 0);

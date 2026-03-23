@@ -838,7 +838,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
     width: 100%;
   }
   .stats-grid {
-    grid-template-columns: 1fr 1fr;
+    /*grid-template-columns: 1fr 1fr;*/
   }
 }
 </style>
