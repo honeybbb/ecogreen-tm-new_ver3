@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, computed } from 'vue';
 import axios from 'axios';
+import * as XLSX from 'xlsx'
 import {useAuthStore} from "~/stores/auth.js";
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
@@ -104,10 +105,145 @@ const getWageCode = async () => {
   }
 };
 
-onMounted(() => {
-  fetchSiteOptions();
-  fetchTypeOptions();
-  getWageCode();
+// ==========================================
+// 엑셀 내보내기
+// ==========================================
+const exportToExcel = () => {
+  const wb = XLSX.utils.book_new()
+  const siteName = formData.value.siteName || '현장미지정'
+  const targetMonth = formData.value.target_month || formData.value.billingDt || ''
+  const fileName = `정산서_${siteName}_${targetMonth}.xlsx`
+
+  // ── 시트1: 청구 공문 ──
+  const statementRows = []
+
+  statementRows.push(['청구 공문'])
+  statementRows.push([])
+  statementRows.push(['수신', formData.value.siteName ? formData.value.siteName + ' 관리사무소' : ''])
+  statementRows.push(['문서번호', formData.value.docNo || ''])
+  statementRows.push(['시행일자', formData.value.billingDt || ''])
+  statementRows.push(['제목', formData.value.billingData.summary || ''])
+  statementRows.push([])
+  statementRows.push(['산정기간', '구분', '내역', '산출금액', '비고'])
+
+  ;(formData.value.billingData.items || []).forEach(item => {
+    statementRows.push([
+      item.period || '',
+      item.category || '',
+      item.detail || '',
+      Number(item.amount) || 0,
+      item.note || ''
+    ])
+  })
+
+  statementRows.push([])
+  statementRows.push(['', '', '합계', formData.value.subTotal, ''])
+
+  if (formData.value.is_vat === 'Y') {
+    const vb = formData.value.billingData.vatBreakdown
+    statementRows.push([])
+    statementRows.push(['구분', '관리면적(㎡)', '단가(원)', '공급가액(원)', '부가세(원)', '합계금액(원)'])
+    statementRows.push([
+      '135㎡ 이하 (면세)',
+      Number(vb.under135.area) || 0,
+      Number(vb.under135.unitPrice) || 0,
+      Number(vb.under135.supply) || 0,
+      0,
+      Number(vb.under135.supply) || 0
+    ])
+    statementRows.push([
+      '135㎡ 초과 (과세)',
+      Number(vb.over135.area) || 0,
+      Number(vb.over135.unitPrice) || 0,
+      Number(vb.over135.supply) || 0,
+      Number(vb.over135.vat) || 0,
+      (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0)
+    ])
+    statementRows.push([
+      '총 계',
+      (Number(vb.under135.area) || 0) + (Number(vb.over135.area) || 0),
+      '-',
+      formData.value.subTotal,
+      formData.value.vatAmount,
+      formData.value.grandTotal
+    ])
+  }
+
+  statementRows.push([])
+  statementRows.push(['입금계좌', formData.value.billingData.bankInfo || ''])
+
+  const ws1 = XLSX.utils.aoa_to_sheet(statementRows)
+
+  // 열 너비 설정
+  ws1['!cols'] = [
+    { wch: 20 }, { wch: 14 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 16 }
+  ]
+
+  XLSX.utils.book_append_sheet(wb, ws1, '청구공문')
+
+  // ── 시트2: 급여 세부 내역서 ──
+  if (formData.value.payrollData.length > 0) {
+    const payrollRows = []
+
+    // 헤더 행 1
+    const header1 = ['NO', '이름', '직책', '지급총액']
+    if (visibleDeductionItems.value.length > 0) {
+      visibleDeductionItems.value.forEach(item => header1.push(item.itemNm))
+    }
+    header1.push('공제계', '연차적립', '퇴직적립')
+    payrollRows.push(header1)
+
+    // 데이터 행
+    formData.value.payrollData.forEach((row, idx) => {
+      const dataRow = [
+        idx + 1,
+        row.empName || '',
+        row.position || '',
+        Number(row.grossPay) || 0
+      ]
+      visibleDeductionItems.value.forEach(item => {
+        dataRow.push(Number(row.deductionItems?.[item.itemCd]) || 0)
+      })
+      dataRow.push(
+          Number(row.totalDeduct) || 0,
+          Number(row.reserves?.annualLeave) || 0,
+          Number(row.reserves?.severance) || 0
+      )
+      payrollRows.push(dataRow)
+    })
+
+    // 합계 행
+    const totalRow = ['', '', '총 계', payrollTotals.value.grossPay]
+    visibleDeductionItems.value.forEach(item => {
+      totalRow.push(payrollTotals.value.deductionItems[item.itemCd] || 0)
+    })
+    totalRow.push(
+        payrollTotals.value.totalDeduct,
+        payrollTotals.value.annualLeave,
+        payrollTotals.value.severance
+    )
+    payrollRows.push(totalRow)
+
+    const ws2 = XLSX.utils.aoa_to_sheet(payrollRows)
+
+    // 열 너비
+    const colWidths = [{ wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 14 }]
+    visibleDeductionItems.value.forEach(() => colWidths.push({ wch: 12 }))
+    colWidths.push({ wch: 12 }, { wch: 12 }, { wch: 12 })
+    ws2['!cols'] = colWidths
+
+    XLSX.utils.book_append_sheet(wb, ws2, '급여내역서')
+  }
+
+  XLSX.writeFile(wb, fileName)
+}
+
+onMounted(async () => {
+  await Promise.all([
+      fetchSiteOptions(),
+      fetchTypeOptions()
+  ])
+  await getWageCode();
 });
 
 const handleSiteChange = () => {
@@ -384,6 +520,10 @@ const formatCurrency = (val) => Number(val || 0).toLocaleString();
           <span class="badge">{{ formData.siteName || '현장 미지정' }} ({{ formData.target_month || '연월 미지정' }})</span>
         </div>
         <div class="header-actions">
+          <button class="btn-excel" @click="exportToExcel">
+            <i class="mdi mdi-microsoft-excel"></i>
+            <span class="btn-text">엑셀 저장</span>
+          </button>
           <button class="btn-save" @click="handleSave"><i class="mdi mdi-content-save"></i> <span class="btn-text">저장하기</span></button>
           <button class="btn-close" @click="closeModal"><i class="mdi mdi-close"></i></button>
         </div>
