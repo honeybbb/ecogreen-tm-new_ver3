@@ -9,7 +9,14 @@ import axios from 'axios';
 const router = useRouter();
 const route  = useRoute();
 
-const { positionOptions, typeOptions, fetchPositionOptions, fetchTypeOptions } = useApi();
+const {
+  positionOptions,
+  typeOptions,
+  wagesData,
+  fetchPositionOptions,
+  fetchTypeOptions,
+  fetchWageCode
+} = useApi();
 
 // =============================================
 // UI 상태
@@ -53,6 +60,13 @@ const statusOptions    = ref(['준비 중', '운영 중', '계약 종료']);
 // 계약 그룹
 // =============================================
 const contractGroups = ref([]);
+
+const getItemName = (code) => {
+  if (!code) return '-';
+  // wagesData에서 해당 코드를 가진 항목을 찾음
+  const found = wagesData.value.find(w => w.itemCd === code);
+  return found ? found.itemNm : code; // 없으면 코드 그대로 표시
+};
 
 // =============================================
 // 배치 인원
@@ -336,7 +350,6 @@ const getTotalMonthlyFee       = (g)       => g.staffList.reduce((s, st) => s + 
 const getSectionGrandTotal     = (g, sec)  => g.costBreakdown[sec].reduce((s, item) => s + getRowTotal(item), 0);
 const getLaborGrandTotal       = (g)       => getSectionGrandTotal(g, 'directLabor') + getSectionGrandTotal(g, 'indirectLabor') + getSectionGrandTotal(g, 'expenses');
 const getGroupStaffTotal       = (group)   => (group.staffList ?? []).reduce((s, i) => s + (Number(i.count) || 0), 0);
-const formatNumber             = (num)     => Number(num || 0).toLocaleString('ko-KR');
 
 const getContractDuration = (group) => {
   if (!group.contractStart || !group.contractEnd) return '';
@@ -568,7 +581,7 @@ watch(activeTab, async (newTab) => {
 });
 
 onMounted(async () => {
-  await Promise.all([fetchPositionOptions(), fetchTypeOptions()]);
+  await Promise.all([fetchPositionOptions(), fetchTypeOptions(), fetchWageCode()]);
   await getSiteData();
   // 초기 탭이 equipment 이면 즉시 로드
   if (activeTab.value === 'equipment') await fetchEquipmentList();
@@ -862,7 +875,7 @@ onMounted(async () => {
                 <button type="button" class="btn-toggle-cost" @click="group.showCostBreakdown = !group.showCostBreakdown">
                   <i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i>
                   <span>{{ group.showCostBreakdown ? '산출내역서 접기' : '산출내역서 펼치기' }}</span>
-                  <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">월 {{ formatNumber(getTotalMonthlyFee(group)) }}원</span>
+                  <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">월 {{ formatCurrency(getTotalMonthlyFee(group)) }}원</span>
                 </button>
 
                 <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
@@ -889,7 +902,11 @@ onMounted(async () => {
                         </tr></thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                          <td><span v-if="!isEditing">{{ item.label }}</span><input v-else v-model="item.label" class="tbl-label-input" /></td>
+                          <td>
+                            <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
+                            <!--input v-else v-model="item.label" class="tbl-label-input" /-->
+                            <CodeSelect v-else v-model="item.label" :allow-empty="false"/>
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
@@ -900,7 +917,7 @@ onMounted(async () => {
                         </tbody>
                         <tfoot><tr class="tfoot-subtotal">
                           <td>소계 (A)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatNumber(getDirectLaborColTotal(group, staff.code)) }}</td>
+                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}</td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                           <td v-if="isEditing"></td>
                         </tr></tfoot>
@@ -923,7 +940,10 @@ onMounted(async () => {
                         </tr></thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
-                          <td><span v-if="!isEditing">{{ item.label }}</span><input v-else v-model="item.label" class="tbl-label-input" /></td>
+                          <td><span v-if="!isEditing">{{ getItemName(item.label) }}</span>
+                            <CodeSelect v-else v-model="item.label" />
+                            <!--input v-else v-model="item.label" class="tbl-label-input" /-->
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
@@ -934,7 +954,7 @@ onMounted(async () => {
                         </tbody>
                         <tfoot><tr class="tfoot-subtotal">
                           <td>소계 (B)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatNumber(getIndirectLaborColTotal(group, staff.code)) }}</td>
+                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}</td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                           <td v-if="isEditing"></td>
                         </tr></tfoot>
@@ -957,7 +977,11 @@ onMounted(async () => {
                         </tr></thead>
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
-                          <td><span v-if="!isEditing">{{ item.label }}</span><input v-else v-model="item.label" class="tbl-label-input" /></td>
+                          <td>
+                            <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
+                            <CodeSelect v-else v-model="item.label" />
+                            <!--input v-else v-model="item.label" class="tbl-label-input" /-->
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
@@ -968,7 +992,7 @@ onMounted(async () => {
                         </tbody>
                         <tfoot><tr class="tfoot-subtotal">
                           <td>소계 (C)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatNumber(getExpensesColTotal(group, staff.code)) }}</td>
+                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getExpensesColTotal(group, staff.code)) }}</td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                           <td v-if="isEditing"></td>
                         </tr></tfoot>
@@ -989,27 +1013,27 @@ onMounted(async () => {
                         <tbody>
                         <tr class="summary-row row-d">
                           <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatNumber(getLaborColTotal(group, staff.code)) }}</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-e">
                           <td><span class="summary-label"><span class="cost-block-label label-mgmt">E</span>일반관리비</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatNumber(getManagementFeeCol(group, staff.code)) }}</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span></td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-f">
                           <td><span class="summary-label"><span class="cost-block-label label-profit">F</span>기업이윤</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatNumber(getProfitCol(group, staff.code)) }}</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span></td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-monthly">
                           <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatNumber(getMonthlyTotalCol(group, staff.code)) }}</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-total-fee">
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>월간 용역비 총계</span></td>
-                          <td :colspan="group.staffList.length"><span class="summary-val grand-total">{{ formatNumber(getTotalMonthlyFee(group)) }}</span></td>
+                          <td :colspan="group.staffList.length"><span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span></td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr>
@@ -1505,7 +1529,7 @@ export default {
 .cost-block-label { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text-inverse); flex-shrink: 0; }
 .label-direct { background: #3b82f6; } .label-indirect { background: #8b5cf6; } .label-expense { background: #f59e0b; } .label-total { background: #10b981; } .label-mgmt { background: #6b7280; } .label-profit { background: #ec4899; } .label-monthly { background: #0ea5e9; } .label-total-fee { background: #f97316; }
 .cost-scroll-area { overflow-x: auto; }
-.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); }
+.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed;}
 .cost-table thead tr { background: var(--bg-canvas); }
 .cost-table th, .cost-table td { padding: 8px 10px; border: 1px solid var(--border-color); vertical-align: middle; }
 .cost-table th { font-size: 11px; font-weight: 700; color: var(--text-sub); text-align: center; white-space: nowrap; }

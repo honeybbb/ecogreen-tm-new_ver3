@@ -60,6 +60,13 @@ const employee = ref({
   disability_grade: '',
   defector: '',
   patriot: '',
+  //기타 특이사항 1, 2, 3 (이름과 여부)
+  etc_name_1: '',
+  etc_value_1: '',
+  etc_name_2: '',
+  etc_value_2: '',
+  etc_name_3: '',
+  etc_value_3: '',
   intern: '',
   beneficiary: '',
   foreigner: '',
@@ -657,6 +664,73 @@ onMounted(() => {
                   v-model="employee.visa_date"
                   class="form-input"
               />
+            </div>
+
+            <div class="form-group full-width">
+              <label class="form-label">
+                <i class="mdi mdi-dots-horizontal-circle-outline"></i>
+                기타 특이사항 (정부 정책 등 자유 입력)
+              </label>
+
+              <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                <input
+                    type="text"
+                    v-model="employee.etc_name_1"
+                    class="form-input"
+                    style="flex: 1;"
+                    placeholder="항목명 입력 (예: 일자리안정자금 대상)"
+                />
+                <div class="radio-group" style="margin: 0; padding: 0; min-width: 140px;">
+                  <label class="radio-label" style="padding: 6px 12px;">
+                    <input type="radio" value="Y" v-model="employee.etc_value_1" />
+                    <span class="radio-text">예</span>
+                  </label>
+                  <label class="radio-label" style="padding: 6px 12px;">
+                    <input type="radio" value="N" v-model="employee.etc_value_1" />
+                    <span class="radio-text">아니오</span>
+                  </label>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                <input
+                    type="text"
+                    v-model="employee.etc_name_2"
+                    class="form-input"
+                    style="flex: 1;"
+                    placeholder="항목명 입력"
+                />
+                <div class="radio-group" style="margin: 0; padding: 0; min-width: 140px;">
+                  <label class="radio-label" style="padding: 6px 12px;">
+                    <input type="radio" value="Y" v-model="employee.etc_value_2" />
+                    <span class="radio-text">예</span>
+                  </label>
+                  <label class="radio-label" style="padding: 6px 12px;">
+                    <input type="radio" value="N" v-model="employee.etc_value_2" />
+                    <span class="radio-text">아니오</span>
+                  </label>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 12px; align-items: center;">
+                <input
+                    type="text"
+                    v-model="employee.etc_name_3"
+                    class="form-input"
+                    style="flex: 1;"
+                    placeholder="항목명 입력"
+                />
+                <div class="radio-group" style="margin: 0; padding: 0; min-width: 140px;">
+                  <label class="radio-label" style="padding: 6px 12px;">
+                    <input type="radio" value="Y" v-model="employee.etc_value_3" />
+                    <span class="radio-text">예</span>
+                  </label>
+                  <label class="radio-label" style="padding: 6px 12px;">
+                    <input type="radio" value="N" v-model="employee.etc_value_3" />
+                    <span class="radio-text">아니오</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -19,8 +19,8 @@ const contractData = ref({
   type: '',
   site: '',
   position: '',
-  joinDate: '',
-  endDate: '',
+  contractStartDt: '',
+  contractEndDt: '',
   address: '',
   phone: '',
   wageInputs: {},
@@ -48,10 +48,15 @@ const contractData = ref({
 watch(() => props.employeeData, (newData) => {
   if (newData) {
     // 기본 정보 덮어쓰기
-    contractData.value = { ...contractData.value, ...newData };
+    contractData.value = {
+      ...contractData.value,
+      ...newData,
+      contractStartDt: newData.contract?.contractStartDt || newData.inDate || '',
+      contractEndDt: newData.contract?.contractEndDt || newData.outDate || ''
+    };
 
     // 부모로부터 받은 contract.contractData 값을 wageInputs에 연결
-    if (newData.contract && newData.contract.contractData) {
+    if (newData.contract?.contractData) {
       contractData.value.wageInputs = { ...newData.contract.contractData };
     } else {
       // 계약 데이터가 없으면 초기화
@@ -61,8 +66,8 @@ watch(() => props.employeeData, (newData) => {
 }, { immediate: true, deep: true });
 
 const contractYear = computed(() => {
-  if (contractData.value.joinDate) {
-    return String(contractData.value.joinDate).slice(0, 4);
+  if (contractData.value.contractStartDt) {
+    return String(contractData.value.contractStartDt).slice(0, 4);
   }
   return String(new Date().getFullYear());
 });
@@ -107,7 +112,7 @@ const handleSave = () => {
     // emergencyContact1: contractData.value.emergencyContact1,
     // emergencyContact2: contractData.value.emergencyContact2,
     wageInputs: contractData.value.wageInputs,
-    endDate: contractData.value.endDate
+    contractEndDt: contractData.value.contractEndDt
   };
 
   // emit('save', contractData.value);
@@ -155,9 +160,9 @@ const handleClose = () => {
             <div class="contract-content">
               <p>본 계약은</p>
               <div class="date-input-group">
-                <input type="date" v-model="contractData.joinDate" class="date-input" />
+                <input type="date" v-model="contractData.contractStartDt" class="date-input" />
                 <span>~</span>
-                <input type="date" v-model="contractData.endDate" class="date-input" />
+                <input type="date" v-model="contractData.contractEndDt" class="date-input" />
                 <span>까지로 한다.</span>
               </div>
               <p class="note-text">
@@ -190,7 +195,7 @@ const handleClose = () => {
             <div class="contract-content">
               <p>
                 "을"은 "갑"의
-                <select v-model="contractData.site" class="inline-select" disabled>
+                <select v-model="contractData.sIdx" class="inline-select" disabled>
                   <option value="">선택</option>
                   <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">
                     {{ site.name }}

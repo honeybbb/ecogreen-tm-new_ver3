@@ -540,7 +540,9 @@ body.theme-dark .theme-toggle i {
 
 /* --- 메인 콘텐츠 & 푸터 --- */
 .eg-main-content { flex: 1; padding: 24px; min-width: 0; }
-@media (min-width: 1280px) { .eg-container { max-width: 1200px; margin: 0 auto; } }
+@media (min-width: 1280px) {
+  /*.eg-container { max-width: 1200px; margin: 0 auto; }*/
+}
 
 .eg-footer {
   padding: 16px 24px; background: var(--bg-surface);

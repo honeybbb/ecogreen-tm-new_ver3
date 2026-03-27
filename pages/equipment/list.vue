@@ -115,12 +115,12 @@ const filteredList = computed(() =>
       const catOk    = selectedCategory.value === '전체' || e.category === selectedCategory.value
       const searchOk = e.name.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
           e.model.toLowerCase().includes(searchTerm.value.toLowerCase())
-      const siteOk   = selectedSite.value === '전체' ||
-          e.distributions.some(d => d.siteName === selectedSite.value)
+      // const siteOk   = selectedSite.value === '전체' ||
+      //     e.distributions.some(d => d.siteName === selectedSite.value)
       const statusOk = selectedStatus.value === '전체' ||
           e.distributions.some(d => d.status === selectedStatus.value) ||
           (selectedStatus.value === 'normal' && remainQty(e) > 0)
-      return catOk && searchOk && siteOk && statusOk
+      return catOk && searchOk && statusOk
     })
 )
 
@@ -314,10 +314,10 @@ onMounted(() => { fetchSiteOptions() })
             <option v-for="cat in EQUIP_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
           </select>
         </div>
-        <div class="filter-group">
+        <!--div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-marker"></i> 배치 현장</label>
           <SiteSelect v-model="selectedSite" />
-        </div>
+        </div-->
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-list-status"></i> 장비 상태</label>
           <select v-model="selectedStatus" class="filter-select">

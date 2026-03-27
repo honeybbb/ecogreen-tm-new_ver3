@@ -22,6 +22,11 @@ const allCodeData = {
     color: '#ef4444', // 레드
     codes: ref([]),
   },
+  '04003': {
+    name: '정산 항목',
+    icon: 'mdi-plus-minus-box',
+    codes: ref([]),
+  }
 };
 
 // 2. 선택 상태
@@ -163,6 +168,7 @@ const getConfigWage = () => {
         // 초기화
         allCodeData['04001'].codes.value = [];
         allCodeData['04002'].codes.value = [];
+        allCodeData['04003'].codes.value = [];
 
         // 데이터 분류
         result.forEach((item, index) => {
@@ -183,6 +189,8 @@ const getConfigWage = () => {
             allCodeData['04001'].codes.value.push(formattedItem);
           } else if (item.groupCd === '04002') {
             allCodeData['04002'].codes.value.push(formattedItem);
+          } else if (item.groupCd === '04003') {
+            allCodeData['04003'].codes.value.push(formattedItem);
           }
         });
       })
@@ -577,7 +585,7 @@ onMounted(() => {
 .status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
 .status-badge i { font-size: 13px; }
 
-/* 입력 필드 공통 
+/* 입력 필드 공통
 .input-edit, .input-add, .status-select {
   width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
   font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box;

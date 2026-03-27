@@ -16,7 +16,7 @@ const searchQuery = ref('');
 
 // 입력 폼 상태
 const newCodeName = ref('');
-const newCodeOption = ref('');
+const newCodeOption = ref(0);
 const newCodeSort = ref(0); // 신규 순서 상태 추가
 
 const newCodeNumber = computed(() => {
@@ -345,6 +345,12 @@ const refreshData = () => {
                 <span>색상</span>
               </div>
             </th>
+            <th v-if="selectedSubGroupKey == '02003'" style="width: 150px;">
+              <div class="th-content">
+                <i class="mdi mdi-account"></i>
+                <span>연령</span>
+              </div>
+            </th>
             <th style="width: 140px;">
               <div class="th-content">
                 <i class="mdi mdi-check-circle-outline"></i>
@@ -370,7 +376,7 @@ const refreshData = () => {
             </td>
 
             <td>
-              <template v-if="code.isEditing">
+              <template v-if="code.isEditing && selectedSubGroupKey !== '02003'">
                 <input
                     type="text"
                     v-model="code.name"
@@ -425,6 +431,23 @@ const refreshData = () => {
               </template>
             </td>
 
+            <td v-if="selectedSubGroupKey == '02003'">
+              <span style="display: flex; gap: 16px; align-items: center">
+              만
+              <template v-if="code.isEditing">
+                <input
+                    type="text"
+                    v-model="code.option"
+                    class="input-edit text-center"
+                />
+              </template>
+              <template v-else>
+                <strong>{{code.option}}</strong>
+              </template>
+               세
+                </span>
+            </td>
+
             <td>
               <template v-if="code.isEditing">
                 <select v-model="code.useFl" class="status-select">
@@ -475,7 +498,7 @@ const refreshData = () => {
           </tr>
 
           <tr v-if="currentCodeList.length === 0" class="empty-row">
-            <td :colspan="selectedSubGroupKey == '02002' ? 7 : 6">
+            <td :colspan="selectedSubGroupKey == '02002' || selectedSubGroupKey == '02003' ? 7 : 6">
               <div class="empty-state">
                 <i class="mdi mdi-folder-open-outline"></i>
                 <p>등록된 코드가 없습니다</p>
@@ -532,6 +555,17 @@ const refreshData = () => {
                     maxlength="7"
                 />
               </div>
+            </td>
+            <td v-if="selectedSubGroupKey == '02003'">
+              <span style="display: flex; gap: 16px; align-items: center">
+              만
+                <input
+                    type="text"
+                    v-model="newCodeOption"
+                    class="input-edit text-center"
+                />
+               세
+                </span>
             </td>
             <td>
                 <span class="status-badge status-new">
@@ -641,9 +675,14 @@ const refreshData = () => {
   background: var(--bg-surface);
 }
 .color-text-input {
-  width: 80px; padding: 6px 10px; border: 1px solid var(--border-color);
-  border-radius: 6px; font-size: 12px; text-transform: uppercase;
-  color: var(--text-main); background: var(--bg-surface);
+  width: 80px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  color: var(--text-main);
+  background: var(--bg-surface);
 }
 .color-text-input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
 

@@ -10,6 +10,7 @@ export const useApi = () => {
     const disabledOptions = ref([]);
     // const categoryOptions = ref([]);
     const wagesData  = ref([]);
+    const overAgeOption = ref([]);
 
     //은행 코드 가져오기
     const fetchBankOption = async (groupCd = '02001') => {
@@ -52,7 +53,7 @@ export const useApi = () => {
         }
     }
 
-    const fetchWageCode = async () => {
+    const fetchWageCode = async (cIdx = 1) => {
         try {
             // 실제 API 경로에 맞게 수정해주세요
             const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
@@ -72,6 +73,16 @@ export const useApi = () => {
         }
     }
 
+    const fetchOverAgeOption = async (groupCd = '02003') => {
+        try {
+            axios.get(`/api/v1/code/group/${groupCd}`).then(res => {
+                overAgeOption.value = res.data.data
+            })
+        } catch (e) {
+            console.error("법정 기준 연령 로드 실패:", e);
+        }
+    }
+
     return {
         bankOptions,
         siteOptions,
@@ -79,11 +90,13 @@ export const useApi = () => {
         positionOptions,
         disabledOptions,
         wagesData,
+        overAgeOption,
         fetchBankOption,
         fetchSiteOptions,
         fetchTypeOptions,
         fetchPositionOptions,
         fetchDisabledOptions,
-        fetchWageCode
+        fetchWageCode,
+        fetchOverAgeOption,
     };
 };

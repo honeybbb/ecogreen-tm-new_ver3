@@ -28,19 +28,32 @@ const steps = [
 ];
 
 const site = ref({
-  siteName: '', siteId: '', siteType: '',
-  postalCode: '', addressMain: '', addressDetail: '',
-  latitude: '', longitude: '', area: '',
-  is_vat: false, building_su: '', unit_su: '',
-  managerName: '', managerContact: '',
-  director: '', directorContact: '',
-  memo: '', status: '준비 중', payment_day: '', bigo: ''
+  siteName: '',
+  siteId: '',
+  siteType: '',
+  postalCode: '',
+  addressMain: '',
+  addressDetail: '',
+  latitude: '',
+  longitude: '',
+  area: '',
+  is_vat: false,
+  building_su: '',
+  unit_su: '',
+  managerName: '',
+  managerContact: '',
+  director: '',
+  directorContact: '',
+  memo: '',
+  status: '운영 중',
+  payment_day: '',
+  bigo: ''
 });
 
 const contractGroups = ref([]);
 const selectedFile = ref(null);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
-const statusOptions  = ref(['준비 중', '운영 중', '계약 종료']);
+const statusOptions  = ref(['운영 중', '계약 종료']);
 const bigoHistory    = ref([]);
 const detailInput    = ref(null);
 
@@ -215,8 +228,6 @@ const addItem = (group, section) => {
 const removeItem = (group, section, idx) => {
   group.costBreakdown[section].splice(idx, 1);
 };
-
-const formatNumber = (num) => Number(num || 0).toLocaleString('ko-KR');
 
 // =============================================
 // 파일 / 폼 처리
@@ -623,7 +634,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                   <i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i>
                   <span>{{ group.showCostBreakdown ? '산출내역서 접기' : '산출내역서 펼치기' }}</span>
                   <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">
-                    월 {{ formatNumber(getTotalMonthlyFee(group)) }}원
+                    월 {{ formatCurrency(getTotalMonthlyFee(group)) }}원
                   </span>
                 </button>
 
@@ -660,10 +671,22 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                          <td><input v-model="item.label" class="tbl-label-input" placeholder="항목명" /></td>
+                          <td>
+                            <CodeSelect
+                                v-model="item.code"
+                                @update:label="(val) => item.label = val"
+                                :allow-empty="false"
+                            />
+                            <!--input v-model="item.label" class="tbl-label-input" placeholder="항목명" /-->
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]"
-                                   type="number" class="tbl-value-input" placeholder="0" min="0" />
+                            <input
+                                v-model.number="item.values[staff.code]"
+                                type="number"
+                                class="tbl-value-input"
+                                placeholder="0"
+                                min="0"
+                            />
                           </td>
                           <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
                           <td class="col-action">
@@ -677,9 +700,9 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         <tr class="tfoot-subtotal">
                           <td>소계 (A)</td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatNumber(getDirectLaborColTotal(group, staff.code)) }}
+                            {{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}
                           </td>
-                          <!--td>{{ formatNumber(getSectionGrandTotal(group, 'directLabor')) }}</td-->
+                          <!--td>{{ formatCurrency(getSectionGrandTotal(group, 'directLabor')) }}</td-->
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
@@ -708,7 +731,10 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
-                          <td><input v-model="item.label" class="tbl-label-input" placeholder="항목명" /></td>
+                          <td>
+                            <CodeSelect v-model="item.label" :allow-empty="false" />
+                            <!--input v-model="item.label" class="tbl-label-input" placeholder="항목명" /-->
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input v-model.number="item.values[staff.code]"
                                    type="number" class="tbl-value-input" placeholder="0" min="0" />
@@ -727,9 +753,9 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         <tr class="tfoot-subtotal">
                           <td>소계 (B)</td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatNumber(getIndirectLaborColTotal(group, staff.code)) }}
+                            {{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}
                           </td>
-                          <!--td>{{ formatNumber(getSectionGrandTotal(group, 'indirectLabor')) }}</td-->
+                          <!--td>{{ formatCurrency(getSectionGrandTotal(group, 'indirectLabor')) }}</td-->
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
@@ -758,10 +784,12 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         </thead>
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
-                          <td><input v-model="item.label" class="tbl-label-input" placeholder="항목명" /></td>
+                          <td>
+                            <CodeSelect v-model="item.label" :allow-empty="false" />
+                            <!--input v-model="item.label" class="tbl-label-input" placeholder="항목명" /-->
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]"
-                                   type="number" class="tbl-value-input" placeholder="0" min="0" />
+                            <input v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" placeholder="0" min="0" />
                           </td>
                           <td class="">
                             <input type="text" class="tbl-value-input" v-model="item.bigo">
@@ -777,9 +805,9 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         <tr class="tfoot-subtotal">
                           <td>소계 (C)</td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatNumber(getExpensesColTotal(group, staff.code)) }}
+                            {{ formatCurrency(getExpensesColTotal(group, staff.code)) }}
                           </td>
-                          <!--td>{{ formatNumber(getSectionGrandTotal(group, 'expenses')) }}</td-->
+                          <!--td>{{ formatCurrency(getSectionGrandTotal(group, 'expenses')) }}</td-->
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
@@ -813,10 +841,10 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                               </span>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatNumber(getLaborColTotal(group, staff.code)) }}</span>
+                            <span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span>
                           </td>
                           <td>
-                            <!--span class="summary-val bold">{{ formatNumber(getLaborGrandTotal(group)) }}</span-->
+                            <!--span class="summary-val bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span-->
                             <input type="text" class="tbl-value-input">
                           </td>
                           <td></td>
@@ -838,11 +866,11 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                             </div>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatNumber(getManagementFeeCol(group, staff.code)) }}</span>
+                            <span class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span>
                           </td>
                           <td>
                               <!--span class="summary-val">
-                                {{ formatNumber(group.staffList.reduce((s,st) => s + getManagementFeeCol(group, st.code), 0)) }}
+                                {{ formatCurrency(group.staffList.reduce((s,st) => s + getManagementFeeCol(group, st.code), 0)) }}
                               </span-->
                             <input type="text" class="tbl-value-input">
                           </td>
@@ -865,11 +893,11 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                             </div>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatNumber(getProfitCol(group, staff.code)) }}</span>
+                            <span class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span>
                           </td>
                           <td>
                               <!--span class="summary-val">
-                                {{ formatNumber(group.staffList.reduce((s,st) => s + getProfitCol(group, st.code), 0)) }}
+                                {{ formatCurrency(group.staffList.reduce((s,st) => s + getProfitCol(group, st.code), 0)) }}
                               </span-->
                             <input type="text" class="tbl-value-input">
                           </td>
@@ -886,7 +914,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                               <span class="summary-val highlight">
-                                {{ formatNumber(getMonthlyTotalCol(group, staff.code)) }}
+                                {{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}
                               </span>
                           </td>
                           <td><input type="text" class="tbl-value-input"></td>
@@ -903,13 +931,13 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           </td>
                           <!--td v-for="staff in group.staffList" :key="staff.code">
                               <span class="summary-val highlight bold">
-                                {{ formatNumber(getMonthlyFeeByStaff(group, staff)) }}
-                                <em class="count-note">{{ staff.count }}명 × {{ formatNumber(getMonthlyTotalCol(group, staff.code)) }}</em>
+                                {{ formatCurrency(getMonthlyFeeByStaff(group, staff)) }}
+                                <em class="count-note">{{ staff.count }}명 × {{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</em>
                               </span>
                           </td-->
                           <td :colspan="group.staffList.length">
                             <span class="summary-val grand-total">
-                              {{ formatNumber(getTotalMonthlyFee(group)) }}
+                              {{ formatCurrency(getTotalMonthlyFee(group)) }}
                             </span>
                           </td>
                           <td>
@@ -917,7 +945,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           </td>
                           <!--td>
                               <span class="summary-val grand-total">
-                                {{ formatNumber(getTotalMonthlyFee(group)) }}
+                                {{ formatCurrency(getTotalMonthlyFee(group)) }}
                               </span>
                           </td-->
                           <td></td>
