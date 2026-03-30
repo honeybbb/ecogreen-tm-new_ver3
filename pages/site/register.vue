@@ -36,7 +36,9 @@ const site = ref({
   addressDetail: '',
   latitude: '',
   longitude: '',
-  area: '',
+  areaUnder: '', // 추가: 135㎡ 이하 (면세)
+  areaOver: '',  // 추가: 135㎡ 초과 (과세)
+  areaGross: '', //연면적
   is_vat: false,
   building_su: '',
   unit_su: '',
@@ -247,6 +249,19 @@ const handleFileChange = (event) => {
   }
 };
 
+// 총 관리면적 자동 계산
+const totalArea = computed(() => {
+  const under = Number(site.value.areaUnder) || 0;
+  const over = Number(site.value.areaOver) || 0;
+  // 소수점 2자리까지만 표현 (부동소수점 오류 방지)
+  return Math.round((under + over) * 100) / 100;
+});
+
+// 과세 여부 자동 판단 (135㎡ 초과 면적이 1이라도 있으면 과세)
+const isVatSite = computed(() => {
+  return Number(site.value.areaOver) > 0;
+});
+
 const handleSubmit = async () => {
   try {
     const contractsJson = JSON.stringify(contractGroups.value);
@@ -257,7 +272,9 @@ const handleSubmit = async () => {
       name: site.value.siteName,
       site_id: site.value.siteId,
       status: site.value.status,
-      area: site.value.area,
+      area: site.value.areaGross, //연면적
+      areaOver: site.value.areaOver, //135㎡ 초과 (과세)
+      areaUnder: site.value.areaUnder, //135㎡ 이하 (면세)
       is_vat: site.value.is_vat ? 'Y' : 'N',
       building_su: site.value.building_su,
       unit_su: site.value.unit_su,
@@ -457,15 +474,42 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                 </label>
               </div>
             </div>
+
             <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-ruler-square"></i>관리면적 (㎡)</label>
-              <div class="area-wrapper">
-                <input type="text" v-model="site.area" required class="form-input text-right" placeholder="예: 150.5" />
-                <label class="checkbox-inline">
-                  <input type="checkbox" v-model="site.is_vat" /><span>135㎡ 초과</span>
-                </label>
+              <label class="form-label"><i class="mdi mdi-domain"></i>연면적 (건축물 총면적)</label>
+              <div style="position: relative;">
+                <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
+
+            <div class="form-group">
+              <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 이하 (면세 면적)</label>
+              <div style="position: relative;">
+                <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 초과 (과세 면적)</label>
+              <div style="position: relative;">
+                <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label"><i class="mdi mdi-calculator"></i>총 관리면적 (자동계산)</label>
+              <div style="position: relative;">
+                <input type="text" :value="totalArea" class="form-input text-right font-bold" readonly style="padding-right: 32px; background: var(--bg-hover); color: var(--primary); border-color: var(--primary);" />
+                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: bold; color: var(--primary);">㎡</span>
+              </div>
+              <p style="margin: 6px 0 0; font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+                * 135㎡ 초과 면적 입력 시 <strong :style="{ color: isVatSite ? 'var(--primary)' : 'inherit' }">과세 사업장({{ isVatSite ? 'Y' : 'N' }})</strong>으로 자동 설정.
+              </p>
+            </div>
+
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-domain"></i>건물 수</label>
               <input type="number" v-model="site.building_su" required class="form-input text-right" placeholder="0" />

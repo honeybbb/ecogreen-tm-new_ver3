@@ -249,13 +249,43 @@ const onDragOver  = (e, index) => {
 // ──────────────────────────────────────────────
 const handleSiteChange = () => {
   const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+  // console.log(selectedSite, 'selectedSite')
+
   if (selectedSite) {
     formData.value.siteName = selectedSite.name;
     formData.value.is_vat   = selectedSite.is_vat || 'N';
+
+    const vb = formData.value.billingData.vatBreakdown;
+
+    // API에서 넘어온 면세/과세 면적 데이터 추출 (API 응답 키에 맞춰 유연하게 대응)
+    const dbAreaUnder = Number(selectedSite.areaUnder || selectedSite.area_under) || 0;
+    const dbAreaOver  = Number(selectedSite.areaOver || selectedSite.area_over) || 0;
+    const dbAreaTotal = Number(selectedSite.areaUnder) + Number(selectedSite.areaOver) || 0; // 구버전 데이터 호환용 방어코드
+
+    if (formData.value.is_vat === 'Y') {
+      // 과세 단지: 분리된 면적을 각각 입력
+      // (만약 분리된 데이터가 0인데 총면적만 있다면, 기존처럼 과세 쪽에 임시로 할당)
+      if (dbAreaUnder > 0 || dbAreaOver > 0) {
+        vb.under135.area = dbAreaUnder;
+        vb.over135.area  = dbAreaOver;
+      } else {
+        vb.under135.area = 0;
+        vb.over135.area  = dbAreaTotal;
+      }
+    } else {
+      // 면세 단지: 무조건 135㎡ 이하 칸에 전체 면적 할당
+      vb.under135.area = dbAreaUnder > 0 ? dbAreaUnder : dbAreaTotal;
+      vb.over135.area  = 0;
+    }
+
+    // 면적 데이터가 들어왔으므로 단가 및 공급가액 재계산
+    calculateAreaSupply();
+
   } else {
     formData.value.siteName = '';
     formData.value.is_vat   = 'N';
   }
+
   calculateBillingTotal();
 };
 
@@ -883,6 +913,32 @@ onMounted(async () => {
                 <td class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(payrollTotals.annualLeave) }}</td>
                 <td class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(payrollTotals.severance) }}</td>
                 <td></td>
+              </tr>
+
+              <tr
+                  v-for="(summary, sIdx) in [
+                  { label: '월간용역비', value: 0 },
+                  { label: '퇴직적립금', value: 0 },
+                  { label: '연차적립금', value: 0 },
+                  { label: '4대보험차액', value: 0 },
+                  { label: '총 청구액', value: 0 }
+                ]"
+                  :key="'summary-'+sIdx"
+              >
+                <td
+                    :colspan="5 + (currentConfig.showGrossPay ? 1 : 0) + visibleDeductionItems.length"
+                    style="border: none; background: transparent;">
+                </td>
+
+                <td colspan="2" class="text-center bg-gray-50 font-bold" style="font-size: 13px;">
+                  {{ summary.label }}
+                </td>
+
+                <td colspan="2" class="text-right text-blue bg-blue-light font-bold">
+                  {{ formatCurrency(summary.value) }}
+                </td>
+
+                <td style="border: none; background: transparent;"></td>
               </tr>
               </tfoot>
             </table>

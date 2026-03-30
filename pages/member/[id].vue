@@ -10,11 +10,13 @@ const route = useRoute();
 const authStore = useAuthStore();
 
 const {
+  companyData,
   siteOptions,
   positionOptions,
   typeOptions,
   disabledOptions,
   bankOptions,
+  getCompanyData,
   fetchSiteOptions,
   fetchPositionOptions,
   fetchTypeOptions,
@@ -266,6 +268,7 @@ watch(activeTab, async (newTab) => {
 
 onMounted(async () => {
   await Promise.all([
+    getCompanyData(authStore.user?.cIdx),
     fetchSiteOptions(),
     fetchPositionOptions(),
     fetchTypeOptions(),
@@ -809,6 +812,7 @@ onMounted(async () => {
         :position-options="positionOptions"
         :wage-items="items"
         :is-editing="isEditing"
+        :company-data="companyData"
         @close="isContractModalOpen = false"
         @save="handleContractSave"
     />

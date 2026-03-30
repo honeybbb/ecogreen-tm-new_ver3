@@ -3,6 +3,7 @@ import axios from 'axios';
 import { ref } from 'vue';
 
 export const useApi = () => {
+    const companyData = ref([]);
     const bankOptions = ref([]);
     const siteOptions = ref([]);
     const typeOptions = ref([]);
@@ -11,6 +12,18 @@ export const useApi = () => {
     // const categoryOptions = ref([]);
     const wagesData  = ref([]);
     const overAgeOption = ref([]);
+
+    //company 정보 가져오기
+    const getCompanyData = async (companyNo = '1') => {
+        try{
+            axios.get(`/api/v1/config/company/${companyNo}`).then((response) => {
+                companyData.value = response.data.data;
+                console.log(companyData.value);
+            })
+        }catch (e) {
+            console.error("company 정보 로드 실패", e);
+        }
+    }
 
     //은행 코드 가져오기
     const fetchBankOption = async (groupCd = '02001') => {
@@ -84,6 +97,7 @@ export const useApi = () => {
     }
 
     return {
+        companyData,
         bankOptions,
         siteOptions,
         typeOptions,
@@ -91,6 +105,7 @@ export const useApi = () => {
         disabledOptions,
         wagesData,
         overAgeOption,
+        getCompanyData,
         fetchBankOption,
         fetchSiteOptions,
         fetchTypeOptions,

@@ -63,9 +63,8 @@ const contractGroups = ref([]);
 
 const getItemName = (code) => {
   if (!code) return '-';
-  // wagesData에서 해당 코드를 가진 항목을 찾음
   const found = wagesData.value.find(w => w.itemCd === code);
-  return found ? found.itemNm : code; // 없으면 코드 그대로 표시
+  return found ? found.itemNm : code;
 };
 
 // =============================================
@@ -84,9 +83,8 @@ const getAssignedByGroup = (contractType) =>
 const equipmentList    = ref([]);
 const isEquipLoaded    = ref(false);
 const isEquipModalOpen = ref(false);
-const editingEquip     = ref(null); // null = 신규, object = 수정
+const editingEquip     = ref(null);
 
-// 현장 실무에 맞는 장비 분류로 변경
 const EQUIP_CATEGORIES = ['청소기계 (탑승/보행)', '일반 청소용구', '경비/통신장비', '안전/제설장비', '기타'];
 const EQUIP_STATUS_OPTIONS = [
   { value: 'normal',   label: '정상',   color: 'success' },
@@ -96,7 +94,6 @@ const EQUIP_STATUS_OPTIONS = [
 
 const equipStatusMap = Object.fromEntries(EQUIP_STATUS_OPTIONS.map(o => [o.value, o]));
 
-// 분류별 직관적인 아이콘 매핑 함수 추가
 const getEquipIcon = (category) => {
   const icons = {
     '청소기계 (탑승/보행)': 'mdi-car-wash',
@@ -108,7 +105,6 @@ const getEquipIcon = (category) => {
   return icons[category] || 'mdi-cog-outline';
 };
 
-// 폼 데이터 (설치일->도입일, 설치위치->보관위치 로 개념 변경)
 const defaultEquipForm = () => ({
   name: '', category: '', quantity: 1,
   location: '', purchaseDate: '', nextCheckDate: '',
@@ -118,8 +114,8 @@ const defaultEquipForm = () => ({
 const equipForm = ref(defaultEquipForm());
 
 const equipStats = computed(() => {
-  const total  = equipmentList.value.length; // 총 장비 종류 수
-  const totalQuantity = equipmentList.value.reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0); // 총 댓수
+  const total  = equipmentList.value.length;
+  const totalQuantity = equipmentList.value.reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0);
   const normal = equipmentList.value.filter(e => e.status === 'normal').length;
   const check  = equipmentList.value.filter(e => e.status === 'check').length;
   const fault  = equipmentList.value.filter(e => e.status === 'fault').length;
@@ -162,7 +158,6 @@ const saveEquip = async () => {
     }
     closeEquipModal();
   } catch {
-    // API 미구현 시 프론트 목업 처리
     if (editingEquip.value) {
       const i = equipmentList.value.findIndex(e => e.idx === editingEquip.value.idx);
       if (i !== -1) equipmentList.value[i] = { ...editingEquip.value, ...equipForm.value };
@@ -188,7 +183,6 @@ const fetchEquipmentList = async () => {
     const res = await axios.get(`/api/v1/site/equipment/${sIdx}`);
     equipmentList.value = res.data.data || [];
   } catch {
-    // 현장 실무에 맞는 샘플 데이터로 변경
     equipmentList.value = [
       { idx: 1, name: '탑승식 습식 바닥세정기', category: '청소기계 (탑승/보행)', quantity: 1, location: '지하 1층 미화창고', purchaseDate: '2023-05-10', nextCheckDate: '2024-11-10', status: 'normal', note: '배터리 상태 양호' },
       { idx: 2, name: '건습식 진공청소기 (대형)', category: '일반 청소용구', quantity: 3, location: '각 동 미화휴게실', purchaseDate: '2024-01-15', nextCheckDate: '2024-12-15', status: 'check', note: '1동 청소기 흡입력 저하로 본사 A/S 입고' },
@@ -337,7 +331,10 @@ const syncCostBreakdownToStaff = (group) => {
 const getColTotal = (items, code) =>
     (items ?? []).reduce((s, item) => s + (Number(item?.values?.[code]) || 0), 0);
 
-const getRowTotal              = (item)    => Object.values(item.values).reduce((s, v) => s + (Number(v) || 0), 0);
+// ── 행 합계: 각 직책별 값의 합산 ──
+const getRowTotal = (item) =>
+    Object.values(item.values).reduce((s, v) => s + (Number(v) || 0), 0);
+
 const getDirectLaborColTotal   = (g, code) => getColTotal(g.costBreakdown.directLabor,   code);
 const getIndirectLaborColTotal = (g, code) => getColTotal(g.costBreakdown.indirectLabor, code);
 const getExpensesColTotal      = (g, code) => getColTotal(g.costBreakdown.expenses,       code);
@@ -350,6 +347,10 @@ const getTotalMonthlyFee       = (g)       => g.staffList.reduce((s, st) => s + 
 const getSectionGrandTotal     = (g, sec)  => g.costBreakdown[sec].reduce((s, item) => s + getRowTotal(item), 0);
 const getLaborGrandTotal       = (g)       => getSectionGrandTotal(g, 'directLabor') + getSectionGrandTotal(g, 'indirectLabor') + getSectionGrandTotal(g, 'expenses');
 const getGroupStaffTotal       = (group)   => (group.staffList ?? []).reduce((s, i) => s + (Number(i.count) || 0), 0);
+
+// ── 소계 행의 행합계 (전 직책 소계 합산) ──
+const getSubtotalRowTotal = (g, sectionFn) =>
+    g.staffList.reduce((s, st) => s + sectionFn(g, st.code), 0);
 
 const getContractDuration = (group) => {
   if (!group.contractStart || !group.contractEnd) return '';
@@ -583,7 +584,6 @@ watch(activeTab, async (newTab) => {
 onMounted(async () => {
   await Promise.all([fetchPositionOptions(), fetchTypeOptions(), fetchWageCode()]);
   await getSiteData();
-  // 초기 탭이 equipment 이면 즉시 로드
   if (activeTab.value === 'equipment') await fetchEquipmentList();
 });
 </script>
@@ -662,7 +662,6 @@ onMounted(async () => {
               :class="['tab-button', { active: activeTab === tab.id }]"
               @click="changeTab(tab.id)">
         <i :class="['mdi', tab.icon]"></i><span>{{ tab.name }}</span>
-        <!-- 고장 장비 알림 뱃지 -->
         <span v-if="tab.id === 'equipment' && equipStats.fault > 0" class="tab-alert-badge">
           {{ equipStats.fault }}
         </span>
@@ -885,165 +884,223 @@ onMounted(async () => {
                   </div>
                   <template v-else>
                     <div class="cost-scroll-area">
-                      <!-- 직접노무비 -->
+
+                      <!-- ══ 직접노무비 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-direct">A</span>직접노무비 <em>(지급내역)</em>
                         <button v-if="isEditing" type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
                       </div>
                       <table class="cost-table">
-                        <thead><tr>
+                        <thead>
+                        <tr>
                           <th class="col-label">항목</th>
                           <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
-                          <th class="col-rowtotal">산출내역</th>
+                          <th class="col-rowtotal-head">행합계</th>
+                          <th class="col-bigo">산출내역</th>
                           <th v-if="isEditing" class="col-action"></th>
-                        </tr></thead>
+                        </tr>
+                        </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
                             <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
-                            <!--input v-else v-model="item.label" class="tbl-label-input" /-->
                             <CodeSelect v-else v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
                           </td>
+                          <!-- 행합계 -->
+                          <td class="col-rowtotal-cell">
+                            {{ formatCurrency(getRowTotal(item)) }}
+                          </td>
                           <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
                         </tr>
                         </tbody>
-                        <tfoot><tr class="tfoot-subtotal">
+                        <tfoot>
+                        <tr class="tfoot-subtotal">
                           <td>소계 (A)</td>
                           <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}</td>
+                          <!-- 소계 행합계 -->
+                          <td class="col-rowtotal-cell subtotal-rowtotal">
+                            {{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                           <td v-if="isEditing"></td>
-                        </tr></tfoot>
+                        </tr>
+                        </tfoot>
                       </table>
 
-                      <!-- 간접노무비 -->
+                      <!-- ══ 간접노무비 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-indirect">B</span>간접노무비 <em>(공제내역)</em>
                         <button v-if="isEditing" type="button" @click="addItem(group, 'indirectLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
                       </div>
                       <table class="cost-table">
-                        <thead><tr>
+                        <thead>
+                        <tr>
                           <th class="col-label">항목</th>
                           <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
-                          <th class="col-rowtotal">산출내역</th>
+                          <th class="col-rowtotal-head">행합계</th>
+                          <th class="col-bigo">산출내역</th>
                           <th v-if="isEditing" class="col-action"></th>
-                        </tr></thead>
+                        </tr>
+                        </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
-                          <td><span v-if="!isEditing">{{ getItemName(item.label) }}</span>
+                          <td>
+                            <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
                             <CodeSelect v-else v-model="item.label" />
-                            <!--input v-else v-model="item.label" class="tbl-label-input" /-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
+                          </td>
+                          <td class="col-rowtotal-cell">
+                            {{ formatCurrency(getRowTotal(item)) }}
                           </td>
                           <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
                         </tr>
                         </tbody>
-                        <tfoot><tr class="tfoot-subtotal">
+                        <tfoot>
+                        <tr class="tfoot-subtotal">
                           <td>소계 (B)</td>
                           <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}</td>
+                          <td class="col-rowtotal-cell subtotal-rowtotal">
+                            {{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                           <td v-if="isEditing"></td>
-                        </tr></tfoot>
+                        </tr>
+                        </tfoot>
                       </table>
 
-                      <!-- 제경비 -->
+                      <!-- ══ 제경비 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-expense">C</span>제경비
                         <button v-if="isEditing" type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
                       </div>
                       <table class="cost-table">
-                        <thead><tr>
+                        <thead>
+                        <tr>
                           <th class="col-label">항목</th>
                           <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
-                          <th class="col-rowtotal">산출내역</th>
+                          <th class="col-rowtotal-head">행합계</th>
+                          <th class="col-bigo">산출내역</th>
                           <th v-if="isEditing" class="col-action"></th>
-                        </tr></thead>
+                        </tr>
+                        </thead>
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
                             <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
                             <CodeSelect v-else v-model="item.label" />
-                            <!--input v-else v-model="item.label" class="tbl-label-input" /-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
                           </td>
+                          <td class="col-rowtotal-cell">
+                            {{ formatCurrency(getRowTotal(item)) }}
+                          </td>
                           <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
                         </tr>
                         </tbody>
-                        <tfoot><tr class="tfoot-subtotal">
+                        <tfoot>
+                        <tr class="tfoot-subtotal">
                           <td>소계 (C)</td>
                           <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getExpensesColTotal(group, staff.code)) }}</td>
+                          <td class="col-rowtotal-cell subtotal-rowtotal">
+                            {{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                           <td v-if="isEditing"></td>
-                        </tr></tfoot>
+                        </tr>
+                        </tfoot>
                       </table>
 
-                      <!-- 합계 -->
+                      <!-- ══ 합계 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-total">합계</span>노무비 합계 및 용역비 산출
                       </div>
                       <table class="cost-table summary-table">
-                        <thead><tr>
+                        <thead>
+                        <tr>
                           <th class="col-label">항목</th>
                           <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span><span class="staff-th-count">({{ staff.count }}명)</span>
+                            <span class="staff-th-name">{{ staff.name }}</span>
+                            <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
-                          <th class="col-rowtotal">산출 내역</th>
-                        </tr></thead>
+                          <th class="col-rowtotal-head">행합계</th>
+                          <th class="col-bigo">산출 내역</th>
+                        </tr>
+                        </thead>
                         <tbody>
                         <tr class="summary-row row-d">
                           <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
                           <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getLaborColTotal)) }}</span>
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-e">
                           <td><span class="summary-label"><span class="cost-block-label label-mgmt">E</span>일반관리비</span></td>
                           <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span></td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-f">
                           <td><span class="summary-label"><span class="cost-block-label label-profit">F</span>기업이윤</span></td>
                           <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span></td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-monthly">
                           <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
                           <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val highlight">{{ formatCurrency(getSubtotalRowTotal(group, getMonthlyTotalCol)) }}</span>
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-total-fee">
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>월간 용역비 총계</span></td>
                           <td :colspan="group.staffList.length"><span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span></td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span>
+                          </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr>
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 (계약기간 총 용역비)</span></td>
-                          <td :colspan="group.staffList.length"><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
+                          <td :colspan="group.staffList.length">
+                            <input v-if="isEditing" type="text" class="tbl-value-input">
+                            <span v-else></span>
+                          </td>
+                          <td><!--input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span--></td>
+                          <td class="col-rowtotal-cell"></td>
                         </tr>
                         </tbody>
                       </table>
-                    </div>
+
+                    </div><!-- /cost-scroll-area -->
                     <div class="cost-special-note">
                       <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i>특이사항</label>
                       <textarea :disabled="!isEditing" v-model="group.costBreakdown.specialNote" class="form-textarea" rows="3" placeholder="예: 최저임금 기준 적용, 5대보험 전원 가입 조건 등"></textarea>
@@ -1120,7 +1177,6 @@ onMounted(async () => {
 
       <!-- ── 장비현황 탭 ── -->
       <div v-show="activeTab === 'equipment'" class="tab-panel">
-
         <div class="equip-stats-row">
           <div class="equip-stat-card">
             <div class="equip-stat-icon esi-blue"><i class="mdi mdi-toolbox-outline"></i></div>
@@ -1183,15 +1239,13 @@ onMounted(async () => {
                   <tbody>
                   <tr v-for="equip in items" :key="equip.idx"
                       :class="{ 'row-fault': equip.status === 'fault', 'row-check': equip.status === 'check' }">
-                    <td class="equip-name-cell">
-                      {{ equip.name }}
-                    </td>
+                    <td class="equip-name-cell">{{ equip.name }}</td>
                     <td class="tc fw-bold text-primary">{{ equip.quantity }}대</td>
                     <td>{{ equip.location || '-' }}</td>
                     <td class="tc">
-                  <span :class="['equip-status-badge', `esb-${equipStatusMap[equip.status]?.color || 'gray'}`]">
-                    {{ equipStatusMap[equip.status]?.label || equip.status }}
-                  </span>
+                      <span :class="['equip-status-badge', `esb-${equipStatusMap[equip.status]?.color || 'gray'}`]">
+                        {{ equipStatusMap[equip.status]?.label || equip.status }}
+                      </span>
                     </td>
                     <td class="text-muted">{{ equip.purchaseDate || '-' }}</td>
                     <td :class="isCheckOverdue(equip.nextCheckDate) ? 'text-red fw-bold' : 'text-muted'">
@@ -1357,7 +1411,6 @@ onMounted(async () => {
 </template>
 
 <script>
-// 컴포넌트 옵션 (setup 외부 헬퍼)
 export default {
   methods: {
     isCheckOverdue(dateStr) {
@@ -1438,13 +1491,7 @@ export default {
 .tab-button { padding: 16px 24px; background: transparent; border: none; color: var(--text-sub); font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; position: relative; margin-bottom: -1px; }
 .tab-button.active { color: var(--primary); background: var(--bg-surface); border: 1px solid var(--border-color); border-bottom-color: var(--bg-surface); border-radius: 8px 8px 0 0; }
 .tab-button i { font-size: 16px; }
-
-/* 고장 알림 뱃지 */
-.tab-alert-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; background: var(--danger); color: #fff;
-  border-radius: 50%; font-size: 10px; font-weight: 700; margin-left: 2px;
-}
+.tab-alert-badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; background: var(--danger); color: #fff; border-radius: 50%; font-size: 10px; font-weight: 700; margin-left: 2px; }
 
 .integrated-content { padding: 32px; background: var(--bg-surface); }
 .tab-panel { animation: fadeIn 0.3s; }
@@ -1513,6 +1560,47 @@ export default {
 .empty-staff-text { text-align: center; padding: 20px 0; color: var(--text-muted); font-size: 13px; }
 .staff-total-bar { padding: 10px 14px; background-color: var(--primary-soft); border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--primary); font-weight: 600; }
 
+/* =============================================
+   산출내역 테이블 — 행합계 열
+============================================= */
+/* 헤더: 행합계 열 */
+.col-rowtotal-head {
+  width: 90px;
+  min-width: 90px;
+  text-align: right;
+  background: rgba(99, 102, 241, 0.06) !important;
+  color: var(--primary) !important;
+  font-weight: 700 !important;
+  border-right: 2px solid var(--border-focus) !important;
+  white-space: nowrap;
+}
+
+/* 바디/푸터: 행합계 셀 */
+.col-rowtotal-cell {
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.04);
+  border-right: 2px solid var(--border-focus) !important;
+  white-space: nowrap;
+  padding: 8px 10px;
+}
+
+/* 소계 행의 행합계 — 조금 더 강조 */
+.subtotal-rowtotal {
+  background: rgba(99, 102, 241, 0.10) !important;
+  font-size: 13px;
+}
+
+/* 산출내역 열 (기존 col-rowtotal → col-bigo 로 rename) */
+.col-bigo {
+  min-width: 100px;
+  text-align: right;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.04);
+}
+
 /* 산출내역 */
 .cost-breakdown-wrapper { margin-top: 24px; }
 .btn-toggle-cost { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 18px; background: var(--bg-canvas); border: 1px dashed var(--border-color); border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text-main); cursor: pointer; transition: all 0.2s; text-align: left; }
@@ -1528,19 +1616,34 @@ export default {
 .btn-add-cost-item { display: flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; background: var(--bg-surface); border: 1px dashed var(--primary); border-radius: 6px; color: var(--primary); cursor: pointer; margin-left: auto; }
 .cost-block-label { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text-inverse); flex-shrink: 0; }
 .label-direct { background: #3b82f6; } .label-indirect { background: #8b5cf6; } .label-expense { background: #f59e0b; } .label-total { background: #10b981; } .label-mgmt { background: #6b7280; } .label-profit { background: #ec4899; } .label-monthly { background: #0ea5e9; } .label-total-fee { background: #f97316; }
-.cost-scroll-area { overflow-x: auto; }
-.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed;}
+.cost-scroll-area {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* iOS 부드러운 스크롤 */
+  margin: 0 -20px; /* 모바일에서 좌우 여백 끝까지 활용 */
+  padding: 0 20px;
+}
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--text-main);
+  /* table-layout: fixed 제거 또는 auto로 변경하여 내용물에 맞게 조절 */
+  table-layout: fixed;
+  min-width: 600px; /* 테이블이 뭉개지지 않는 최소 너비 확보 */
+}
 .cost-table thead tr { background: var(--bg-canvas); }
 .cost-table th, .cost-table td { padding: 8px 10px; border: 1px solid var(--border-color); vertical-align: middle; }
 .cost-table th { font-size: 11px; font-weight: 700; color: var(--text-sub); text-align: center; white-space: nowrap; }
-.col-label { min-width: 140px; width: 160px; } .col-staff { min-width: 130px; text-align: center; } .col-rowtotal { min-width: 100px; text-align: right; font-weight: 600; background: rgba(99,102,241,.04); } .col-action { width: 36px; text-align: center; }
+.col-label { min-width: 140px; width: 160px; }
+.col-staff { min-width: 130px; text-align: center; }
+.col-action { width: 36px; text-align: center; }
 .staff-th-name { display: block; font-size: 12px; font-weight: 700; color: var(--text-main); }
 .staff-th-count { display: block; font-size: 11px; color: var(--text-sub); font-weight: 400; }
 .tbl-label-input, .tbl-value-input { width: 100%; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px; color: var(--text-main); background: var(--bg-surface); box-sizing: border-box; }
 .tbl-value-input { text-align: right; }
 .btn-remove-cost { width: 24px; height: 24px; border-radius: 4px; background: rgba(239,68,68,.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .tfoot-subtotal td { background: var(--bg-canvas); font-size: 12px; font-weight: 700; color: var(--text-main); text-align: right; border-top: 2px solid var(--border-focus); }
-.tfoot-subtotal td:first-child { text-align: left; }
+.tfoot-subtotal td:nth-child(2) { text-align: left; }
 .summary-table tbody tr td { background: var(--bg-surface); }
 .summary-row td { padding: 10px; }
 .summary-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; white-space: nowrap; }
@@ -1588,65 +1691,21 @@ export default {
 /* =============================================
    장비현황
 ============================================= */
-.equip-stats-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 14px;
-  margin-bottom: 24px;
-}
-
-.equip-stat-card {
-  display: flex; gap: 14px; align-items: center;
-  padding: 16px 18px;
-  background: var(--bg-canvas);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  transition: all 0.2s;
-}
-
-.equip-stat-card.card-alert {
-  border-color: rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.04);
-  animation: pulse-border 2s infinite;
-}
-
-@keyframes pulse-border {
-  0%, 100% { border-color: rgba(239,68,68,.4); }
-  50%       { border-color: rgba(239,68,68,.8); }
-}
-
+.equip-stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.equip-stat-card { display: flex; gap: 14px; align-items: center; padding: 16px 18px; background: var(--bg-canvas); border-radius: 12px; border: 1px solid var(--border-color); transition: all 0.2s; }
+.equip-stat-card.card-alert { border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.04); animation: pulse-border 2s infinite; }
+@keyframes pulse-border { 0%, 100% { border-color: rgba(239,68,68,.4); } 50% { border-color: rgba(239,68,68,.8); } }
 .equip-stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 20px; }
-.esi-blue   { background: var(--primary-soft);           color: var(--primary);  }
-.esi-green  { background: rgba(16,185,129,.1);            color: var(--success);  }
-.esi-orange { background: rgba(245,158,11,.1);            color: var(--warning);  }
-.esi-red    { background: rgba(239,68,68,.1);             color: var(--danger);   }
-
+.esi-blue { background: var(--primary-soft); color: var(--primary); } .esi-green { background: rgba(16,185,129,.1); color: var(--success); } .esi-orange { background: rgba(245,158,11,.1); color: var(--warning); } .esi-red { background: rgba(239,68,68,.1); color: var(--danger); }
 .equip-stat-body { display: flex; flex-direction: column; gap: 2px; }
 .equip-stat-label { font-size: 12px; color: var(--text-sub); font-weight: 500; }
 .equip-stat-value { font-size: 20px; font-weight: 700; color: var(--text-main); }
-
-.equip-tab-actions { display: flex; justify-content: flex-end; margin-bottom: 20px; }
-.btn-add-equip { display: flex; align-items: center; gap: 8px; padding: 10px 18px; background: var(--primary); border: none; border-radius: 8px; color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-add-equip:hover { background: var(--primary-hover); transform: translateY(-1px); }
-
 .equip-sections { display: flex; flex-direction: column; gap: 24px; }
-
 .equip-group { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
-
-.equip-group-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 18px;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border-color);
-  font-size: 14px; font-weight: 700; color: var(--text-main);
-}
+.equip-group-header { display: flex; align-items: center; gap: 8px; padding: 12px 18px; background: var(--bg-hover); border-bottom: 1px solid var(--border-color); font-size: 14px; font-weight: 700; color: var(--text-main); }
 .equip-group-header i { font-size: 18px; color: var(--primary); }
 .equip-group-name { flex: 1; }
-.equip-group-count {
-  padding: 2px 10px; background: var(--primary-soft); color: var(--primary);
-  border-radius: 20px; font-size: 12px; font-weight: 700;
-}
-
+.equip-group-count { padding: 2px 10px; background: var(--primary-soft); color: var(--primary); border-radius: 20px; font-size: 12px; font-weight: 700; }
 .equip-table-wrap { overflow-x: auto; }
 .equip-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--text-main); }
 .equip-table th { padding: 10px 14px; background: var(--bg-canvas); border-bottom: 1px solid var(--border-color); font-size: 12px; font-weight: 600; color: var(--text-sub); white-space: nowrap; text-align: left; }
@@ -1655,55 +1714,23 @@ export default {
 .equip-table tbody tr:hover td { background: var(--bg-canvas); }
 .equip-table .tc { text-align: center; }
 .fw-bold { font-weight: 700; }
-
-.equip-name-cell { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.equip-row-icon { font-size: 16px; color: var(--text-muted); flex-shrink: 0; }
-
-.equip-status-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
-}
-.esb-success { background: rgba(16,185,129,.1);   color: var(--success); }
-.esb-warning { background: rgba(245,158,11,.1);   color: var(--warning); }
-.esb-danger  { background: rgba(239,68,68,.1);    color: var(--danger);  }
-.esb-gray    { background: var(--bg-canvas);       color: var(--text-sub);}
-
-.row-fault td { background: rgba(239, 68, 68, 0.03) !important; }
-.row-check td { background: rgba(245,158,11, 0.03) !important; }
-
-.text-muted   { color: var(--text-muted); }
-.text-green   { color: var(--success); }
-.text-orange  { color: var(--warning); }
-.text-red     { color: var(--danger);  }
-.small-text   { font-size: 12px; }
-
-.overdue-chip {
-  display: inline-flex; margin-left: 4px; padding: 1px 6px;
-  background: rgba(239,68,68,.1); color: var(--danger);
-  border-radius: 4px; font-size: 10px; font-weight: 700;
-}
-
+.equip-name-cell { font-weight: 600; }
+.equip-status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.esb-success { background: rgba(16,185,129,.1); color: var(--success); } .esb-warning { background: rgba(245,158,11,.1); color: var(--warning); } .esb-danger { background: rgba(239,68,68,.1); color: var(--danger); } .esb-gray { background: var(--bg-canvas); color: var(--text-sub); }
+.row-fault td { background: rgba(239, 68, 68, 0.03) !important; } .row-check td { background: rgba(245,158,11, 0.03) !important; }
+.text-muted { color: var(--text-muted); } .text-green { color: var(--success); } .text-orange { color: var(--warning); } .text-red { color: var(--danger); } .small-text { font-size: 12px; }
+.overdue-chip { display: inline-flex; margin-left: 4px; padding: 1px 6px; background: rgba(239,68,68,.1); color: var(--danger); border-radius: 4px; font-size: 10px; font-weight: 700; }
 .equip-action-btns { display: flex; gap: 6px; justify-content: center; }
 .btn-equip-edit, .btn-equip-del { width: 28px; height: 28px; border-radius: 6px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 15px; }
-.btn-equip-edit { background: var(--primary-soft); color: var(--primary); }
-.btn-equip-edit:hover { background: var(--primary); color: #fff; }
-.btn-equip-del  { background: rgba(239,68,68,.1); color: var(--danger); }
-.btn-equip-del:hover  { background: var(--danger); color: #fff; }
-
-/* 장비 폼 */
+.btn-equip-edit { background: var(--primary-soft); color: var(--primary); } .btn-equip-edit:hover { background: var(--primary); color: #fff; }
+.btn-equip-del { background: rgba(239,68,68,.1); color: var(--danger); } .btn-equip-del:hover { background: var(--danger); color: #fff; }
 .equip-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
 .equip-form-item { display: flex; flex-direction: column; gap: 6px; }
 .equip-form-item.full-width { grid-column: 1 / -1; }
 .equip-form-item label { font-size: 12px; font-weight: 600; color: var(--text-sub); }
 .req-mark { color: var(--danger); }
-
 .equip-status-radio-group { display: flex; gap: 8px; }
-.equip-status-radio {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);
-  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-  color: var(--text-sub); background: var(--bg-canvas);
-}
+.equip-status-radio { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; color: var(--text-sub); background: var(--bg-canvas); }
 .equip-status-radio input { display: none; }
 .equip-status-radio.esr-success.active { border-color: var(--success); background: rgba(16,185,129,.1); color: var(--success); }
 .equip-status-radio.esr-warning.active { border-color: var(--warning); background: rgba(245,158,11,.1); color: var(--warning); }
@@ -1781,5 +1808,22 @@ export default {
   .assigned-staff-grid { grid-template-columns: 1fr; }
   .staff-overview, .equip-stats-row { grid-template-columns: repeat(2, 1fr); }
   .equip-form-grid { grid-template-columns: 1fr; }
+
+  /* 행합계 열도 중요하므로 너비 조절 */
+  .col-rowtotal-head, .col-rowtotal-cell {
+    min-width: 80px;
+    font-size: 11px;
+  }
+
+  /* 입력 필드 크기 최적화 */
+  .tbl-value-input {
+    padding: 4px 6px;
+    font-size: 11px;
+    min-width: 60px;
+  }
+
+  /* 테이블 헤더 텍스트 작게 */
+  .staff-th-name { font-size: 11px; }
+  .staff-th-count { font-size: 10px; }
 }
 </style>
