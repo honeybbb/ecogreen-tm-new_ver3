@@ -300,7 +300,10 @@ function openEditModal(item, tabType = 'statement') {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchTypeOptions(), fetchSiteOptions()])
+  await Promise.all([
+    fetchTypeOptions(),
+    fetchSiteOptions()
+  ])
   await fetchList()
 })
 </script>

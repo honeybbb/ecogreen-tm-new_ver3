@@ -13,7 +13,7 @@ const props = defineProps({
   width:       { type: String,  default: '100%' }
 })
 
-const emit = defineEmits(['update:modelValue', 'update:label']) // label 업데이트 이벤트 추가
+const emit = defineEmits(['update:modelValue', 'update:label'])
 
 const { wagesData, fetchWageCode } = useApi()
 
@@ -33,17 +33,15 @@ const options = computed(() => {
 })
 
 // ────────────────────────────────────────────────────────────
-// v-model 양방향 바인딩 (목록에 있는 항목만 반환)
+// v-model 양방향 바인딩
 // ────────────────────────────────────────────────────────────
 const innerValue = computed({
   get() {
-    // modelValue(itemCd)를 기반으로 옵션에서 객체를 찾음
     return options.value.find(o => o.itemCd === props.modelValue) || null
   },
   set(val) {
-    // 선택 시 부모의 label(이름)과 modelValue(코드)를 동시에 업데이트
     emit('update:modelValue', val?.itemCd || '');
-    emit('update:label', val?.itemNm || ''); // 부모의 item.itemNm 등을 업데이트하기 위함
+    emit('update:label', val?.itemNm || '');
   },
 })
 
@@ -93,26 +91,26 @@ fetchWageCode()
   </Multiselect>
 </template>
 
-<style>
+<style scoped>
 /* ==============================================
    테이블 내부 input과 완벽하게 높이를 맞추기 위한 CSS
+   (+ scoped 및 :deep 적용으로 겹침 현상 완벽 해결)
 ============================================== */
-.code-select.multiselect {
+.code-select {
   font-family: inherit;
-  font-size: 12px; /* 테이블 폰트 사이즈 연동 */
+  font-size: 12px;
   color: var(--text-main);
   cursor: pointer;
   position: relative;
   box-sizing: border-box;
-  min-height: 28px !important; /* 강제 높이 축소 */
+  min-height: 28px !important;
 }
 
-/* 태그 박스 전체를 일반 input처럼 깎음 */
-.code-select .multiselect__tags {
+:deep(.multiselect__tags) {
   min-height: 28px !important;
-  padding: 0 24px 0 8px !important; /* 화살표 공간 24px 확보, 좌측 8px */
+  padding: 0 24px 0 8px !important;
   border: 1px solid var(--border-color);
-  border-radius: 5px; /* 테이블 input-value와 동일하게 */
+  border-radius: 5px;
   background: var(--bg-surface);
   transition: all 0.2s;
   display: flex;
@@ -120,18 +118,18 @@ fetchWageCode()
   box-sizing: border-box;
 }
 
-.code-select .multiselect__tags:hover {
+:deep(.multiselect__tags:hover) {
   border-color: var(--border-focus);
 }
 
-.code-select.multiselect--active .multiselect__tags {
+:deep(.multiselect--active .multiselect__tags) {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-soft);
   border-radius: 5px 5px 0 0;
 }
 
 /* 선택된 텍스트 */
-.code-select .multiselect__single {
+:deep(.multiselect__single) {
   background: transparent;
   border: none;
   outline: none;
@@ -145,8 +143,8 @@ fetchWageCode()
   text-overflow: ellipsis;
 }
 
-/* 검색창 (입력할 때) */
-.code-select .multiselect__input {
+/* 검색창 */
+:deep(.multiselect__input) {
   background: transparent;
   border: none;
   outline: none;
@@ -156,11 +154,19 @@ fetchWageCode()
   color: var(--text-main);
   line-height: 1.2;
   width: 100% !important;
+  box-shadow: none !important;
 }
-.code-select .multiselect__input::placeholder { color: var(--text-muted); opacity: 0.8; font-weight: normal; }
 
-/* 플레이스홀더 */
-.code-select .multiselect__placeholder {
+/* ★ 핵심 해결: 입력창 플레이스홀더를 숨겨서 겹침 방지 (선명하게 보이도록 처리) */
+:deep(.multiselect__input::placeholder) {
+  color: transparent !important;
+}
+:deep(.multiselect--active .multiselect__input::placeholder) {
+  color: var(--text-muted) !important;
+}
+
+/* 커스텀 플레이스홀더 */
+:deep(.multiselect__placeholder) {
   font-size: 12px;
   color: var(--text-muted);
   padding: 0;
@@ -168,8 +174,8 @@ fetchWageCode()
   line-height: 1.2;
 }
 
-/* ── 드롭다운 패널 ── */
-.code-select .multiselect__content-wrapper {
+/* 드롭다운 패널 */
+:deep(.multiselect__content-wrapper) {
   position: absolute;
   left: -1px; right: -1px; top: 100%;
   border: 1px solid var(--primary);
@@ -181,13 +187,16 @@ fetchWageCode()
   z-index: 999;
 }
 
-/* 리스트 아이템 기본 여백 제거 */
-.code-select .multiselect__content,
-.code-select .multiselect__element {
+/* 리스트 스타일 제거 */
+:deep(.multiselect__content),
+:deep(.multiselect__element) {
   list-style: none !important;
   padding: 0; margin: 0;
 }
-.code-select .multiselect__element::before, .code-select .multiselect__element::after { display: none !important; }
+:deep(.multiselect__element::before),
+:deep(.multiselect__element::after) {
+  display: none !important;
+}
 
 /* 커스텀 옵션 디자인 */
 .ss-option {
@@ -200,24 +209,72 @@ fetchWageCode()
 .ss-option-icon { font-size: 14px; color: var(--primary); flex-shrink: 0; }
 .ss-option-name { flex: 1; }
 
-.code-select .multiselect__option { padding: 0; min-height: auto; transition: background 0.1s; }
-.code-select .multiselect__option--highlight,
-.code-select .multiselect__option--highlight::after { background: var(--primary-soft); color: var(--primary); }
-.code-select .multiselect__option--selected,
-.code-select .multiselect__option--selected::after { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
-.code-select .multiselect__option::after { display: none !important; } /* vue-multiselect 특유의 텍스트 오버레이 제거 */
+:deep(.multiselect__option) { padding: 0; min-height: auto; transition: background 0.1s; }
+:deep(.multiselect__option--highlight),
+:deep(.multiselect__option--highlight::after) { background: var(--primary-soft); color: var(--primary); }
+:deep(.multiselect__option--selected),
+:deep(.multiselect__option--selected::after) { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+:deep(.multiselect__option::after) { display: none !important; }
 
 /* 우측 화살표 (Caret) */
-.code-select .multiselect__select { display: none; }
+:deep(.multiselect__select) { display: none; }
 .ss-caret {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
   color: var(--text-sub); cursor: pointer; transition: transform .2s;
   display: flex; align-items: center; justify-content: center;
 }
-.code-select.multiselect--active .ss-caret { transform: translateY(-50%) rotate(180deg); }
+:deep(.multiselect--active) .ss-caret { transform: translateY(-50%) rotate(180deg); }
 .ss-caret i { font-size: 16px; }
 
 /* 비활성화 상태 */
-.code-select.multiselect--disabled { pointer-events: none; }
-.code-select.multiselect--disabled .multiselect__tags { background: var(--bg-canvas); opacity: 0.7; }
+:deep(.multiselect--disabled) { pointer-events: none; }
+:deep(.multiselect--disabled .multiselect__tags) { background: var(--bg-canvas); opacity: 0.7; }
+
+.ss-no-result {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-sub);
+  display: flex; align-items: center; gap: 6px;
+}
+.ss-no-result i { font-size: 16px; opacity: 0.5; }
+
+/* ── 드롭다운 패널 (스크롤 강제 생성 및 겹침 완벽 방지) ── */
+:deep(.multiselect__content-wrapper) {
+  position: absolute !important;
+  left: -1px;
+  right: -1px;
+  top: 100%;
+
+  /* 배경, 테두리, 그림자 설정 */
+  background-color: var(--bg-surface, #ffffff) !important;
+  border: 1px solid var(--primary) !important;
+  border-top: none !important;
+  border-radius: 0 0 5px 5px !important;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+
+  /* ★ 핵심: 높이를 200px로 제한하고 넘어갈 경우 무조건 스크롤바 생성 */
+  max-height: 200px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+
+  /* 테이블 tr보다 무조건 위로 뜨게 설정 */
+  z-index: 9999 !important;
+}
+
+/* ★ 추가 방어: 내부 ul 태그가 제멋대로 커지는 것 방지 */
+:deep(.multiselect__content) {
+  display: block !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+}
+
+/* 스크롤바 디자인 (옵션) */
+:deep(.multiselect__content-wrapper::-webkit-scrollbar) {
+  width: 6px;
+}
+:deep(.multiselect__content-wrapper::-webkit-scrollbar-thumb) {
+  background: var(--border-focus);
+  border-radius: 3px;
+}
 </style>

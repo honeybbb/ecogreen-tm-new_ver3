@@ -77,6 +77,7 @@ const todayDate = computed(() => {
 
 const totalWage = computed(() => {
   let sum = 0;
+  console.log(contractData.value);
   for (const key in contractData.value.wageInputs) {
     sum += parseInt(contractData.value.wageInputs[key]) || 0;
   }
@@ -265,7 +266,7 @@ async function handleExportPdf() {
 <div class="doc-header">
   <div class="doc-title">근 로 계 약 서 ${year}년</div>
   <div class="doc-addr">
-    서울시 강서구 공항대로 325 에이스빌딩 7층<br>
+    {{comp.addr}}<br>
     TEL. 02)355-3322 &nbsp; FAX. 02)355-3318
   </div>
 </div>
@@ -422,6 +423,7 @@ async function handleExportPdf() {
 const handleSave = () => {
   const extractedContractData = {
     wageInputs: contractData.value.wageInputs,
+    contractStartDt: contractData.value.contractStartDt,
     contractEndDt: contractData.value.contractEndDt
   };
   emit('save', extractedContractData);
@@ -451,8 +453,8 @@ const handleClose = () => {
           <div class="contract-header">
             <h1 class="contract-title">근 로 계 약 서 {{ contractYear }}년</h1>
             <p class="company-info">
-              서울시 강서구 공항대로 325 에이스빌딩 7층<br/>
-              TEL. 02)355-3322 &nbsp; FAX. 02)355-3318
+              {{ companyData.addr }}<br/>
+              TEL. {{ companyData.contact }} &nbsp; FAX. {{ companyData.fax }}
             </p>
           </div>
 
@@ -773,10 +775,10 @@ const handleClose = () => {
             <div class="signature-parties">
               <div class="party employer">
                 <p class="party-label">"갑" (사용자)</p>
-                <p><strong>회사명:</strong> {{companyData.companyNm}}</p>
-                <p><strong>사업자번호:</strong> {{ companyData.businessNo }}</p>
-                <p><strong>주소:</strong> {{ companyData.addr }}</p>
-                <p><strong>대표이사:</strong> {{ companyData.ceoNm }} (인)</p>
+                <p><strong>회사명:</strong> {{companyData?.companyNm}}</p>
+                <p><strong>사업자번호:</strong> {{ companyData?.businessNo }}</p>
+                <p><strong>주소:</strong> {{ companyData?.addr }}</p>
+                <p><strong>대표이사:</strong> {{ companyData?.ceoNm }} (인)</p>
               </div>
 
               <div class="party employee">

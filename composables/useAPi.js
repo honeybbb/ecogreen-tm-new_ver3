@@ -14,9 +14,9 @@ export const useApi = () => {
     const overAgeOption = ref([]);
 
     //company 정보 가져오기
-    const getCompanyData = async (companyNo = '1') => {
+    const getCompanyData = async () => {
         try{
-            axios.get(`/api/v1/config/company/${companyNo}`).then((response) => {
+            axios.get(`/api/v1/config/company`).then((response) => {
                 companyData.value = response.data.data;
                 console.log(companyData.value);
             })
@@ -37,9 +37,9 @@ export const useApi = () => {
     }
 
     // 현장 목록 가져오기
-    const fetchSiteOptions = async (cIdx = 1) => {
+    const fetchSiteOptions = async () => {
         try {
-            const res = await axios.get(`/api/v1/site/list/${cIdx}`);
+            const res = await axios.get(`/api/v1/site/list`);
             siteOptions.value = res.data.data || [];
         } catch (e) {
             console.error("현장 목록 로드 실패:", e);

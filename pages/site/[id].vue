@@ -332,8 +332,8 @@ const getColTotal = (items, code) =>
     (items ?? []).reduce((s, item) => s + (Number(item?.values?.[code]) || 0), 0);
 
 // ── 행 합계: 각 직책별 값의 합산 ──
-const getRowTotal = (item) =>
-    Object.values(item.values).reduce((s, v) => s + (Number(v) || 0), 0);
+const getRowTotal = (item, staffList) =>
+    (staffList ?? []).reduce((s, st) => s + (Number(item.values[st.code]) || 0) * (Number(st.count) || 0), 0);
 
 const getDirectLaborColTotal   = (g, code) => getColTotal(g.costBreakdown.directLabor,   code);
 const getIndirectLaborColTotal = (g, code) => getColTotal(g.costBreakdown.indirectLabor, code);
@@ -350,7 +350,7 @@ const getGroupStaffTotal       = (group)   => (group.staffList ?? []).reduce((s,
 
 // ── 소계 행의 행합계 (전 직책 소계 합산) ──
 const getSubtotalRowTotal = (g, sectionFn) =>
-    g.staffList.reduce((s, st) => s + sectionFn(g, st.code), 0);
+    g.staffList.reduce((s, st) => s + sectionFn(g, st.code) * (Number(st.count) || 0), 0);
 
 const getContractDuration = (group) => {
   if (!group.contractStart || !group.contractEnd) return '';
@@ -915,7 +915,7 @@ onMounted(async () => {
                           </td>
                           <!-- 행합계 -->
                           <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item)) }}
+                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
@@ -964,7 +964,7 @@ onMounted(async () => {
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
                           </td>
                           <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item)) }}
+                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
@@ -1012,7 +1012,7 @@ onMounted(async () => {
                             <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
                           </td>
                           <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item)) }}
+                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
@@ -1057,16 +1057,35 @@ onMounted(async () => {
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-e">
-                          <td><span class="summary-label"><span class="cost-block-label label-mgmt">E</span>일반관리비</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span></td>
+                          <td>
+                            <div class="summary-label-rate">
+                                <span class="summary-label">
+                                  <span class="cost-block-label label-mgmt">E</span>일반관리비
+                                </span>
+                            </div>
+                          </td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span>
+                            <input v-else v-model.number="group.costBreakdown.managementFee[staff.code]" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
+                          </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
                           </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
+
                         <tr class="summary-row row-f">
-                          <td><span class="summary-label"><span class="cost-block-label label-profit">F</span>기업이윤</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span></td>
+                          <td>
+                            <div class="summary-label-rate">
+                                <span class="summary-label">
+                                  <span class="cost-block-label label-profit">F</span>기업이윤
+                                </span>
+                            </div>
+                          </td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span>
+                            <input v-else v-model.number="group.costBreakdown.profit[staff.code]" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
+                          </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>
                           </td>
@@ -1081,8 +1100,17 @@ onMounted(async () => {
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
                         <tr class="summary-row row-total-fee">
-                          <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>월간 용역비 총계</span></td>
-                          <td :colspan="group.staffList.length"><span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span></td>
+                          <td>
+                            <span class="summary-label">
+                              <span class="cost-block-label label-total-fee">합</span>
+                              월간 용역비 총계
+                            </span>
+                          </td>
+                          <td :colspan="group.staffList.length">
+                            <span class="summary-val grand-total">
+                              {{ formatCurrency(getTotalMonthlyFee(group)) }}
+                            </span>
+                          </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span>
                           </td>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import { useAuthStore } from '@/stores/auth';
 import axios from 'axios';
@@ -15,6 +15,9 @@ const {
   fetchTypeOptions
 } = useApi();
 
+// 금액 포맷터 (세자리 콤마)
+const formatCurrency = (val) => Number(val || 0).toLocaleString();
+
 const currentStep = ref(1);
 const totalSteps = 4;
 
@@ -22,7 +25,6 @@ const progressPercentage = computed(() => (currentStep.value / totalSteps) * 100
 
 const steps = [
   { number: 1, title: '기본 정보',  icon: 'mdi-office-building-outline' },
-  // { number: 2, title: '주소 정보',  icon: 'mdi-map-marker-outline' },
   { number: 2, title: '계약 정보',  icon: 'mdi-file-document-outline' },
   { number: 3, title: '담당자 정보', icon: 'mdi-account-tie-outline' }
 ];
@@ -34,11 +36,9 @@ const site = ref({
   postalCode: '',
   addressMain: '',
   addressDetail: '',
-  latitude: '',
-  longitude: '',
-  areaUnder: '', // 추가: 135㎡ 이하 (면세)
-  areaOver: '',  // 추가: 135㎡ 초과 (과세)
-  areaGross: '', //연면적
+  areaUnder: '',
+  areaOver: '',
+  areaGross: '',
   is_vat: false,
   building_su: '',
   unit_su: '',
@@ -61,7 +61,6 @@ const detailInput    = ref(null);
 
 // =============================================
 // costBreakdown 기본값 생성
-// staffList 기반으로 values 객체 초기화
 // =============================================
 const makeValuesObj = (staffList, defaultVal = 0) => {
   const obj = {};
@@ -91,26 +90,35 @@ const createDefaultCostBreakdown = (staffList = []) => ({
     { label: '소모품비',         values: makeValuesObj(staffList) },
     { label: '복리후생비',       values: makeValuesObj(staffList) },
   ],
-  managementFeeRate: 2,
-  profitRate: 2,
+  // ★ 요율 대신 직접 금액을 입력받기 위한 객체
+  managementFee: makeValuesObj(staffList),
+  profit: makeValuesObj(staffList),
   specialNote: '',
 });
 
-// staffList 변경 시 costBreakdown의 values 키를 동기화
 const syncCostBreakdownToStaff = (group) => {
   const sections = ['directLabor', 'indirectLabor', 'expenses'];
   const currentCodes = group.staffList.map(s => s.code);
 
   sections.forEach(section => {
     group.costBreakdown[section].forEach(item => {
-      // 새로 추가된 직책 키 초기화
       currentCodes.forEach(code => {
         if (!(code in item.values)) item.values[code] = 0;
       });
-      // 삭제된 직책 키 제거
       Object.keys(item.values).forEach(code => {
         if (!currentCodes.includes(code)) delete item.values[code];
       });
+    });
+  });
+
+  // ★ 일반관리비, 기업이윤 객체도 인원 변경 시 동기화
+  const manualItems = ['managementFee', 'profit'];
+  manualItems.forEach(key => {
+    currentCodes.forEach(code => {
+      if (!(code in group.costBreakdown[key])) group.costBreakdown[key][code] = 0;
+    });
+    Object.keys(group.costBreakdown[key]).forEach(code => {
+      if (!currentCodes.includes(code)) delete group.costBreakdown[key][code];
     });
   });
 };
@@ -143,8 +151,6 @@ const addStaffToGroup = (groupIndex) => {
   if (group.tempCount < 1) { alert('1명 이상 입력해주세요.'); return; }
 
   const jobInfo = positionOptions.value.find(p => p.itemCd === group.tempJobCode);
-
-  // 같은 직책 코드가 이미 있으면 수량 합산
   const existing = group.staffList.find(s => s.code === jobInfo.itemCd);
   if (existing) {
     existing.count += Number(group.tempCount);
@@ -177,53 +183,55 @@ const getContractDuration = (group) => {
 };
 
 // =============================================
-// 산출내역서 계산 함수 (1원 단위 절사 적용)
+// 산출내역서 계산 함수
 // =============================================
-const getRowTotal = (item) =>
-    Object.values(item.values).reduce((s, v) => s + (Number(v) || 0), 0);
+// 1개 항목 행합계 = (단가 × 인원수)의 합
+const getRowTotal = (item, staffList) =>
+    (staffList ?? []).reduce((s, st) => s + (Number(item.values[st.code]) || 0) * (Number(st.count) || 0), 0);
 
+// 특정 열(직책)의 단순 합계
 const getColTotal = (items, code) =>
     items.reduce((s, item) => s + (Number(item.values[code]) || 0), 0);
+
+// 소계 영역의 행합계
+const getSubtotalRowTotal = (group, sectionFn) =>
+    group.staffList.reduce((s, st) => s + sectionFn(group, st.code) * (Number(st.count) || 0), 0);
 
 const getDirectLaborColTotal   = (group, code) => getColTotal(group.costBreakdown.directLabor, code);
 const getIndirectLaborColTotal = (group, code) => getColTotal(group.costBreakdown.indirectLabor, code);
 const getExpensesColTotal      = (group, code) => getColTotal(group.costBreakdown.expenses, code);
 
+// D: 노무비 합계 (직책별)
 const getLaborColTotal = (group, code) =>
-    getDirectLaborColTotal(group, code) +
-    getIndirectLaborColTotal(group, code) +
-    getExpensesColTotal(group, code);
+    getDirectLaborColTotal(group, code) + getIndirectLaborColTotal(group, code) + getExpensesColTotal(group, code);
 
-// 일반관리비: 1원 단위 절사 적용 (예: 12347원 -> 12340원)
-const getManagementFeeCol = (group, code) => {
-  const calcValue = getLaborColTotal(group, code) * ((Number(group.costBreakdown.managementFeeRate) || 0) / 100);
-  return Math.floor(calcValue / 10) * 10;
-};
+// D: 노무비 전체 행합계
+const getLaborGrandTotal = (group) =>
+    group.staffList.reduce((s, st) => s + getLaborColTotal(group, st.code) * st.count, 0);
 
-// 기업이윤: 1원 단위 절사 적용
-const getProfitCol = (group, code) => {
-  const calcValue = getLaborColTotal(group, code) * ((Number(group.costBreakdown.profitRate) || 0) / 100);
-  return Math.floor(calcValue / 10) * 10;
-};
+// E: 일반관리비 (직접 입력값 반환)
+const getManagementFeeCol = (group, code) => Number(group.costBreakdown.managementFee[code]) || 0;
 
+// E: 일반관리비 전체 행합계
+const getManagementFeeGrandTotal = (group) =>
+    group.staffList.reduce((s, st) => s + getManagementFeeCol(group, st.code) * st.count, 0);
+
+// F: 기업이윤 (직접 입력값 반환)
+const getProfitCol = (group, code) => Number(group.costBreakdown.profit[code]) || 0;
+
+// F: 기업이윤 전체 행합계
+const getProfitGrandTotal = (group) =>
+    group.staffList.reduce((s, st) => s + getProfitCol(group, st.code) * st.count, 0);
+
+// 1인당 월 용역비 (D+E+F)
 const getMonthlyTotalCol = (group, code) =>
     getLaborColTotal(group, code) + getManagementFeeCol(group, code) + getProfitCol(group, code);
 
-const getMonthlyFeeByStaff = (group, staff) =>
-    getMonthlyTotalCol(group, staff.code) * staff.count;
-
+// 전체 월간 용역비 (총합계)
 const getTotalMonthlyFee = (group) =>
-    group.staffList.reduce((s, staff) => s + getMonthlyFeeByStaff(group, staff), 0);
+    group.staffList.reduce((s, st) => s + getMonthlyTotalCol(group, st.code) * st.count, 0);
 
-const getSectionGrandTotal = (group, section) =>
-    group.costBreakdown[section].reduce((s, item) => s + getRowTotal(item), 0);
 
-const getLaborGrandTotal = (group) =>
-    getSectionGrandTotal(group, 'directLabor') +
-    getSectionGrandTotal(group, 'indirectLabor') +
-    getSectionGrandTotal(group, 'expenses');
-
-// 항목 추가/삭제
 const addItem = (group, section) => {
   group.costBreakdown[section].push({ label: '', values: makeValuesObj(group.staffList) });
 };
@@ -232,7 +240,7 @@ const removeItem = (group, section, idx) => {
 };
 
 // =============================================
-// 파일 / 폼 처리
+// 폼 및 API 처리 로직
 // =============================================
 const handleFileChange = (event) => {
   const file = event.target.files[0];
@@ -249,18 +257,13 @@ const handleFileChange = (event) => {
   }
 };
 
-// 총 관리면적 자동 계산
 const totalArea = computed(() => {
   const under = Number(site.value.areaUnder) || 0;
   const over = Number(site.value.areaOver) || 0;
-  // 소수점 2자리까지만 표현 (부동소수점 오류 방지)
   return Math.round((under + over) * 100) / 100;
 });
 
-// 과세 여부 자동 판단 (135㎡ 초과 면적이 1이라도 있으면 과세)
-const isVatSite = computed(() => {
-  return Number(site.value.areaOver) > 0;
-});
+const isVatSite = computed(() => Number(site.value.areaOver) > 0);
 
 const handleSubmit = async () => {
   try {
@@ -272,12 +275,13 @@ const handleSubmit = async () => {
       name: site.value.siteName,
       site_id: site.value.siteId,
       status: site.value.status,
-      area: site.value.areaGross, //연면적
-      areaOver: site.value.areaOver, //135㎡ 초과 (과세)
-      areaUnder: site.value.areaUnder, //135㎡ 이하 (면세)
+      area: site.value.areaGross,
+      areaOver: site.value.areaOver,
+      areaUnder: site.value.areaUnder,
       is_vat: site.value.is_vat ? 'Y' : 'N',
       building_su: site.value.building_su,
       unit_su: site.value.unit_su,
+      postalCode: site.value.postalCode,
       address: site.value.addressMain,
       addressDetail: site.value.addressDetail,
       payment_day: site.value.payment_day,
@@ -319,7 +323,9 @@ const getSiteData = async () => {
     site.value.siteId         = result.site_id;
     site.value.siteType       = result.sType;
     site.value.status         = result.status === 'Y' ? '운영 중' : '계약 종료';
-    site.value.area           = result.area;
+    site.value.areaGross      = result.area;
+    site.value.areaOver       = result.areaOver;
+    site.value.areaUnder      = result.areaUnder;
     site.value.is_vat         = result.is_vat;
     site.value.addressMain    = result.address;
     site.value.addressDetail  = result.address_detail;
@@ -331,22 +337,24 @@ const getSiteData = async () => {
     site.value.directorContact= result.director_phone;
     site.value.payment_day    = result.payment_day;
 
-    const contract = JSON.parse(result.contractList);
-    contractGroups.value = contract.map(item => ({
-      category: item.category,
-      type: item.type,
-      contractStart: item.startDt,
-      contractEnd: item.endDt,
-      totalCost: 0,
-      workDays: item.workDays,
-      workSchedule: item.workSchedule,
-      breakTime: item.breaktime,
-      staffList: item.staffList || [],
-      tempJobCode: '',
-      tempCount: 1,
-      costBreakdown: item.costBreakdown || createDefaultCostBreakdown(item.staffList || []),
-      showCostBreakdown: false,
-    }));
+    if(result.contractList){
+      const contract = JSON.parse(result.contractList);
+      contractGroups.value = contract.map(item => ({
+        category: item.category,
+        type: item.type,
+        contractStart: item.startDt,
+        contractEnd: item.endDt,
+        totalCost: 0,
+        workDays: item.workDays,
+        workSchedule: item.workSchedule,
+        breakTime: item.breaktime,
+        staffList: item.staffList || [],
+        tempJobCode: '',
+        tempCount: 1,
+        costBreakdown: item.costBreakdown || createDefaultCostBreakdown(item.staffList || []),
+        showCostBreakdown: false,
+      }));
+    }
 
     if (result.bigoList) {
       try {
@@ -401,13 +409,16 @@ const prevStep = () => {
   }
 };
 
-onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
+onMounted(() => {
+  fetchPositionOptions();
+  fetchTypeOptions();
+  getSiteData();
+});
 </script>
 
 <template>
   <div class="site-register-page">
 
-    <!-- 페이지 헤더 -->
     <div class="page-header">
       <div class="header-left">
         <button @click="handleCancel" class="btn-back">
@@ -423,7 +434,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
       </button>
     </div>
 
-    <!-- 스텝 인디케이터 -->
     <div class="steps-container">
       <div class="steps-list">
         <div v-for="step in steps" :key="step.number"
@@ -444,7 +454,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
 
-        <!-- ===== STEP 1: 기본 정보 ===== -->
         <div v-show="currentStep === 1" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-office-building-outline"></i>
@@ -550,13 +559,11 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
           </div>
         </div>
 
-        <!-- ===== STEP 3: 계약 정보 ===== -->
         <div v-show="currentStep === 2" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-file-document-outline"></i><h2>계약 및 인원 정보</h2>
           </div>
 
-          <!-- 파일 업로드 -->
           <div class="file-upload-section">
             <label class="section-label"><i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일 업로드 (PDF)</label>
             <div class="file-upload-box" :class="{ 'has-file': selectedFile }">
@@ -581,7 +588,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
             </p>
           </div>
 
-          <!-- 계약 추가 -->
           <div class="contract-header">
             <p class="contract-description">현장의 계약 정보를 추가합니다. 경비, 미화 등 구분별로 계약을 등록할 수 있습니다.</p>
             <div class="contract-actions">
@@ -592,14 +598,12 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
             </div>
           </div>
 
-          <!-- 빈 상태 -->
           <div v-if="contractGroups.length === 0" class="empty-contracts">
             <i class="mdi mdi-file-document-multiple-outline"></i>
             <p>등록된 계약이 없습니다</p>
             <span>상단 버튼을 눌러 계약 정보를 추가해주세요</span>
           </div>
 
-          <!-- 계약 카드 목록 -->
           <div v-for="(group, idx) in contractGroups" :key="idx" class="contract-card">
             <div class="contract-card-header">
               <div class="contract-title">
@@ -637,7 +641,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                 </div>
               </div>
 
-              <!-- 인원 구성 -->
               <div class="staff-section">
                 <label class="section-label"><i class="mdi mdi-account-group-outline"></i>인원 구성</label>
                 <div class="staff-input-group">
@@ -669,9 +672,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                 </div>
               </div>
 
-              <!-- =============================================
-                   산출내역서 (직책별 동적 열)
-              ============================================= -->
               <div class="cost-breakdown-wrapper">
                 <button type="button" class="btn-toggle-cost"
                         @click="group.showCostBreakdown = !group.showCostBreakdown">
@@ -684,7 +684,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 
                 <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
 
-                  <!-- 인원 없을 때 안내 -->
                   <div v-if="group.staffList.length === 0" class="cost-no-staff">
                     <i class="mdi mdi-account-plus-outline"></i>
                     <p>먼저 인원 구성에서 직책을 추가하면<br>직책별 산출내역을 입력할 수 있습니다.</p>
@@ -693,7 +692,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                   <template v-else>
                     <div class="cost-scroll-area">
 
-                      <!-- ── 직접노무비 (A) ── -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-direct">A</span>
                         직접노무비 <em>(지급내역)</em>
@@ -709,6 +707,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
+                          <th class="col-rowtotal-head">행합계</th>
                           <th class="col-rowtotal">산출내역</th>
                           <th class="col-action"></th>
                         </tr>
@@ -721,7 +720,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                                 @update:label="(val) => item.label = val"
                                 :allow-empty="false"
                             />
-                            <!--input v-model="item.label" class="tbl-label-input" placeholder="항목명" /-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -731,6 +729,9 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                                 placeholder="0"
                                 min="0"
                             />
+                          </td>
+                          <td class="col-rowtotal-cell">
+                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
                           <td class="col-action">
@@ -746,14 +747,15 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           <td v-for="staff in group.staffList" :key="staff.code">
                             {{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}
                           </td>
-                          <!--td>{{ formatCurrency(getSectionGrandTotal(group, 'directLabor')) }}</td-->
+                          <td class="col-rowtotal-cell subtotal-rowtotal">
+                            {{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}
+                          </td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
                         </tfoot>
                       </table>
 
-                      <!-- ── 간접노무비 (B) ── -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-indirect">B</span>
                         간접노무비 <em>(공제내역)</em>
@@ -769,6 +771,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
+                          <th class="col-rowtotal-head">행합계</th>
                           <th class="col-rowtotal">산출내역</th>
                           <th class="col-action"></th>
                         </tr>
@@ -777,11 +780,13 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
                             <CodeSelect v-model="item.label" :allow-empty="false" />
-                            <!--input v-model="item.label" class="tbl-label-input" placeholder="항목명" /-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input v-model.number="item.values[staff.code]"
                                    type="number" class="tbl-value-input" placeholder="0" min="0" />
+                          </td>
+                          <td class="col-rowtotal-cell">
+                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td class="">
                             <input type="text" class="tbl-value-input" v-model="item.bigo">
@@ -799,14 +804,15 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           <td v-for="staff in group.staffList" :key="staff.code">
                             {{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}
                           </td>
-                          <!--td>{{ formatCurrency(getSectionGrandTotal(group, 'indirectLabor')) }}</td-->
+                          <td class="col-rowtotal-cell subtotal-rowtotal">
+                            {{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}
+                          </td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
                         </tfoot>
                       </table>
 
-                      <!-- ── 제경비 (C) ── -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-expense">C</span>
                         제경비
@@ -822,6 +828,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
+                          <th class="col-rowtotal-head">행합계</th>
                           <th class="col-rowtotal">산출내역</th>
                           <th class="col-action"></th>
                         </tr>
@@ -830,10 +837,12 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
                             <CodeSelect v-model="item.label" :allow-empty="false" />
-                            <!--input v-model="item.label" class="tbl-label-input" placeholder="항목명" /-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" placeholder="0" min="0" />
+                          </td>
+                          <td class="col-rowtotal-cell">
+                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td class="">
                             <input type="text" class="tbl-value-input" v-model="item.bigo">
@@ -851,14 +860,15 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           <td v-for="staff in group.staffList" :key="staff.code">
                             {{ formatCurrency(getExpensesColTotal(group, staff.code)) }}
                           </td>
-                          <!--td>{{ formatCurrency(getSectionGrandTotal(group, 'expenses')) }}</td-->
+                          <td class="col-rowtotal-cell subtotal-rowtotal">
+                            {{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}
+                          </td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
                         </tfoot>
                       </table>
 
-                      <!-- ── 합계 테이블 ── -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-total">합계</span>
                         노무비 합계 및 용역비 산출
@@ -871,12 +881,12 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                             <span class="staff-th-name">{{ staff.name }}</span>
                             <span class="staff-th-count">({{ staff.count }}명)</span>
                           </th>
+                          <th class="col-rowtotal-head">행합계</th>
                           <th class="col-rowtotal">산출 내역</th>
                           <th class="col-action"></th>
                         </tr>
                         </thead>
                         <tbody>
-                        <!-- D: 노무비 합계 -->
                         <tr class="summary-row row-d">
                           <td>
                               <span class="summary-label">
@@ -887,68 +897,67 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span>
                           </td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span>
+                          </td>
                           <td>
-                            <!--span class="summary-val bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span-->
                             <input type="text" class="tbl-value-input">
                           </td>
                           <td></td>
                         </tr>
 
-                        <!-- E: 일반관리비 -->
                         <tr class="summary-row row-e">
                           <td>
                             <div class="summary-label-rate">
                                 <span class="summary-label">
                                   <span class="cost-block-label label-mgmt">E</span>일반관리비
                                 </span>
-                              <!--div class="rate-inline">
-                                <span>D ×</span>
-                                <input v-model.number="group.costBreakdown.managementFeeRate"
-                                       type="number" class="rate-input-sm" min="0" max="100" step="0.1" />
-                                <span>%</span>
-                              </div-->
                             </div>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span>
+                            <input
+                                v-model.number="group.costBreakdown.managementFee[staff.code]"
+                                type="number"
+                                class="tbl-value-input"
+                                placeholder="0"
+                                min="0"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span>
                           </td>
                           <td>
-                              <!--span class="summary-val">
-                                {{ formatCurrency(group.staffList.reduce((s,st) => s + getManagementFeeCol(group, st.code), 0)) }}
-                              </span-->
                             <input type="text" class="tbl-value-input">
                           </td>
                           <td></td>
                         </tr>
 
-                        <!-- F: 기업이윤 -->
                         <tr class="summary-row row-f">
                           <td>
                             <div class="summary-label-rate">
                                 <span class="summary-label">
                                   <span class="cost-block-label label-profit">F</span>기업이윤
                                 </span>
-                              <!--div class="rate-inline">
-                                <span>D ×</span>
-                                <input v-model.number="group.costBreakdown.profitRate"
-                                       type="number" class="rate-input-sm" min="0" max="100" step="0.1" />
-                                <span>%</span>
-                              </div-->
                             </div>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span>
+                            <input
+                                v-model.number="group.costBreakdown.profit[staff.code]"
+                                type="number"
+                                class="tbl-value-input"
+                                placeholder="0"
+                                min="0"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span>
                           </td>
                           <td>
-                              <!--span class="summary-val">
-                                {{ formatCurrency(group.staffList.reduce((s,st) => s + getProfitCol(group, st.code), 0)) }}
-                              </span-->
                             <input type="text" class="tbl-value-input">
                           </td>
                           <td></td>
                         </tr>
 
-                        <!-- 1인당 월 용역비 -->
                         <tr class="summary-row row-monthly">
                           <td>
                               <span class="summary-label">
@@ -961,11 +970,11 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                                 {{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}
                               </span>
                           </td>
+                          <td class="col-rowtotal-cell">-</td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
 
-                        <!-- 총 월 용역비 (인원 × 단가) -->
                         <tr class="summary-row row-total-fee">
                           <td>
                               <span class="summary-label">
@@ -973,25 +982,16 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                                 월간 용역비 총계
                               </span>
                           </td>
-                          <!--td v-for="staff in group.staffList" :key="staff.code">
-                              <span class="summary-val highlight bold">
-                                {{ formatCurrency(getMonthlyFeeByStaff(group, staff)) }}
-                                <em class="count-note">{{ staff.count }}명 × {{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</em>
-                              </span>
-                          </td-->
                           <td :colspan="group.staffList.length">
                             <span class="summary-val grand-total">
                               {{ formatCurrency(getTotalMonthlyFee(group)) }}
                             </span>
                           </td>
+                          <td class="col-rowtotal-cell">
+                          </td>
                           <td>
                             <input type="text" class="tbl-value-input">
                           </td>
-                          <!--td>
-                              <span class="summary-val grand-total">
-                                {{ formatCurrency(getTotalMonthlyFee(group)) }}
-                              </span>
-                          </td-->
                           <td></td>
                         </tr>
 
@@ -1002,20 +1002,18 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                                 입찰 금액 <br>(계약기간 총 용역비)
                               </span>
                           </td>
-                          <td :colspan="group.staffList.length">
+                          <td :colspan="group.staffList.length + 1">
                             <input type="text" class="tbl-value-input">
                           </td>
                           <td>
                             <input type="text" class="tbl-value-input">
                           </td>
+                          <td></td>
                         </tr>
                         </tbody>
                       </table>
 
                     </div>
-                    <!-- // cost-scroll-area -->
-
-                    <!-- 특이사항 -->
                     <div class="cost-special-note">
                       <label class="form-label">
                         <i class="mdi mdi-text-box-edit-outline"></i>특이사항
@@ -1027,19 +1025,14 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
                   </template>
                 </div>
               </div>
-              <!-- // 산출내역서 끝 -->
-
             </div>
           </div>
-          <!-- // 계약 카드 목록 끝 -->
-
           <div class="form-actions">
             <button type="button" @click="prevStep" class="btn-prev"><i class="mdi mdi-arrow-left"></i>이전</button>
             <button type="button" @click="nextStep" class="btn-next">다음 단계<i class="mdi mdi-arrow-right"></i></button>
           </div>
         </div>
 
-        <!-- ===== STEP 4: 담당자 정보 ===== -->
         <div v-show="currentStep === 3" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-account-tie-outline"></i><h2>담당자 및 기타 정보</h2>
@@ -1250,7 +1243,7 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 .cost-scroll-area { overflow-x: auto; }
 
 /* ── 공통 테이블 ── */
-.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); }
+.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed;}
 .cost-table thead tr { background: var(--bg-canvas); }
 .cost-table th, .cost-table td { padding: 8px 10px; border: 1px solid var(--border-color); vertical-align: middle; }
 .cost-table th { font-size: 11px; font-weight: 700; color: var(--text-sub); text-align: center; white-space: nowrap; }
@@ -1258,8 +1251,10 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 
 .col-label    { min-width: 140px; width: 160px; }
 .col-staff    { min-width: 130px; text-align: center; }
+.col-rowtotal-head { min-width: 120px; text-align: right; }
 .col-rowtotal { min-width: 120px; text-align: right; font-weight: 600; background: rgba(99,102,241,0.04); }
 .col-action   { width: 36px; text-align: center; }
+.col-rowtotal-cell { text-align: right; font-weight: bold; background: rgba(99,102,241,0.04); }
 
 .staff-th-name  { display: block; font-size: 12px; font-weight: 700; color: var(--text-main); }
 .staff-th-count { display: block; font-size: 11px; color: var(--text-sub); font-weight: 400; }
@@ -1284,16 +1279,11 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
 
 .summary-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; white-space: nowrap; }
 .summary-label-rate { display: flex; flex-direction: column; gap: 5px; }
-.rate-inline { display: flex; align-items: center; gap: 4px; margin-left: 28px; font-size: 11px; color: var(--text-sub); }
-.rate-input-sm { width: 52px; padding: 3px 6px; text-align: center; border: 1px solid var(--primary); border-radius: 4px; font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); }
-.rate-input-sm:focus { outline: none; }
 
 .summary-val { display: block; text-align: right; font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; }
 .summary-val.bold { font-weight: 800; font-size: 13px; }
 .summary-val.highlight { color: var(--primary); font-weight: 700; }
-.summary-val.grand-total { font-size: 15px; font-weight: 800; color: var(--primary); }
-
-.count-note { display: block; font-size: 10px; font-style: normal; color: var(--text-sub); font-weight: 400; text-align: right; margin-top: 3px; }
+.summary-val.grand-total { font-size: 15px; font-weight: 800; color: var(--primary); text-align: right; }
 
 .row-d td        { background: rgba(16,185,129,0.04) !important; }
 .row-e td        { background: rgba(107,114,128,0.04) !important; }
@@ -1333,10 +1323,6 @@ onMounted(() => { fetchPositionOptions(); fetchTypeOptions(); getSiteData(); });
   .address-search-group { flex-direction: column; }
   .postal-input { width: 100%; }
   .btn-search-address { width: 100%; justify-content: center; }
-  .area-wrapper { flex-direction: column; align-items: stretch; }
-  .staff-input-group { flex-direction: column; align-items: stretch; }
-  .staff-count { width: 100%; }
-  .btn-add-staff { justify-content: center; }
   .contract-actions { flex-direction: column; }
   .btn-add-contract { width: 100%; justify-content: center; }
   .form-actions { flex-direction: column; }

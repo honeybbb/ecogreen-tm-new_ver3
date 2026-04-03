@@ -168,10 +168,25 @@ const calculateProcessed = (data) => {
   return data.map(site => {
     let progress = 0;
     let contractEnd = '';
+    let urgentType = ''; // 임박한 계약의 종류 (예: '경비')
 
-    if (site.contract && site.contract.includes('~')) {
-      const [startStr, endStr] = site.contract.split(' ~ ');
+    if (site.contracts && site.contracts.length > 0) {
+      // 1. 계약들을 '종료일(endDate)이 빠른 순'으로 정렬합니다.
+      const sortedContracts = [...site.contracts].sort((a, b) => {
+        const endA = new Date(a.contract_period.split(' ~ ')[1]).getTime();
+        const endB = new Date(b.contract_period.split(' ~ ')[1]).getTime();
+        return endA - endB;
+      });
+
+      // 2. 가장 종료일이 빠른(임박한) 계약을 타겟으로 잡습니다.
+      const targetContract = sortedContracts[0];
+
+      const [startStr, endStr] = targetContract.contract_period.split(' ~ ');
       contractEnd = endStr;
+
+      // 만약 contract 객체 안에 계약 종류(type이나 category)가 있다면 가져옵니다.
+      // (변수명은 실제 데이터에 맞게 수정하세요. 예: targetContract.category)
+      urgentType = targetContract.type || targetContract.category || '계약';
 
       const startDate = new Date(startStr);
       const endDate = new Date(endStr);
@@ -183,14 +198,16 @@ const calculateProcessed = (data) => {
         progress = (elapsedDuration / totalDuration) * 100;
       }
 
-      if (progress < 0) progress = 0;
-      if (progress > 100) progress = 100;
+      // 3. 진행률 0 ~ 100 사이 보정 (기존 로직 유지, 더 깔끔하게 작성)
+      progress = Math.max(0, Math.min(100, progress));
     }
 
     return {
       ...site,
       progress: Math.round(progress),
       contractEnd: contractEnd,
+      urgentType: urgentType, // UI 표시용 (예: 경비)
+      contractCount: site.contracts ? site.contracts.length : 0 // UI 표시용 (총 계약 수)
     };
   });
 };
@@ -198,7 +215,7 @@ const calculateProcessed = (data) => {
 // API 호출
 const getSiteData = async () => {
   try {
-    const res = await axios.get(`/api/v1/site/list/${cIdx}`);
+    const res = await axios.get(`/api/v1/site/list`);
     const result = res.data.data;
     // if (stats.value[0]) stats.value[0].value = result.length;
     const processedData = calculateProcessed(result.slice(0, 3));
@@ -287,7 +304,7 @@ const setDefaultDate = () => {
 const fetchDashboardData = async () => {
   try {
     // 백엔드에서 만든 통합 API 호출
-    const res = await axios.get(`/api/v1/dashboard/${cIdx}`);
+    const res = await axios.get(`/api/v1/dashboard`);
 
     if (res.data) {
       const { pending, siteStatus: sStatus, memberStatus: mStatus } = res.data;

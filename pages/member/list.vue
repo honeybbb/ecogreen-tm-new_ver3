@@ -64,11 +64,10 @@ const fetchOverAgeOption = async () => {
 };
 
 const fetchMembers = async () => {
-  const cIdx = useAuthStore().user?.cIdx;
   isLoading.value = true;
   error.value = null;
   try {
-    const res = await axios.get(`/api/v1/member/list/${cIdx}`);
+    const res = await axios.get(`/api/v1/member/list`);
     members.value = res.data.data || [];
   } catch (e) {
     console.error('직원 목록 로드 실패:', e);
@@ -120,7 +119,7 @@ const filteredMembers = computed(() => {
     const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
     const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
     const activeMatch = !filterActive.value || member.status == '재직';
-    console.log(member, 'm')
+
     return siteMatch && searchMatch && typeMatch &&
         dateMatch && pensionMatch && employmentMatch &&
         disaMatch && foreMatch && activeMatch;
@@ -478,9 +477,9 @@ onMounted(async () => {
               <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
             </td>
             <td>
-              <div v-if="member.accountNo" class="account-info">
+              <div v-if="member.accountNumber" class="account-info">
                 <span class="bank-badge">{{ member.bank }}</span>
-                <span class="account-number">{{ member.accountNo }}</span>
+                <span class="account-number">{{ member.accountNumber }}</span>
               </div>
               <span v-else class="text-gray">-</span>
             </td>

@@ -71,6 +71,9 @@ const employee = ref({
 const isContractModalOpen = ref(false);
 const items = ref([]);
 
+const wageInputs = ref({});
+const contractDataTemp = ref(null);
+
 // 근무 이력
 const workHistory = ref([
   { period: '2023.01 ~ 2024.12', site: 'LH 위례 6단지', position: '경비원', status: '재직' },
@@ -115,7 +118,7 @@ const age = computed(() => {
 const workPeriod = computed(() => {
   if (!employee.value.inDate) return '-';
   const start = new Date(employee.value.inDate);
-  const end = employee.value.outDate ? new Date(employee.value.outDate) : new Date();
+  const end = (employee.value.outDate && employee.value.outDate !== '0000-00-00') ? new Date(employee.value.outDate) : new Date();
 
   const months = (end.getFullYear() - start.getFullYear()) * 12 +
       (end.getMonth() - start.getMonth());
@@ -268,7 +271,7 @@ watch(activeTab, async (newTab) => {
 
 onMounted(async () => {
   await Promise.all([
-    getCompanyData(authStore.user?.cIdx),
+    getCompanyData(),
     fetchSiteOptions(),
     fetchPositionOptions(),
     fetchTypeOptions(),

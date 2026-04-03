@@ -1,11 +1,15 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router'; // 라우터 임포트 추가
 import axios from 'axios';
-import {useAuthStore} from "~/stores/auth.js";
+import { useAuthStore } from "~/stores/auth.js";
 
 // ==========================================
 // 1. 상태 관리 (State)
 // ==========================================
+const route = useRoute();     // 현재 URL 정보 가져오기
+const router = useRouter();   // URL 변경 조작용
+
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
@@ -17,7 +21,7 @@ const searchQuery = ref('');
 // 입력 폼 상태
 const newCodeName = ref('');
 const newCodeOption = ref(0);
-const newCodeSort = ref(0); // 신규 순서 상태 추가
+const newCodeSort = ref(0);
 
 const newCodeNumber = computed(() => {
   const list = currentCodeList.value;
@@ -37,32 +41,19 @@ const transformCodeData = (rows) => {
   const result = {};
   rows.forEach(row => {
     const {
-      groupCode, groupName,
-      subCode, subName,
-      detailCode, detailName,
-      useFl, editFl, deleteFl,
-      option, sort // DB에서 sort 가져오기
+      groupCode, groupName, subCode, subName, detailCode, detailName,
+      useFl, editFl, deleteFl, option, sort
     } = row;
 
     if (!result[groupCode]) {
-      result[groupCode] = {
-        name: groupName,
-        subGroups: [],
-        codes: []
-      };
+      result[groupCode] = { name: groupName, subGroups: [], codes: [] };
     }
     const currentGroup = result[groupCode];
 
     const createCodeObj = (id, name, dbUseFl, dbSort) => ({
-      id: id,
-      codeNumber: id,
-      name: name,
-      useFl: dbUseFl,
-      sort: dbSort || 0, // 객체에 sort 연결
-      isEditing: false,
-      editFl: editFl,
-      deleteFl: deleteFl,
-      option: option,
+      id: id, codeNumber: id, name: name, useFl: dbUseFl,
+      sort: dbSort || 0, isEditing: false, editFl: editFl,
+      deleteFl: deleteFl, option: option,
     });
 
     if (detailCode) {
@@ -79,19 +70,57 @@ const transformCodeData = (rows) => {
   return result;
 };
 
+// ==========================================
+// ★ URL 변경 감지 및 업데이트 설정
+// ==========================================
+// 셀렉트 박스(상태)가 변경될 때마다 URL 파라미터를 업데이트 합니다.
+watch([selectedGroupKey, selectedSubGroupKey], ([newGroup, newSub]) => {
+  if (newGroup) {
+    router.replace({
+      query: {
+        ...route.query, // 기존 다른 쿼리 유지
+        group: newGroup,
+        sub: newSub || undefined // 값이 없으면 URL에서 제거
+      }
+    });
+  }
+});
+
 const getCode = async () => {
   try {
     const res = await axios.get(`/api/v1/code/${cIdx}`);
-    if(!res.data.data.length > 0) return console.error("코드를 가져오지 못 했습니다.");
+    if (!res.data.data.length > 0) return console.error("코드를 가져오지 못 했습니다.");
+
     const result = res.data.data.filter(item =>
-        item.groupCode == '01' ||
-        item.groupCode == '02'
+        item.groupCode == '01' || item.groupCode == '02'
     );
+
     allCodeData.value = transformCodeData(result);
-    const firstKey = Object.keys(allCodeData.value)[0];
-    if (firstKey) {
-      selectedGroupKey.value = firstKey;
-      handleMainGroupChange();
+
+    // === ★ URL 쿼리 기반 초기 세팅 로직 ===
+    const queryGroup = route.query.group;
+    const querySubGroup = route.query.sub;
+
+    if (queryGroup && allCodeData.value[queryGroup]) {
+      // 1. URL에 group 파라미터가 유효한 경우 적용
+      selectedGroupKey.value = queryGroup;
+      const group = allCodeData.value[queryGroup];
+
+      // 2. URL의 sub 파라미터가 유효한지 검증 후 적용
+      if (querySubGroup && group.subGroups.some(sg => sg.id === querySubGroup)) {
+        selectedSubGroupKey.value = querySubGroup;
+      } else if (group.subGroups.length > 0) {
+        selectedSubGroupKey.value = group.subGroups[0].id; // 유효하지 않으면 첫번째 하위 그룹
+      } else {
+        selectedSubGroupKey.value = '';
+      }
+    } else {
+      // 파라미터가 없거나 유효하지 않으면 기본값(첫 번째 대분류)으로 초기화
+      const firstKey = Object.keys(allCodeData.value)[0];
+      if (firstKey) {
+        selectedGroupKey.value = firstKey;
+        handleMainGroupChange();
+      }
     }
   } catch (err) {
     console.error("데이터 로드 실패", err);
@@ -135,7 +164,6 @@ const currentCodeList = computed(() => {
     codeList = group.codes;
   }
 
-  // 정렬 순서대로 데이터 정렬
   codeList.sort((a, b) => a.sort - b.sort);
 
   if (searchQuery.value) {
@@ -156,10 +184,7 @@ const currentGroupInfo = computed(() => {
     const sub = group.subGroups.find(s => s.id === selectedSubGroupKey.value);
     if (sub) groupName += ` > ${sub.subName}`;
   }
-  return {
-    name: groupName,
-    count: currentCodeList.value.length
-  };
+  return { name: groupName, count: currentCodeList.value.length };
 });
 
 // ==========================================
@@ -189,18 +214,15 @@ const cancelEdit = (code) => {
 
 const saveCode = async (code) => {
   const params = {
-    itemCd: code.itemCd,
-    itemNm: code.name,
-    useFl: code.useFl,
-    option: code.option,
-    sort: code.sort // 정렬 순서 파라미터 추가
+    itemCd: code.itemCd, itemNm: code.name,
+    useFl: code.useFl, option: code.option, sort: code.sort
   };
 
   try {
     await axios.put(`/api/v1/code/${code.id}`, params);
     alert('수정되었습니다.');
     code.isEditing = false;
-    await getCode(); // 데이터 새로고침
+    await getCode();
   } catch (err) {
     console.error("수정 실패", err);
   }
@@ -228,7 +250,7 @@ const addCode = async () => {
     itemCd: generatedNumber,
     itemNm: newCodeName.value,
     option: newCodeOption.value,
-    sort: newCodeSort.value, // 입력한 순서 전송
+    sort: newCodeSort.value,
     useFl: 'Y'
   };
   try {
@@ -240,10 +262,6 @@ const addCode = async () => {
   } catch (err) {
     console.error("추가 실패", err);
   }
-};
-
-const refreshData = () => {
-  getCode();
 };
 </script>
 

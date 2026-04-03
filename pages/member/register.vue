@@ -4,21 +4,27 @@ import { useRouter } from 'nuxt/app';
 import axios from 'axios';
 import {useAuthStore} from "~/stores/auth.js";
 import ContractModal from "~/components/contractModal.vue";
+import auth from "~/middleware/auth.js";
 
 const authStore = useAuthStore();
 const router = useRouter();
+
 const {
+  companyData,
   bankOptions,
   siteOptions,
   typeOptions,
   positionOptions,
   disabledOptions,
+  getCompanyData,
   fetchBankOption,
   fetchSiteOptions,
   fetchTypeOptions,
   fetchPositionOptions,
   fetchDisabledOptions,
 } = useApi();
+
+const cIdx = authStore.user?.cIdx;
 
 // 현재 단계
 const currentStep = ref(1);
@@ -124,7 +130,8 @@ const handleSubmit = async () => {
 
   const payload = {
     ...employee.value,
-    cIdx: authStore.user?.cIdx,
+    cIdx: cIdx,
+    contractData: contractDataTemp.value,
     wageInputs: wageInputs.value
   };
 
@@ -161,13 +168,59 @@ const handleCancel = () => {
 
 //지급항목
 const getWageCode = async function () {
-  const cIdx = authStore.user?.cIdx;
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     const rawData = res.data.data || [];
     items.value = rawData.filter(item => item.groupCd === '04001');
   } catch (err) {
     console.error("항목 로드 실패", err);
+  }
+}
+
+const getBudgetData = async function () {
+  // 현장과 직위가 모두 선택되어 있어야만 데이터를 가져옵니다.
+  if (!employee.value.site || !employee.value.position) return;
+
+  let params = {
+    sIdx: employee.value.site,
+    type: employee.value.type
+  }
+
+  try {
+    const res = await axios.get(`/api/v1/site/contract/budget`, {params});
+    const budgetList = res.data.data;
+
+    if (budgetList && budgetList.length > 0) {
+      const targetPosition = employee.value.position;
+      const jsonData = budgetList[0].jsonData;
+
+      const newWageInputs = {};
+
+      // 1. jsonData 내의 directLabor(직접노무비-지급항목) 배열을 순회합니다.
+      if (jsonData && jsonData.directLabor) {
+        jsonData.directLabor.forEach(item => {
+          console.log(item, 'item', targetPosition)
+          // item.code (예: "04001001") 와 해당 직책의 금액이 존재할 경우
+          if (item.code && item.values && item.values[targetPosition] !== undefined) {
+            newWageInputs[item.code] = item.values[targetPosition];
+          }
+        });
+      }
+
+      // 2. 부모 컴포넌트의 wageInputs 상태 업데이트
+      wageInputs.value = newWageInputs;
+
+      // 3. 모달(ContractModal)에 전달되는 employee 객체에 계약 데이터 세팅
+      // 모달 내부의 watch가 이 값을 감지하여 자동으로 임금 입력칸에 뿌려줍니다.
+      if (!employee.value.contract) {
+        employee.value.contract = {};
+      }
+      employee.value.contract.contractData = newWageInputs;
+
+      console.log('예산 데이터 적용 완료:', newWageInputs);
+    }
+  } catch (err) {
+    console.error('예산 데이터 로드 실패:', err);
   }
 }
 
@@ -207,6 +260,18 @@ watch(
       }
     }
 );
+
+watch(() => employee.value.site, (newType) => {
+  if (newType && employee.value.site) {
+    getBudgetData();
+  }
+});
+
+watch(() => employee.value.position, (newType) => {
+  if (newType && employee.value.position) {
+    getBudgetData();
+  }
+});
 
 const isValidDate = (dateString) => {
   const regEx = /^\d{4}-\d{2}-\d{2}$/;
@@ -272,11 +337,12 @@ const prevStep = () => {
 };
 
 onMounted(() => {
+  getCompanyData(),
   fetchSiteOptions()
   fetchTypeOptions()
   fetchPositionOptions()
   fetchDisabledOptions()
-  fetchBankOption();
+  fetchBankOption()
   getWageCode();
 });
 </script>
@@ -1109,6 +1175,8 @@ onMounted(() => {
         :site-options="siteOptions"
         :position-options="positionOptions"
         :wage-items="items"
+        :is-editing="true"
+        :company-data="companyData"
         @close="showModal = false"
         @save="handleContractSave"
     />
