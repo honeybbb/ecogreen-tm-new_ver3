@@ -3,6 +3,7 @@ import axios from 'axios';
 import { ref } from 'vue';
 
 export const useApi = () => {
+    const companyData = ref([]);
     const bankOptions = ref([]);
     const siteOptions = ref([]);
     const typeOptions = ref([]);
@@ -10,6 +11,19 @@ export const useApi = () => {
     const disabledOptions = ref([]);
     // const categoryOptions = ref([]);
     const wagesData  = ref([]);
+    const overAgeOption = ref([]);
+
+    //company 정보 가져오기
+    const getCompanyData = async () => {
+        try{
+            axios.get(`/api/v1/config/company`).then((response) => {
+                companyData.value = response.data.data;
+                console.log(companyData.value);
+            })
+        }catch (e) {
+            console.error("company 정보 로드 실패", e);
+        }
+    }
 
     //은행 코드 가져오기
     const fetchBankOption = async (groupCd = '02001') => {
@@ -23,9 +37,9 @@ export const useApi = () => {
     }
 
     // 현장 목록 가져오기
-    const fetchSiteOptions = async (cIdx = 1) => {
+    const fetchSiteOptions = async () => {
         try {
-            const res = await axios.get(`/api/v1/site/list/${cIdx}`);
+            const res = await axios.get(`/api/v1/site/list`);
             siteOptions.value = res.data.data || [];
         } catch (e) {
             console.error("현장 목록 로드 실패:", e);
@@ -52,7 +66,7 @@ export const useApi = () => {
         }
     }
 
-    const fetchWageCode = async () => {
+    const fetchWageCode = async (cIdx = 1) => {
         try {
             // 실제 API 경로에 맞게 수정해주세요
             const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
@@ -72,18 +86,32 @@ export const useApi = () => {
         }
     }
 
+    const fetchOverAgeOption = async (groupCd = '02003') => {
+        try {
+            axios.get(`/api/v1/code/group/${groupCd}`).then(res => {
+                overAgeOption.value = res.data.data
+            })
+        } catch (e) {
+            console.error("법정 기준 연령 로드 실패:", e);
+        }
+    }
+
     return {
+        companyData,
         bankOptions,
         siteOptions,
         typeOptions,
         positionOptions,
         disabledOptions,
         wagesData,
+        overAgeOption,
+        getCompanyData,
         fetchBankOption,
         fetchSiteOptions,
         fetchTypeOptions,
         fetchPositionOptions,
         fetchDisabledOptions,
-        fetchWageCode
+        fetchWageCode,
+        fetchOverAgeOption,
     };
 };

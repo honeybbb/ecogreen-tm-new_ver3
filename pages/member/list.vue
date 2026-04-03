@@ -20,9 +20,15 @@ const searchTerm     = ref('');
 const selectedSite   = ref('전체');
 const selectedType   = ref('전체');
 
-const filterOver65     = ref(false);
+// 입사일 기간 필터 상태 추가
+const filterStartDate = ref('');
+const filterEndDate   = ref('');
+
+const filterNoPension    = ref(false); // 만 60세 이상
+const filterNoEmployment = ref(false); // 만 65세 이상
 const filterDisability = ref(false);
 const filterForeigner  = ref(false);
+const filterActive = ref(false); //재직중
 
 const sortKey   = ref('id');
 const sortOrder = ref('asc');
@@ -36,12 +42,32 @@ const currentPage = ref(1);
 const pageSize    = ref(50); // 한 페이지당 행 수
 const pageSizeOptions = [50, 100, 200, 500];
 
+const ageLimits = ref({ pension: 0, employment: 0 }); //4대보험 상한 연령 상태
+
+const fetchOverAgeOption = async () => {
+  const groupCd = '02003';
+
+  try {
+    const res = await axios.get(`/api/v1/code/group/${groupCd}`);
+    const codes = res.data.data || [];
+
+    // (항목명에 특정 단어가 포함된 것을 찾아 option 값을 매핑)
+    const pensionCode = codes.find(c => c.itemNm.includes('국민연금'));
+    const employCode = codes.find(c => c.itemNm.includes('고용보험'));
+
+    if (pensionCode && pensionCode.option) ageLimits.value.pension = Number(pensionCode.option);
+    if (employCode && employCode.option) ageLimits.value.employment = Number(employCode.option);
+
+  } catch (e) {
+    console.error('연령 기준 코드를 불러오지 못해 기본값(60, 65)을 적용합니다.', e);
+  }
+};
+
 const fetchMembers = async () => {
-  const cIdx = useAuthStore().user?.cIdx;
   isLoading.value = true;
   error.value = null;
   try {
-    const res = await axios.get(`/api/v1/member/list/${cIdx}`);
+    const res = await axios.get(`/api/v1/member/list`);
     members.value = res.data.data || [];
   } catch (e) {
     console.error('직원 목록 로드 실패:', e);
@@ -68,9 +94,13 @@ const resetFilters = () => {
   searchTerm.value     = '';
   selectedSite.value   = '전체';
   selectedType.value   = '전체';
-  filterOver65.value     = false;
+  filterStartDate.value  = '';
+  filterEndDate.value    = '';
+  filterNoPension.value    = false;
+  filterNoEmployment.value = false;
   filterDisability.value = false;
   filterForeigner.value  = false;
+  filterActive.value = false;
   currentPage.value = 1;
 };
 
@@ -79,10 +109,20 @@ const filteredMembers = computed(() => {
     const siteMatch  = selectedSite.value === '전체' || String(member.sIdx) === String(selectedSite.value);
     const searchMatch = member.name.toLowerCase().includes(searchTerm.value.toLowerCase());
     const typeMatch  = selectedType.value === '전체' || member.type === selectedType.value;
-    const ageMatch   = !filterOver65.value     || calculateAge(member.birthDt) >= 65;
+    const dateMatch =
+        (!filterStartDate.value || member.inDate >= filterStartDate.value) &&
+        (!filterEndDate.value   || member.inDate <= filterEndDate.value);
+
+    const pensionMatch    = !filterNoPension.value    || calculateAge(member.birthDt) >= ageLimits.value.pension;
+    const employmentMatch = !filterNoEmployment.value || calculateAge(member.birthDt) >= ageLimits.value.employment
+
     const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
     const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
-    return siteMatch && searchMatch && typeMatch && ageMatch && disaMatch && foreMatch;
+    const activeMatch = !filterActive.value || member.status == '재직';
+
+    return siteMatch && searchMatch && typeMatch &&
+        dateMatch && pensionMatch && employmentMatch &&
+        disaMatch && foreMatch && activeMatch;
   });
 
   // 기본 정렬 (idx asc, sIdx desc)
@@ -113,7 +153,8 @@ const filteredMembers = computed(() => {
 const statsInfo = computed(() => ({
   total:      filteredMembers.value.length,
   active:     filteredMembers.value.filter(m => m.status === '재직').length,
-  over65:     filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 65).length,
+  noPension:    filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 60).length,
+  noEmployment: filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 65).length,
   disability: filteredMembers.value.filter(m => m.disability === 'Y' || m.disability === true).length,
   foreigner:  filteredMembers.value.filter(m => m.foreigner  === 'Y' || m.foreigner  === true).length,
 }));
@@ -148,7 +189,12 @@ const goToRegister = () => router.push('/member/register');
 const goToDetail   = (id) => router.push(`/member/${id}`);
 
 onMounted(async () => {
-  await Promise.all([fetchSiteOptions(), fetchTypeOptions(), fetchDisabledOptions()]);
+  await Promise.all([
+    fetchSiteOptions(),
+    fetchTypeOptions(),
+    fetchDisabledOptions(),
+    fetchOverAgeOption()
+  ]);
   await fetchMembers();
 });
 </script>
@@ -187,11 +233,18 @@ onMounted(async () => {
           <span class="stat-value">{{ statsInfo.active }} <small>명</small></span>
         </div>
       </div>
-      <div class="stat-card" style="--card-color: var(--danger); --card-bg: rgba(239, 68, 68, 0.1);">
-        <div class="stat-icon"><i class="mdi mdi-account-clock"></i></div>
+      <div class="stat-card" style="--card-color: #f97316; --card-bg: rgba(249, 115, 22, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-shield-remove-outline"></i></div>
         <div class="stat-content">
-          <span class="stat-label">65세 이상</span>
-          <span class="stat-value">{{ statsInfo.over65 }} <small>명</small></span>
+          <span class="stat-label">국민연금 제외</span>
+          <span class="stat-value">{{ statsInfo.noPension }} <small>명</small></span>
+        </div>
+      </div>
+      <div class="stat-card" style="--card-color: var(--danger); --card-bg: rgba(239, 68, 68, 0.1);">
+        <div class="stat-icon"><i class="mdi mdi-account-off-outline"></i></div>
+        <div class="stat-content">
+          <span class="stat-label">고용보험 제외</span>
+          <span class="stat-value">{{ statsInfo.noEmployment }} <small>명</small></span>
         </div>
       </div>
       <div class="stat-card" style="--card-color: #8b5cf6; --card-bg: rgba(139, 92, 246, 0.1);">
@@ -227,6 +280,14 @@ onMounted(async () => {
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemNm">{{ opt.itemNm }}</option>
           </select>
         </div>
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label>
+          <div class="date-range-inputs">
+            <input type="date" v-model="filterStartDate" @change="onFilterChange" class="filter-select date-input" />
+            <span class="date-separator">~</span>
+            <input type="date" v-model="filterEndDate" @change="onFilterChange" class="filter-select date-input" />
+          </div>
+        </div>
         <div class="search-group">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
@@ -252,9 +313,13 @@ onMounted(async () => {
       <div class="filter-toggles-row">
         <span class="toggles-label"><i class="mdi mdi-filter-variant"></i> 빠른 필터:</span>
         <div class="filter-toggles">
-          <label class="toggle-chip" :class="{ active: filterOver65 }">
-            <input type="checkbox" v-model="filterOver65" @change="onFilterChange">
-            <i class="mdi mdi-account-clock"></i><span>65세 이상</span>
+          <label class="toggle-chip" :class="{ active: filterNoPension }">
+            <input type="checkbox" v-model="filterNoPension" @change="onFilterChange">
+            <i class="mdi mdi-shield-remove-outline"></i><span>국민연금 제외 ({{ageLimits.pension}}세↑)</span>
+          </label>
+          <label class="toggle-chip" :class="{ active: filterNoEmployment }">
+            <input type="checkbox" v-model="filterNoEmployment" @change="onFilterChange">
+            <i class="mdi mdi-account-off-outline"></i><span>고용보험 제외 ({{ageLimits.employment}}세↑)</span>
           </label>
           <label class="toggle-chip" :class="{ active: filterDisability }">
             <input type="checkbox" v-model="filterDisability" @change="onFilterChange">
@@ -263,6 +328,10 @@ onMounted(async () => {
           <label class="toggle-chip" :class="{ active: filterForeigner }">
             <input type="checkbox" v-model="filterForeigner" @change="onFilterChange">
             <i class="mdi mdi-earth"></i><span>외국인</span>
+          </label>
+          <label class="toggle-chip" :class="{ active: filterActive }">
+            <input type="checkbox" v-model="filterActive" @change="onFilterChange">
+            <i class="mdi mdi-account-check"></i><span>재직중</span>
           </label>
         </div>
       </div>
@@ -294,19 +363,41 @@ onMounted(async () => {
 
       <div class="table-scroll-container">
         <table class="data-table">
+          <colgroup>
+            <col width="3%">
+            <col width="*%">
+            <col width="2%">
+            <col width="2%">
+            <col width="5%">
+            <col width="3%">
+            <col width="2%">
+            <col width="3%">
+            <col width="5%">
+            <col width="10%">
+            <col width="10%">
+            <col width="5%">
+            <col width="5%">
+            <col width="10%">
+            <col width="10%">
+            <col width="5%">
+            <col width="5%">
+          </colgroup>
           <thead>
           <tr>
             <th @click="toggleSort('id')" class="sortable">
               <div class="th-content">ID <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th @click="toggleSort('name')" class="sortable">
-              <div class="th-content">이름 <i v-if="sortKey==='name'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
-            </th>
             <th @click="toggleSort('siteName')" class="sortable">
               <div class="th-content">현장 <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
+            <th @click="toggleSort('name')" class="sortable">
+              <div class="th-content">이름 <i v-if="sortKey==='name'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
             <th @click="toggleSort('position')" class="sortable">
               <div class="th-content">직책 <i v-if="sortKey==='position'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th @click="toggleSort('name')" class="sortable">
+              <div class="th-content">근로계약일 <i v-if="sortKey==='contract'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
             <th @click="toggleSort('gender')" class="sortable">
               <div class="th-content">성별 <i v-if="sortKey==='gender'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
@@ -325,6 +416,7 @@ onMounted(async () => {
             <th class="text-center">4대보험</th>
             <th class="text-center">퇴직연금</th>
             <th>계좌번호</th>
+            <th>연락처</th>
             <th @click="toggleSort('status')" class="sortable">
               <div class="th-content">상태 <i v-if="sortKey==='status'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
@@ -334,13 +426,14 @@ onMounted(async () => {
           <tbody>
           <tr v-for="member in pagedMembers" :key="member.idx" class="data-row">
             <td>{{ member.id }}</td>
-            <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
             <td>{{ member.siteName }}</td>
+            <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
             <td>{{ member.position }}</td>
+            <td>{{member.contract}}</td>
             <td>{{ member.gender === 'M' ? '남' : '여' }}</td>
             <td
-                :class="{ 'age-warning': calculateAge(member.birthDt) >= 65 }"
-                :title="calculateAge(member.birthDt) >= 65 ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+                :class="{ 'age-warning': calculateAge(member.birthDt) >= ageLimits.employment }"
+                :title="calculateAge(member.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
               {{ calculateAge(member.birthDt) ? calculateAge(member.birthDt) + '세' : '-' }}
             </td>
             <td>
@@ -384,12 +477,13 @@ onMounted(async () => {
               <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
             </td>
             <td>
-              <div v-if="member.accountNo" class="account-info">
+              <div v-if="member.accountNumber" class="account-info">
                 <span class="bank-badge">{{ member.bank }}</span>
-                <span class="account-number">{{ member.accountNo }}</span>
+                <span class="account-number">{{ member.accountNumber }}</span>
               </div>
               <span v-else class="text-gray">-</span>
             </td>
+            <td>{{member.phone}}</td>
             <td>
                 <span :class="['status-badge', member.status === '재직' ? 'status-active' : 'status-inactive']">
                   <i :class="['mdi', member.status === '재직' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
@@ -530,5 +624,19 @@ onMounted(async () => {
   display: flex; align-items: center; gap: 8px; padding: 20px;
   background: rgba(239, 68, 68, 0.1); color: var(--danger); border-radius: 12px;
   margin-bottom: 24px; font-weight: 600;
+}
+
+.date-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.date-input {
+  width: 130px; /* 날짜 입력창 크기에 맞게 조절 */
+  cursor: pointer;
+}
+.date-separator {
+  color: var(--text-sub);
+  font-weight: bold;
 }
 </style>

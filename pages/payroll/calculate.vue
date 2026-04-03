@@ -1110,7 +1110,9 @@ onMounted(async () => {
   padding: 8px 10px; border-bottom: 1px solid var(--border-color);
   border-right: 1px solid var(--bg-canvas); vertical-align: middle; word-break: keep-all;
 }
-.amount-header, .amount-cell { min-width: 110px; }
+.amount-header, .amount-cell {
+  min-width: 75px;
+}
 
 .data-row { background: var(--bg-surface); }
 .data-row:hover { background-color: var(--primary-soft); }
@@ -1128,9 +1130,17 @@ onMounted(async () => {
 .days-separator { color: var(--text-muted); font-weight: 400; font-size: 14px;}
 
 .inline-input {
-  width: 100%; min-width: 90px; padding: 8px 10px; text-align: right;
-  font-size: 13px; color: var(--text-main); font-weight: 500;
-  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%; /* 부모(td)를 절대 넘지 못하게 강제 */
+  min-width: 0; /* 억지로 공간을 차지하던 min-width 제거 */
+  padding: 6px 4px; /* 좌우 여백을 살짝 줄여서 글자 들어갈 공간 최대 확보 */
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-main);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .inline-input:hover { border-color: var(--border-focus); background: var(--bg-surface); }

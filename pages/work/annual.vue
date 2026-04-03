@@ -53,7 +53,7 @@ const { siteOptions, fetchSiteOptions } = useApi()
 // ────────────────────────────────────────────────────────────
 const tabs = [
   { id: 'request', icon: 'mdi-inbox-arrow-down-outline', name: '신청 관리' },
-  { id: 'quota',   icon: 'mdi-chart-donut',              name: '잔여 현황' },
+  // { id: 'quota',   icon: 'mdi-chart-donut',              name: '잔여 현황' },
 ]
 
 const activeTab = ref(route.query.tab || 'request')

@@ -2,127 +2,200 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import Pagination from "~/components/Pagination.vue";
+import { useRoute, useRouter } from "#app";
 
-// 1. 상태 관리
-const searchTerm = ref('');
+// 1. API 및 상태 관리
+const { siteOptions, fetchSiteOptions } = useApi();
+const route     = useRoute()
+const router    = useRouter()
+const authStore = useAuthStore();
+
+const tabs = [
+  { id: 'orders', icon: 'mdi-format-list-bulleted', name: '신청 현황 목록' },
+  { id: 'budgets',icon: 'mdi-cog-outline',          name: '현장별 예산 설정' },
+]
+
+// 메인 탭 상태 ('orders': 신청 현황, 'budgets': 예산 설정)
+const activeTab = ref(route.query.tab || 'orders')
+
+async function changeTab(id) {
+  activeTab.value = id
+  currentPage.value   = 1
+  await router.replace({ query: { ...route.query, tab: id } })
+}
+
+// [필터] 공통 및 신청 현황용
+const selectedSite   = ref('전체');
+const searchTerm     = ref('');
 const selectedStatus = ref('전체');
-const statusOptions = ['전체', '신청 완료', '배송 중', '수령 완료'];
+const statusOptions  = ['전체', '신청 완료', '배송 중', '수령 완료'];
+const selectedMonth  = ref(new Date().toISOString().slice(0, 7)); // 기본값 당월 (YYYY-MM)
+
+// [예산 설정 탭] 전용 상태
+const budgetSearchTerm = ref('');
+const siteBudgets = ref({}); // { sIdx: amount }
+const budgetPage = ref(1);
+const budgetPageSize = ref(50);
+
+// --- [추가] 선택된 현장(체크박스) 상태 관리 ---
+const selectedSites = ref([]); // 선택된 site.idx 배열 보관
 
 const rawOrders = ref([]);
 const isLoading = ref(false);
-const error     = ref(null);
 
-// ── 페이지네이션 상태 ──────────────────────────────
-const currentPage = ref(1);
-const pageSize    = ref(50); // 한 페이지당 행 수
-const pageSizeOptions = [50, 100, 200, 500];
-
-// 2. 통계 데이터 계산
+// 2. 통계 데이터 계산 (선택된 월 기준 필터링)
 const stats = computed(() => {
-  const total = rawOrders.value.length;
-  const pending = rawOrders.value.filter(o => o.status === 0).length;
-  const shipping = rawOrders.value.filter(o => o.status === 1).length;
-  const completed = rawOrders.value.filter(o => o.status === 2).length;
-  const totalAmount = rawOrders.value.reduce((acc, cur) => acc + (Number(cur.totalAmount) || 0), 0);
+  const monthlyData = rawOrders.value.filter(o => o.regDt && o.regDt.startsWith(selectedMonth.value));
+
+  const total = monthlyData.length;
+  const pending = monthlyData.filter(o => o.status === 0).length;
+  const shipping = monthlyData.filter(o => o.status === 1).length;
+  const completed = monthlyData.filter(o => o.status === 2).length;
+  const totalAmount = monthlyData.reduce((acc, cur) => acc + (Number(cur.totalAmount) || 0), 0);
 
   return { total, pending, shipping, completed, totalAmount };
 });
 
-// 3. 필터링 및 검색 로직
+// 3. 신청 현황 필터링 및 페이징
 const filteredOrders = computed(() => {
   return rawOrders.value.filter(order => {
-    const statusText = getStatusText(order.status);
+    const monthMatch  = order.regDt && order.regDt.startsWith(selectedMonth.value);
+    const siteMatch   = selectedSite.value === '전체' || String(order.sIdx) === String(selectedSite.value);
+    const statusText  = getStatusText(order.status);
     const statusMatch = selectedStatus.value === '전체' || statusText === selectedStatus.value;
     const searchMatch = order.siteName.toLowerCase().includes(searchTerm.value.toLowerCase()) ||
-        order.applicant.includes(searchTerm.value);
-    return statusMatch && searchMatch;
+        (order.applicant && order.applicant.includes(searchTerm.value));
+
+    return monthMatch && siteMatch && statusMatch && searchMatch;
   });
 });
 
-// ── 페이지네이션 computed ──────────────────────────
+const currentPage = ref(1);
+const pageSize    = ref(50); // 한 페이지당 행 수
+const pageSizeOptions = [50, 100, 200, 500];
+
 const pagedOrders = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return filteredOrders.value.slice(start, start + pageSize.value);
 });
 
-// 페이지 이동 시 처리할 로직 (스크롤 상단 이동 등)
-const handlePageChange = () => {
-  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// 4. 예산 설정 탭 필터링 (현장 검색 대응)
+const filteredBudgetSites = computed(() => {
+  if (!siteOptions.value) return [];
+  return siteOptions.value.filter(site =>
+      site.name.toLowerCase().includes(budgetSearchTerm.value.toLowerCase())
+  );
+});
+
+const pagedBudgetSites = computed(() => {
+  const start = (budgetPage.value - 1) * budgetPageSize.value;
+  return filteredBudgetSites.value.slice(start, start + budgetPageSize.value);
+});
+
+// --- [추가] 현재 페이지 전체 선택/해제 Computed ---
+const selectAll = computed({
+  get: () => pagedBudgetSites.value.length > 0 && pagedBudgetSites.value.every(site => selectedSites.value.includes(site.idx)),
+  set: (val) => {
+    if (val) {
+      pagedBudgetSites.value.forEach(site => {
+        if (!selectedSites.value.includes(site.idx)) selectedSites.value.push(site.idx);
+      });
+    } else {
+      const currentIds = pagedBudgetSites.value.map(s => s.idx);
+      selectedSites.value = selectedSites.value.filter(id => !currentIds.includes(id));
+    }
+  }
+});
+
+// --- [추가] 예산 금액 입력 시 자동으로 체크하는 함수 ---
+const markAsSelected = (idx) => {
+  if (!selectedSites.value.includes(idx)) {
+    selectedSites.value.push(idx);
+  }
 };
 
-// 4. API 호출
+// 5. 예산 초과 로직
+const getSiteMonthlyTotal = (sIdx) => {
+  return rawOrders.value
+      .filter(o => String(o.sIdx) === String(sIdx) && o.regDt.startsWith(selectedMonth.value))
+      .reduce((acc, cur) => acc + (Number(cur.totalAmount) || 0), 0);
+};
+
+const isOverBudget = (sIdx) => {
+  const budget = siteBudgets.value[sIdx] || 0;
+  if (!budget || budget === 0) return false;
+  return getSiteMonthlyTotal(sIdx) > budget;
+};
+
+// 6. API 및 액션
 const fetchOrders = async () => {
   isLoading.value = true;
   try {
     const res = await axios.get('/api/v1/code/item/order');
-    if (res.data.result) {
-      rawOrders.value = res.data.data;
-    }
+    if (res.data.result) rawOrders.value = res.data.data;
+    // 실제 환경에서는 여기서 예산 데이터도 GET 해옵니다.
+  } catch (err) { console.error(err); }
+  finally { isLoading.value = false; }
+};
+
+// --- [수정] 체크된 예산만 저장하도록 로직 변경 ---
+const saveBudgets = async () => {
+  if (selectedSites.value.length === 0) {
+    alert('저장할 현장을 체크해주세요.');
+    return;
+  }
+
+  if (!confirm(`체크된 ${selectedSites.value.length}개 현장의 예산 설정을 저장하시겠습니까?`)) return;
+
+  // 선택된 현장 ID에 대한 데이터만 추출
+  const dataToSave = {};
+  selectedSites.value.forEach(idx => {
+    dataToSave[idx] = siteBudgets.value[idx] || 0;
+  });
+
+  try {
+    await axios.post('/api/v1/site/order/budgets', dataToSave);
+    alert('선택한 현장의 기준 금액 설정이 저장되었습니다.');
+    selectedSites.value = []; // 저장 성공 시 선택 초기화
   } catch (err) {
-    console.error('데이터 로드 에러:', err);
-  } finally {
-    isLoading.value = false;
+    alert('저장 중 오류 발생');
   }
 };
 
-// 5. 유틸리티 함수
 const getStatusText = (status) => {
   if (status === 0) return '신청 완료';
   if (status === 1) return '배송 중';
   return '수령 완료';
 };
 
-// 6. 모달 로직 및 상태 변경
+// 모달 로직
 const isModalOpen = ref(false);
 const selectedOrder = ref({});
+const openModal = (order) => { selectedOrder.value = order; isModalOpen.value = true; };
+const closeModal = () => { isModalOpen.value = false; };
 
-const openModal = (order) => {
-  selectedOrder.value = order;
-  isModalOpen.value = true;
-};
-
-const closeModal = () => {
-  isModalOpen.value = false;
-  selectedOrder.value = {};
-};
-
-const processOrder = async (nextStatus) => {
-  const statusLabel = nextStatus === 1 ? '배송 중' : '수령 완료';
-  if (!confirm(`해당 신청 건을 '${statusLabel}' 상태로 변경하시겠습니까?`)) return;
-
-  try {
-    const idxs = selectedOrder.value.items.map(i => i.idx);
-    const res = await axios.put('/api/v1/order/status', { idxs, status: nextStatus });
-    if (res.data.result) {
-      alert('상태가 성공적으로 변경되었습니다.');
-      fetchOrders();
-      closeModal();
-    }
-  } catch (err) {
-    alert('오류가 발생했습니다.');
-  }
-};
-
-onMounted(fetchOrders);
+onMounted(async () => {
+  await Promise.all([
+    fetchSiteOptions(),
+    fetchOrders()
+  ]);
+});
 </script>
 
 <template>
   <div class="order-management-page">
     <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title">
-          <i class="mdi mdi-cart-check"></i>
-          용품 신청 관리
-        </h1>
-        <p class="page-subtitle">현장별 청소용품 및 피복 신청 현황을 관리하고 승인합니다</p>
+        <h1 class="page-title"><i class="mdi mdi-cart-check"></i> 용품 신청 및 예산 관리</h1>
+        <p class="page-subtitle">현장별 소모품 신청 현황과 월별 예산 한도를 관리합니다.</p>
       </div>
     </div>
 
     <div class="stats-grid">
       <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
-        <div class="stat-icon"><i class="mdi mdi-clipboard-text-outline"></i></div>
+        <div class="stat-icon"><i class="mdi mdi-calendar-month"></i></div>
         <div class="stat-content">
-          <span class="stat-label">누적 신청</span>
+          <span class="stat-label">{{ selectedMonth.split('-')[1] }}월 신청 건수</span>
           <span class="stat-value">{{ stats.total }}<small>건</small></span>
         </div>
       </div>
@@ -143,200 +216,216 @@ onMounted(fetchOrders);
       <div class="stat-card" style="--card-color: var(--success); --card-bg: rgba(16, 185, 129, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-check-decagram-outline"></i></div>
         <div class="stat-content">
-          <span class="stat-label">완료</span>
+          <span class="stat-label">수령 완료</span>
           <span class="stat-value">{{ stats.completed }}<small>건</small></span>
         </div>
       </div>
       <div class="stat-card" style="--card-color: #8b5cf6; --card-bg: rgba(139, 92, 246, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
         <div class="stat-content">
-          <span class="stat-label">총 신청 금액</span>
-          <span class="stat-value">{{ formatCurrency(stats.totalAmount) }}<small>원</small></span>
+          <span class="stat-label">당월 총 신청액</span>
+          <span class="stat-value text-blue">{{ formatCurrency(stats.totalAmount) }}<small>원</small></span>
         </div>
       </div>
     </div>
 
-    <div class="filter-panel">
-      <div class="filter-row">
-        <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-filter-variant"></i>상태 구분</label>
-          <select v-model="selectedStatus" class="filter-select">
-            <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
-          </select>
-        </div>
+    <div class="tab-nav">
+      <button
+          v-for="tab in tabs" :key="tab.id"
+          :class="['tab-btn', { active: activeTab === tab.id }]"
+          @click="changeTab(tab.id)"
+      >
+        <i :class="['mdi', tab.icon]"></i>
+        {{ tab.name }}
+      </button>
+    </div>
 
-        <div class="search-group">
-          <div class="search-box">
-            <i class="mdi mdi-magnify"></i>
-            <input
-                type="text"
-                v-model="searchTerm"
-                placeholder="현장명 또는 신청자 검색..."
-                class="search-input"
-            />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
-              <i class="mdi mdi-close"></i>
-            </button>
+    <div v-if="activeTab === 'orders'" class="tab-content-area">
+      <div class="filter-panel">
+        <div class="filter-row">
+          <div class="filter-group">
+            <label class="filter-label"><i class="mdi mdi-calendar-search"></i>조회 월</label>
+            <input type="month" v-model="selectedMonth" class="filter-select" @change="currentPage = 1" />
+          </div>
+          <div class="filter-group">
+            <label class="filter-label"><i class="mdi mdi-office-building-outline"></i>현장</label>
+            <SiteSelect v-model="selectedSite" @update:modelValue="currentPage = 1" />
+          </div>
+          <div class="filter-group">
+            <label class="filter-label"><i class="mdi mdi-filter-variant"></i>상태</label>
+            <select v-model="selectedStatus" class="filter-select" @change="currentPage = 1">
+              <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
+            </select>
+          </div>
+          <div class="search-group">
+            <div class="search-box">
+              <i class="mdi mdi-magnify"></i>
+              <input type="text" v-model="searchTerm" placeholder="신청자 검색..." class="search-input" />
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="isLoading" class="loading-state">
-      <div class="spinner"></div>
-      <p>데이터를 불러오는 중...</p>
-    </div>
-
-    <div class="table-card" v-else>
-      <div class="table-header">
-        <div class="table-title">
-          <i class="mdi mdi-format-list-bulleted"></i>
-          <span>신청 목록 ({{ filteredOrders.length }}건)</span>
+      <div class="table-card" v-if="!isLoading">
+        <div class="table-header">
+          <div class="table-title"><span>신청 목록 ({{ filteredOrders.length }}건)</span></div>
+          <div class="page-size-select">
+            <label>페이지당</label>
+            <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+              <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+            </select>
+          </div>
         </div>
-        <div class="page-size-select">
-          <label>페이지당</label>
-          <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
-            <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
-          </select>
+        <div class="table-scroll-container">
+          <table class="data-table">
+            <thead>
+            <tr>
+              <th class="text-center" style="width: 140px;">신청일시</th>
+              <th>현장명</th>
+              <th style="width: 120px;">신청자</th>
+              <th>품목 요약</th>
+              <th class="text-right" style="width: 150px;">신청 금액</th>
+              <th class="text-center" style="width: 100px;">상태</th>
+              <th class="text-center" style="width: 80px;">관리</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="order in pagedOrders" :key="order.regDt + order.mIdx"
+                :class="['data-row', { 'row-over-budget': isOverBudget(order.sIdx) }]">
+              <td class="text-center text-gray">{{ order.regDt }}</td>
+              <td class="font-bold">{{ order.siteName }}</td>
+              <td>{{ order.applicant }}</td>
+              <td class="text-blue">{{ order.summary }}</td>
+              <td class="text-right">
+                <span class="font-bold">{{ formatCurrency(order.totalAmount) }}</span>
+                <div v-if="isOverBudget(order.sIdx)" class="budget-alert-text">예산 초과</div>
+              </td>
+              <td class="text-center">
+                  <span :class="['status-badge', order.status === 0 ? 'status-pending' : order.status === 1 ? 'status-shipping' : 'status-completed']">
+                    {{ getStatusText(order.status) }}
+                  </span>
+              </td>
+              <td class="text-center">
+                <button @click="openModal(order)" class="btn-detail">
+                  <i class="mdi mdi-eye"></i> 상세
+                </button>
+              </td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+        <Pagination v-model:currentPage="currentPage" v-model:pageSize="pageSize" :totalCount="filteredOrders.length" />
+      </div>
+    </div>
+
+    <div v-else class="tab-content-area">
+      <div class="filter-panel">
+        <div class="filter-row" style="justify-content: space-between;">
+          <div class="search-group" style="max-width: 400px;">
+            <div class="search-box">
+              <i class="mdi mdi-magnify"></i>
+              <input type="text" v-model="budgetSearchTerm" placeholder="현장 이름 검색..." class="search-input" @input="budgetPage = 1" />
+            </div>
+          </div>
+          <button class="btn-save" @click="saveBudgets" :disabled="selectedSites.length === 0">
+            <i class="mdi mdi-content-save-outline"></i> 선택 예산 저장
+            <span v-if="selectedSites.length > 0">({{ selectedSites.length }}건)</span>
+          </button>
         </div>
       </div>
 
-      <div class="table-scroll-container">
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title"><span>현장 목록 ({{ filteredBudgetSites.length }}건)</span></div>
+          <div class="page-size-select">
+            <label>페이지당</label>
+            <select v-model="pageSize" @change="currentPage = 1" class="filter-select" style="height:32px; padding:4px 10px; font-size:12px; min-width:60px;">
+              <option v-for="n in pageSizeOptions" :key="n" :value="n">{{ n }}개</option>
+            </select>
+          </div>
+        </div>
+
         <table class="data-table">
           <thead>
           <tr>
-            <th style="width: 140px;" class="text-center">신청일시</th>
+            <th class="text-center" style="width: 50px;">
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
+              </label>
+            </th>
             <th>현장명</th>
-            <th style="width: 140px;">신청자</th>
-            <th>품목 요약</th>
-            <th class="text-right" style="width: 140px;">총 금액</th>
-            <th class="text-center" style="width: 100px;">상태</th>
-            <th class="text-center" style="width: 100px;">관리</th>
+            <th class="text-right">당월 신청 누적액</th>
+            <th class="text-center" style="width: 280px;">월 기준 금액 (예산 한도)</th>
+            <th class="text-center" style="width: 120px;">상태</th>
           </tr>
           </thead>
           <tbody>
-          <tr
-              v-for="order in pagedOrders"
-              :key="order.regDt + order.mIdx"
-              class="data-row"
-          >
-            <td class="text-center text-gray">{{ order.regDt }}</td>
-            <td class="font-bold text-dark">{{ order.siteName }}</td>
-            <td>{{ order.applicant }} <span class="staff-id">({{order.memberId }})</span></td>
-            <td class="text-blue">{{ order.summary }}</td>
-            <td class="text-right font-bold">{{ formatCurrency(order.totalAmount) }}</td>
+          <tr v-for="site in pagedBudgetSites" :key="site.idx"
+              :class="['data-row', { 'row-selected': selectedSites.includes(site.idx) }]">
             <td class="text-center">
-                <span :class="[
-                    'status-badge', order.status === 0 ? 'status-pending' :
-                    order.status === 1 ? 'status-shipping' : 'status-completed'
-                    ]">
-                  {{ getStatusText(order.status) }}
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="selectedSites" :value="site.idx" class="custom-checkbox" />
+              </label>
+            </td>
+            <td class="font-bold">{{ site.name }}</td>
+            <td class="text-right">
+                <span :class="{ 'text-red font-bold': isOverBudget(site.idx) }">
+                  {{ formatCurrency(getSiteMonthlyTotal(site.idx)) }}원
                 </span>
             </td>
-            <td class="text-center-col">
-              <button @click="openModal(order)" class="btn-detail">
-                <i class="mdi mdi-eye"></i>
-                <span>상세</span>
-              </button>
-            </td>
-          </tr>
-          <tr v-if="filteredOrders.length === 0" class="empty-row">
-            <td colspan="7">
-              <div class="empty-state">
-                <i class="mdi mdi-package-variant"></i>
-                <p>조회된 신청 내역이 없습니다</p>
+            <td class="text-center">
+              <div class="budget-input-wrap">
+                <input type="number"
+                       v-model.number="siteBudgets[site.idx]"
+                       @input="markAsSelected(site.idx)"
+                       class="input-edit text-right"
+                       placeholder="0" />
+                <span class="unit-text">원</span>
               </div>
+            </td>
+            <td class="text-center">
+              <span v-if="isOverBudget(site.idx)" class="badge badge-red">한도초과</span>
+              <span v-else-if="siteBudgets[site.idx] > 0" class="badge badge-green">정상</span>
+              <span v-else class="badge badge-gray">미설정</span>
             </td>
           </tr>
           </tbody>
         </table>
+        <Pagination v-model:currentPage="budgetPage" v-model:pageSize="budgetPageSize" :totalCount="filteredBudgetSites.length" />
       </div>
-
-      <Pagination
-          v-model:currentPage="currentPage"
-          v-model:pageSize="pageSize"
-          :totalCount="filteredOrders.length"
-          @change="handlePageChange"
-      />
     </div>
 
-    <transition name="fade">
-      <div v-if="isModalOpen" class="modal-overlay" @click.self="closeModal">
-        <div class="modal-card">
-          <div class="modal-header">
-            <h3 class="modal-title">
-              <i class="mdi mdi-clipboard-text-search-outline"></i>
-              <span>신청 상세 내역</span>
-            </h3>
-            <button @click="closeModal" class="btn-close"><i class="mdi mdi-close"></i></button>
+    <div v-if="isModalOpen" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-card" style="max-width: 700px;">
+        <div class="modal-header">
+          <h3 class="modal-title">신청 내역 상세</h3>
+          <button @click="closeModal" class="modal-close"><i class="mdi mdi-close"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="order-info-summary" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; background: var(--bg-surface); padding: 16px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+            <div class="info-item"><span class="text-gray">현장</span><div class="font-bold">{{ selectedOrder.siteName }}</div></div>
+            <div class="info-item"><span class="text-gray">신청자</span><div class="font-bold">{{ selectedOrder.applicant }}</div></div>
+            <div class="info-item"><span class="text-gray">당월 누적</span><div :class="['font-bold', { 'text-red': isOverBudget(selectedOrder.sIdx) }]">{{ formatCurrency(getSiteMonthlyTotal(selectedOrder.sIdx)) }}원</div></div>
           </div>
-
-          <div class="modal-body custom-scrollbar">
-            <div class="order-info-summary">
-              <div class="info-item">
-                <span class="label">현장명</span>
-                <span class="value text-dark">{{ selectedOrder.siteName }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">신청자</span>
-                <span class="value text-dark">{{ selectedOrder.applicant }}</span>
-              </div>
-              <div class="info-item">
-                <span class="label">신청일시</span>
-                <span class="value text-dark">{{ selectedOrder.regDt }}</span>
-              </div>
-            </div>
-
-            <div class="item-table-wrapper">
-              <table class="item-table">
-                <thead>
-                <tr>
-                  <th>품목명</th>
-                  <th class="text-center">수량</th>
-                  <th class="text-right">단가</th>
-                  <th class="text-right">소계</th>
-                </tr>
-                </thead>
-                <tbody>
-                <tr v-for="item in selectedOrder.items" :key="item.idx">
-                  <td class="font-medium">{{item.categoryName}} - {{ item.itemName }}</td>
-                  <td class="text-center">{{ item.qty }}개</td>
-                  <td class="text-right text-gray">{{ formatCurrency(item.price) }}</td>
-                  <td class="text-right font-bold">{{ formatCurrency(item.price * item.qty) }}</td>
-                </tr>
-                </tbody>
-                <tfoot>
-                <tr>
-                  <td colspan="3" class="text-right font-bold">최종 합계 금액</td>
-                  <td class="text-right font-extrabold text-blue-lg">{{ formatCurrency(selectedOrder.totalAmount) }}</td>
-                </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button
-                v-if="selectedOrder.status === 0"
-                @click="processOrder(1)"
-                class="btn-approve"
-            >
-              <i class="mdi mdi-truck-delivery-outline"></i>
-              승인 및 배송시작
-            </button>
-            <button
-                v-if="selectedOrder.status === 1"
-                @click="processOrder(2)"
-                class="btn-complete"
-            >
-              <i class="mdi mdi-check-all"></i>
-              수령 완료 처리
-            </button>
-            <button @click="closeModal" class="btn-close-modal">닫기</button>
-          </div>
+          <table class="data-table">
+            <thead><tr><th>품목</th><th class="text-center">수량</th><th class="text-right">단가</th><th class="text-right">소계</th></tr></thead>
+            <tbody>
+            <tr v-for="item in selectedOrder.items" :key="item.idx">
+              <td>{{ item.itemName }}</td>
+              <td class="text-center">
+                <input type="number" v-model="item.qty" class="input-add" style="width: 60px !important;"> 개
+              </td>
+              <td class="text-right">{{ formatCurrency(item.price) }}</td>
+              <td class="text-right font-bold">{{ formatCurrency(item.price * item.qty) }}</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="modal-footer">
+          <button @click="closeModal" class="btn-refresh" style="height: 36px;">닫기</button>
         </div>
       </div>
-    </transition>
+    </div>
   </div>
 </template>
 
@@ -350,101 +439,76 @@ onMounted(fetchOrders);
   color: var(--text-sub);
 }
 
-.staff-id { font-size: 11px; color: var(--text-muted); margin-left: 4px; font-weight: 400;}
+/* 탭 네비게이션 스타일 */
+.tab-nav { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); }
+.tab-btn { padding: 10px 20px; border: none; background: none; font-size: 13px; font-weight: 600; color: var(--text-sub); cursor: pointer; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 7px; transition: all .2s; position: relative; bottom: -2px; font-family: inherit; letter-spacing: -.02em; }
+.tab-btn i { font-size: 17px; }
+.tab-btn:hover { background: var(--primary-soft); color: var(--primary); }
+.tab-btn.active { color: var(--primary); background: var(--bg-surface); border: 2px solid var(--border-color); border-bottom: 2px solid var(--bg-surface); }
+.tab-count { background: var(--primary-soft); color: var(--primary); font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center; }
+.tab-btn.active .tab-count { background: var(--primary); color: #fff; }
 
-/* 상태 배지 (테마 변수 활용) */
-.status-badge {
-  display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
-  border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap;
-}
-.status-pending { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.status-shipping { background-color: rgba(14, 165, 233, 0.1); color: #0ea5e9; } /* 하늘색 */
-.status-completed { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+/* 예산 관리 전용 스타일 */
+.row-over-budget { background-color: rgba(239, 68, 68, 0.04) !important; }
+.row-selected { background-color: var(--primary-soft) !important; }
+.budget-alert-text { font-size: 10px; color: var(--danger); font-weight: 700; margin-top: 2px; }
+.budget-input-wrap { display: flex; align-items: center; gap: 8px; justify-content: center; }
+.budget-input-wrap .input-edit { width: 160px; font-weight: 600; font-size: 14px; }
+.unit-text { font-size: 12px; color: var(--text-sub); }
 
-/* === 모달창 스타일 === */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px);
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;
 }
-.modal-card {
-  background: var(--bg-surface); border-radius: 16px; width: 100%; max-width: 700px; max-height: 90vh;
-  display: flex; flex-direction: column; box-shadow: var(--shadow-md); overflow: hidden; border: 1px solid var(--border-color);
-}
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
-
-/* 모달 헤더 */
-.btn-close {
-  background: transparent; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; transition: 0.2s;
-  display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 6px;
-}
-.btn-close:hover { background: var(--bg-hover); color: var(--danger); }
-
-.order-info-summary {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
-  background: var(--bg-canvas); padding: 16px 20px; border-radius: 10px; margin-bottom: 24px; border: 1px solid var(--border-color);
-}
-.info-item { display: flex; flex-direction: column; gap: 4px; }
-.info-item .label { font-size: 11px; color: var(--text-sub); font-weight: 600; }
-.info-item .value { font-size: 13px; color: var(--text-main); font-weight: 700; }
-
-/* 모달 테이블 */
-.item-table-wrapper { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;}
-.item-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--bg-surface); }
-.item-table thead { background-color: var(--bg-hover); border-bottom: 1px solid var(--border-color);}
-.item-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 600; color: var(--text-sub); }
-.item-table td { padding: 14px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-main); vertical-align: middle;}
-.item-table tfoot td { padding: 16px; font-size: 14px; background-color: var(--bg-canvas); border-bottom: none;}
-
-.text-blue-lg { color: var(--primary); font-size: 16px; font-weight: 800;  }
-.font-extrabold { font-weight: 800; }
-
-/* 모달 푸터 */
+/* 모달 푸터 액션 버튼 */
 .modal-footer {
-  padding: 16px 24px;
-  border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
-  align-items: center;
   gap: 10px;
-  border-radius: 0 0 16px 16px;
+  padding: 16px 28px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface);
 }
 
-.btn-approve {
-  background-color: var(--warning); color: var(--text-inverse); padding: 10px 20px; border-radius: 8px;
-  font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm);
+.status-shipping { background-color: rgba(14, 165, 233, 0.1); color: #0ea5e9; }
+.status-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
 }
-.btn-approve:hover { filter: brightness(0.9); transform: translateY(-1px);}
+.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
 
-.btn-complete {
-  background-color: var(--success); color: var(--text-inverse); padding: 10px 20px; border-radius: 8px;
-  font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: var(--shadow-sm);
+/* --- [추가] 커스텀 체크박스 스타일 (급여 페이지와 동일) --- */
+.checkbox-wrapper {
+  display: flex; justify-content: center; align-items: center;
+  width: 100%; height: 100%; cursor: pointer;
 }
-.btn-complete:hover { background-color: var(--success-hover); transform: translateY(-1px);}
-
-.btn-close-modal {
-  background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); padding: 10px 20px;
-  border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s;
+.custom-checkbox {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border: 2px solid var(--border-focus); border-radius: 4px;
+  cursor: pointer; position: relative; transition: all 0.2s;
+  background: var(--bg-surface); margin: 0;
 }
-.btn-close-modal:hover { background: var(--bg-hover); color: var(--text-main);}
-
-/* 스크롤바 커스텀 */
-.custom-scrollbar::-webkit-scrollbar { width: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 3px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-/* === 반응형 (Responsive) === */
-@media (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group { flex: 1; min-width: calc(33% - 10px); }
-  .search-group { width: 100%; flex: 1 1 100%; }
+.custom-checkbox:hover { border-color: var(--text-muted); }
+.custom-checkbox:checked { border-color: var(--primary); background-color: var(--primary); }
+.custom-checkbox:checked::after {
+  content: ''; position: absolute;
+  top: 2px; left: 5px; width: 4px; height: 8px;
+  border: solid var(--text-inverse); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
+
+/* 버튼 비활성화 스타일 */
+.btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+}
+
+.table-scroll-container { max-height: 600px; overflow-y: auto; }
 
 @media (max-width: 768px) {
-  .order-info-summary { grid-template-columns: 1fr; gap: 12px; }
-
-  .modal-footer { flex-direction: column-reverse; align-items: stretch; gap: 10px;}
-  .modal-footer button { width: 100%; justify-content: center; }
+  .budget-input-wrap .input-edit { width: 100px; }
 }
 </style>

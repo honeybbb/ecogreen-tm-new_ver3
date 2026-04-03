@@ -94,8 +94,7 @@ const handleSearch = () => {
 
 const getSites = () => {
   isLoading.value = true;
-  const cIdx = useAuthStore().user?.cIdx;
-  axios.get(`/api/v1/site/list/${cIdx}`)
+  axios.get(`/api/v1/site/list`)
       .then(res => {
         sites.value = res.data.data || [];
       })

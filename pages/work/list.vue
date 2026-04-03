@@ -40,10 +40,12 @@ const monthTitle = computed(() => `${selectedYear.value}년 ${selectedMonth.valu
 
 const monthSummary = computed(() => {
   const work = schedules.value.filter(s => s.workType === 'work').length;
-  const leave = schedules.value.filter(s => s.workType === 'leave' || s.workType === 'annual').length;
+  const leave = schedules.value.filter(s => ['leave', 'annual', 'half'].includes(s.workType)).length;
   const holiday = schedules.value.filter(s => s.workType === 'holiday').length;
   const absent = schedules.value.filter(s => s.workType === 'absent').length;
-  return { work, leave, holiday, absent };
+  const half = schedules.value.filter(s => s.workType === 'half').length; // 별도 카운트용
+
+  return { work, leave, holiday, absent, half };
 });
 
 const calendarDays = computed(() => {
@@ -70,9 +72,10 @@ const calendarDays = computed(() => {
       schedules: dailySchedules,
       summary: {
         work: dailySchedules.filter(s => s.workType === 'work').length,
-        leave: dailySchedules.filter(s => s.workType === 'leave' || s.workType === 'annual').length,
-        holiday: dailySchedules.filter(s => s.workType === 'holiday').length,
-        absent: dailySchedules.filter(s => s.workType === 'absent').length
+        leave: dailySchedules.filter(s => ['leave', 'annual'].includes(s.workType)).length, //연차
+        half: dailySchedules.filter(s => s.workType === 'half').length, //반차
+        holiday: dailySchedules.filter(s => s.workType === 'holiday').length, //특근
+        absent: dailySchedules.filter(s => s.workType === 'absent').length //결근
       }
     });
   }
@@ -171,6 +174,7 @@ const openRegisterModal = () => {
 };
 
 const saveSchedule = async () => {
+  console.log(staffList, staffSearchName.value)
   const selectedStaff = staffList.value.find(s => s.name === staffSearchName.value);
   if (!selectedStaff) return alert('정확한 직원 이름을 선택해주세요.');
 
@@ -191,6 +195,7 @@ const getWorkTypeName = (type) => {
     case 'holiday': return '특근';
     case 'leave':
     case 'annual': return '연차';
+    case 'half': return '반차';
     case 'absent': return '결근';
     default: return '알수없음';
   }
@@ -293,7 +298,7 @@ onMounted(() => {
       <div class="stat-card" style="--card-color: var(--danger); --card-bg: rgba(239, 68, 68, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-beach"></i></div>
         <div class="stat-content">
-          <span class="stat-label">이번 달 휴무/연차</span>
+          <span class="stat-label">이번 달 휴무/연차/반차</span>
           <span class="stat-value">{{ monthSummary.leave }} <small>건</small></span>
         </div>
       </div>
@@ -342,6 +347,9 @@ onMounted(() => {
                 </div>
                 <div v-if="day.summary.leave > 0" class="summary-badge leave">
                   연차 <strong>{{ day.summary.leave }}</strong>
+                </div>
+                <div v-if="day.summary.half > 0" class="summary-badge half">
+                  반차 <strong>{{ day.summary.half }}</strong>
                 </div>
                 <div v-if="day.summary.absent > 0" class="summary-badge absent">
                   결근 <strong>{{ day.summary.absent }}</strong>
@@ -440,6 +448,10 @@ onMounted(() => {
                   <div class="option-card leave"><i class="mdi mdi-beach"></i>연차</div>
                 </label>
                 <label class="type-option">
+                  <input type="radio" v-model="form.workType" value="half">
+                  <div class="option-card half"><i class="mdi mdi-clock-outline"></i>반차</div>
+                </label>
+                <label class="type-option">
                   <input type="radio" v-model="form.workType" value="absent">
                   <div class="option-card absent"><i class="mdi mdi-account-remove-outline"></i>결근</div>
                 </label>
@@ -497,10 +509,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* =========================================
-   페이지 고유 스타일 (캘린더, 모달 전용)
-========================================= */
-
 /* === 캘린더 네비게이션 컨트롤 === */
 .nav-controls {
   display: flex; align-items: center; gap: 10px; background: var(--bg-surface);
@@ -563,10 +571,11 @@ onMounted(() => {
 }
 .summary-badge strong { font-size: 12px; font-weight: 700; }
 
-.summary-badge.work { background-color: var(--primary-soft); color: var(--primary); }
-.summary-badge.holiday { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.summary-badge.leave { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
-.summary-badge.absent { background-color: var(--bg-hover); color: var(--text-sub); }
+.summary-badge.work { background-color: var(--primary-soft); color: var(--primary); } /* 출근: 하늘색 */
+.summary-badge.holiday { background-color: #e0f2f1; color: #00796b; } /* 특근: 청록색 (눈에 띔) */
+.summary-badge.leave { background-color: #fff9c4; color: #f57f17; } /* 연차: 노란색 */
+.summary-badge.half { background-color: #fff9c4; color: #f57f17; }  /* 반차: 노란색 (연차와 통일) */
+.summary-badge.absent { background-color: #ffebee; color: #d32f2f; } /* 결근: 빨간색 */
 
 .empty-cell-hint {
   opacity: 0; height: 100%; display: flex; align-items: center; justify-content: center;
@@ -616,11 +625,21 @@ onMounted(() => {
 .option-card:hover { border-color: var(--border-focus); background: var(--bg-hover); color: var(--text-main); }
 
 /* 선택 상태 컬러링 (플랫) */
-.type-option input:checked + .option-card.work { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
-.type-option input:checked + .option-card.holiday { border-color: var(--warning); color: var(--warning); background: rgba(245, 158, 11, 0.1); }
-.type-option input:checked + .option-card.leave { border-color: var(--danger); color: var(--danger); background: rgba(239, 68, 68, 0.1); }
-.type-option input:checked + .option-card.absent { border-color: var(--text-sub); color: var(--text-sub); background: var(--bg-canvas); }
-
+.type-option input:checked + .option-card.work {
+  border-color: var(--primary); color: var(--primary); background: var(--primary-soft);
+}
+.type-option input:checked + .option-card.holiday {
+  border-color: #00796b; color: #00796b; background: #e0f2f1;
+}
+.type-option input:checked + .option-card.leave {
+  border-color: #f57f17; color: #f57f17; background: #fff9c4;
+}
+.type-option input:checked + .option-card.half {
+  border-color: #f57f17; color: #f57f17; background: #fff9c4;
+}
+.type-option input:checked + .option-card.absent {
+  border-color: #d32f2f; color: #d32f2f; background: #ffebee;
+}
 .modal-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--border-color);
@@ -648,9 +667,10 @@ onMounted(() => {
 
 .status-badge { font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; }
 .status-badge.work { background-color: var(--primary-soft); color: var(--primary); }
-.status-badge.holiday { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.status-badge.leave { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
-.status-badge.absent { background-color: var(--bg-hover); color: var(--text-sub); }
+.status-badge.holiday { background-color: #e0f2f1; color: #00796b; }
+.status-badge.leave { background-color: #fff9c4; color: #f57f17; }
+.status-badge.half { background-color: #fff9c4; color: #f57f17; }
+.status-badge.absent { background-color: #ffebee; color: #d32f2f; }
 
 /* 엑셀 파일 업로드 폼 (플랫 & 모던) */
 .file-upload-area {
@@ -719,7 +739,7 @@ onMounted(() => {
 }
 
 @media screen and (max-width: 480px) {
-  .type-selector { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .type-selector { grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .option-card { padding: 10px 0; }
 }
 </style>

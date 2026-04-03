@@ -15,7 +15,6 @@ const mobileMenuOpen = ref(false);
 const title = ref('에코그린티엠');
 const activeGroup = ref(null);
 
-// ★ 추가: 다크 모드 상태
 const isDarkMode = ref(false);
 
 const cIdx = computed(() => authStore.user?.cIdx ?? null);
@@ -42,7 +41,6 @@ const toggleGroup = (itemId) => {
   activeGroup.value = activeGroup.value === itemId ? null : itemId;
 };
 
-// ★ 추가: 다크 모드 토글 함수
 const toggleTheme = () => {
   isDarkMode.value = !isDarkMode.value;
   if (isDarkMode.value) {
@@ -67,6 +65,7 @@ watch(() => route.path, (newPath) => {
 }, { immediate: true });
 
 const logout = () => {
+  authStore.logout();
   navigateTo('/login');
 };
 
@@ -130,17 +129,26 @@ watch(() => cIdx.value, (val) => {
 }, { immediate: true });
 
 onMounted(() => {
-  // ★ 추가: 초기 로드 시 저장된 테마 확인
+  // 저장된 테마 확인
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
     isDarkMode.value = true;
     document.body.classList.add('theme-dark');
+  }
+
+  // ★ 세션 타이머 시작 (이미 로그인된 상태로 레이아웃이 마운트됐을 때)
+  // 토큰이 있고 타이머가 아직 안 돌고 있을 때만 시작
+  if (authStore.token && authStore.remainingSeconds === 60 * 60) {
+    authStore.startTimer();
   }
 });
 </script>
 
 <template>
   <div class="eg-app-container">
+
+    <!-- 세션 만료 경고 모달 -->
+    <SessionTimeoutModal />
 
     <transition name="fade">
       <div
@@ -251,14 +259,21 @@ onMounted(() => {
 
         <div class="eg-spacer"></div>
 
+        <!-- ★ 헤더에 남은 시간 미니 표시 (선택사항) -->
+        <div
+            v-if="authStore.remainingSeconds <= 10 * 60"
+            class="session-mini-badge"
+            :class="{ urgent: authStore.remainingSeconds <= 60 }"
+            @click="authStore.showWarningModal = true"
+            title="클릭하여 세션 연장"
+        >
+          <i class="mdi mdi-clock-outline"></i>
+          <span>{{ authStore.remainingFormatted }}</span>
+        </div>
+
         <button class="eg-icon-btn theme-toggle" @click="toggleTheme" :title="isDarkMode ? '라이트 모드로 변경' : '다크 모드로 변경'">
           <i :class="['mdi', isDarkMode ? 'mdi-weather-sunny' : 'mdi-weather-night']"></i>
         </button>
-
-        <!--button class="eg-icon-btn eg-notification-btn">
-          <i class="mdi mdi-bell-outline"></i>
-          <span class="eg-badge"></span>
-        </button-->
 
         <div class="eg-profile-menu">
           <button class="eg-profile-btn" @click.stop="toggleProfile">
@@ -320,7 +335,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* CSS 커스텀 변수는 common.css에서 관리하므로 여기서 하드코딩 제거 */
+/* CSS 커스텀 변수는 common.css에서 관리 */
 * { box-sizing: border-box; outline: none; }
 
 .eg-app-container {
@@ -341,7 +356,7 @@ onMounted(() => {
   z-index: 1099;
 }
 
-/* === 사이드바 (왼쪽 네비게이션) === */
+/* === 사이드바 === */
 .eg-leftnav {
   position: fixed;
   top: 0; left: 0;
@@ -358,7 +373,6 @@ onMounted(() => {
 
 .eg-leftnav.eg-mini { width: 72px; }
 
-/* 브랜드 (로고 영역) */
 .eg-brand {
   height: 70px;
   display: flex; align-items: center;
@@ -373,17 +387,12 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .eg-logo-text { color: #ffffff; font-weight: 800; font-size: 16px; letter-spacing: -0.5px; }
-.eg-brand-text {
-  color: var(--nav-brand-text); font-weight: 700; font-size: 17px; white-space: nowrap;
-  letter-spacing: -0.3px;
-}
+.eg-brand-text { color: var(--nav-brand-text); font-weight: 700; font-size: 17px; white-space: nowrap; letter-spacing: -0.3px; }
 
-/* 스크롤 영역 */
 .eg-scroll-area { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 0; }
 .eg-scroll-area::-webkit-scrollbar { width: 4px; }
 .eg-scroll-area::-webkit-scrollbar-thumb { background: var(--nav-border); border-radius: 2px; }
 
-/* 메뉴 리스트 */
 .eg-menu-list { list-style: none; padding: 0 12px; margin: 0; }
 .eg-menu-item {
   display: flex; align-items: center; padding: 12px 16px; margin: 2px 0;
@@ -391,23 +400,17 @@ onMounted(() => {
   transition: all 0.2s ease; cursor: pointer; position: relative;
   font-size: 14px; font-weight: 500;
 }
-
-/* Hover & Active State */
 .eg-menu-item:hover { background-color: var(--nav-item-hover); color: var(--nav-text-hover); }
-
 .eg-active {
   background-color: var(--nav-active-bg) !important;
   color: var(--primary) !important;
   font-weight: 600;
 }
-/* Active일 때 왼쪽에 포인트 바 추가 */
 .eg-active::before {
   content: ''; position: absolute; left: 0; top: 10px; bottom: 10px;
   width: 4px; background-color: var(--primary); border-radius: 0 4px 4px 0;
 }
-
 .eg-active-group { color: var(--nav-text-hover); }
-
 .eg-icon {
   font-size: 20px; width: 24px; text-align: center; flex-shrink: 0; margin-right: 12px;
   display: flex; align-items: center; justify-content: center;
@@ -416,16 +419,13 @@ onMounted(() => {
 .eg-menu-item:hover .eg-icon,
 .eg-active .eg-icon,
 .eg-active-group .eg-icon { opacity: 1; color: var(--primary); }
-
 .eg-mini .eg-icon { margin-right: 0; }
 .eg-title { white-space: nowrap; }
 .eg-arrow { margin-left: auto; transition: transform 0.3s; font-size: 18px; opacity: 0.7; }
 .eg-arrow-up { transform: rotate(180deg); opacity: 1; }
 
-/* 하위 메뉴 (Submenu) */
 .eg-submenu-list { list-style: none; padding: 0; margin: 4px 0; border-left: 1px solid var(--nav-border); margin-left: 28px; }
 .eg-mini .eg-submenu-list { display: none; }
-
 .eg-submenu-item {
   display: flex; align-items: center; padding: 9px 16px 9px 20px;
   color: var(--nav-text); text-decoration: none; font-size: 13px; border-radius: 6px; margin: 1px 0;
@@ -434,7 +434,6 @@ onMounted(() => {
 .eg-submenu-item:hover { color: var(--nav-text-hover); background-color: var(--nav-item-hover); }
 .eg-active-child { color: var(--primary); font-weight: 600; background-color: var(--primary-soft); }
 
-/* 기타 */
 .eg-divider { height: 1px; background: var(--nav-border); margin: 16px 12px; }
 .eg-nav-footer { padding: 12px; border-top: 1px solid var(--nav-border); margin-top: auto; }
 .eg-toggle-btn {
@@ -444,7 +443,7 @@ onMounted(() => {
 }
 .eg-toggle-btn:hover { background-color: var(--nav-item-hover); color: var(--nav-text-hover); }
 
-/* === 메인 콘텐츠 영역 === */
+/* === 메인 콘텐츠 === */
 .eg-main-wrapper {
   flex: 1; margin-left: 260px;
   transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -453,7 +452,6 @@ onMounted(() => {
 }
 .eg-main-wrapper.eg-main-expanded { margin-left: 72px; }
 
-/* --- 헤더 (Appbar) --- */
 .eg-appbar {
   display: flex; align-items: center; padding: 0 24px; height: 70px;
   background-color: var(--bg-surface);
@@ -462,10 +460,8 @@ onMounted(() => {
   transition: background-color 0.3s, border-color 0.3s;
 }
 .eg-mobile-menu-btn { display: none; margin-right: 12px; margin-left: -8px; background: transparent;}
-.eg-page-title { font-size: 20px; font-weight: 700; color: var(--text-main); margin: 0; white-space: nowrap; letter-spacing: -0.5px; }
 .eg-spacer { flex: 1; }
 
-/* 헤더 버튼 & 프로필 */
 .eg-icon-btn {
   width: 40px; height: 40px; border-radius: 10px; border: 1px solid transparent; background: transparent;
   color: var(--text-sub); cursor: pointer; display: flex; align-items: center; justify-content: center;
@@ -474,19 +470,43 @@ onMounted(() => {
 .eg-icon-btn:hover { background-color: var(--bg-hover); color: var(--primary); border-color: var(--border-focus); }
 .eg-icon-btn i { font-size: 22px; }
 
-/* ★ 추가: 테마 변경 버튼 애니메이션 및 색상 포인트 */
-.theme-toggle i {
-  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s;
-  color: var(--warning); /* 해/달 아이콘은 기본적으로 눈에 띄게 */
-}
-.theme-toggle:hover i {
-  transform: rotate(30deg);
-}
-body.theme-dark .theme-toggle i {
-  color: var(--primary-hover); /* 다크 모드일 때 달 모양 색상 */
-}
+.theme-toggle i { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s; color: var(--warning); }
+.theme-toggle:hover i { transform: rotate(30deg); }
+body.theme-dark .theme-toggle i { color: var(--primary-hover); }
 
-/* 알림 배지 */
+/* ★ 헤더 세션 미니 배지 */
+.session-mini-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: all 0.2s;
+  font-variant-numeric: tabular-nums;
+}
+.session-mini-badge:hover {
+  background: rgba(245, 158, 11, 0.18);
+  transform: translateY(-1px);
+}
+.session-mini-badge.urgent {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+  animation: badge-pulse 1s infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+.session-mini-badge i { font-size: 15px; }
+
 .eg-badge {
   position: absolute; top: 10px; right: 10px;
   width: 6px; height: 6px; background-color: var(--danger);
@@ -500,7 +520,6 @@ body.theme-dark .theme-toggle i {
   transition: all 0.2s;
 }
 .eg-profile-btn:hover { background-color: var(--bg-hover); border-color: var(--border-focus); }
-
 .eg-avatar {
   width: 36px; height: 36px;
   background-color: var(--bg-canvas);
@@ -511,7 +530,6 @@ body.theme-dark .theme-toggle i {
 .eg-profile-name { font-size: 14px; font-weight: 600; color: var(--text-main); }
 .eg-profile-btn .mdi-chevron-down, .eg-profile-btn .mdi-chevron-up { color: var(--text-sub); font-size: 18px;}
 
-/* --- 프로필 드롭다운 (클린 디자인) --- */
 .eg-dropdown-content {
   position: absolute; right: 0; top: calc(100% + 12px);
   background: var(--bg-surface); min-width: 250px; border-radius: 16px;
@@ -521,7 +539,6 @@ body.theme-dark .theme-toggle i {
 .eg-dropdown-header { padding: 20px; background-color: var(--bg-canvas); border-bottom: 1px solid var(--border-color); }
 .eg-user-info strong { display: block; font-size: 15px; color: var(--text-main); font-weight: 700; margin-bottom: 2px;}
 .eg-user-info small { font-size: 13px; color: var(--text-sub); font-weight: 400; }
-
 .eg-dropdown-list { padding: 8px; }
 .eg-dropdown-item {
   display: flex; align-items: center; gap: 12px; padding: 10px 14px;
@@ -531,17 +548,13 @@ body.theme-dark .theme-toggle i {
 .eg-dropdown-item:hover { background-color: var(--bg-hover); color: var(--primary); }
 .eg-dropdown-item i { font-size: 18px; color: var(--text-muted); }
 .eg-dropdown-item:hover i { color: var(--primary); }
-
 .eg-dropdown-divider { height: 1px; background: var(--border-color); margin: 8px; }
 .eg-dropdown-item.eg-logout { color: var(--danger); }
 .eg-dropdown-item.eg-logout:hover { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 .eg-dropdown-item.eg-logout i { color: var(--danger); opacity: 0.8; }
 .eg-dropdown-item.eg-logout:hover i { color: var(--danger); opacity: 1; }
 
-/* --- 메인 콘텐츠 & 푸터 --- */
 .eg-main-content { flex: 1; padding: 24px; min-width: 0; }
-@media (min-width: 1280px) { .eg-container { max-width: 1200px; margin: 0 auto; } }
-
 .eg-footer {
   padding: 16px 24px; background: var(--bg-surface);
   border-top: 1px solid var(--border-color); color: var(--text-sub); font-size: 13px;
@@ -555,26 +568,17 @@ body.theme-dark .theme-toggle i {
 /* === 애니메이션 === */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-
 .slide-down-enter-active { animation: slideDown 0.25s ease-out; overflow: hidden; }
 .slide-down-leave-active { animation: slideDown 0.2s ease-in reverse; overflow: hidden; }
 @keyframes slideDown { from { max-height: 0; opacity: 0; } to { max-height: 400px; opacity: 1; } }
-
 .fade-down-enter-active, .fade-down-leave-active { transition: all 0.2s ease-out; }
 .fade-down-enter-from { opacity: 0; transform: translateY(-10px); }
 .fade-down-leave-to { opacity: 0; transform: translateY(-5px); }
 
-/* === 반응형 (Responsive) Utility === */
-@media (min-width: 769px) {
-  .desktop-only { display: block !important; }
-}
-@media (max-width: 768px) {
-  .desktop-only { display: none !important; }
-}
+/* === 반응형 === */
+@media (min-width: 769px) { .desktop-only { display: block !important; } }
+@media (max-width: 768px) { .desktop-only { display: none !important; } }
 
-/* ==========================================
-   반응형 Media Queries
-============================================= */
 @media (max-width: 1024px) {
   .eg-leftnav { width: 72px; }
   .eg-brand-text, .eg-title, .eg-arrow { display: none !important; }
@@ -586,15 +590,12 @@ body.theme-dark .theme-toggle i {
 
 @media (max-width: 768px) {
   .eg-mobile-menu-btn { display: flex; }
-
   .eg-leftnav {
     transform: translateX(-100%);
     width: 260px !important;
     box-shadow: 10px 0 30px rgba(0,0,0,0.2);
   }
-
   .eg-leftnav.eg-mobile-open { transform: translateX(0); }
-
   .eg-leftnav.eg-mobile-open .eg-brand-text,
   .eg-leftnav.eg-mobile-open .eg-title,
   .eg-leftnav.eg-mobile-open .eg-arrow,
@@ -602,15 +603,12 @@ body.theme-dark .theme-toggle i {
   .eg-leftnav.eg-mobile-open .eg-icon { margin-right: 12px; }
   .eg-leftnav.eg-mobile-open .eg-brand { padding: 0 20px; justify-content: flex-start; }
   .eg-leftnav.eg-mobile-open .eg-logo-wrapper { gap: 12px; }
-
   .eg-main-wrapper, .eg-main-wrapper.eg-main-expanded { margin-left: 0; }
-
   .eg-appbar { padding: 0 16px; height: 60px; }
   .eg-main-content { padding: 16px; }
-
   .eg-footer-content { flex-direction: column; text-align: center; gap: 8px; }
   .eg-footer-links { justify-content: center; }
-
   .eg-dropdown-content { right: 8px; width: calc(100vw - 16px); max-width: 300px; }
+  .session-mini-badge { padding: 4px 8px; font-size: 12px; }
 }
 </style>

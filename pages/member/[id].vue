@@ -10,11 +10,13 @@ const route = useRoute();
 const authStore = useAuthStore();
 
 const {
+  companyData,
   siteOptions,
   positionOptions,
   typeOptions,
   disabledOptions,
   bankOptions,
+  getCompanyData,
   fetchSiteOptions,
   fetchPositionOptions,
   fetchTypeOptions,
@@ -69,6 +71,9 @@ const employee = ref({
 const isContractModalOpen = ref(false);
 const items = ref([]);
 
+const wageInputs = ref({});
+const contractDataTemp = ref(null);
+
 // 근무 이력
 const workHistory = ref([
   { period: '2023.01 ~ 2024.12', site: 'LH 위례 6단지', position: '경비원', status: '재직' },
@@ -113,7 +118,7 @@ const age = computed(() => {
 const workPeriod = computed(() => {
   if (!employee.value.inDate) return '-';
   const start = new Date(employee.value.inDate);
-  const end = employee.value.outDate ? new Date(employee.value.outDate) : new Date();
+  const end = (employee.value.outDate && employee.value.outDate !== '0000-00-00') ? new Date(employee.value.outDate) : new Date();
 
   const months = (end.getFullYear() - start.getFullYear()) * 12 +
       (end.getMonth() - start.getMonth());
@@ -139,7 +144,7 @@ const loadEmployeeData = async () => {
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
       contract: rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} }
     };
-    console.log(rawData.sites)
+    console.log(rawData.contract)
     await loadSalaryHistory();
   } catch (error) {
     console.error('직원 정보 로드 실패:', error);
@@ -148,13 +153,6 @@ const loadEmployeeData = async () => {
     isLoading.value = false;
   }
 };
-
-// 급여 합계 계산 (계약서용)
-const wageTotal = computed(() => {
-  const data = employee.value.contract?.contractData;
-  if (!data) return 0;
-  return Object.values(data).reduce((acc, cur) => acc + (Number(cur) || 0), 0);
-});
 
 
 //지급항목
@@ -175,7 +173,6 @@ const loadSalaryHistory = async () => {
 
   try {
     const mIdx = employee.value.idx; // loadEmployeeData에서 받아온 실제 DB PK
-    console.log(mIdx)
     if (!mIdx) return;
 
     const res = await axios.get(`/api/v1/member/payroll/history/${mIdx}`);
@@ -190,6 +187,14 @@ const loadSalaryHistory = async () => {
 // 편집 모드 토글
 const toggleEdit = () => {
   isEditing.value = !isEditing.value;
+};
+
+const handleContractSave = (savedData) => {
+  // 모달에서 넘어온 데이터 중 wageInputs를 부모의 wageInputs에 저장
+  wageInputs.value = savedData.wageInputs;
+  contractDataTemp.value = savedData;
+
+  alert('근로계약서 내용이 임시 저장되었습니다.');
 };
 
 // 저장
@@ -266,6 +271,7 @@ watch(activeTab, async (newTab) => {
 
 onMounted(async () => {
   await Promise.all([
+    getCompanyData(),
     fetchSiteOptions(),
     fetchPositionOptions(),
     fetchTypeOptions(),
@@ -809,6 +815,7 @@ onMounted(async () => {
         :position-options="positionOptions"
         :wage-items="items"
         :is-editing="isEditing"
+        :company-data="companyData"
         @close="isContractModalOpen = false"
         @save="handleContractSave"
     />
