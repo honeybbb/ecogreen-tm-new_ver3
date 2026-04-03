@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import Pagination from "~/components/Pagination.vue";
-import {useRoute, useRouter} from "#app";
+import { useRoute, useRouter } from "#app";
 
 // 1. API 및 상태 관리
 const { siteOptions, fetchSiteOptions } = useApi();
@@ -36,6 +36,9 @@ const budgetSearchTerm = ref('');
 const siteBudgets = ref({}); // { sIdx: amount }
 const budgetPage = ref(1);
 const budgetPageSize = ref(50);
+
+// --- [추가] 선택된 현장(체크박스) 상태 관리 ---
+const selectedSites = ref([]); // 선택된 site.idx 배열 보관
 
 const rawOrders = ref([]);
 const isLoading = ref(false);
@@ -89,6 +92,28 @@ const pagedBudgetSites = computed(() => {
   return filteredBudgetSites.value.slice(start, start + budgetPageSize.value);
 });
 
+// --- [추가] 현재 페이지 전체 선택/해제 Computed ---
+const selectAll = computed({
+  get: () => pagedBudgetSites.value.length > 0 && pagedBudgetSites.value.every(site => selectedSites.value.includes(site.idx)),
+  set: (val) => {
+    if (val) {
+      pagedBudgetSites.value.forEach(site => {
+        if (!selectedSites.value.includes(site.idx)) selectedSites.value.push(site.idx);
+      });
+    } else {
+      const currentIds = pagedBudgetSites.value.map(s => s.idx);
+      selectedSites.value = selectedSites.value.filter(id => !currentIds.includes(id));
+    }
+  }
+});
+
+// --- [추가] 예산 금액 입력 시 자동으로 체크하는 함수 ---
+const markAsSelected = (idx) => {
+  if (!selectedSites.value.includes(idx)) {
+    selectedSites.value.push(idx);
+  }
+};
+
 // 5. 예산 초과 로직
 const getSiteMonthlyTotal = (sIdx) => {
   return rawOrders.value
@@ -108,17 +133,33 @@ const fetchOrders = async () => {
   try {
     const res = await axios.get('/api/v1/code/item/order');
     if (res.data.result) rawOrders.value = res.data.data;
-
     // 실제 환경에서는 여기서 예산 데이터도 GET 해옵니다.
   } catch (err) { console.error(err); }
   finally { isLoading.value = false; }
 };
 
+// --- [수정] 체크된 예산만 저장하도록 로직 변경 ---
 const saveBudgets = async () => {
+  if (selectedSites.value.length === 0) {
+    alert('저장할 현장을 체크해주세요.');
+    return;
+  }
+
+  if (!confirm(`체크된 ${selectedSites.value.length}개 현장의 예산 설정을 저장하시겠습니까?`)) return;
+
+  // 선택된 현장 ID에 대한 데이터만 추출
+  const dataToSave = {};
+  selectedSites.value.forEach(idx => {
+    dataToSave[idx] = siteBudgets.value[idx] || 0;
+  });
+
   try {
-    await axios.post('/api/v1/site/order/budgets', siteBudgets.value);
-    alert('기준 금액 설정이 저장되었습니다.');
-  } catch (err) { alert('저장 중 오류 발생'); }
+    await axios.post('/api/v1/site/order/budgets', dataToSave);
+    alert('선택한 현장의 기준 금액 설정이 저장되었습니다.');
+    selectedSites.value = []; // 저장 성공 시 선택 초기화
+  } catch (err) {
+    alert('저장 중 오류 발생');
+  }
 };
 
 const getStatusText = (status) => {
@@ -197,16 +238,6 @@ onMounted(async () => {
         <i :class="['mdi', tab.icon]"></i>
         {{ tab.name }}
       </button>
-      <!--button
-          :class="['tab-btn', { active: activeTab === 'orders' }]"
-          @click="activeTab = 'orders'"
-      >
-        <i class="mdi mdi-format-list-bulleted"></i> 신청 현황 목록
-      </button>
-      <button
-          :class="['nav-tab-btn', { active: activeTab === 'budgets' }]" @click="activeTab = 'budgets'">
-        <i class="mdi mdi-cog-outline"></i> 현장별 예산 설정
-      </button-->
     </div>
 
     <div v-if="activeTab === 'orders'" class="tab-content-area">
@@ -296,8 +327,9 @@ onMounted(async () => {
               <input type="text" v-model="budgetSearchTerm" placeholder="현장 이름 검색..." class="search-input" @input="budgetPage = 1" />
             </div>
           </div>
-          <button class="btn-save" @click="saveBudgets">
-            <i class="mdi mdi-content-save-outline"></i> 예산 설정값 전체 저장
+          <button class="btn-save" @click="saveBudgets" :disabled="selectedSites.length === 0">
+            <i class="mdi mdi-content-save-outline"></i> 선택 예산 저장
+            <span v-if="selectedSites.length > 0">({{ selectedSites.length }}건)</span>
           </button>
         </div>
       </div>
@@ -316,6 +348,11 @@ onMounted(async () => {
         <table class="data-table">
           <thead>
           <tr>
+            <th class="text-center" style="width: 50px;">
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
+              </label>
+            </th>
             <th>현장명</th>
             <th class="text-right">당월 신청 누적액</th>
             <th class="text-center" style="width: 280px;">월 기준 금액 (예산 한도)</th>
@@ -323,7 +360,13 @@ onMounted(async () => {
           </tr>
           </thead>
           <tbody>
-          <tr v-for="site in pagedBudgetSites" :key="site.idx" class="data-row">
+          <tr v-for="site in pagedBudgetSites" :key="site.idx"
+              :class="['data-row', { 'row-selected': selectedSites.includes(site.idx) }]">
+            <td class="text-center">
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="selectedSites" :value="site.idx" class="custom-checkbox" />
+              </label>
+            </td>
             <td class="font-bold">{{ site.name }}</td>
             <td class="text-right">
                 <span :class="{ 'text-red font-bold': isOverBudget(site.idx) }">
@@ -332,7 +375,11 @@ onMounted(async () => {
             </td>
             <td class="text-center">
               <div class="budget-input-wrap">
-                <input type="number" v-model.number="siteBudgets[site.idx]" class="input-edit text-right" placeholder="0" />
+                <input type="number"
+                       v-model.number="siteBudgets[site.idx]"
+                       @input="markAsSelected(site.idx)"
+                       class="input-edit text-right"
+                       placeholder="0" />
                 <span class="unit-text">원</span>
               </div>
             </td>
@@ -403,6 +450,7 @@ onMounted(async () => {
 
 /* 예산 관리 전용 스타일 */
 .row-over-budget { background-color: rgba(239, 68, 68, 0.04) !important; }
+.row-selected { background-color: var(--primary-soft) !important; }
 .budget-alert-text { font-size: 10px; color: var(--danger); font-weight: 700; margin-top: 2px; }
 .budget-input-wrap { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .budget-input-wrap .input-edit { width: 160px; font-weight: 600; font-size: 14px; }
@@ -430,7 +478,34 @@ onMounted(async () => {
 .status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
 
-/* 공통 변수 외 추가 스타일 */
+/* --- [추가] 커스텀 체크박스 스타일 (급여 페이지와 동일) --- */
+.checkbox-wrapper {
+  display: flex; justify-content: center; align-items: center;
+  width: 100%; height: 100%; cursor: pointer;
+}
+.custom-checkbox {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border: 2px solid var(--border-focus); border-radius: 4px;
+  cursor: pointer; position: relative; transition: all 0.2s;
+  background: var(--bg-surface); margin: 0;
+}
+.custom-checkbox:hover { border-color: var(--text-muted); }
+.custom-checkbox:checked { border-color: var(--primary); background-color: var(--primary); }
+.custom-checkbox:checked::after {
+  content: ''; position: absolute;
+  top: 2px; left: 5px; width: 4px; height: 8px;
+  border: solid var(--text-inverse); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* 버튼 비활성화 스타일 */
+.btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(100%);
+}
+
 .table-scroll-container { max-height: 600px; overflow-y: auto; }
 
 @media (max-width: 768px) {
