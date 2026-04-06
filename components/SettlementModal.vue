@@ -58,9 +58,15 @@ const fetchTaxRates = async () => {
       insuranceRates.value.healthInsurance = result.health_rate;
       insuranceRates.value.longTermCare = result.long_term_care_rate;
       insuranceRates.value.employmentInsurance = result.employment_rate;
-      insuranceRates.value.industrialAccident = result.industrial_rate || 0;
+      insuranceRates.value.industrialAccident = result.industrial_rate;
     } else {
-      insuranceRates.value = { nationalPension: 0, healthInsurance: 0, longTermCare: 0, employmentInsurance: 0, industrialAccident: 0 };
+      insuranceRates.value = {
+        nationalPension: 0,
+        healthInsurance: 0,
+        longTermCare: 0,
+        employmentInsurance: 0,
+        industrialAccident: 0
+      };
     }
   } catch (err) {
     console.error('적용요율 로드 실패:', err);
@@ -82,15 +88,22 @@ const deductionItems = computed(() => {
 
   if (contractIndirectLabels.value.length > 0) {
     result = items.value.filter(item => {
-      if (item.groupCd !== '04002') return false;
+      // 그룹코드가 04002(4대보험)이거나 04003(산재보험 포함)인 경우 허용
+      if (item.groupCd !== '04002' && item.groupCd !== '04003') return false;
       return contractIndirectLabels.value.some(label => item.itemCd === label || item.itemNm.includes(label));
     });
-    if (contractIndirectLabels.value.includes('산재보험') && !result.some(i => i.itemNm.includes('산재보험'))) {
-      result.push({ itemCd: 'SANJAE_INS', itemNm: '산재보험', groupCd: '04002' });
-    }
   } else {
     const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
     result = items.value.filter(item => item.groupCd === '04002' && defaultKeywords.some(kw => item.itemNm.includes(kw)));
+  }
+
+  // ★ 핵심: 계약데이터(직접노무비)에 산재보험(04003010)이 있다면 무조건 리스트에 추가
+  const hasSanjaeInDirect = contractDirectLabor.value.some(
+      d => d.label === '04003010' || String(d.label).includes('산재')
+  );
+  if (hasSanjaeInDirect && !result.some(i => i.itemCd === '04003010')) {
+    const sanjaeItem = items.value.find(i => i.itemCd === '04003010');
+    if (sanjaeItem) result.push(sanjaeItem);
   }
 
   const uniqueResult = [];
@@ -198,7 +211,7 @@ const recalculateInsurances = (row) => {
 
   const rates = insuranceRates.value;
 
-  // 2. 4대보험 재계산 (1원 단위 절사)
+  // 2. 4대보험 및 산재보험 재계산 (1원 단위 절사)
   visibleDeductionItems.value.forEach(item => {
     const code = item.itemCd;
     const name = item.itemNm;
@@ -207,7 +220,7 @@ const recalculateInsurances = (row) => {
     const originalAmt = Number(row.originalDeductions?.[code]) || 0;
     if (originalAmt === 0) {
       row.deductionItems[code] = 0;
-      return; // 0원이면 요율 곱셈을 건너뛰고 다음 항목으로 넘어감
+      return;
     }
 
     let amt = 0;
@@ -221,8 +234,11 @@ const recalculateInsurances = (row) => {
       amt = Math.floor((healthAmt * (rates.longTermCare / 100)) / 10) * 10;
     } else if (name.includes('고용보험')) {
       amt = Math.floor((baseAmount * (rates.employmentInsurance / 100)) / 10) * 10;
+    } else if (name.includes('산재보험')) {
+      // 산재보험 요율(1.116%) 적용하여 계산 (10원 단위 절사)
+      amt = Math.floor((baseAmount * (rates.industrialAccident / 100)) / 10) * 10;
     } else {
-      // 4대보험이 아닌 기타 공제항목(소득세 등)은 원본 유지
+      // 소득세, 지방소득세 등 기타 항목은 원본 유지
       amt = originalAmt;
     }
 
@@ -287,6 +303,13 @@ const applyContractReserves = (row) => {
   const severanceObj = contractDirectLabor.value.find(d => d.label === '04003003' || String(d.label).includes('퇴직'));
   if (severanceObj && severanceObj.values && severanceObj.values[staffCode] !== undefined) {
     row.reserves.severance = Number(severanceObj.values[staffCode]) || 0;
+  }
+
+  // ★ 이 부분을 추가해 주세요! (산재보험 금액 주입)
+  const sanjaeObj = contractDirectLabor.value.find(d => d.label === '04003010' || String(d.label).includes('산재'));
+  if (sanjaeObj && sanjaeObj.values && sanjaeObj.values[staffCode] !== undefined) {
+    if (!row.deductionItems) row.deductionItems = {};
+    row.deductionItems['04003010'] = Number(sanjaeObj.values[staffCode]) || 0;
   }
 
   finalize();
@@ -490,13 +513,18 @@ const loadPayrollData = async () => {
       const rowObj = {
         idx:        item.idx, empName: item.staff, position: item.role || '', personalNo: item.birthDt,
         inDate:     item.inDate, outDate: item.outDate ?? '', grossPay: Number(item.grossPay) || 0,
-        payItems:   parsedPayItems, deductionItems: parsedDeductions, originalDeductions: JSON.parse(JSON.stringify(parsedDeductions)),
+        payItems:   parsedPayItems, deductionItems: parsedDeductions,
+        originalDeductions: {}, // ★ 여기서는 일단 빈 객체로 둡니다! (중요)
         totalDeduct, reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0 }, netPay: (Number(item.grossPay) || 0) - totalDeduct,
       };
 
+      // 1. 계약서의 연차, 퇴직금, 산재보험을 rowObj에 매핑합니다.
       applyContractReserves(rowObj);
 
-      // ★ 에러 원인 해결: isMeltedDeduction 대신 meltOptions 사용
+      // 2. ★ 산재보험이 매핑된 직후의 값을 원본(originalDeductions)으로 복사합니다.
+      rowObj.originalDeductions = JSON.parse(JSON.stringify(rowObj.deductionItems));
+
+      // 3. 토글 옵션 적용에 따른 재계산 로직 실행
       if (meltOptions.annualLeave || meltOptions.severance) {
         recalculateInsurances(rowObj);
       }
