@@ -174,12 +174,10 @@ const openRegisterModal = () => {
 };
 
 const saveSchedule = async () => {
-  console.log(staffList, staffSearchName.value)
-  const selectedStaff = staffList.value.find(s => s.name === staffSearchName.value);
-  if (!selectedStaff) return alert('정확한 직원 이름을 선택해주세요.');
+  if (!form.value.mIdx) return alert('직원을 선택해주세요.');  // ✅ 이것만
 
   try {
-    form.value.mIdx = selectedStaff.idx;
+    form.value.sIdx = currentSiteId.value;
     await axios.post(`/api/v1/work/start`, form.value);
     isModalOpen.value = false;
     isDailyModalOpen.value = false;

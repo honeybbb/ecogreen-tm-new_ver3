@@ -63,10 +63,10 @@ const formattedOptions = computed(() => {
 
 const innerValue = computed({
   get() {
-    return formattedOptions.value.find(o => o.name === props.modelValue) ?? null
+    return formattedOptions.value.find(o => o.idx === props.modelValue) ?? null
   },
   set(val) {
-    emit('update:modelValue', val?.name ?? null)
+    emit('update:modelValue', val?.idx ?? null)
   },
 })
 </script>
