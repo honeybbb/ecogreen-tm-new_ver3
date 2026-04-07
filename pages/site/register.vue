@@ -266,6 +266,16 @@ const totalArea = computed(() => {
 const isVatSite = computed(() => Number(site.value.areaOver) > 0);
 
 const handleSubmit = async () => {
+  if (!site.value.siteName) { alert('현장명을 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.siteType) { alert('현장 형태를 선택해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.postalCode) { alert('주소를 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.building_su) { alert('건물 수를 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.unit_su) { alert('세대 수를 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.payment_day) { alert('급여지급일을 선택해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); currentStep.value = 3; return; }
+  if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); currentStep.value = 3; return; }
+
+
   try {
     const contractsJson = JSON.stringify(contractGroups.value);
     const params = {
