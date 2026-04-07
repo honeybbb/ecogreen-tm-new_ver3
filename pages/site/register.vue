@@ -464,7 +464,7 @@ onMounted(() => {
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
 
-        <div v-show="currentStep === 1" class="form-step">
+        <div v-if="currentStep === 1" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-office-building-outline"></i>
             <h2>현장 기본 정보</h2>
@@ -569,7 +569,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-show="currentStep === 2" class="form-step">
+        <div v-if="currentStep === 2" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-file-document-outline"></i><h2>계약 및 인원 정보</h2>
           </div>
@@ -1043,7 +1043,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-show="currentStep === 3" class="form-step">
+        <div v-if="currentStep === 3" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-account-tie-outline"></i><h2>담당자 및 기타 정보</h2>
           </div>
