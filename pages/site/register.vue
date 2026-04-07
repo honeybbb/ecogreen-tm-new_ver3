@@ -266,6 +266,16 @@ const totalArea = computed(() => {
 const isVatSite = computed(() => Number(site.value.areaOver) > 0);
 
 const handleSubmit = async () => {
+  if (!site.value.siteName) { alert('현장명을 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.siteType) { alert('현장 형태를 선택해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.postalCode) { alert('주소를 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.building_su) { alert('건물 수를 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.unit_su) { alert('세대 수를 입력해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.payment_day) { alert('급여지급일을 선택해주세요.'); currentStep.value = 1; return; }
+  if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); currentStep.value = 3; return; }
+  if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); currentStep.value = 3; return; }
+
+
   try {
     const contractsJson = JSON.stringify(contractGroups.value);
     const params = {
@@ -454,7 +464,7 @@ onMounted(() => {
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
 
-        <div v-show="currentStep === 1" class="form-step">
+        <div v-if="currentStep === 1" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-office-building-outline"></i>
             <h2>현장 기본 정보</h2>
@@ -559,7 +569,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-show="currentStep === 2" class="form-step">
+        <div v-if="currentStep === 2" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-file-document-outline"></i><h2>계약 및 인원 정보</h2>
           </div>
@@ -1033,7 +1043,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-show="currentStep === 3" class="form-step">
+        <div v-if="currentStep === 3" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-account-tie-outline"></i><h2>담당자 및 기타 정보</h2>
           </div>
