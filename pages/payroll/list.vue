@@ -199,8 +199,8 @@ const calculateInsurances = (row, sourceItem) => {
   } else {
     // 공제 항목 체크박스 변경
     if (!row.deductionFlags[sourceItem.itemCd]) {
-      row.deductions[sourceItem.itemCd] = 0;
-      if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
+      // row.deductions[sourceItem.itemCd] = 0;
+      // if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
       return;
     }
     if (sourceItem.itemCd === '04002001') {
@@ -224,27 +224,19 @@ const applyDeductionLogic = async (row, item, base, rates) => {
   if (item.itemCd === '04002014') return;
 
   let amt = 0;
-  const currentAge = calculateAge(row.birthDt);
+  // const currentAge = calculateAge(row.birthDt); // 연령 체크가 필요 없다면 이 변수도 생략 가능합니다.
 
   if (item.itemCd === '04002003') {        // 국민연금
-    if (currentAge > 0 && currentAge >= ageLimits.value.pension) {
-      amt = 0;
-      row.deductionFlags['04002003'] = false;
-    } else {
-      amt = base * (rates.pension / 100);
-    }
+    // 기존의 연령 체크 및 deductionFlags = false 로직 삭제
+    amt = base * (rates.pension / 100);
   } else if (item.itemCd === '04002001') { // 건강보험
     amt = base * (rates.health / 100);
   } else if (item.itemCd === '04002002') { // 장기요양
     const healthAmt = row.deductions['04002001'] || 0;
     amt = healthAmt * (rates.longTerm / 100);
   } else if (item.itemCd === '04002004') { // 고용보험
-    if (currentAge > 0 && currentAge >= ageLimits.value.employment) {
-      amt = 0;
-      row.deductionFlags['04002004'] = false;
-    } else {
-      amt = base * (rates.employment / 100);
-    }
+    // 기존의 연령 체크 및 deductionFlags = false 로직 삭제
+    amt = base * (rates.employment / 100);
   } else return;
 
   row.deductions[item.itemCd] = Math.floor(amt / 10) * 10;
@@ -594,7 +586,6 @@ onMounted(async () => {
                     v-model.number="p.deductions[item.itemCd]"
                     @input="markAsDraft(p)"
                     class="inline-input"
-                    :disabled="!p.deductionFlags[item.itemCd]"
                 />
               </div>
             </td>
