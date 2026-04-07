@@ -208,6 +208,7 @@ const saveEmployee = async () => {
 
   try {
     const memberId = route.params.id;
+    /*
     const payload = {
       ...employee.value,
       outDate: employee.value.outDate,
@@ -224,6 +225,29 @@ const saveEmployee = async () => {
         sIdx: employee.value.sIdx           // 선택된 현장 idx
       }
     };
+
+     */
+    const payload = {
+      ...employee.value,
+      ...employee.value, // 기본적으로 모든 정보 포함
+      type: employee.value.typeCd, // 명시적으로 typeCd를 보냄 (백엔드에서 처리)
+      position: employee.value.positionCd,
+      // 백엔드 updateMemberData 컨트롤러에서 사용하는 명칭으로 통일
+      bankName: employee.value.bank,
+      address: employee.value.address, // API는 addr 또는 address 혼용 주의
+      joinDate: employee.value.inDate,
+      endDate: employee.value.outDate,
+      endReason: employee.value.outReason,
+
+      // 계약 및 배치 데이터 (sIdx 필수)
+      sIdx: employee.value.sIdx,
+      wageInputs: wageInputs.value, // ContractModal에서 저장된 값
+
+      // 계약 날짜가 없을 경우 입사/퇴사일로 보정
+      contractStartDt: contractDataTemp.value?.contractStartDt || employee.value.inDate,
+      contractEndDt: contractDataTemp.value?.contractEndDt || employee.value.outDate
+    };
+
     await axios.put(`/api/v1/member/data/${memberId}`, payload);
 
     alert('저장되었습니다.');
