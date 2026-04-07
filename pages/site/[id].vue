@@ -308,8 +308,8 @@ const createDefaultCostBreakdown = (staffList = []) => ({
     { label: '소모품비',         values: makeValuesObj(staffList) },
     { label: '복리후생비',       values: makeValuesObj(staffList) },
   ],
-  managementFeeRate: 2,
-  profitRate: 2,
+  managementFee: makeValuesObj(staffList),
+  profit: makeValuesObj(staffList),
   specialNote: '',
 });
 
@@ -324,6 +324,16 @@ const syncCostBreakdownToStaff = (group) => {
     group.costBreakdown[section].forEach(item => {
       currentCodes.forEach(code => { if (!(code in item.values)) item.values[code] = 0; });
       Object.keys(item.values).forEach(code => { if (!currentCodes.includes(code)) delete item.values[code]; });
+    });
+  });
+
+  ['managementFee', 'profit'].forEach(key => {
+    if (!group.costBreakdown[key]) group.costBreakdown[key] = {};
+    currentCodes.forEach(code => {
+      if (!(code in group.costBreakdown[key])) group.costBreakdown[key][code] = 0;
+    });
+    Object.keys(group.costBreakdown[key]).forEach(code => {
+      if (!currentCodes.includes(code)) delete group.costBreakdown[key][code];
     });
   });
 };
