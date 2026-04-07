@@ -104,10 +104,29 @@ const cancelEdit = (code) => {
   code.isEditing = false;
 };
 
-const saveCode = (code) => {
-  console.log(`수정(임시): ${JSON.stringify(code)}`);
-  axios.post(`/api/v1/code/${code.itemCd}`, code);
-  code.isEditing = false;
+const saveCode = async (code) => {
+  try {
+    // 1. URL의 파라미터는 cIdx(업체번호)여야 함
+    // 2. 전달하는 객체(payload)에 필요한 모든 정보가 있어야 함
+    const payload = {
+      groupCd: selectedGroupKey.value, // 현재 선택된 그룹 (04001 등)
+      itemCd: code.itemCd,
+      itemNm: code.itemNm,
+      sort: code.sort,
+      useFl: code.useFl,
+      tax_free: code.tax_free,
+      option: code.option || null
+    };
+
+    await axios.post(`/api/v1/code/${cIdx}`, payload); // code.itemCd가 아니라 cIdx를 전달
+
+    alert('수정되었습니다.');
+    code.isEditing = false;
+    // getConfigWage(); // 필요 시 리스트 새로고침
+  } catch (err) {
+    console.error('수정 실패:', err);
+    alert('수정에 실패했습니다.');
+  }
 };
 
 // [행 삭제]
