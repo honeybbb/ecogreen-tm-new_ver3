@@ -126,6 +126,11 @@ const handleSubmit = async () => {
     return;
   }
 
+  if (!contractDataTemp.value || !contractDataTemp.value.contractStartDt || !contractDataTemp.value.contractEndDt) {
+    alert('근로계약서의 계약기간을 입력해주세요.\n근로계약서 작성 버튼을 클릭하여 계약 시작일과 종료일을 입력하세요.');
+    return;
+  }
+
   if (!confirm(`${employee.value.name} 직원을 등록하시겠습니까?`)) return;
 
   const payload = {
