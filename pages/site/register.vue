@@ -294,7 +294,7 @@ const handleSubmit = async () => {
     };
 
     const res = await axios.post(`/api/v1/site/register`, params);
-    const savedSIdx = res.data.data?.insertId || route.query.idx;
+    const savedSIdx = res.data.data || route.query.idx;
     if (!savedSIdx) throw new Error('sIdx를 찾을 수 없습니다.');
 
     if (selectedFile.value) {
