@@ -73,6 +73,34 @@ const markAsDraft = (row) => {
   row.selected = true;
 };
 
+// 입력 시 숫자만 추출하여 저장하는 함수
+const onInputAmount = (row, item, group, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart; // [추가] 현재 커서 위치 저장
+  const oldLength = el.value.length;        // [추가] 변경 전 글자 길이
+
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = Number(rawValue) || 0;
+
+  if (group === 'pay') {
+    row.payments[item.itemCd] = numValue;
+  } else {
+    row.deductions[item.itemCd] = numValue;
+  }
+
+  // 화면 업데이트
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  // [추가] 커서 위치 보정 (중간 수정 시 커서가 뒤로 안 튕기게)
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+
+  markAsDraft(row);
+  calculateInsurances(row, item);
+};
+
 // ── 행 합계 계산 ──────────────────────────────────
 const calculateRow = (row) => {
   let gross = 0, ded = 0;
@@ -499,9 +527,10 @@ onMounted(async () => {
             >
               <input
                   v-if="p.payments"
-                  type="number"
-                  v-model.number="p.payments[item.itemCd]"
-                  @input="markAsDraft(p); calculateInsurances(p, item)"
+                  @focus="$event.target.select()"
+                  type="text"
+                  :value="formatCurrency(p.payments[item.itemCd])"
+                  @input="onInputAmount(p, item, 'pay', $event)"
                   class="inline-input"
               />
             </td>
@@ -522,9 +551,10 @@ onMounted(async () => {
                 </label>
                 <input
                     v-if="p.deductions"
-                    type="number"
-                    v-model.number="p.deductions[item.itemCd]"
-                    @input="markAsDraft(p)"
+                    type="text"
+                    @focus="$event.target.select()"
+                    @input="onInputAmount(p, item, 'deduct', $event)"
+                    :value="formatCurrency(p.deductions[item.itemCd])"
                     class="inline-input"
                 />
               </div>
