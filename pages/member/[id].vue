@@ -207,7 +207,7 @@ const saveEmployee = async () => {
   if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
 
   try {
-    const memberId = route.params.id;
+    const memberIdx = employee.value.idx;
     /*
     const payload = {
       ...employee.value,
@@ -232,7 +232,6 @@ const saveEmployee = async () => {
       ...employee.value, // 기본적으로 모든 정보 포함
       type: employee.value.typeCd, // 명시적으로 typeCd를 보냄 (백엔드에서 처리)
       position: employee.value.positionCd,
-      // 백엔드 updateMemberData 컨트롤러에서 사용하는 명칭으로 통일
       bankName: employee.value.bank,
       address: employee.value.address, // API는 addr 또는 address 혼용 주의
       joinDate: employee.value.inDate,
@@ -248,7 +247,7 @@ const saveEmployee = async () => {
       contractEndDt: contractDataTemp.value?.contractEndDt || employee.value.outDate
     };
 
-    await axios.put(`/api/v1/member/data/${memberId}`, payload);
+    await axios.put(`/api/v1/member/data/${memberIdx}`, payload);
 
     alert('저장되었습니다.');
     isEditing.value = false;
