@@ -42,15 +42,29 @@ const changeTab = async (tabId) => {
 // 현장 기본 정보
 // =============================================
 const site = ref({
-  siteName: '', siteId: '', siteType: '',
-  zipcode: '', address: '', addressDetail: '',
-  latitude: '', longitude: '',
-  area: '', is_vat: false,
-  building_su: '', unit_su: '',
-  managerName: '', managerContact: '',
-  director: '', directorContact: '',
-  memo: '', status: '준비 중',
-  payment_day: '', bigo: '',
+  siteName: '',
+  siteId: '',
+  siteType: '',
+  zipcode: '',
+  address: '',
+  addressDetail: '',
+  latitude: '',
+  longitude: '',
+  // 면적 필드 세분화 (등록 페이지와 동일하게)
+  areaGross: '', // 연면적
+  areaUnder: '', // 135㎡ 이하
+  areaOver: '',  // 135㎡ 초과
+  is_vat: false,  // 기존 과세 여부
+  building_su: '',
+  unit_su: '',
+  managerName: '',
+  managerContact: '',
+  director: '',
+  directorContact: '',
+  memo: '',
+  status: '준비 중',
+  payment_day: '',
+  bigo: '',
 });
 
 const siteTypeOptions  = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
@@ -495,6 +509,14 @@ const fetchAssignedStaff = async () => {
   }
 };
 
+const totalArea = computed(() => {
+  const under = Number(site.value.areaUnder) || 0;
+  const over = Number(site.value.areaOver) || 0;
+  return Math.round((under + over) * 100) / 100;
+});
+
+const isVatSite = computed(() => Number(site.value.areaOver) > 0);
+
 const getSiteData = async () => {
   const sIdx = route.params.id || route.query.idx;
   if (!sIdx) return;
@@ -509,7 +531,9 @@ const getSiteData = async () => {
       siteId:         result.site_id,
       siteType:       result.sType,
       status:         result.status === 'Y' ? '운영 중' : '계약 종료',
-      area:           result.area,
+      areaGross:      result.area,
+      areaOver:       result.areaOver,
+      areaUnder:      result.areaUnder,
       is_vat:         result.is_vat === 'Y',
       address:        result.address,
       building_su:    result.building_su,
@@ -590,8 +614,11 @@ const saveSiteData = async () => {
       name:             site.value.siteName,
       site_id:          site.value.siteId,
       status:           site.value.status,
-      area:             site.value.area,
-      is_vat:           site.value.is_vat ? 'Y' : 'N',
+      area:             site.value.areaGross, // 연면적
+      areaOver:         site.value.areaOver,  // 과세 면적 (정산서 VAT 계산 근거)
+      areaUnder:        site.value.areaUnder, // 면세 면적
+      areaTotal:        totalArea.value,      // 전체 합계 면적
+      is_vat:           isVatSite.value ? 'Y' : 'N',
       building_su:      site.value.building_su,
       unit_su:          site.value.unit_su,
       address:          site.value.address,
@@ -789,14 +816,14 @@ onMounted(async () => {
                 </select>
                 <span v-else :class="['info-value', site.status === '운영 중' ? 'text-green' : site.status === '준비 중' ? 'text-orange' : 'text-gray']">{{ site.status }}</span>
               </div>
-              <div class="info-item">
+              <!--div class="info-item">
                 <label>관리면적</label>
                 <div v-if="isEditing" class="area-input">
                   <input type="text" v-model="site.area" class="info-input" />
                   <label class="checkbox-inline-small"><input type="checkbox" v-model="site.is_vat" /><span>135㎡ 초과</span></label>
                 </div>
                 <span v-else class="info-value">{{ site.area }}㎡ <span v-if="site.is_vat" class="badge badge-red">VAT 과세</span></span>
-              </div>
+              </div-->
               <div class="info-item">
                 <label>건물 수</label>
                 <input v-if="isEditing" type="number" v-model="site.building_su" class="info-input" />
@@ -814,6 +841,60 @@ onMounted(async () => {
                 </select>
                 <span v-else class="info-value">매월 {{ site.payment_day }}일</span>
               </div>
+            </div>
+          </div>
+
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-calculator-variant"></i>
+              <h3>면적 및 과세 설정 (정산 근거)</h3>
+            </div>
+            <div class="info-grid">
+
+              <div class="info-item">
+                <label>연면적</label>
+                <div v-if="isEditing" class="input-with-unit">
+                  <input type="number" v-model="site.areaGross" class="info-input text-right" placeholder="0" />
+                  <span class="unit">㎡</span>
+                </div>
+                <span v-else class="info-value">{{ site.areaGross || 0 }} ㎡</span>
+              </div>
+
+              <div class="info-item">
+                <label>135㎡ 이하 (면세)</label>
+                <div v-if="isEditing" class="input-with-unit">
+                  <input type="number" v-model="site.areaUnder" class="info-input text-right" placeholder="0" />
+                  <span class="unit">㎡</span>
+                </div>
+                <span v-else class="info-value">{{ site.areaUnder || 0 }} ㎡</span>
+              </div>
+
+              <div class="info-item">
+                <label>135㎡ 초과 (과세)</label>
+                <div v-if="isEditing" class="input-with-unit">
+                  <input type="number" v-model="site.areaOver" class="info-input text-right" placeholder="0" />
+                  <span class="unit">㎡</span>
+                </div>
+                <span v-else class="info-value">{{ site.areaOver || 0 }} ㎡</span>
+              </div>
+
+              <div class="info-item full-width">
+                <label>총 관리면적 및 과세여부</label>
+
+                <div class="calculated-area-box">
+                  <span class="total-number">{{ totalArea || site.area || 0 }} <small>㎡</small></span>
+
+                  <span :class="['vat-badge', isVatSite ? 'vat-red' : 'vat-green']">
+          <i :class="['mdi', isVatSite ? 'mdi-check-circle' : 'mdi-minus-circle']"></i>
+          {{ isVatSite ? '과세 대상 (VAT Y)' : '면세 대상 (VAT N)' }}
+        </span>
+                </div>
+
+                <p v-if="isEditing" class="info-helper-text">
+                  * 135㎡ 초과(과세) 면적을 입력하면 <strong>과세 대상</strong>으로 자동 전환되며, 정산 시 VAT가 생성됩니다.
+                </p>
+              </div>
+
             </div>
           </div>
 
@@ -1994,4 +2075,55 @@ export default {
   .staff-th-name { font-size: 11px; }
   .staff-th-count { font-size: 10px; }
 }
+
+/* 입력창 단위(㎡) 스타일 */
+.input-with-unit { position: relative; display: flex; align-items: center; }
+.input-with-unit .unit { position: absolute; right: 12px; font-size: 13px; color: var(--text-muted); }
+.text-right { text-align: right; }
+
+/* 총 관리면적 및 과세여부 박스 */
+.calculated-area-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: var(--bg-hover);
+  border: 1px dashed var(--primary);
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.total-number {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--primary);
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.total-number small {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+/* 과세/면세 배지 */
+.vat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  transition: all 0.3s ease;
+}
+.vat-red { background-color: var(--danger); box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2); }
+.vat-green { background-color: var(--success); box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); }
+
+/* 도움말 텍스트 */
+.info-helper-text { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
+.info-helper-text strong { color: var(--danger); }
 </style>

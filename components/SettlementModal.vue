@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted, computed, reactive } from 'vue';
+import { ref, watch, onMounted, computed, reactive, nextTick } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '~/stores/auth.js';
@@ -17,33 +17,67 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save']);
 
 // ──────────────────────────────────────────────
-// 탭 & 뷰타입 및 표시 설정(토글)
+// 1. 기본 상태 및 표시 설정 (단일 뷰 통합)
 // ──────────────────────────────────────────────
 const activeTab = ref('statement'); // 'statement' | 'details'
 
-const VIEW_TYPES = {
-  site: { label: '현장용',    icon: 'mdi-office-building-outline', color: '#2563eb' },
-  tax:  { label: '세무사용',  icon: 'mdi-file-chart-outline',      color: '#7c3aed' },
-};
-
-const activeViewType = ref('site');
-
-const viewConfig = reactive({
-  site: { showGrossPay: true,  showAnnualLeave: true, showSeverance: true, activeDeductionCodes: [] },
-  tax:  { showGrossPay: false, showAnnualLeave: true, showSeverance: true, activeDeductionCodes: [] },
+const currentConfig = reactive({
+  showGrossPay: true,
+  showAnnualLeave: true,
+  showSeverance: true,
+  showSanjae: true,
+  activeDeductionCodes: [],
+  // ★ 하단 요약 항목들의 양수(+1) / 음수(-1) 토글 상태 저장
+  summarySigns: {
+    severance: -1,
+    annualLeave: -1,
+    estimatedIns: -1,
+    actualIns: -1,
+    insuranceDiff: -1
+  }
 });
 
-const currentConfig = computed(() => viewConfig[activeViewType.value]);
+const meltOptions = reactive({
+  annualLeave: false,
+  severance: false
+});
+
+const dragIndex = ref(null);
 
 // ──────────────────────────────────────────────
-// ★ DB 적용요율(getTaxRate) 가져오기 로직
+// 2. 폼 데이터 상태
 // ──────────────────────────────────────────────
+const formData = ref({
+  sIdx: '', siteName: '', is_vat: 'N', type: '', target_month: '', docNo: '', billingDt: '', subTotal: 0, vatAmount: 0, grandTotal: 0,
+  billingData: {
+    summary: '',
+    workerCount: 0,
+    bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
+    items: [],
+    vatBreakdown: {
+      under135: { area: '', unitPrice: '', supply: 0 },
+      over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
+    },
+    insuranceDiff: 0
+  },
+  payrollData: [],
+  viewConfig: null,
+});
+
+// ──────────────────────────────────────────────
+// 3. 계약 데이터 및 적용 요율
+// ──────────────────────────────────────────────
+const items = ref([]);
+
+const contractIndirectLabor = ref([]);
+const contractIndirectLabels = ref([]);
+
+const contractDirectLabor = ref([]);
+const contractStaffList = ref([]);
+const contractTotalCost = ref(0);
+
 const insuranceRates = ref({
-  nationalPension: 0,
-  healthInsurance: 0,
-  longTermCare: 0,
-  employmentInsurance: 0,
-  industrialAccident: 0
+  nationalPension: 0, healthInsurance: 0, longTermCare: 0, employmentInsurance: 0, industrialAccident: 0
 });
 
 const fetchTaxRates = async () => {
@@ -59,86 +93,23 @@ const fetchTaxRates = async () => {
       insuranceRates.value.longTermCare = result.long_term_care_rate;
       insuranceRates.value.employmentInsurance = result.employment_rate;
       insuranceRates.value.industrialAccident = result.industrial_rate;
-    } else {
-      insuranceRates.value = {
-        nationalPension: 0,
-        healthInsurance: 0,
-        longTermCare: 0,
-        employmentInsurance: 0,
-        industrialAccident: 0
-      };
     }
-  } catch (err) {
-    console.error('적용요율 로드 실패:', err);
-  }
+  } catch (err) { console.error('적용요율 로드 실패:', err); }
 };
 
-// ──────────────────────────────────────────────
-// 동적 계약 데이터 로직
-// ──────────────────────────────────────────────
-const items = ref([]);
-const contractIndirectLabels = ref([]);
-const contractDirectLabor = ref([]);
-const contractStaffList = ref([]);
-const contractTotalCost = ref(0);
-
-const deductionItems = computed(() => {
-  if (!Array.isArray(items.value)) return [];
-  let result = [];
-
-  if (contractIndirectLabels.value.length > 0) {
-    result = items.value.filter(item => {
-      // 그룹코드가 04002(4대보험)이거나 04003(산재보험 포함)인 경우 허용
-      if (item.groupCd !== '04002' && item.groupCd !== '04003') return false;
-      return contractIndirectLabels.value.some(label => item.itemCd === label || item.itemNm.includes(label));
-    });
-  } else {
-    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
-    result = items.value.filter(item => item.groupCd === '04002' && defaultKeywords.some(kw => item.itemNm.includes(kw)));
-  }
-
-  // ★ 핵심: 계약데이터(직접노무비)에 산재보험(04003010)이 있다면 무조건 리스트에 추가
-  const hasSanjaeInDirect = contractDirectLabor.value.some(
-      d => d.label === '04003010' || String(d.label).includes('산재')
-  );
-  if (hasSanjaeInDirect && !result.some(i => i.itemCd === '04003010')) {
-    const sanjaeItem = items.value.find(i => i.itemCd === '04003010');
-    if (sanjaeItem) result.push(sanjaeItem);
-  }
-
-  const uniqueResult = [];
-  const seen = new Set();
-  for (const item of result) {
-    if (!seen.has(item.itemCd)) {
-      seen.add(item.itemCd);
-      uniqueResult.push(item);
-    }
-  }
-  return uniqueResult;
-});
-
-const totalSummary = computed(() => {
-  const monthlyFee  = contractTotalCost.value || 0;
-  const severance   = payrollTotals.value.severance || 0;
-  const annualLeave = payrollTotals.value.annualLeave || 0;
-  const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
-  const grandTotal  = monthlyFee - severance - annualLeave - insDiff;
-
-  return [
-    { label: '월간용역비', value: monthlyFee },
-    { label: '퇴직적립금 (차감)', value: severance },
-    { label: '연차적립금 (차감)', value: annualLeave },
-    { label: '4대보험차액 (차감)', value: insDiff },
-    { label: '총 청구액', value: grandTotal }
-  ];
-});
+const getWageCode = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
+    items.value = res.data.data || [];
+  } catch (err) { console.error('급여 항목 로드 실패', err); }
+};
 
 const fetchContractData = async () => {
   const sIdx = formData.value.sIdx;
   const type = formData.value.type;
 
   if (!sIdx || !type) {
-    contractIndirectLabels.value = []; contractDirectLabor.value = []; contractStaffList.value = []; contractTotalCost.value = 0;
+    contractIndirectLabor.value = []; contractIndirectLabels.value = []; contractDirectLabor.value = []; contractStaffList.value = []; contractTotalCost.value = 0;
     return;
   }
 
@@ -146,196 +117,187 @@ const fetchContractData = async () => {
     const res = await axios.get(`/api/v1/site/data/${sIdx}`);
     const siteData = res.data.data?.[0];
 
-    if (!siteData || !siteData.contractList) {
-      contractIndirectLabels.value = []; contractDirectLabor.value = []; contractStaffList.value = []; contractTotalCost.value = 0;
-      return;
-    }
+    if (!siteData || !siteData.contractList) return;
 
     const parsedContractList = typeof siteData.contractList === 'string' ? JSON.parse(siteData.contractList) : siteData.contractList;
     const targetContract = parsedContractList.find(c => c.type === type);
 
     if (targetContract) {
-      contractIndirectLabels.value = (targetContract.budget && Array.isArray(targetContract.budget.indirectLabor)) ? targetContract.budget.indirectLabor.map(item => item.label) : [];
+      const iLabor = (targetContract.budget && Array.isArray(targetContract.budget.indirectLabor)) ? targetContract.budget.indirectLabor : [];
+      contractIndirectLabor.value = iLabor;
+      contractIndirectLabels.value = iLabor.map(item => item.label);
+
       contractDirectLabor.value = (targetContract.budget && Array.isArray(targetContract.budget.directLabor)) ? targetContract.budget.directLabor : [];
       contractStaffList.value = Array.isArray(targetContract.staffList) ? targetContract.staffList : [];
       contractTotalCost.value = Number(targetContract.totalCost) || 0;
-    } else {
-      contractIndirectLabels.value = []; contractDirectLabor.value = []; contractStaffList.value = []; contractTotalCost.value = 0;
     }
-  } catch (error) {
-    console.error('계약 정보를 불러오는 중 오류 발생:', error);
-  }
+  } catch (error) { console.error('계약 정보를 불러오는 중 오류 발생:', error); }
 };
+
+const deductionItems = computed(() => {
+  if (!Array.isArray(items.value)) return [];
+  let result = items.value.filter(item => item.groupCd === '04002');
+
+  if (contractIndirectLabels.value.length > 0) {
+    result = result.filter(item => contractIndirectLabels.value.some(label => item.itemCd === label || item.itemNm.includes(label)));
+  } else {
+    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
+    result = result.filter(item => defaultKeywords.some(kw => item.itemNm.includes(kw)));
+  }
+  return [...new Map(result.map(item => [item.itemCd, item])).values()];
+});
 
 watch(deductionItems, (newItems) => {
   if (newItems.length === 0) return;
-  const allCodes = newItems.map(i => i.itemCd);
-  if (viewConfig.site.activeDeductionCodes.length === 0) viewConfig.site.activeDeductionCodes = [...allCodes];
-  if (viewConfig.tax.activeDeductionCodes.length === 0)  viewConfig.tax.activeDeductionCodes = [...allCodes];
+  if (currentConfig.activeDeductionCodes.length === 0) {
+    currentConfig.activeDeductionCodes = newItems.map(i => i.itemCd);
+  }
 }, { immediate: true });
 
 const visibleDeductionItems = computed(() =>
-    deductionItems.value.filter(item => currentConfig.value.activeDeductionCodes.includes(item.itemCd))
+    deductionItems.value.filter(item => currentConfig.activeDeductionCodes.includes(item.itemCd))
 );
 
-const getWageCode = async () => {
-  try {
-    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-    items.value = res.data.data || [];
-  } catch (err) {
-    console.error('급여 항목 로드 실패', err);
-  }
+// ──────────────────────────────────────────────
+// 4. 숫자 콤마 전용 입력 핸들러 (커서 튐 방지)
+// ──────────────────────────────────────────────
+const handleCurrencyInput = async (e, obj, key, row, calcType) => {
+  const input = e.target;
+  const cursorPosition = input.selectionStart;
+  const oldLength = input.value.length;
+
+  let rawValue = input.value.replace(/,/g, '').replace(/[^0-9\.\-]/g, '');
+  const numValue = rawValue === '' || rawValue === '-' ? 0 : Number(rawValue);
+
+  obj[key] = numValue;
+
+  if (calcType === 'salary') onSalaryInput(row);
+  else if (calcType === 'row') calculateRow(row);
+  else if (calcType === 'billing') calculateBillingTotal();
+  else if (calcType === 'area') calculateAreaSupply();
+  else if (calcType === 'manual') handleManualBreakdownUpdate();
+
+  await nextTick();
+  const newLength = input.value.length;
+  const diff = newLength - oldLength;
+  let newCursorPos = cursorPosition + diff;
+  if (newCursorPos < 0) newCursorPos = 0;
+  input.setSelectionRange(newCursorPos, newCursorPos);
+};
+
+const formatCurrency = (val) => {
+  if (val === undefined || val === null || val === '') return '0';
+  return Number(val).toLocaleString();
 };
 
 // ──────────────────────────────────────────────
-// ★ 연차/퇴직금 합산(녹이기) 재계산 로직
+// 5. 급여 계산 핵심 로직
 // ──────────────────────────────────────────────
-const meltOptions = reactive({
-  annualLeave: false,
-  severance: false
-});
+const applyContractReserves = (row) => {
+  const finalize = () => { calculateRow(row); };
+  if (!row.position || !contractStaffList.value.length) return finalize();
+
+  const staffObj = contractStaffList.value.find(s => s.name === row.position.trim());
+  if (!staffObj) return finalize();
+  const staffCode = staffObj.code;
+
+  const findContractValue = (keyword, cd) => {
+    let target = contractDirectLabor.value.find(d => d.label === cd || String(d.label).includes(keyword));
+    if (!target) {
+      target = contractIndirectLabor.value.find(d => d.label === cd || String(d.label).includes(keyword));
+    }
+    return target?.values?.[staffCode] ? Number(target.values[staffCode]) : 0;
+  };
+
+  const annualAmt = findContractValue('연차', '04003001');
+  if (annualAmt > 0) row.reserves.annualLeave = annualAmt;
+
+  const severanceAmt = findContractValue('퇴직', '04003003');
+  if (severanceAmt > 0) row.reserves.severance = severanceAmt;
+
+  const sanjaeAmt = findContractValue('산재', '04003010');
+  if (sanjaeAmt > 0) row.reserves.sanjae = sanjaeAmt;
+
+  row.originalSanjae = sanjaeAmt;
+
+  finalize();
+};
+
+const calculateRow = (row) => {
+  let totalDeduct = 0;
+  visibleDeductionItems.value.forEach(item => { totalDeduct += Number(row.deductionItems?.[item.itemCd]) || 0; });
+  row.totalDeduct = totalDeduct;
+  row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
+
+  let totalGross = Number(row.grossPay) || 0;
+  if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
+  if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
+
+  row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+};
 
 const recalculateInsurances = (row) => {
-  // 둘 다 꺼져있으면 원본 복구 후 종료
   if (!meltOptions.annualLeave && !meltOptions.severance) {
-    if (row.originalDeductions) {
-      row.deductionItems = JSON.parse(JSON.stringify(row.originalDeductions));
-    }
+    if (row.originalDeductions) row.deductionItems = JSON.parse(JSON.stringify(row.originalDeductions));
+    if (row.originalSanjae !== undefined) row.reserves.sanjae = row.originalSanjae;
     return;
   }
 
-  // 1. 기준 금액 산정 (기본급 + 체크된 항목만 합산)
   let baseAmount = Number(row.grossPay) || 0;
   if (meltOptions.annualLeave) baseAmount += Number(row.reserves.annualLeave) || 0;
   if (meltOptions.severance)   baseAmount += Number(row.reserves.severance)   || 0;
 
   const rates = insuranceRates.value;
 
-  // 2. 4대보험 및 산재보험 재계산 (1원 단위 절사)
   visibleDeductionItems.value.forEach(item => {
-    const code = item.itemCd;
-    const name = item.itemNm;
-
-    // ★ 핵심 방어 로직: 원본 공제액이 아예 0원이면(가입 제외자 등) 재계산하지 않고 0원 유지!
-    const originalAmt = Number(row.originalDeductions?.[code]) || 0;
-    if (originalAmt === 0) {
-      row.deductionItems[code] = 0;
-      return;
-    }
+    const code = item.itemCd; const name = item.itemNm;
+    if ((Number(row.originalDeductions?.[code]) || 0) === 0) { row.deductionItems[code] = 0; return; }
 
     let amt = 0;
-
-    if (name.includes('국민연금')) {
-      amt = Math.floor((baseAmount * (rates.nationalPension / 100)) / 10) * 10;
-    } else if (name.includes('건강보험')) {
-      amt = Math.floor((baseAmount * (rates.healthInsurance / 100)) / 10) * 10;
-    } else if (name.includes('장기요양')) {
-      const healthAmt = Math.floor((baseAmount * (rates.healthInsurance / 100)) / 10) * 10;
-      amt = Math.floor((healthAmt * (rates.longTermCare / 100)) / 10) * 10;
-    } else if (name.includes('고용보험')) {
-      amt = Math.floor((baseAmount * (rates.employmentInsurance / 100)) / 10) * 10;
-    } else if (name.includes('산재보험')) {
-      // 산재보험 요율(1.116%) 적용하여 계산 (10원 단위 절사)
-      amt = Math.floor((baseAmount * (rates.industrialAccident / 100)) / 10) * 10;
-    } else {
-      // 소득세, 지방소득세 등 기타 항목은 원본 유지
-      amt = originalAmt;
-    }
-
+    if (name.includes('국민연금')) amt = Math.floor((baseAmount * (rates.nationalPension / 100)) / 10) * 10;
+    else if (name.includes('건강보험')) amt = Math.floor((baseAmount * (rates.healthInsurance / 100)) / 10) * 10;
+    else if (name.includes('장기요양')) amt = Math.floor((Math.floor((baseAmount * (rates.healthInsurance / 100)) / 10) * 10 * (rates.longTermCare / 100)) / 10) * 10;
+    else if (name.includes('고용보험')) amt = Math.floor((baseAmount * (rates.employmentInsurance / 100)) / 10) * 10;
+    else amt = Number(row.originalDeductions?.[code]) || 0;
     row.deductionItems[code] = amt;
   });
-};
 
-// 토글 옵션 중 하나라도 변하면 전체 행 재계산
-watch(meltOptions, () => {
-  formData.value.payrollData.forEach(row => {
-    recalculateInsurances(row);
-    calculateRow(row);
-  });
-}, { deep: true });
-
-// 사용자가 급여칸에 직접 숫자를 쳤을 때
-const onSalaryInput = (row) => {
-  if (meltOptions.annualLeave || meltOptions.severance) {
-    recalculateInsurances(row);
+  if ((Number(row.originalSanjae) || 0) > 0) {
+    row.reserves.sanjae = Math.floor((baseAmount * (rates.industrialAccident / 100)) / 10) * 10;
   }
-  calculateRow(row);
-};
-
-// ──────────────────────────────────────────────
-// 계산 로직
-// ──────────────────────────────────────────────
-const calculateRow = (row) => {
-  let totalDeduct = 0;
-  visibleDeductionItems.value.forEach(item => {
-    totalDeduct += Number(row.deductionItems?.[item.itemCd]) || 0;
-  });
-  row.totalDeduct = totalDeduct;
-  row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
-
-  // 사업주 고용안정(0.45%)도 개별 토글 옵션에 따라 기준금액 변경
-  let totalGross = Number(row.grossPay) || 0;
-  if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
-  if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
-
-  if (totalGross > 0) {
-    row.reserves.empInsEmployer = Math.floor((totalGross * 0.0045) / 10) * 10;
-  } else {
-    row.reserves.empInsEmployer = 0;
-  }
-};
-
-const applyContractReserves = (row) => {
-  const finalize = () => { calculateRow(row); };
-  if (!row.position || !contractStaffList.value.length || !contractDirectLabor.value.length) return finalize();
-
-  const positionName = row.position.trim();
-  const staffObj = contractStaffList.value.find(s => s.name === positionName);
-
-  if (!staffObj) return finalize();
-  const staffCode = staffObj.code;
-
-  const annualObj = contractDirectLabor.value.find(d => d.label === '04003001' || String(d.label).includes('연차'));
-  if (annualObj && annualObj.values && annualObj.values[staffCode] !== undefined) {
-    row.reserves.annualLeave = Number(annualObj.values[staffCode]) || 0;
-  }
-
-  const severanceObj = contractDirectLabor.value.find(d => d.label === '04003003' || String(d.label).includes('퇴직'));
-  if (severanceObj && severanceObj.values && severanceObj.values[staffCode] !== undefined) {
-    row.reserves.severance = Number(severanceObj.values[staffCode]) || 0;
-  }
-
-  // ★ 이 부분을 추가해 주세요! (산재보험 금액 주입)
-  const sanjaeObj = contractDirectLabor.value.find(d => d.label === '04003010' || String(d.label).includes('산재'));
-  if (sanjaeObj && sanjaeObj.values && sanjaeObj.values[staffCode] !== undefined) {
-    if (!row.deductionItems) row.deductionItems = {};
-    row.deductionItems['04003010'] = Number(sanjaeObj.values[staffCode]) || 0;
-  }
-
-  finalize();
 };
 
 const getInsuranceTotal = (row) => {
   let total = 0;
   visibleDeductionItems.value.forEach(item => { total += Number(row.deductionItems?.[item.itemCd]) || 0; });
   total += Number(row.reserves?.empInsEmployer) || 0;
+  total += Number(row.reserves?.sanjae) || 0;
   return total;
 };
 
-watch(activeViewType, () => { formData.value.payrollData.forEach(row => calculateRow(row)); });
-watch(() => currentConfig.value.activeDeductionCodes, () => { formData.value.payrollData.forEach(row => calculateRow(row)); }, { deep: true });
+const onSalaryInput = (row) => {
+  if (meltOptions.annualLeave || meltOptions.severance) recalculateInsurances(row);
+  calculateRow(row);
+};
 
+watch(meltOptions, () => { formData.value.payrollData.forEach(row => { recalculateInsurances(row); calculateRow(row); }); }, { deep: true });
+watch(() => currentConfig.activeDeductionCodes, () => { formData.value.payrollData.forEach(row => calculateRow(row)); }, { deep: true });
+
+// ──────────────────────────────────────────────
+// 6. 총계 & 부가세 계산 (토글 기능 포함)
+// ──────────────────────────────────────────────
 const payrollTotals = computed(() => {
-  const totals = { grossPay: 0, totalDeduct: 0, netPay: 0, annualLeave: 0, severance: 0, empInsEmployer: 0, insuranceTotal: 0, deductionItems: {} };
+  const totals = { grossPay: 0, totalDeduct: 0, netPay: 0, annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0, insuranceTotal: 0, deductionItems: {} };
   formData.value.payrollData.forEach(row => {
     totals.grossPay       += Number(row.grossPay)    || 0;
     totals.totalDeduct    += Number(row.totalDeduct) || 0;
     totals.netPay         += Number(row.netPay)      || 0;
     totals.annualLeave    += Number(row.reserves?.annualLeave) || 0;
     totals.severance      += Number(row.reserves?.severance)   || 0;
+    totals.sanjae         += Number(row.reserves?.sanjae)      || 0;
     totals.empInsEmployer += Number(row.reserves?.empInsEmployer) || 0;
 
-    let rowInsTotal = Number(row.reserves?.empInsEmployer) || 0;
+    let rowInsTotal = (Number(row.reserves?.empInsEmployer) || 0) + (Number(row.reserves?.sanjae) || 0);
     visibleDeductionItems.value.forEach(item => {
       const code = item.itemCd;
       if (!totals.deductionItems[code]) totals.deductionItems[code] = 0;
@@ -348,109 +310,168 @@ const payrollTotals = computed(() => {
   return totals;
 });
 
-// 하단 합계용 colspan 동적 계산 (연차, 퇴직금 토글 고려)
+const estimatedInsuranceTotal = computed(() => {
+  let total = 0;
+  contractIndirectLabor.value.forEach(item => {
+    if (item.values) {
+      Object.entries(item.values).forEach(([staffCode, val]) => {
+        const staffObj = contractStaffList.value.find(s => s.code === staffCode);
+        const headcount = staffObj && staffObj.count ? Number(staffObj.count) : 1;
+        total += (Number(val) || 0) * headcount;
+      });
+    }
+  });
+  return total;
+});
+
+const actualInsuranceTotal = computed(() => {
+  let total = 0;
+  visibleDeductionItems.value.forEach(item => {
+    if (['국민', '건강', '장기', '고용'].some(kw => item.itemNm.includes(kw))) {
+      total += Number(payrollTotals.value.deductionItems[item.itemCd]) || 0;
+    }
+  });
+  total += Number(payrollTotals.value.empInsEmployer) || 0;
+  total += Number(payrollTotals.value.sanjae) || 0;
+  return total;
+});
+
+watch([estimatedInsuranceTotal, actualInsuranceTotal], ([est, act]) => {
+  formData.value.billingData.insuranceDiff = est - act;
+}, { immediate: true });
+
+const toggleSummarySign = (key) => {
+  if (currentConfig.summarySigns[key] !== undefined) {
+    currentConfig.summarySigns[key] *= -1; // -1 <-> 1 전환
+  }
+};
+
+const totalSummary = computed(() => {
+  const monthlyFee  = contractTotalCost.value || 0;
+  const severance   = payrollTotals.value.severance || 0;
+  const annualLeave = payrollTotals.value.annualLeave || 0;
+  const estIns      = estimatedInsuranceTotal.value || 0;
+  const actIns      = actualInsuranceTotal.value || 0;
+  const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
+  const signs       = currentConfig.summarySigns;
+
+  const grandTotal  = monthlyFee
+      + (severance * signs.severance)
+      + (annualLeave * signs.annualLeave)
+      + (insDiff * signs.insuranceDiff);
+
+  return [
+    { key: 'monthlyFee', label: '월간용역비', value: monthlyFee, sign: 1, toggleable: false },
+    { key: 'severance', label: '퇴직적립금', value: severance, sign: signs.severance, toggleable: true },
+    { key: 'annualLeave', label: '연차적립금', value: annualLeave, sign: signs.annualLeave, toggleable: true },
+    // ★ 견적서 및 실비정산은 토글 비활성화, 기호 무조건 1 (UI에서는 안보이게)
+    { key: 'estimatedIns', label: '견적서 4대보험료', value: estIns, sign: 1, toggleable: false },
+    { key: 'actualIns', label: '실비정산 4대보험료', value: actIns, sign: 1, toggleable: false },
+    { key: 'insuranceDiff', label: '4대보험차액', value: insDiff, sign: signs.insuranceDiff, toggleable: true },
+    { key: 'grandTotal', label: '총 청구액', value: grandTotal, sign: 1, toggleable: false }
+  ];
+});
+
+// ──────────────────────────────────────────────
+// ★ 6-1. 세부내역서 -> 청구 공문(표지) 자동 동기화 로직
+// ──────────────────────────────────────────────
+const syncBillingItems = () => {
+  // 1. 산정기간 계산 (1일 ~ 말일)
+  let periodStr = '';
+  let monthNum = '';
+  const targetDateStr = formData.value.target_month || formData.value.billingDt;
+
+  if (targetDateStr) {
+    const parts = targetDateStr.split('-');
+    if (parts.length >= 2) {
+      const yyyy = parseInt(parts[0], 10);
+      const mm = parseInt(parts[1], 10);
+      const yearStr = String(yyyy).slice(2);
+      const monthStr = String(mm).padStart(2, '0');
+      monthNum = String(mm);
+      const lastDay = new Date(yyyy, mm, 0).getDate(); // 월의 말일 계산 완벽 보장
+      periodStr = `${yearStr}.${monthStr}.01~${monthStr}.${lastDay}`;
+    }
+  }
+
+  // 2. 구분값 계산 (type에 따른 텍스트)
+  let categoryStr = '';
+  if (formData.value.type && typeOptions.value) {
+    const matched = typeOptions.value.find(t => t.itemCd === formData.value.type);
+    if (matched) categoryStr = matched.itemNm;
+  }
+
+  // 3. 반영할 타겟 항목들 (4대보험차액만 반영)
+  const targetKeys = ['monthlyFee', 'severance', 'annualLeave', 'insuranceDiff'];
+  let currentItems = [...formData.value.billingData.items];
+
+  // (비어있는 초기 기본행 1개가 있다면 지우기)
+  if (currentItems.length === 1 && !currentItems[0].detail && currentItems[0].amount === 0) {
+    currentItems = [];
+  }
+
+  targetKeys.forEach(key => {
+    const summaryObj = totalSummary.value.find(s => s.key === key);
+    if (!summaryObj) return;
+
+    // 토글 상태(양수/음수)가 반영된 실제 금액
+    const signedAmount = summaryObj.value * summaryObj.sign;
+
+    // 해당 항목이 청구 테이블에 이미 있는지 키워드로 유연하게 검색
+    let existIdx = -1;
+    if (key === 'monthlyFee') existIdx = currentItems.findIndex(i => i.detail.includes('용역비') || i.detail.includes('도급비'));
+    else if (key === 'severance') existIdx = currentItems.findIndex(i => i.detail.includes('퇴직'));
+    else if (key === 'annualLeave') existIdx = currentItems.findIndex(i => i.detail.includes('연차'));
+    else if (key === 'insuranceDiff') existIdx = currentItems.findIndex(i => i.detail.includes('보험') && i.detail.includes('차액'));
+
+    const defaultDetail = key === 'monthlyFee' ? `${monthNum ? monthNum + '월 ' : ''}${categoryStr}용역비` : summaryObj.label;
+
+    if (existIdx > -1) {
+      // 이미 존재하면 값 업데이트 (산정기간과 구분도 동기화)
+      currentItems[existIdx].period = periodStr || currentItems[existIdx].period;
+      currentItems[existIdx].category = categoryStr || currentItems[existIdx].category;
+      currentItems[existIdx].amount = signedAmount;
+
+      // 용역비가 아닌데 금액이 0원이 되면 삭제 (청구서에 0원은 안보이게)
+      if (key !== 'monthlyFee' && signedAmount === 0) {
+        currentItems.splice(existIdx, 1);
+      }
+    } else {
+      // 없으면 신규 행 추가
+      if (key === 'monthlyFee' || signedAmount !== 0) {
+        currentItems.push({
+          period: periodStr,
+          category: categoryStr,
+          detail: defaultDetail,
+          amount: signedAmount,
+          note: ''
+        });
+      }
+    }
+  });
+
+  formData.value.billingData.items = currentItems;
+  calculateBillingTotal();
+};
+
+// 합계가 변하거나, 선택 조건이 변하면 자동 동기화 실행!
+watch([totalSummary, () => formData.value.type, () => formData.value.billingDt, () => formData.value.target_month], () => {
+  // 현장이 선택되어 데이터가 있을 때만 동기화 실행
+  if (formData.value.sIdx) {
+    syncBillingItems();
+  }
+}, { deep: true });
+
 const colspanForSummary = computed(() => {
   let cols = 6;
-  if (currentConfig.value.showAnnualLeave) cols += 1;
-  if (currentConfig.value.showSeverance) cols += 1;
-  if (currentConfig.value.showGrossPay) cols += 1;
+  if (currentConfig.showAnnualLeave) cols += 1;
+  if (currentConfig.showSeverance) cols += 1;
+  if (currentConfig.showGrossPay) cols += 1;
   cols += visibleDeductionItems.value.length;
   if (visibleDeductionItems.value.some(item => item.itemNm.includes('고용보험'))) cols += 1;
+  if (currentConfig.showSanjae) cols += 1;
   return cols - 2;
 });
-
-// ──────────────────────────────────────────────
-// formData & Load Data
-// ──────────────────────────────────────────────
-const formData = ref({
-  sIdx: '', siteName: '', is_vat: 'N', type: '', target_month: '', docNo: '', billingDt: '', subTotal: 0, vatAmount: 0, grandTotal: 0,
-  billingData: { summary: '', workerCount: 0, bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', items: [], vatBreakdown: { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } }, insuranceDiff: 0 },
-  payrollData: [], viewConfig: null,
-});
-
-const initForm = () => {
-  if (props.initialData && Object.keys(props.initialData).length > 0) {
-    const data = JSON.parse(JSON.stringify(props.initialData));
-    if (!data.payrollData) data.payrollData = [];
-    if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', insuranceDiff: 0 };
-    if (!data.billingData.items) data.billingData.items = [];
-    if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } };
-    data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
-
-    data.payrollData.forEach(row => {
-      if (!row.deductionItems) row.deductionItems = {};
-      row.totalDeduct = row.totalDeduct || 0;
-      if (!row.reserves) row.reserves = {};
-      row.reserves.annualLeave = row.reserves.annualLeave || 0;
-      row.reserves.severance = row.reserves.severance || 0;
-      row.reserves.empInsEmployer = row.reserves.empInsEmployer || 0;
-      row.originalDeductions = JSON.parse(JSON.stringify(row.deductionItems));
-    });
-
-    const selectedSite = siteOptions.value.find(s => s.idx === data.sIdx);
-    data.is_vat = selectedSite ? selectedSite.is_vat : (data.vatAmount > 0 ? 'Y' : 'N');
-
-    if (data.viewConfig) {
-      viewConfig.site = { ...viewConfig.site, ...data.viewConfig.site };
-      viewConfig.tax  = { ...viewConfig.tax, ...data.viewConfig.tax };
-    }
-    if (data.defaultTab) activeTab.value = data.defaultTab;
-    formData.value = data;
-    if (formData.value.sIdx && formData.value.type) fetchContractData();
-  } else {
-    formData.value = {
-      sIdx: '', siteName: '', is_vat: 'N', type: '', target_month: '', docNo: '', billingDt: '', subTotal: 0, vatAmount: 0, grandTotal: 0,
-      billingData: { summary: '', workerCount: 0, bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', items: [{ period: '', category: '', detail: '', amount: 0, note: '' }], vatBreakdown: { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } }, insuranceDiff: 0 },
-      payrollData: [], viewConfig: null,
-    };
-  }
-};
-
-watch(() => props.initialData, initForm, { immediate: true });
-
-// 드래그 앤 드롭
-const dragIndex = ref(null);
-const onDragStart = (index) => { dragIndex.value = index; };
-const onDragEnd   = ()        => { dragIndex.value = null; };
-const onDragOver  = (e, index) => {
-  e.preventDefault();
-  if (dragIndex.value === null || dragIndex.value === index) return;
-  const list = formData.value.payrollData;
-  const dragged = list.splice(dragIndex.value, 1)[0];
-  list.splice(index, 0, dragged);
-  dragIndex.value = index;
-};
-
-// 현장 및 구분 변경
-const handleSiteChange = () => {
-  const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
-  if (selectedSite) {
-    formData.value.siteName = selectedSite.name;
-    formData.value.is_vat   = selectedSite.is_vat || 'N';
-    const vb = formData.value.billingData.vatBreakdown;
-    const dbAreaUnder = Number(selectedSite.areaUnder || selectedSite.area_under) || 0;
-    const dbAreaOver  = Number(selectedSite.areaOver || selectedSite.area_over) || 0;
-    const dbAreaTotal = Number(selectedSite.areaUnder) + Number(selectedSite.areaOver) || 0;
-
-    if (formData.value.is_vat === 'Y') {
-      if (dbAreaUnder > 0 || dbAreaOver > 0) { vb.under135.area = dbAreaUnder; vb.over135.area = dbAreaOver; }
-      else { vb.under135.area = 0; vb.over135.area = dbAreaTotal; }
-    } else {
-      vb.under135.area = dbAreaUnder > 0 ? dbAreaUnder : dbAreaTotal; vb.over135.area = 0;
-    }
-    calculateAreaSupply();
-  } else {
-    formData.value.siteName = ''; formData.value.is_vat = 'N';
-  }
-  calculateBillingTotal();
-  fetchContractData();
-};
-
-watch(() => formData.value.type, (newType) => { if (newType && formData.value.sIdx) fetchContractData(); });
-
-// 청구공문 계산
-const addBillingRow = () => { formData.value.billingData.items.push({ period: '', category: '', detail: '', amount: 0, note: '' }); };
-const removeBillingRow = (index) => { formData.value.billingData.items.splice(index, 1); calculateBillingTotal(); };
 
 const calculateAreaSupply = () => {
   const vb = formData.value.billingData.vatBreakdown;
@@ -484,7 +505,60 @@ const handleManualBreakdownUpdate = () => {
   formData.value.grandTotal = formData.value.subTotal + overVat;
 };
 
-// 급여 데이터 로드
+// ──────────────────────────────────────────────
+// 7. 폼 세팅 및 이벤트 핸들러
+// ──────────────────────────────────────────────
+const initForm = () => {
+  if (props.initialData && Object.keys(props.initialData).length > 0) {
+    const data = JSON.parse(JSON.stringify(props.initialData));
+    if (!data.payrollData) data.payrollData = [];
+    if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', insuranceDiff: 0 };
+    if (!data.billingData.items) data.billingData.items = [];
+    if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } };
+    data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
+
+    data.payrollData.forEach(row => {
+      if (!row.deductionItems) row.deductionItems = {};
+      row.totalDeduct = row.totalDeduct || 0;
+      if (!row.reserves) row.reserves = { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 };
+      row.reserves.annualLeave = row.reserves.annualLeave || 0;
+      row.reserves.severance = row.reserves.severance || 0;
+      row.reserves.empInsEmployer = row.reserves.empInsEmployer || 0;
+      row.reserves.sanjae = row.reserves.sanjae || 0;
+
+      row.originalDeductions = JSON.parse(JSON.stringify(row.deductionItems));
+      row.originalSanjae = row.reserves.sanjae;
+    });
+
+    const selectedSite = siteOptions.value.find(s => s.idx === data.sIdx);
+    data.is_vat = selectedSite ? selectedSite.is_vat : (data.vatAmount > 0 ? 'Y' : 'N');
+
+    if (data.viewConfig) {
+      const savedConfig = data.viewConfig.site || data.viewConfig;
+      Object.assign(currentConfig, savedConfig);
+      if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
+      if (!currentConfig.summarySigns) {
+        currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+      }
+    } else {
+      currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+    }
+
+    if (data.defaultTab) activeTab.value = data.defaultTab;
+    formData.value = data;
+    if (formData.value.sIdx && formData.value.type) fetchContractData();
+  } else {
+    formData.value = {
+      sIdx: '', siteName: '', is_vat: 'N', type: '', target_month: '', docNo: '', billingDt: '', subTotal: 0, vatAmount: 0, grandTotal: 0,
+      billingData: { summary: '', workerCount: 0, bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', items: [{ period: '', category: '', detail: '', amount: 0, note: '' }], vatBreakdown: { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } }, insuranceDiff: 0 },
+      payrollData: [], viewConfig: null,
+    };
+    currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+  }
+};
+
+watch(() => props.initialData, initForm, { immediate: true });
+
 const loadPayrollData = async () => {
   if (!formData.value.sIdx) { alert('현장을 먼저 선택해주세요.'); return; }
   if (formData.value.payrollData.length > 0 && !confirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) return;
@@ -494,11 +568,9 @@ const loadPayrollData = async () => {
     const [year, month] = targetDate.split('-');
 
     await fetchTaxRates();
-    if (contractStaffList.value.length === 0) await fetchContractData();
+    if (contractStaffList.value.length === 0 || contractIndirectLabor.value.length === 0) await fetchContractData();
 
     const res = await axios.get('/api/v1/member/payroll/month', { params: { year, month } });
-
-    // ★ 에러 방어 1: res.data.data가 null이나 undefined일 경우 빈 배열([])로 처리
     const rawData = res.data?.data || [];
     const result = rawData.filter(item => item.type == formData.value.type && item.sIdx == formData.value.sIdx);
 
@@ -507,27 +579,20 @@ const loadPayrollData = async () => {
     formData.value.payrollData = result.map(item => {
       const parsedDeductions = safeParse(item.deductionItems);
       const parsedPayItems   = safeParse(item.payItems);
-      let totalDeduct = 0;
-      visibleDeductionItems.value.forEach(dItem => { totalDeduct += Number(parsedDeductions[dItem.itemCd]) || 0; });
 
       const rowObj = {
         idx:        item.idx, empName: item.staff, position: item.role || '', personalNo: item.birthDt,
         inDate:     item.inDate, outDate: item.outDate ?? '', grossPay: Number(item.grossPay) || 0,
         payItems:   parsedPayItems, deductionItems: parsedDeductions,
-        originalDeductions: {}, // ★ 여기서는 일단 빈 객체로 둡니다! (중요)
-        totalDeduct, reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0 }, netPay: (Number(item.grossPay) || 0) - totalDeduct,
+        originalDeductions: {}, originalSanjae: 0,
+        totalDeduct: 0, reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 }, netPay: 0,
       };
 
-      // 1. 계약서의 연차, 퇴직금, 산재보험을 rowObj에 매핑합니다.
       applyContractReserves(rowObj);
-
-      // 2. ★ 산재보험이 매핑된 직후의 값을 원본(originalDeductions)으로 복사합니다.
       rowObj.originalDeductions = JSON.parse(JSON.stringify(rowObj.deductionItems));
 
-      // 3. 토글 옵션 적용에 따른 재계산 로직 실행
-      if (meltOptions.annualLeave || meltOptions.severance) {
-        recalculateInsurances(rowObj);
-      }
+      if (meltOptions.annualLeave || meltOptions.severance) recalculateInsurances(rowObj);
+      calculateRow(rowObj);
 
       return rowObj;
     });
@@ -536,30 +601,67 @@ const loadPayrollData = async () => {
     else alert('직원 급여 데이터를 성공적으로 불러왔습니다.');
 
   } catch (error) {
-    // F12 콘솔창에 찍힌 진짜 에러를 확인하기 위한 로그
     console.error('데이터 로드 에러 원인:', error);
     alert('데이터를 불러오는 중 오류가 발생했습니다.');
   }
 };
 
-const addPayrollRow = () => {
-  formData.value.payrollData.push({
-    empName: '', position: '', personalNo: '', inDate: '', outDate: '', grossPay: 0, deductionItems: {}, originalDeductions: {}, totalDeduct: 0,
-    reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0 }, netPay: 0,
-  });
+const updateDocNo = () => {
+  const targetDate = formData.value.target_month || formData.value.billingDt;
+  if (targetDate && formData.value.sIdx) {
+    const [year, month] = targetDate.split('-');
+    formData.value.docNo = `에코그린 ${year}-${month.padStart(2, '0')}-${formData.value.sIdx}호`;
+  }
+};
+watch(() => formData.value.sIdx, updateDocNo);
+watch(() => formData.value.target_month, updateDocNo);
+watch(() => formData.value.billingDt, updateDocNo);
+watch(() => formData.value.type, (newType) => { if (newType && formData.value.sIdx) fetchContractData(); });
+
+const handleSiteChange = () => {
+  const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+  if (selectedSite) {
+    formData.value.siteName = selectedSite.name;
+    formData.value.is_vat   = selectedSite.is_vat || 'N';
+    const vb = formData.value.billingData.vatBreakdown;
+    const dbAreaUnder = Number(selectedSite.areaUnder || selectedSite.area_under) || 0;
+    const dbAreaOver  = Number(selectedSite.areaOver || selectedSite.area_over) || 0;
+    const dbAreaTotal = Number(selectedSite.areaUnder) + Number(selectedSite.areaOver) || 0;
+
+    if (formData.value.is_vat === 'Y') {
+      if (dbAreaUnder > 0 || dbAreaOver > 0) { vb.under135.area = dbAreaUnder; vb.over135.area = dbAreaOver; }
+      else { vb.under135.area = 0; vb.over135.area = dbAreaTotal; }
+    } else { vb.under135.area = dbAreaUnder > 0 ? dbAreaUnder : dbAreaTotal; vb.over135.area = 0; }
+    calculateAreaSupply();
+  } else { formData.value.siteName = ''; formData.value.is_vat = 'N'; }
+  calculateBillingTotal();
+  fetchContractData();
 };
 
-const removePayrollRow = (index) => { if (confirm('이 직원의 데이터를 삭제하시겠습니까?')) formData.value.payrollData.splice(index, 1); };
+const addBillingRow = () => formData.value.billingData.items.push({ period: '', category: '', detail: '', amount: 0, note: '' });
+const removeBillingRow = (i) => { formData.value.billingData.items.splice(i, 1); calculateBillingTotal(); };
+const addPayrollRow = () => formData.value.payrollData.push({ empName: '', position: '', personalNo: '', inDate: '', outDate: '', grossPay: 0, deductionItems: {}, originalDeductions: {}, originalSanjae: 0, totalDeduct: 0, reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 }, netPay: 0 });
+const removePayrollRow = (i) => { if (confirm('삭제하시겠습니까?')) formData.value.payrollData.splice(i, 1); };
 
-const formatCurrency = (val) => Number(val || 0).toLocaleString();
+const onDragStart = (index) => { dragIndex.value = index; };
+const onDragEnd   = ()        => { dragIndex.value = null; };
+const onDragOver  = (e, index) => {
+  e.preventDefault();
+  if (dragIndex.value === null || dragIndex.value === index) return;
+  const list = formData.value.payrollData;
+  const dragged = list.splice(dragIndex.value, 1)[0];
+  list.splice(index, 0, dragged);
+  dragIndex.value = index;
+};
 
-// 엑셀 내보내기
+// ──────────────────────────────────────────────
+// 8. 내보내기 & 저장
+// ──────────────────────────────────────────────
 const exportToExcel = () => {
   const wb         = XLSX.utils.book_new();
   const siteName   = formData.value.siteName   || '현장미지정';
   const targetMonth= formData.value.target_month || formData.value.billingDt || '';
-  const viewLabel  = VIEW_TYPES[activeViewType.value].label;
-  const fileName   = `정산서_${siteName}_${targetMonth}_${viewLabel}.xlsx`;
+  const fileName   = `정산서_${siteName}_${targetMonth}.xlsx`;
 
   const statementRows = [ ['청구 공문'], [], ['수신', formData.value.siteName ? formData.value.siteName + ' 관리사무소' : ''], ['문서번호', formData.value.docNo || ''], ['시행일자', formData.value.billingDt || ''], ['제목', formData.value.billingData.summary || ''], [], ['산정기간', '구분', '내역', '산출금액', '비고'] ];
   (formData.value.billingData.items || []).forEach(item => { statementRows.push([item.period || '', item.category || '', item.detail || '', Number(item.amount) || 0, item.note || '']); });
@@ -573,13 +675,12 @@ const exportToExcel = () => {
     statementRows.push(['총 계', (Number(vb.under135.area)||0)+(Number(vb.over135.area)||0), '-', formData.value.subTotal, formData.value.vatAmount, formData.value.grandTotal]);
   }
   statementRows.push([], ['입금계좌', formData.value.billingData.bankInfo || '']);
-
   const ws1 = XLSX.utils.aoa_to_sheet(statementRows);
   ws1['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
   XLSX.utils.book_append_sheet(wb, ws1, '청구공문');
 
   if (formData.value.payrollData.length > 0) {
-    const cfg = currentConfig.value;
+    const cfg = currentConfig;
     const payrollRows = [];
 
     const header1 = ['NO', '이름', '직책', '생년월일', '입사일', '퇴사일'];
@@ -591,6 +692,7 @@ const exportToExcel = () => {
       if (item.itemNm.includes('고용보험')) { header1.push('실업급여(0.9%)'); header1.push('고용안정(0.45%)'); }
       else { header1.push(item.itemNm); }
     });
+    if (cfg.showSanjae) header1.push('산재보험');
     header1.push('총계');
     payrollRows.push(header1);
 
@@ -604,6 +706,7 @@ const exportToExcel = () => {
         if (item.itemNm.includes('고용보험')) { dataRow.push(Number(row.deductionItems?.[item.itemCd]) || 0); dataRow.push(Number(row.reserves?.empInsEmployer) || 0); }
         else { dataRow.push(Number(row.deductionItems?.[item.itemCd]) || 0); }
       });
+      if (cfg.showSanjae) dataRow.push(Number(row.reserves?.sanjae) || 0);
       dataRow.push(getInsuranceTotal(row));
       payrollRows.push(dataRow);
     });
@@ -617,6 +720,7 @@ const exportToExcel = () => {
       if (item.itemNm.includes('고용보험')) { totalRow.push(payrollTotals.value.deductionItems[item.itemCd] || 0); totalRow.push(payrollTotals.value.empInsEmployer || 0); }
       else { totalRow.push(payrollTotals.value.deductionItems[item.itemCd] || 0); }
     });
+    if (cfg.showSanjae) totalRow.push(payrollTotals.value.sanjae);
     totalRow.push(payrollTotals.value.insuranceTotal);
     payrollRows.push(totalRow);
     payrollRows.push([]);
@@ -624,28 +728,28 @@ const exportToExcel = () => {
     totalSummary.value.forEach(summary => {
       const row = Array(header1.length).fill('');
       row[row.length - 3] = summary.label;
-      row[row.length - 1] = summary.label.includes('차감') && summary.value > 0 ? -summary.value : summary.value;
+      let displayValue = summary.value;
+      if (summary.sign < 0 && summary.value !== 0) displayValue = -summary.value;
+      row[row.length - 1] = displayValue;
       payrollRows.push(row);
     });
 
     const ws2 = XLSX.utils.aoa_to_sheet(payrollRows);
     const colWidths = [{ wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
-    if (cfg.showAnnualLeave) colWidths.push({ wch: 12 });
-    if (cfg.showSeverance) colWidths.push({ wch: 12 });
+    if (cfg.showAnnualLeave) colWidths.push({ wch: 14 });
+    if (cfg.showSeverance) colWidths.push({ wch: 14 });
     if (cfg.showGrossPay) colWidths.push({ wch: 14 });
-
     visibleDeductionItems.value.forEach(item => {
       if (item.itemNm.includes('고용보험')) colWidths.push({ wch: 15 }, { wch: 15 });
-      else colWidths.push({ wch: 12 });
+      else colWidths.push({ wch: 14 });
     });
+    if (cfg.showSanjae) colWidths.push({ wch: 14 });
     colWidths.push({ wch: 14 });
     ws2['!cols'] = colWidths;
-    XLSX.utils.book_append_sheet(wb, ws2, `급여내역서_${viewLabel}`);
+    XLSX.utils.book_append_sheet(wb, ws2, `급여내역서`);
   }
   XLSX.writeFile(wb, fileName);
 };
-
-const closeModal  = () => emit('close');
 
 const handleSave = async () => {
   try {
@@ -665,7 +769,7 @@ const handleSave = async () => {
       grandTotal:  formData.value.grandTotal,
       billingData: formData.value.billingData,
       payrollData: formData.value.payrollData,
-      viewConfig:  JSON.parse(JSON.stringify(viewConfig)),
+      viewConfig:  JSON.parse(JSON.stringify(currentConfig)),
       cIdx:        authStore.user?.cIdx || 0,
     };
 
@@ -674,6 +778,8 @@ const handleSave = async () => {
     else { alert(`저장 실패: ${response.data.msg}`); }
   } catch (error) { console.error('정산서 저장 중 오류 발생:', error); alert('서버 통신 중 오류가 발생했습니다.'); }
 };
+
+const closeModal = () => emit('close');
 
 onMounted(async () => {
   await Promise.all([ fetchSiteOptions(), fetchTypeOptions() ]);
@@ -705,20 +811,6 @@ onMounted(async () => {
         <button :class="['tab-btn', { active: activeTab === 'details' }]" @click="activeTab = 'details'">
           <i class="mdi mdi-table-account"></i> <span class="tab-text">급여 세부 내역서</span>
         </button>
-
-        <transition name="slide-fade">
-          <div v-if="activeTab === 'details'" class="view-type-switcher">
-            <span class="switcher-label">출력 형식</span>
-            <button
-                v-for="(meta, key) in VIEW_TYPES" :key="key"
-                :class="['view-type-btn', { active: activeViewType === key }]"
-                :style="activeViewType === key ? `--vt-color:${meta.color}` : ''"
-                @click="activeViewType = key"
-            >
-              <i :class="['mdi', meta.icon]"></i> {{ meta.label }}
-            </button>
-          </div>
-        </transition>
       </div>
 
       <div class="modal-body">
@@ -787,7 +879,13 @@ onMounted(async () => {
                   <td><input type="text" v-model="item.period"   class="cell-input text-center" placeholder="26.01.01~01.31" /></td>
                   <td><input type="text" v-model="item.category" class="cell-input text-center" placeholder="미화, 경비" /></td>
                   <td><input type="text" v-model="item.detail"   class="cell-input" placeholder="1월 미화용역비" /></td>
-                  <td><input type="number" v-model="item.amount" @input="calculateBillingTotal" class="cell-input text-right font-bold text-blue" /></td>
+                  <td>
+                    <input type="text"
+                           :value="formatCurrency(item.amount)"
+                           @focus="$event.target.select()"
+                           @input="handleCurrencyInput($event, item, 'amount', null, 'billing')"
+                           class="cell-input text-right font-bold text-blue" />
+                  </td>
                   <td><input type="text" v-model="item.note"     class="cell-input" placeholder="비고 입력" /></td>
                   <td class="text-center"><button class="btn-delete-row" @click="removeBillingRow(index)"><i class="mdi mdi-minus"></i></button></td>
                 </tr>
@@ -814,18 +912,18 @@ onMounted(async () => {
                   <tbody>
                   <tr>
                     <td class="text-center font-bold bg-gray-50">135㎡ 이하 (면세)</td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.under135.area"      @input="calculateAreaSupply" class="cell-input text-right" /></td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.under135.unitPrice" @input="calculateAreaSupply" class="cell-input text-right" /></td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.under135.supply"    @input="calculateBillingTotal" class="cell-input text-right font-bold text-blue" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.under135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'area', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.under135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.under135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'supply', null, 'billing')" class="cell-input text-right font-bold text-blue" /></td>
                     <td class="text-right bg-gray-50 text-gray-400">0</td>
                     <td class="text-right font-bold text-blue bg-blue-light">{{ formatCurrency(formData.billingData.vatBreakdown.under135.supply) }}</td>
                   </tr>
                   <tr>
                     <td class="text-center font-bold bg-gray-50">135㎡ 초과 (과세)</td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.over135.area"      @input="calculateAreaSupply" class="cell-input text-right" /></td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.over135.unitPrice" @input="calculateAreaSupply" class="cell-input text-right" /></td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.over135.supply"    @input="handleManualBreakdownUpdate" class="cell-input text-right font-bold text-blue" /></td>
-                    <td><input type="number" v-model="formData.billingData.vatBreakdown.over135.vat"       @input="handleManualBreakdownUpdate" class="cell-input text-right font-bold text-red" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'area', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'supply', null, 'manual')" class="cell-input text-right font-bold text-blue" /></td>
+                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.vat)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'vat', null, 'manual')" class="cell-input text-right font-bold text-red" /></td>
                     <td class="text-right font-bold text-blue bg-blue-light">{{ formatCurrency(Number(formData.billingData.vatBreakdown.over135.supply) + Number(formData.billingData.vatBreakdown.over135.vat)) }}</td>
                   </tr>
                   </tbody>
@@ -852,17 +950,11 @@ onMounted(async () => {
 
         <div v-show="activeTab === 'details'" class="tab-content">
           <div class="table-actions">
-            <h4>
-              <i class="mdi mdi-table-account"></i> 직원별 정산 내역
-              <span class="view-indicator" :style="`--vi-color:${VIEW_TYPES[activeViewType].color}`">
-                <i :class="['mdi', VIEW_TYPES[activeViewType].icon]"></i> {{ VIEW_TYPES[activeViewType].label }}
-              </span>
-            </h4>
+            <h4><i class="mdi mdi-table-account"></i> 직원별 정산 내역</h4>
 
             <div class="action-btns" style="align-items: center;">
               <div class="melt-toggles-group">
                 <span class="melt-title"><i class="mdi mdi-calculator-variant"></i> 공제 계산 시 포함:</span>
-
                 <label class="melt-toggle">
                   <span class="melt-label">연차수당</span>
                   <div class="switch">
@@ -870,7 +962,6 @@ onMounted(async () => {
                     <span class="slider round"></span>
                   </div>
                 </label>
-
                 <label class="melt-toggle">
                   <span class="melt-label">퇴직충당금</span>
                   <div class="switch">
@@ -896,6 +987,9 @@ onMounted(async () => {
             <label class="toggle-checkbox main-toggle">
               <input type="checkbox" v-model="currentConfig.showSeverance" /> <span class="font-bold" style="color: #b45309;">퇴직충당금</span>
             </label>
+            <label class="toggle-checkbox main-toggle">
+              <input type="checkbox" v-model="currentConfig.showSanjae" /> <span class="font-bold" style="color: #b45309;">산재보험</span>
+            </label>
             <label v-for="item in deductionItems" :key="item.itemCd" class="toggle-checkbox">
               <input type="checkbox" :value="item.itemCd" v-model="currentConfig.activeDeductionCodes" /> <span>{{ item.itemNm }}</span>
             </label>
@@ -905,32 +999,33 @@ onMounted(async () => {
             <table class="excel-table">
               <thead>
               <tr>
-                <th rowspan="2" style="min-width:50px;">NO</th>
-                <th rowspan="2" style="min-width:70px;">이름</th>
-                <th rowspan="2" style="min-width:70px;">직책</th>
-                <th rowspan="2" style="min-width:70px;">생년월일</th>
-                <th rowspan="2" style="min-width:70px;">입사일</th>
-                <th rowspan="2" style="min-width:70px;">퇴사일</th>
+                <th rowspan="2" style="width:40px; min-width:40px;">NO</th>
+                <th rowspan="2" style="width:70px; min-width:70px;">이름</th>
+                <th rowspan="2" style="width:70px; min-width:70px;">직책</th>
+                <th rowspan="2" style="width:80px; min-width:80px;">생년월일</th>
+                <th rowspan="2" style="width:80px; min-width:80px;">입사일</th>
+                <th rowspan="2" style="width:80px; min-width:80px;">퇴사일</th>
 
-                <th v-if="currentConfig.showAnnualLeave" rowspan="2" class="bg-yellow-light" style="min-width:80px;">연차수당</th>
-                <th v-if="currentConfig.showSeverance" rowspan="2" class="bg-yellow-light" style="min-width:80px;">퇴직충당금</th>
-
-                <th v-if="currentConfig.showGrossPay" rowspan="2" class="bg-blue-light" style="min-width:100px;">급여</th>
+                <th v-if="currentConfig.showAnnualLeave" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:120px;">연차수당</th>
+                <th v-if="currentConfig.showSeverance" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:120px;">퇴직충당금</th>
+                <th v-if="currentConfig.showGrossPay" rowspan="2" class="bg-blue-light" style="width:80px;min-width:120px;">급여</th>
 
                 <template v-for="item in visibleDeductionItems" :key="'th1-'+item.itemCd">
-                  <th v-if="item.itemNm.includes('고용보험')" colspan="2" class="bg-red-light" style="min-width:150px;">고용보험({{ insuranceRates.employmentInsurance }}%)</th>
-                  <th v-else rowspan="2" class="bg-red-light" style="min-width:90px;">{{ item.itemNm }}</th>
+                  <th v-if="item.itemNm.includes('고용보험')" colspan="2" class="bg-red-light" style="min-width:200px;">고용보험({{ insuranceRates.employmentInsurance }}%)</th>
+                  <th v-else rowspan="2" class="bg-red-light" style="min-width:120px;">{{ item.itemNm }}</th>
                 </template>
 
-                <th rowspan="2" class="bg-red-light" style="min-width:80px;">총계</th>
-                <th rowspan="2" style="min-width:20px;">관리</th>
+                <th v-if="currentConfig.showSanjae" rowspan="2" class="bg-red-light" style="min-width:120px;">산재보험</th>
+
+                <th rowspan="2" class="bg-red-light" style="min-width:120px;">총계</th>
+                <th rowspan="2" style="width:20px;min-width:20px;">관리</th>
               </tr>
 
               <tr>
                 <template v-for="item in visibleDeductionItems" :key="'th2-'+item.itemCd">
                   <template v-if="item.itemNm.includes('고용보험')">
-                    <th class="bg-red-light" style="min-width:80px; font-size:11px;">실업급여<br>{{ insuranceRates.employmentInsurance }}%</th>
-                    <th class="bg-red-light" style="min-width:80px; font-size:11px;">고용안정 등<br>0.45%</th>
+                    <th class="bg-red-light" style="min-width:100px; font-size:11px;">실업급여<br>{{ insuranceRates.employmentInsurance }}%</th>
+                    <th class="bg-red-light" style="min-width:100px; font-size:11px;">고용안정 등<br>0.45%</th>
                   </template>
                 </template>
               </tr>
@@ -949,28 +1044,79 @@ onMounted(async () => {
                 <td><input type="text" v-model="row.inDate"     class="cell-input text-center" /></td>
                 <td><input type="text" v-model="row.outDate"    class="cell-input text-center" /></td>
 
-                <td v-if="currentConfig.showAnnualLeave"><input type="number" v-model="row.reserves.annualLeave" @input="onSalaryInput(row)" class="cell-input text-right" /></td>
-                <td v-if="currentConfig.showSeverance"><input type="number" v-model="row.reserves.severance"   @input="onSalaryInput(row)" class="cell-input text-right" /></td>
-
+                <td v-if="currentConfig.showAnnualLeave">
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.reserves.annualLeave)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')"
+                      class="cell-input text-right"
+                  />
+                </td>
+                <td v-if="currentConfig.showSeverance">
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.reserves.severance)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')"
+                      class="cell-input text-right"
+                  />
+                </td>
                 <td v-if="currentConfig.showGrossPay">
-                  <input type="number" v-model="row.grossPay" @input="onSalaryInput(row)" class="cell-input text-right font-bold text-blue" />
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.grossPay)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, row, 'grossPay', row, 'salary')"
+                      class="cell-input text-right font-bold text-blue"
+                  />
                 </td>
 
                 <template v-for="item in visibleDeductionItems" :key="'td-'+item.itemCd">
                   <template v-if="item.itemNm.includes('고용보험')">
-                    <td><input type="number" v-model="row.deductionItems[item.itemCd]" @input="calculateRow(row)" class="cell-input text-right" /></td>
-                    <td><input type="number" v-model="row.reserves.empInsEmployer" @input="calculateRow(row)" class="cell-input text-right" /></td>
+                    <td>
+                      <input
+                          type="text"
+                          :value="formatCurrency(row.deductionItems[item.itemCd])"
+                          @focus="$event.target.select()"
+                          @input="handleCurrencyInput($event, row.deductionItems, item.itemCd, row, 'row')"
+                          class="cell-input text-right"
+                      />
+                    </td>
+                    <td>
+                      <input
+                          type="text"
+                          :value="formatCurrency(row.reserves.empInsEmployer)"
+                          @focus="$event.target.select()"
+                          @input="handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')"
+                          class="cell-input text-right"
+                      />
+                    </td>
                   </template>
                   <td v-else>
-                    <input type="number" v-model="row.deductionItems[item.itemCd]" @input="calculateRow(row)" class="cell-input text-right" />
+                    <input
+                        type="text"
+                        :value="formatCurrency(row.deductionItems[item.itemCd])"
+                        @focus="$event.target.select()"
+                        @input="handleCurrencyInput($event, row.deductionItems, item.itemCd, row, 'row')"
+                        class="cell-input text-right" />
                   </td>
                 </template>
+
+                <td v-if="currentConfig.showSanjae">
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.reserves.sanjae)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')"
+                      class="cell-input text-right" />
+                </td>
 
                 <td class="text-right font-bold bg-gray-50">{{ formatCurrency(getInsuranceTotal(row)) }}</td>
                 <td class="text-center"><button class="btn-delete-row" @click="removePayrollRow(index)"><i class="mdi mdi-trash-can-outline"></i></button></td>
               </tr>
               <tr v-if="formData.payrollData.length === 0">
-                <td :colspan="9 + visibleDeductionItems.length" class="empty-row">등록된 데이터가 없습니다.</td>
+                <td :colspan="9 + visibleDeductionItems.length + (currentConfig.showSanjae ? 1 : 0)" class="empty-row">등록된 데이터가 없습니다.</td>
               </tr>
               </tbody>
 
@@ -989,20 +1135,37 @@ onMounted(async () => {
                   <td v-else class="text-right">{{ formatCurrency(payrollTotals.deductionItems[item.itemCd]) }}</td>
                 </template>
 
+                <td v-if="currentConfig.showSanjae" class="text-right">{{ formatCurrency(payrollTotals.sanjae) }}</td>
+
                 <td class="text-right text-red bg-red-light">{{ formatCurrency(payrollTotals.insuranceTotal) }}</td>
                 <td></td>
               </tr>
 
               <tr v-for="(summary, sIdx) in totalSummary" :key="'summary-'+sIdx">
                 <td :colspan="colspanForSummary" style="border: none; background: transparent;"></td>
-                <td colspan="2" class="text-center bg-gray-50 font-bold" style="font-size: 13px;">{{ summary.label }}</td>
-                <td colspan="2" class="text-right font-bold" :class="summary.label === '총 청구액' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color);">
-                  <template v-if="summary.label.includes('4대보험차액')">
-                    <input type="number" v-model="formData.billingData.insuranceDiff" class="cell-input text-right font-bold text-red" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+                <td colspan="2"
+                    class="text-center bg-gray-50 font-bold"
+                    :class="{'summary-label-cell': summary.toggleable}"
+                    @click="summary.toggleable && toggleSummarySign(summary.key)"
+                    style="font-size: 13px;"
+                    :title="summary.toggleable ? '클릭하여 양수/음수 전환' : ''">
+                  <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
+                      {{ summary.sign < 0 ? '-' : '+' }}
+                    </span>
+                    {{ summary.label }}
+                  </div>
+                </td>
+                <td colspan="2" class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color);">
+                  <template v-if="summary.key === 'insuranceDiff'">
+                    <div style="display: flex; align-items: center; padding-left: 8px;">
+                      <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
+                      <input type="text" :value="formatCurrency(formData.billingData.insuranceDiff)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+                    </div>
                   </template>
                   <template v-else>
-                    <div style="padding: 6px;" :class="{'text-red': summary.label.includes('차감')}">
-                      <span v-if="summary.label.includes('차감') && summary.value > 0">- </span>{{ formatCurrency(summary.value) }}
+                    <div style="padding: 6px;" :class="summary.sign < 0 ? 'text-red' : (summary.toggleable ? 'text-blue' : '')">
+                      <span v-if="summary.value !== 0">{{ summary.sign < 0 ? '- ' : (summary.toggleable ? '+ ' : '') }}</span>{{ formatCurrency(summary.value) }}
                     </div>
                   </template>
                 </td>
@@ -1018,7 +1181,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* 모달 레이아웃 (이전과 동일) */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
 .modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1); overflow: hidden; border: 1px solid var(--border-color); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-wrap: wrap; }
@@ -1036,15 +1198,6 @@ onMounted(async () => {
 .tab-btn { padding: 14px 18px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap; }
 .tab-btn:hover  { color: var(--text-main); }
 .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-.view-type-switcher { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 12px; }
-.switcher-label { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-right: 2px; }
-.view-type-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-canvas); color: var(--text-sub); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .2s; white-space: nowrap; }
-.view-type-btn:hover { border-color: var(--border-focus); background: var(--bg-hover); }
-.view-type-btn.active { background: color-mix(in srgb, var(--vt-color, var(--primary)) 12%, transparent); border-color: var(--vt-color, var(--primary)); color: var(--vt-color, var(--primary)); }
-.view-indicator { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; margin-left: 8px; padding: 3px 9px; border-radius: 20px; background: color-mix(in srgb, var(--vi-color, var(--primary)) 12%, transparent); color: var(--vi-color, var(--primary)); border: 1px solid color-mix(in srgb, var(--vi-color, var(--primary)) 30%, transparent); }
-.slide-fade-enter-active { transition: all .2s ease; }
-.slide-fade-leave-active { transition: all .15s ease; }
-.slide-fade-enter-from, .slide-fade-leave-to { opacity: 0; transform: translateX(8px); }
 .modal-body { flex: 1; overflow-y: auto; padding: 20px; background: var(--bg-canvas); -webkit-overflow-scrolling: touch; }
 .modal-body::-webkit-scrollbar { width: 8px; }
 .modal-body::-webkit-scrollbar-track { background: var(--bg-canvas); }
@@ -1076,7 +1229,7 @@ onMounted(async () => {
 .excel-table-wrapper { background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--border-color); overflow-x: auto; box-shadow: var(--shadow-sm); -webkit-overflow-scrolling: touch; }
 .excel-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 .excel-table th, .excel-table td { border: 1px solid var(--border-color); padding: 6px; vertical-align: middle; }
-.excel-table thead th { background: var(--bg-hover); font-weight: 600; text-align: center; color: var(--text-main); padding: 10px 8px; white-space: nowrap; line-height: 1.3; }
+.excel-table thead th { background: var(--bg-hover); font-weight: 600; text-align: center; color: var(--text-main); padding: 10px 8px; white-space: nowrap; line-height: 1.3; position: sticky; top: 0; z-index: 10; }
 .statement-table tfoot td { padding: 10px; }
 .bank-info { display: flex; align-items: center; gap: 10px; background: var(--bg-canvas); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; }
 .bank-info label { font-weight: 600; color: var(--text-main); white-space: nowrap; }
@@ -1095,15 +1248,16 @@ onMounted(async () => {
 .btn-delete-row { background: rgba(239, 68, 68, .1); color: var(--danger); border: none; padding: 4px; border-radius: 4px; cursor: pointer; transition: .2s; display: inline-flex; align-items: center; justify-content: center; }
 .btn-delete-row:hover { background: var(--danger); color: var(--text-inverse); }
 .text-gray-400{ color: var(--text-muted); }
+.text-red { color: #dc2626; }
+.text-blue { color: #2563eb; }
 .mt-2 { margin-top: 8px; }
 .mt-4 { margin-top: 16px; }
 .mt-5 { margin-top: 30px; }
 input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-@media (max-width: 1024px) { .modal-overlay { padding: 10px; } .modal-container { height: 95vh; } .document-paper { padding: 24px 20px; } .excel-table { table-layout: auto; } }
+@media (max-width: 1024px) { .modal-overlay { padding: 10px; } .modal-container { height: 95vh; } .document-paper { padding: 24px 20px; } }
 @media (max-width: 768px) { .modal-overlay { padding: 0; align-items: flex-end; } .modal-container { height: 96vh; border-radius: 16px 16px 0 0; max-width: 100%; } .modal-header { padding: 12px 16px; } .header-title h2 { font-size: 15px; } .badge { display: none; } .modal-tabs { padding: 0 8px; } .tab-btn { padding: 12px 12px; font-size: 13px; } .tab-text { display: none; } .switcher-label { display: none; } .modal-body { padding: 12px; } .document-paper { padding: 16px 14px; } .doc-header h1 { font-size: 18px; letter-spacing: 4px; margin-bottom: 20px; } .form-grid { grid-template-columns: 1fr; gap: 12px; } .btn-text { display: none; } .action-btns { gap: 6px; } .btn-add-row, .btn-load-data { padding: 7px 10px; } .excel-table { font-size: 12px; } .excel-table thead th { padding: 8px 6px; font-size: 11px; } .excel-table td { padding: 4px; } .cell-input { font-size: 12px; padding: 3px; } .deduction-toggles { gap: 8px; padding: 10px; } }
 @media (max-width: 480px) { .header-title h2 { font-size: 14px; } .modal-body { padding: 8px; } .document-paper { padding: 12px 10px; } .doc-header h1 { font-size: 16px; letter-spacing: 3px; } .tab-btn { padding: 10px 10px; } }
 
-/* 연차/퇴직금 개별 녹이기 토글 디자인 */
 .melt-toggles-group {
   display: flex;
   align-items: center;
@@ -1139,4 +1293,11 @@ input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-app
 .slider.round:before { border-radius: 50%; }
 input:checked + .slider { background-color: #dc2626; }
 input:checked + .slider:before { transform: translateX(14px); }
+
+/* ★ 요약 하단 토글 관련 디자인 */
+.summary-label-cell { cursor: pointer; transition: background-color 0.2s; user-select: none; }
+.summary-label-cell:hover { background-color: #e2e8f0; }
+.sign-badge { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; font-size: 12px; font-weight: 900; color: white; }
+.bg-red-badge { background-color: #ef4444; }
+.bg-blue-badge { background-color: #3b82f6; }
 </style>
