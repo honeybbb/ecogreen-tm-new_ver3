@@ -13,10 +13,10 @@ export const useTableResize = () => {
         document.body.classList.add('is-resizing');
 
         const onMove = (moveEvent) => {
-            // ✅ Math.max 최솟값을 1px로 낮춰 거의 무제한 축소 허용
+            // Math.max 최솟값을 1px로 낮춰 거의 무제한 축소 허용
             const newWidth = Math.max(1, startWidth + (moveEvent.clientX - startX));
             th.style.width    = newWidth + 'px';
-            th.style.minWidth = newWidth + 'px'; // ✅ minWidth도 같이 덮어써야 CSS min-width를 이김
+            th.style.minWidth = newWidth + 'px';
         };
 
         const onUp = () => {

@@ -412,68 +412,36 @@ onMounted(async () => {
       <div class="table-scroll-container">
         <table class="data-table">
 
-          <!-- ─ thead ─────────────────────────────── -->
           <thead>
           <tr>
-            <!-- 체크박스 -->
             <th rowspan="2" class="text-center" style="width:30px;">
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
               </label>
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
+            <th rowspan="2" class="text-center" style="width:40px;" data-col-key="no">No.<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:110px;" data-col-key="siteName">현장명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:70px;" data-col-key="role">직책<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:80px;" data-col-key="id">사번<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:80px;" data-col-key="staff">성명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
 
-            <!-- No. -->
-            <th rowspan="2" class="text-center" style="width:40px;" data-col-key="no">
-              No.
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 현장명 -->
-            <th rowspan="2" class="text-center" style="width:110px;" data-col-key="siteName">
-              현장명
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 직책 -->
-            <th rowspan="2" class="text-center" style="width:70px;" data-col-key="role">
-              직책
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 사번 -->
-            <th rowspan="2" class="text-center" style="width:80px;" data-col-key="id">
-              사번
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 성명 -->
-            <th rowspan="2" class="text-center" style="width:80px;" data-col-key="staff">
-              성명
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 합계 그룹 -->
-            <th colspan="2" class="text-center group-header-summary">
+            <th colspan="2" class="text-center group-header-summary group-divider">
               합계
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-
-            <!-- 지급 항목 그룹 -->
-            <th :colspan="payItems.length" class="text-center group-header-pay">
+            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">
               지급 항목
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-
-            <!-- 공제 항목 그룹 -->
-            <th :colspan="deductionItems.length" class="text-center group-header-deduction">
+            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">
               공제 항목 (체크 시 자동계산)
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
           </tr>
 
           <tr>
-            <th class="text-right sub-header" data-col-key="gross">
+            <th class="text-right sub-header group-divider" data-col-key="gross">
               지급합계
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
@@ -482,18 +450,18 @@ onMounted(async () => {
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
             <th
-                v-for="item in payItems"
+                v-for="(item, index) in payItems"
                 :key="item.itemCd"
-                class="text-right sub-header amount-header"
+                :class="['text-right sub-header amount-header theme-pay-sub', { 'group-divider': index === 0 }]"
                 :data-col-key="'pay-' + item.itemCd"
             >
               {{ item.itemNm }}
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
             <th
-                v-for="item in deductionItems"
+                v-for="(item, index) in deductionItems"
                 :key="item.itemCd"
-                class="text-right sub-header amount-header"
+                :class="['text-right sub-header amount-header theme-deduct-sub', { 'group-divider': index === 0 }]"
                 :data-col-key="'ded-' + item.itemCd"
             >
               {{ item.itemNm }}
@@ -502,59 +470,32 @@ onMounted(async () => {
           </tr>
           </thead>
 
-          <!-- ─ tbody ─────────────────────────────── -->
           <tbody>
           <tr
               v-for="(p, i) in pagedPayrollList"
               :key="p.idx"
               class="data-row"
           >
-            <!-- 체크 + 상태 색상 -->
-            <td
-                class="text-center calculate-status transition-colors"
-                :class="{
-                  'calculate-active':   p.status == 1,
-                  'calculate-draft':    p.status == 2,
-                  'calculate-inactive': p.status == 0,
-                }"
-            >
-              <label class="checkbox-wrapper">
-                <input type="checkbox" v-model="p.selected" class="custom-checkbox" />
-              </label>
+            <td class="text-center calculate-status transition-colors" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0 }">
+              <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
-
-            <!-- No. -->
-            <td class="text-center text-gray">
-              {{ (currentPage - 1) * pageSize + i + 1 }}
-            </td>
-
-            <!-- 현장명 -->
+            <td class="text-center text-gray">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
             <td class="text-center text-dark compact-text">{{ p.siteName }}</td>
-
-            <!-- 직책 -->
             <td class="text-center text-gray compact-text">{{ p.role }}</td>
-
-            <!-- 사번 -->
             <td class="text-center text-gray compact-text">{{ p.id }}</td>
-
-            <!-- 성명 -->
             <td class="text-center font-bold text-dark member-name">{{ p.staff }}</td>
 
-            <!-- 지급합계 -->
-            <td class="text-right bg-light-gray font-bold amount-cell">
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider">
               {{ formatCurrency(calculateRow(p).gross) }}
             </td>
-
-            <!-- 공제합계 -->
             <td class="text-right bg-light-gray font-bold text-red amount-cell">
               {{ formatCurrency(calculateRow(p).ded) }}
             </td>
 
-            <!-- 지급 항목 입력 -->
             <td
-                v-for="item in payItems"
+                v-for="(item, index) in payItems"
                 :key="item.itemCd"
-                class="amount-cell"
+                :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]"
             >
               <input
                   v-if="p.payments"
@@ -565,11 +506,10 @@ onMounted(async () => {
               />
             </td>
 
-            <!-- 공제 항목 체크 + 입력 -->
             <td
-                v-for="item in deductionItems"
+                v-for="(item, index) in deductionItems"
                 :key="item.itemCd"
-                class="amount-cell"
+                :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]"
             >
               <div class="deduction-combo-box">
                 <label class="checkbox-wrapper-sm">
@@ -591,7 +531,6 @@ onMounted(async () => {
             </td>
           </tr>
 
-          <!-- 빈 상태 -->
           <tr v-if="filteredPayrollList.length === 0">
             <td :colspan="8 + payItems.length + deductionItems.length" class="empty-state">
               <i class="mdi mdi-text-box-search-outline"></i>
@@ -600,20 +539,19 @@ onMounted(async () => {
           </tr>
           </tbody>
 
-          <!-- ─ tfoot ─────────────────────────────── -->
           <tfoot>
           <tr class="table-footer sticky-footer">
             <td colspan="6" class="text-center">
               <span class="font-bold text-dark">전체 합계</span>
             </td>
-            <td class="text-right font-bold">
+            <td class="text-right font-bold group-divider">
               {{ formatCurrency(totalSummary.gross) }}
             </td>
             <td class="text-right font-bold text-red">
               {{ formatCurrency(totalSummary.ded) }}
             </td>
-            <td :colspan="payItems.length" class="bg-light-gray border-none"></td>
-            <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none">
+            <td :colspan="payItems.length" class="bg-light-gray border-none theme-pay-sub group-divider"></td>
+            <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none theme-deduct-sub group-divider">
               <div class="net-pay-box">
                 <span class="net-pay-label">실 지급액 합계</span>
                 <span class="net-pay-value">{{ formatCurrency(totalSummary.net) }} 원</span>
@@ -722,7 +660,9 @@ onMounted(async () => {
 .data-row { background: var(--bg-surface); }
 .data-row:hover { background-color: var(--primary-soft); }
 .amount-header,
-.amount-cell { min-width: 75px; }
+.amount-cell {
+  min-width: 75px;
+}
 
 /* === 공제 콤보 === */
 .deduction-combo-box { display: flex; gap: 4px; align-items: center; }
@@ -734,11 +674,17 @@ onMounted(async () => {
 /* === 인라인 인풋 === */
 .inline-input {
   box-sizing: border-box;
-  width: 100%; max-width: 100%; min-width: 0;
-  padding: 6px 4px; text-align: right;
-  font-size: 13px; color: var(--text-main);
-  border: 1px solid transparent; border-radius: 6px;
-  background: transparent; transition: all 0.2s;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 4px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-main);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 .inline-input:hover  { border-color: var(--border-focus); background: var(--bg-surface); }
 .inline-input:focus  {
@@ -791,32 +737,71 @@ onMounted(async () => {
    컬럼 리사이즈 핸들
 ========================================= */
 .data-table th {
-  position: relative; /* 핸들 absolute 기준점 */
+  position: relative; /* 핸들의 절대 위치 기준점 */
+  overflow: hidden; /* 글자가 넘치지 않게 */
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* 평소에는 완전히 투명하게 숨김 */
 .resize-handle {
   position: absolute;
-  top: 0; right: 0;
-  width: 5px; height: 100%;
+  top: 0;
+  right: -2px; /* 셀 경계선에 위치 */
+  width: 5px;
+  height: 100%;
   cursor: col-resize;
-  user-select: none;
   z-index: 10;
-  background: transparent;
-  transition: background 0.15s;
-  border-radius: 0 2px 2px 0;
+  background-color: transparent;
+  transition: background-color 0.2s ease;
 }
+
+/* 마우스를 올릴 때만 은은한 회색 선 표시 */
 .resize-handle:hover,
 .resize-handle:active {
-  background: var(--primary);
-  opacity: 0.45;
+  background-color: var(--border-focus);
 }
 
-/* 리사이즈 중 전체 커서 강제 적용 (JS에서 body 클래스 토글 시 활성화) */
-body.is-resizing *        { cursor: col-resize !important; user-select: none !important; }
-
+/* 리사이즈 중일 때 커서 고정 */
+body.is-resizing,
+body.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 /* === 반응형 === */
 @media (max-width: 768px) {
   .status-legend         { width: 100%; justify-content: space-between; padding: 10px 0; }
   .header-right-controls { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
+}
+
+/* 그룹간 명확한 세로 구분선 */
+.group-divider {
+  border-left: 2px solid var(--border-color) !important;
+}
+
+/* 지급 항목 테마 (상단 포인트 라인 + 아주 연한 배경) */
+.theme-pay-header {
+  background-color: #f8fafc !important; /* 아주 연한 쿨그레이 (거의 흰색에 가까움) */
+  border-top: 2px solid #3b82f6 !important; /* 상단에만 파란색 포인트 라인 */
+  color: #1e40af !important;
+}
+.theme-pay-sub {
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.theme-pay-cell {
+  background-color: transparent; /* 데이터 셀은 기본 흰색 유지 (지저분함 방지) */
+}
+
+/* 공제 항목 테마 (상단 포인트 라인 + 아주 연한 배경) */
+.theme-deduct-header {
+  background-color: #fef2f2 !important; /* 아주 연한 파스텔 레드 */
+  border-top: 2px solid #ef4444 !important; /* 상단에만 빨간색 포인트 라인 */
+  color: #991b1b !important;
+}
+.theme-deduct-sub {
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.theme-deduct-cell {
+  background-color: transparent; /* 데이터 셀은 기본 흰색 유지 */
 }
 </style>
