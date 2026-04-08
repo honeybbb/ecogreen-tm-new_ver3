@@ -275,9 +275,18 @@ const handleSubmit = async () => {
   if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); currentStep.value = 3; return; }
   if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); currentStep.value = 3; return; }
 
-
   try {
-    const contractsJson = JSON.stringify(contractGroups.value);
+    const finalContractGroups = contractGroups.value.map(group => {
+      const calcFee = getTotalMonthlyFee(group);
+      return {
+        ...group,
+        // 사용자가 직접 입력한 값이 있으면 쓰고, 없거나 0이면 계산된 금액(calcFee) 대입
+        totalCost: Number(group.totalCost) > 0 ? Number(group.totalCost) : calcFee
+      };
+    });
+
+    // 가공이 끝난 새 배열(finalContractGroups)을 JSON으로 변환
+    const contractsJson = JSON.stringify(finalContractGroups);
     const params = {
       cIdx: authStore.user?.cIdx,
       sIdx: route.query.idx || '',

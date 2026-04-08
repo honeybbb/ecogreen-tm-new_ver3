@@ -512,6 +512,16 @@ const toggleEdit = () => {
 
 const saveSiteData = async () => {
   if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
+
+  contractGroups.value.forEach(group => {
+    const calcFee = getTotalMonthlyFee(group);
+
+    // 직접 입력한 입찰 금액(totalCost)이 없거나 0이라면, 계산된 총합(calcFee)을 넣습니다.
+    if (!group.totalCost || Number(group.totalCost) === 0) {
+      group.totalCost = calcFee;
+    }
+  });
+
   try {
     const params = {
       cIdx:             useAuthStore().user?.cIdx,
