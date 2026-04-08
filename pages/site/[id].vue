@@ -854,7 +854,7 @@ onMounted(async () => {
               <div class="info-item">
                 <label>연면적</label>
                 <div v-if="isEditing" class="input-with-unit">
-                  <input type="number" v-model="site.areaGross" class="info-input text-right" />
+                  <input type="number" v-model="site.areaGross" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
                 <span v-else class="info-value">{{ site.areaGross || 0 }} ㎡</span>
@@ -863,7 +863,7 @@ onMounted(async () => {
               <div class="info-item">
                 <label>135㎡ 이하 (면세)</label>
                 <div v-if="isEditing" class="input-with-unit">
-                  <input type="number" v-model="site.areaUnder" class="info-input text-right" />
+                  <input type="number" v-model="site.areaUnder" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
                 <span v-else class="info-value">{{ site.areaUnder || 0 }} ㎡</span>
@@ -872,30 +872,30 @@ onMounted(async () => {
               <div class="info-item">
                 <label>135㎡ 초과 (과세)</label>
                 <div v-if="isEditing" class="input-with-unit">
-                  <input type="number" v-model="site.areaOver" class="info-input text-right" />
+                  <input type="number" v-model="site.areaOver" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
                 <span v-else class="info-value">{{ site.areaOver || 0 }} ㎡</span>
               </div>
 
-              <div class="info-item">
+              <div class="info-item full-width">
                 <label>총 관리면적 및 과세여부</label>
-                <div v-if="isEditing" class="input-with-unit">
-                  <input type="number" :value="totalArea" class="info-input text-right readonly-highlight" readonly />
-                  <span class="unit-bold">㎡</span>
-                </div>
-                <div v-else class="info-value">
-                  <strong class="text-primary">{{ site.area || 0 }} ㎡</strong>
-                  <span :class="['badge', isVatSite ? 'badge-red' : 'badge-green']" style="margin-left: 8px;">
-          {{ isVatSite ? '과세 대상' : '면세 대상' }}
+
+                <div class="calculated-area-box">
+                  <span class="total-number">{{ totalArea || site.area || 0 }} <small>㎡</small></span>
+
+                  <span :class="['vat-badge', isVatSite ? 'vat-red' : 'vat-green']">
+          <i :class="['mdi', isVatSite ? 'mdi-check-circle' : 'mdi-minus-circle']"></i>
+          {{ isVatSite ? '과세 대상 (VAT Y)' : '면세 대상 (VAT N)' }}
         </span>
                 </div>
+
+                <p v-if="isEditing" class="info-helper-text">
+                  * 135㎡ 초과(과세) 면적을 입력하면 <strong>과세 대상</strong>으로 자동 전환되며, 정산 시 VAT가 생성됩니다.
+                </p>
               </div>
 
             </div>
-            <p v-if="isEditing" class="info-helper-text">
-              * 과세 면적(135㎡ 초과)이 0보다 크면 정산 시 <strong>VAT가 자동으로 생성</strong>됩니다.
-            </p>
           </div>
 
           <div class="info-section">
@@ -2076,9 +2076,54 @@ export default {
   .staff-th-count { font-size: 10px; }
 }
 
+/* 입력창 단위(㎡) 스타일 */
 .input-with-unit { position: relative; display: flex; align-items: center; }
-.input-with-unit .unit { position: absolute; right: 12px; font-size: 12px; color: var(--text-muted); }
-.input-with-unit .unit-bold { position: absolute; right: 12px; font-size: 12px; font-weight: 700; color: var(--primary); }
-.readonly-highlight { background-color: var(--bg-hover) !important; color: var(--primary) !important; border-color: var(--primary) !important; font-weight: 700; }
-.info-helper-text { font-size: 11px; color: var(--text-sub); margin-top: 8px; }
+.input-with-unit .unit { position: absolute; right: 12px; font-size: 13px; color: var(--text-muted); }
+.text-right { text-align: right; }
+
+/* 총 관리면적 및 과세여부 박스 */
+.calculated-area-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background-color: var(--bg-hover);
+  border: 1px dashed var(--primary);
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+.total-number {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--primary);
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.total-number small {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+/* 과세/면세 배지 */
+.vat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  transition: all 0.3s ease;
+}
+.vat-red { background-color: var(--danger); box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2); }
+.vat-green { background-color: var(--success); box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); }
+
+/* 도움말 텍스트 */
+.info-helper-text { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
+.info-helper-text strong { color: var(--danger); }
 </style>
