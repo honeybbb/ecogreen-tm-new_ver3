@@ -70,6 +70,42 @@ const markAsDraft = (row) => {
   row.selected = true;
 };
 
+const onInputAmount = (row, item, group, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  // 1. 숫자 이외의 문자 제거 및 숫자 변환
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = Number(rawValue) || 0;
+
+  // 2. 데이터 업데이트
+  if (group === 'pay') {
+    row.payItems[item.itemCd] = numValue;
+    // 기본급(04001001) 수정 시 원본 기준급 업데이트 (기존 resetBasePay 역할)
+    if (item.itemCd === '04001001') {
+      row.originalBasePay = numValue;
+    }
+  } else {
+    row.deductionItems[item.itemCd] = numValue;
+  }
+
+  // 3. 화면 포맷팅 (콤마 추가)
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  // 4. 커서 위치 보정
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+
+  // 5. 상태 변경 및 재계산
+  markAsDraft(row);
+  if (group === 'pay') {
+    calculateInsurances(row); // 지급항목 변경 시 보험료 재계산
+  }
+};
+
 const selectAll = computed({
   get: () => pagedPayrollList.value.length > 0 && pagedPayrollList.value.every(p => p.selected),
   set: (val) => { pagedPayrollList.value.forEach(p => p.selected = val); }
@@ -1013,13 +1049,35 @@ onMounted(async () => {
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.net ?? 0) }}
             </td>
 
-            <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
-              <input type="number" v-model.number="p.payItems[item.itemCd]"
-                     @focus="$event.target.select()" @input="markAsDraft(p); resetBasePay(p)" class="inline-input" />
+            <td
+                v-for="(item, index) in payItems"
+                :key="item.itemCd"
+                :class="[
+                    'amount-cell theme-pay-cell', { 'group-divider': index === 0 }
+                ]"
+            >
+              <input
+                  type="text"
+                  :value="formatCurrency(p.payItems[item.itemCd])"
+                  @focus="$event.target.select()"
+                  @input="onInputAmount(p, item, 'pay', $event)"
+                  class="inline-input"
+              />
             </td>
-            <td v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
-              <input type="number" v-model.number="p.deductionItems[item.itemCd]"
-                     @focus="$event.target.select()" @input="markAsDraft(p)" class="inline-input" />
+            <td
+                v-for="(item, index) in deductionItems"
+                :key="item.itemCd"
+                :class="[
+                    'amount-cell theme-deduct-cell', { 'group-divider': index === 0 }
+                ]"
+            >
+              <input
+                  type="text"
+                  :value="formatCurrency(p.deductionItems[item.itemCd])"
+                  @focus="$event.target.select()"
+                  @input="onInputAmount(p, item, 'deduct', $event)"
+                  class="inline-input"
+              />
             </td>
           </tr>
           <tr v-if="filteredPayrollList.length === 0">

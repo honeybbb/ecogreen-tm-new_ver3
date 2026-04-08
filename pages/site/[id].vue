@@ -286,6 +286,66 @@ const makeValuesObj = (staffList, defaultVal = 0) => {
   return obj;
 };
 
+// [추가] 산출내역서 전용 금액 입력 핸들러
+const onInputCost = (item, code, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  // 1. 숫자 이외의 문자(콤마 등) 제거
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = Number(rawValue) || 0;
+
+  // 2. 데이터 업데이트 (숫자형으로 유지)
+  item.values[code] = numValue;
+
+  // 3. 화면 포맷팅 (콤마 추가)
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  // 4. 커서 위치 보정 (중간 수정 시 커서가 뒤로 안 튕기게 함)
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
+// [추가] 일반관리비, 이윤 등 단일 객체 입력 핸들러
+const onInputSingleCost = (obj, code, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = Number(rawValue) || 0;
+
+  obj[code] = numValue;
+
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
+const onInputMonthlyTotal = (group, event) => {
+  const el = event.target;
+  const numValue = Number(el.value.replace(/[^\d]/g, '')) || 0;
+
+  // 자동 합계 대신 이 값을 우선해서 쓰도록 필드에 저장
+  group.manualMonthlyTotal = numValue;
+
+  el.value = formatCurrency(numValue);
+};
+
+// 수동 입력값이 있으면 그것을 쓰고, 없으면 자동 계산 합계를 반환하는 computed용 함수 수정
+const getDisplayMonthlyTotal = (g) => {
+  if (g.manualMonthlyTotal !== undefined && g.manualMonthlyTotal !== null) {
+    return g.manualMonthlyTotal;
+  }
+  return getTotalMonthlyFee(g); // 기존 자동 계산 함수
+};
+
 const createDefaultCostBreakdown = (staffList = []) => ({
   directLabor: [
     { label: '기본급',         values: makeValuesObj(staffList) },
@@ -937,8 +997,15 @@ onMounted(async () => {
                             <CodeSelect v-else v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
-                            <input v-else v-model.number="item.values[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input" />
+                            <span v-if="!isEditing">{{ formatCurrency(item.values[staff.code]) }}</span>
+                            <input
+                                v-else
+                                type="text"
+                                :value="formatCurrency(item.values[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputCost(item, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <!-- 행합계 -->
                           <td class="col-rowtotal-cell">
@@ -987,8 +1054,15 @@ onMounted(async () => {
                             <CodeSelect v-else v-model="item.label" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
-                            <input v-else v-model.number="item.values[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input" />
+                            <span v-if="!isEditing">{{ formatCurrency(item.values[staff.code]) }}</span>
+                            <input
+                                v-else
+                                type="text"
+                                :value="formatCurrency(item.values[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputCost(item, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
@@ -1035,13 +1109,27 @@ onMounted(async () => {
                             <CodeSelect v-else v-model="item.label" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
-                            <input v-else v-model.number="item.values[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input" />
+                            <span v-if="!isEditing">{{ formatCurrency(item.values[staff.code]) }}</span>
+                            <input
+                                v-else
+                                type="text"
+                                :value="formatCurrency(item.values[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputCost(item, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
-                          <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
+                          <td>
+                            <span v-if="!isEditing">{{ item.bigo }}</span>
+                            <input
+                                v-else type="text"
+                                class="tbl-value-input"
+                                v-model="item.bigo"
+                            />
+                          </td>
                           <td v-if="isEditing"><button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
                         </tr>
                         </tbody>
@@ -1093,7 +1181,14 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span>
-                            <input v-else v-model.number="group.costBreakdown.managementFee[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
+                            <input
+                                v-else
+                                type="text"
+                                :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
+                                class="tbl-value-input text-right"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
@@ -1111,7 +1206,14 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span>
-                            <input v-else v-model.number="group.costBreakdown.profit[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
+                            <input
+                                v-else
+                                type="text"
+                                :value="formatCurrency(group.costBreakdown.profit[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)"
+                                class="tbl-value-input text-right"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>
@@ -1134,24 +1236,35 @@ onMounted(async () => {
                             </span>
                           </td>
                           <td :colspan="group.staffList.length">
-                            <span class="summary-val grand-total">
-                              {{ formatCurrency(getTotalMonthlyFee(group)) }}
+                            <input
+                                v-if="isEditing"
+                                type="text"
+                                :value="formatCurrency(getDisplayMonthlyTotal(group))"
+                                @focus="$event.target.select()"
+                                @input="onInputMonthlyTotal(group, $event)"
+                                class="tbl-value-input grand-total-input"
+                                />
+                            <span v-else class="summary-val grand-total">
+                              {{ formatCurrency(getDisplayMonthlyTotal(group)) }}
                             </span>
                           </td>
+
                           <td class="col-rowtotal-cell">
-                            <span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span>
+                            <span class="summary-val grand-total">
+                            {{ formatCurrency(getDisplayMonthlyTotal(group)) }}
+                          </span>
                           </td>
                           <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
                         </tr>
-                        <tr>
+                        <!--tr>
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 (계약기간 총 용역비)</span></td>
                           <td :colspan="group.staffList.length">
                             <input v-if="isEditing" type="text" class="tbl-value-input">
                             <span v-else></span>
                           </td>
-                          <td><!--input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span--></td>
+                          <td></td>
                           <td class="col-rowtotal-cell"></td>
-                        </tr>
+                        </tr-->
                         </tbody>
                       </table>
 
