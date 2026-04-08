@@ -5,6 +5,7 @@ import { useAuthStore } from "~/stores/auth.js";
 // import * as XLSX from 'xlsx';
 import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/Pagination.vue";
+import { useTableResize } from '~/composables/useTableResize.js';
 
 const {
   siteOptions,
@@ -51,6 +52,9 @@ const filteredPayrollList = computed(() =>
       return siteMatch && typeMatch && searchMatch;
     })
 );
+
+// ── 컬럼 리사이즈 ─────────────────────────────────
+const { startResize } = useTableResize();
 
 const handlePageChange = () => {
   document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -945,23 +949,31 @@ onMounted(async () => {
               </label>
             </th>
             <th rowspan="2" class="text-center" style="width:50px;">No.</th>
-            <th rowspan="2" class="text-center" style="width:140px;">현장명</th>
-            <th rowspan="2" class="text-center" style="width:90px;">직책</th>
-            <th rowspan="2" class="text-center" style="width:90px;">사번</th>
-            <th rowspan="2" class="text-center" style="width:100px;">성명</th>
-            <th rowspan="2" class="text-center" style="width:110px;">근무/기준</th>
-            <th colspan="3" class="text-center group-header-summary">합계</th>
-            <th :colspan="payItems.length" class="text-center group-header-pay">지급 항목</th>
-            <th :colspan="deductionItems.length" class="text-center group-header-deduction">공제 항목</th>
+            <th rowspan="2" class="text-center" style="width:140px;">현장명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:90px;">직책<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:90px;">사번<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:100px;">성명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center" style="width:110px;">근무/기준<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+
+            <th colspan="3" class="text-center group-header-summary group-divider">합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">공제 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
           </tr>
           <tr>
-            <th class="text-right sub-header">지급합계</th>
-            <th class="text-right sub-header">공제합계</th>
-            <th class="text-right sub-header">실지급액</th>
-            <th v-for="item in payItems" :key="item.itemCd" class="text-right sub-header amount-header">{{ item.itemNm }}</th>
-            <th v-for="item in deductionItems" :key="item.itemCd" class="text-right sub-header amount-header">{{ item.itemNm }}</th>
+            <th class="text-right sub-header group-divider">지급합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th class="text-right sub-header">공제합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th class="text-right sub-header">실지급액<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right theme-pay-sub amount-header', { 'group-divider': index === 0 }]">
+              {{ item.itemNm }}
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right theme-deduct-sub amount-header', { 'group-divider': index === 0 }]">
+              {{ item.itemNm }}
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
           </tr>
           </thead>
+
           <tbody>
           <tr v-for="(p, index) in pagedPayrollList" :key="p.idx" class="data-row">
             <td
@@ -984,14 +996,14 @@ onMounted(async () => {
             <td class="text-center">
               <div class="days-input-group">
                 <input type="number" class="inline-input days-input" v-model.number="p.workedDays"
-                       @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
+                       @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
                 <span class="days-separator">/</span>
                 <input type="number" class="inline-input days-input" v-model.number="p.scheduledDays"
-                       @input="markAsDraft(p); updatePay(p)" title="한 달 기준 근무일수" />
+                       @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="한 달 기준 근무일수" />
               </div>
             </td>
 
-            <td class="text-right bg-light-gray font-bold amount-cell">
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.gross ?? 0) }}
             </td>
             <td class="text-right bg-light-gray font-bold text-red amount-cell">
@@ -1001,13 +1013,13 @@ onMounted(async () => {
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.net ?? 0) }}
             </td>
 
-            <td v-for="item in payItems" :key="item.itemCd" class="amount-cell">
+            <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
               <input type="number" v-model.number="p.payItems[item.itemCd]"
-                     @input="markAsDraft(p); resetBasePay(p)" class="inline-input" />
+                     @focus="$event.target.select()" @input="markAsDraft(p); resetBasePay(p)" class="inline-input" />
             </td>
-            <td v-for="item in deductionItems" :key="item.itemCd" class="amount-cell">
+            <td v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
               <input type="number" v-model.number="p.deductionItems[item.itemCd]"
-                     @input="markAsDraft(p)" class="inline-input" />
+                     @focus="$event.target.select()" @input="markAsDraft(p)" class="inline-input" />
             </td>
           </tr>
           <tr v-if="filteredPayrollList.length === 0">
@@ -1017,14 +1029,15 @@ onMounted(async () => {
             </td>
           </tr>
           </tbody>
+
           <tfoot>
           <tr class="table-footer sticky-footer">
             <td colspan="7" class="text-center"><span class="font-bold text-dark">전체 합계</span></td>
-            <td class="text-right font-bold">{{ formatCurrency(statsInfo.gross) }}</td>
+            <td class="text-right font-bold group-divider">{{ formatCurrency(statsInfo.gross) }}</td>
             <td class="text-right font-bold text-red">{{ formatCurrency(statsInfo.ded) }}</td>
             <td class="text-right font-bold text-blue">{{ formatCurrency(statsInfo.net) }}</td>
-            <td :colspan="payItems.length" class="bg-light-gray border-none"></td>
-            <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none">
+            <td :colspan="payItems.length" class="bg-light-gray border-none group-divider"></td>
+            <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none group-divider">
               <div class="net-pay-box">
                 <span class="net-pay-label">실 지급액 합계</span>
                 <span class="net-pay-value">{{ formatCurrency(statsInfo.net) }} 원</span>
@@ -1090,32 +1103,42 @@ onMounted(async () => {
 .legend-color.calculate-active { background-color: var(--success); }
 
 .table-scroll-container {
-  overflow: auto; max-width: 100%; max-height: calc(100vh - 380px);
+  overflow: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 380px);
 }
 .table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
 .table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
 .table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
 .table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-.data-table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 13px; }
 .data-table thead { position: sticky; top: 0; z-index: 30; }
-.data-table th:last-child, .data-table td:last-child { border-right: none; }
+.data-table th:last-child,
+.data-table td:last-child { border-right: none; }
 
-.group-header-summary, .group-header-pay, .group-header-deduction {
-  background-color: var(--bg-canvas); border-bottom: 1px solid var(--border-color);
+.group-header-summary,
+.group-header-pay,
+.group-header-deduction {
+  background-color: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-color);
 }
-.sub-header { background-color: var(--bg-hover); border-bottom: 1px solid var(--border-color); }
+.sub-header {
+  background-color: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color); }
 
 .data-table td {
-  padding: 8px 10px; border-bottom: 1px solid var(--border-color);
-  border-right: 1px solid var(--bg-canvas); vertical-align: middle; word-break: keep-all;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--bg-hover);
+  vertical-align: middle;
+  word-break: keep-all;
 }
-.amount-header, .amount-cell {
-  min-width: 75px;
-}
-
 .data-row { background: var(--bg-surface); }
 .data-row:hover { background-color: var(--primary-soft); }
+.amount-header,
+.amount-cell {
+  min-width: 75px;
+}
 
 .calculate-status { position: relative; }
 .calculate-inactive { background-color: var(--bg-canvas); }
@@ -1161,20 +1184,82 @@ onMounted(async () => {
 
 .table-footer.sticky-footer {
   position: sticky; bottom: 0; z-index: 25;
-  background-color: var(--bg-surface); border-top: 2px solid var(--border-focus);
+  background-color: var(--bg-canvas);
+  border-top: 2px solid var(--border-focus);
   box-shadow: 0 -4px 12px rgba(0,0,0,0.05);
 }
 .table-footer td { padding: 14px 10px; font-size: 14px; }
 .net-pay-box {
   display: inline-flex; align-items: center; gap: 12px;
-  background-color: var(--primary-soft); padding: 8px 20px; border-radius: 8px; border: 1px solid rgba(37, 99, 235, 0.2);
+  background-color: var(--primary-soft); padding: 8px 20px;
+  border-radius: 8px; border: 1px solid rgba(37, 99, 235, 0.2);
 }
 .net-pay-label { font-size: 13px; color: var(--primary); font-weight: 600; }
 .net-pay-value { font-size: 18px; color: var(--primary); font-weight: 700; letter-spacing: 0.5px;}
+
+.data-table th {
+  position: relative; /* 핸들의 절대 위치 기준점 */
+  overflow: hidden; /* 글자가 넘치지 않게 */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px; /* 셀 경계선에 위치 */
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background-color: transparent;
+  transition: background-color 0.2s ease;
+}
+
+/* 마우스를 올릴 때만 은은한 회색 선 표시 */
+.resize-handle:hover,
+.resize-handle:active {
+  background-color: var(--border-focus);
+}
+
+/* 리사이즈 중일 때 커서 고정 */
+body.is-resizing,
+body.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 
 @media (max-width: 768px) {
   .btn-calculate, .btn-export { flex: 1; justify-content: center; }
   .status-legend { width: 100%; justify-content: space-between; padding: 10px 0; }
   .header-right-controls { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
+}
+
+.group-divider {
+  border-left: 2px solid var(--border-color) !important;
+}
+
+.theme-pay-header {
+  background-color: #f8fafc !important;
+  border-top: 2px solid #3b82f6 !important;
+  color: #1e40af !important;
+}
+.theme-pay-sub {
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.theme-pay-cell {
+  background-color: transparent;
+}
+
+.theme-deduct-header {
+  background-color: #fef2f2 !important;
+  border-top: 2px solid #ef4444 !important;
+  color: #991b1b !important;
+}
+.theme-deduct-sub {
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.theme-deduct-cell {
+  background-color: transparent;
 }
 </style>
