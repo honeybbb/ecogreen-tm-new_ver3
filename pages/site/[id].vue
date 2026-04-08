@@ -349,9 +349,16 @@ const getDirectLaborColTotal   = (g, code) => getColTotal(g.costBreakdown.direct
 const getIndirectLaborColTotal = (g, code) => getColTotal(g.costBreakdown.indirectLabor, code);
 const getExpensesColTotal      = (g, code) => getColTotal(g.costBreakdown.expenses,       code);
 const getLaborColTotal         = (g, code) => getDirectLaborColTotal(g, code) + getIndirectLaborColTotal(g, code) + getExpensesColTotal(g, code);
-const getManagementFeeCol      = (g, code) => Math.floor(getLaborColTotal(g, code) * ((Number(g.costBreakdown.managementFeeRate) || 0) / 100));
-const getProfitCol             = (g, code) => Math.floor(getLaborColTotal(g, code) * ((Number(g.costBreakdown.profitRate) || 0) / 100));
-const getMonthlyTotalCol       = (g, code) => getLaborColTotal(g, code) + getManagementFeeCol(g, code) + getProfitCol(g, code);
+// 일반관리비(E): 요율 계산 대신 입력된 값을 가져옴
+const getManagementFeeCol = (g, code) => {
+  return Number(g.costBreakdown.managementFee?.[code]) || 0;
+};
+
+// 기업이윤(F): 요율 계산 대신 입력된 값을 가져옴
+const getProfitCol = (g, code) => {
+  return Number(g.costBreakdown.profit?.[code]) || 0;
+};
+const getMonthlyTotalCol = (g, code) => getLaborColTotal(g, code) + getManagementFeeCol(g, code) + getProfitCol(g, code);
 const getMonthlyFeeByStaff     = (g, s)    => getMonthlyTotalCol(g, s.code) * s.count;
 const getTotalMonthlyFee       = (g)       => g.staffList.reduce((s, st) => s + getMonthlyFeeByStaff(g, st), 0);
 const getSectionGrandTotal     = (g, sec)  => g.costBreakdown[sec].reduce((s, item) => s + getRowTotal(item), 0);
@@ -459,14 +466,14 @@ const getSiteData = async () => {
       contractGroups.value = JSON.parse(result.contractList).map(item => ({
         category:          item.category,
         type:              item.type,
-        contractStart:     item.startDt,
-        contractEnd:       item.endDt,
+        contractStart:     item.contractStart || item.startDt || '',
+        contractEnd:       item.contractEnd || item.endDt || '',
         totalCost:         item.totalCost || 0,
         workDays:          item.workDays,
         workSchedule:      item.workSchedule,
         breakTime:         item.breaktime,
         staffList:         item.staffList || [],
-        costBreakdown:     item.budget || createDefaultCostBreakdown(item.staffList || []),
+        costBreakdown:     item.costBreakdown || item.budget || createDefaultCostBreakdown(item.staffList || []),
         showCostBreakdown: false,
       }));
     }
@@ -921,7 +928,7 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
-                            <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
+                            <input v-else v-model.number="item.values[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input" />
                           </td>
                           <!-- 행합계 -->
                           <td class="col-rowtotal-cell">
@@ -971,7 +978,7 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
-                            <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
+                            <input v-else v-model.number="item.values[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input" />
                           </td>
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
@@ -1019,7 +1026,7 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing">{{ item.values[staff.code] }}</span>
-                            <input v-else v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" />
+                            <input v-else v-model.number="item.values[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input" />
                           </td>
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
@@ -1076,7 +1083,7 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span>
-                            <input v-else v-model.number="group.costBreakdown.managementFee[staff.code]" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
+                            <input v-else v-model.number="group.costBreakdown.managementFee[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
                           </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
@@ -1094,7 +1101,7 @@ onMounted(async () => {
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span>
-                            <input v-else v-model.number="group.costBreakdown.profit[staff.code]" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
+                            <input v-else v-model.number="group.costBreakdown.profit[staff.code]" @focus="$event.target.select()" type="number" class="tbl-value-input text-right" placeholder="0" min="0" />
                           </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>

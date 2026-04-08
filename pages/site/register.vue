@@ -62,7 +62,7 @@ const detailInput    = ref(null);
 // =============================================
 // costBreakdown 기본값 생성
 // =============================================
-const makeValuesObj = (staffList, defaultVal = 0) => {
+const makeValuesObj = (staffList, defaultVal = '') => {
   const obj = {};
   staffList.forEach(s => { obj[s.code] = defaultVal; });
   return obj;
@@ -103,7 +103,7 @@ const syncCostBreakdownToStaff = (group) => {
   sections.forEach(section => {
     group.costBreakdown[section].forEach(item => {
       currentCodes.forEach(code => {
-        if (!(code in item.values)) item.values[code] = 0;
+        if (!(code in item.values)) item.values[code] = '';
       });
       Object.keys(item.values).forEach(code => {
         if (!currentCodes.includes(code)) delete item.values[code];
@@ -111,11 +111,11 @@ const syncCostBreakdownToStaff = (group) => {
     });
   });
 
-  // ★ 일반관리비, 기업이윤 객체도 인원 변경 시 동기화
+  // 일반관리비, 기업이윤 객체도 인원 변경 시 동기화
   const manualItems = ['managementFee', 'profit'];
   manualItems.forEach(key => {
     currentCodes.forEach(code => {
-      if (!(code in group.costBreakdown[key])) group.costBreakdown[key][code] = 0;
+      if (!(code in group.costBreakdown[key])) group.costBreakdown[key][code] = '';
     });
     Object.keys(group.costBreakdown[key]).forEach(code => {
       if (!currentCodes.includes(code)) delete group.costBreakdown[key][code];
@@ -734,9 +734,9 @@ onMounted(() => {
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
                                 v-model.number="item.values[staff.code]"
+                                @focus="$event.target.select()"
                                 type="number"
                                 class="tbl-value-input"
-                                placeholder="0"
                                 min="0"
                             />
                           </td>
@@ -792,8 +792,13 @@ onMounted(() => {
                             <CodeSelect v-model="item.label" :allow-empty="false" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]"
-                                   type="number" class="tbl-value-input" placeholder="0" min="0" />
+                            <input
+                                v-model.number="item.values[staff.code]"
+                                @focus="$event.target.select()"
+                                type="number"
+                                class="tbl-value-input"
+                                min="0"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
@@ -849,7 +854,13 @@ onMounted(() => {
                             <CodeSelect v-model="item.label" :allow-empty="false" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]" type="number" class="tbl-value-input" placeholder="0" min="0" />
+                            <input
+                                v-model.number="item.values[staff.code]"
+                                @focus="$event.target.select()"
+                                type="number"
+                                class="tbl-value-input"
+                                min="0"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
@@ -927,9 +938,9 @@ onMounted(() => {
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
                                 v-model.number="group.costBreakdown.managementFee[staff.code]"
+                                @focus="$event.target.select()"
                                 type="number"
                                 class="tbl-value-input"
-                                placeholder="0"
                                 min="0"
                             />
                           </td>
@@ -953,9 +964,9 @@ onMounted(() => {
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
                                 v-model.number="group.costBreakdown.profit[staff.code]"
+                                @focus="$event.target.select()"
                                 type="number"
                                 class="tbl-value-input"
-                                placeholder="0"
                                 min="0"
                             />
                           </td>
@@ -1007,13 +1018,20 @@ onMounted(() => {
 
                         <tr>
                           <td>
-                              <span class="summary-label">
-                                <span class="cost-block-label label-total-fee">합</span>
-                                입찰 금액 <br>(계약기간 총 용역비)
-                              </span>
+                            <span class="summary-label">
+                              <span class="cost-block-label label-total-fee">합</span>
+                              입찰 금액 <br>(계약기간 총 용역비)
+                            </span>
                           </td>
                           <td :colspan="group.staffList.length + 1">
-                            <input type="text" class="tbl-value-input">
+                            <input
+                                v-model.number="group.totalCost"
+                                @focus="$event.target.select()"
+                                type="number"
+                                class="tbl-value-input"
+                                placeholder="0"
+                                min="0"
+                            >
                           </td>
                           <td>
                             <input type="text" class="tbl-value-input">
