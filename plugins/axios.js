@@ -2,31 +2,65 @@
 import axios from 'axios'
 
 export default defineNuxtPlugin((nuxtApp) => {
-    // 요청(Request) 인터셉터
+
+    // 요청 인터셉터 (기존 그대로)
     axios.interceptors.request.use((config) => {
         const token = useCookie('user_token').value;
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
         return config;
-    })
+    });
 
-    // 응답(Response) 인터셉터
+    // 응답 인터셉터
     axios.interceptors.response.use(
         (response) => response,
         async (error) => {
-            // 401 권한 없음 에러 발생 시
-            if (error.response?.status === 401) {
-                const token = useCookie('user_token');
-                token.value = null; // 쿠키 초기화
+            const originalRequest = error.config;
 
-                const { useAuthStore } = await import('~/stores/auth');
-                const authStore = useAuthStore();
-                authStore.logout();
+            // 401이고 아직 재시도 안 한 요청
+            if (error.response?.status === 401 && !originalRequest._retry) {
+                originalRequest._retry = true;
 
-                return navigateTo('/login');
+                const refreshToken = useCookie('refresh_token').value;
+
+                // refresh token도 없으면 바로 로그아웃
+                if (!refreshToken) {
+                    return handleLogout();
+                }
+
+                try {
+                    // access token 재발급 요청
+                    const { data } = await axios.post('/api/v1/auth/refresh', { refreshToken });
+
+                    if (data.result) {
+                        // 새 access token 쿠키에 저장
+                        useCookie('user_token').value = data.accessToken;
+
+                        // 실패했던 요청 새 토큰으로 재시도
+                        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+                        return axios(originalRequest);
+                    } else {
+                        return handleLogout();
+                    }
+                } catch (e) {
+                    return handleLogout();
+                }
             }
+
             return Promise.reject(error);
         }
-    )
-})
+    );
+
+    // 로그아웃 처리 공통 함수
+    const handleLogout = async () => {
+        useCookie('user_token').value = null;
+        useCookie('refresh_token').value = null;
+
+        const { useAuthStore } = await import('~/stores/auth');
+        const authStore = useAuthStore();
+        authStore.logout();
+
+        return navigateTo('/login');
+    };
+});
