@@ -35,10 +35,10 @@ export default defineNuxtPlugin((nuxtApp) => {
 
                     if (data.result) {
                         // 새 access token 쿠키에 저장
-                        useCookie('user_token').value = data.accessToken;
+                        useCookie('user_token').value = data.token;
 
                         // 실패했던 요청 새 토큰으로 재시도
-                        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+                        originalRequest.headers.Authorization = `Bearer ${data.token}`;
                         return axios(originalRequest);
                     } else {
                         return handleLogout();
