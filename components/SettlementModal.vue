@@ -719,7 +719,7 @@ const loadPayrollData = async () => {
     await fetchTaxRates();
     if (contractStaffList.value.length === 0 || contractIndirectLabor.value.length === 0) await fetchContractData();
 
-    const res = await axios.get('/api/v1/member/payroll/month', { params: { year, month } });
+    const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
     const rawData = res.data?.data || [];
     const result = rawData.filter(item => item.type == formData.value.type && item.sIdx == formData.value.sIdx);
 
