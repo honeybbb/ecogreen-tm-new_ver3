@@ -33,6 +33,11 @@ const site = ref({
   siteName: '',
   siteId: '',
   siteType: '',
+  businessNumber: '', // 사업자번호
+  representative: '', // 대표자
+  businessType: '',   // 업태
+  businessItem: '',   // 종목
+  email: '',          // 메일주소
   postalCode: '',
   addressMain: '',
   addressDetail: '',
@@ -294,6 +299,11 @@ const handleSubmit = async () => {
       name: site.value.siteName,
       site_id: site.value.siteId,
       status: site.value.status,
+      businessNumber: site.value.businessNumber,
+      representative: site.value.representative,
+      businessType: site.value.businessType,
+      businessItem: site.value.businessItem,
+      email: site.value.email,
       area: site.value.areaGross,
       areaOver: site.value.areaOver,
       areaUnder: site.value.areaUnder,
@@ -570,6 +580,32 @@ onMounted(() => {
             </div>
             <div class="form-group full-width">
               <input type="text" v-model="site.addressMain" placeholder="기본 주소" required class="form-input" readonly />
+            </div>
+          </div>
+
+          <div class="step-header mt-4">
+            <i class="mdi mdi-card-account-details-outline"></i><h2>사업자 정보</h2>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label"><i class="mdi mdi-identifier"></i>사업자등록번호</label>
+              <input type="text" v-model="site.businessNumber" class="form-input" placeholder="예: 123-45-67890" />
+            </div>
+            <div class="form-group">
+              <label class="form-label"><i class="mdi mdi-account-tie"></i>대표자명</label>
+              <input type="text" v-model="site.representative" class="form-input" placeholder="대표자명 입력" />
+            </div>
+            <div class="form-group">
+              <label class="form-label"><i class="mdi mdi-store-outline"></i>업태</label>
+              <input type="text" v-model="site.businessType" class="form-input" placeholder="예: 서비스, 도매" />
+            </div>
+            <div class="form-group">
+              <label class="form-label"><i class="mdi mdi-shape-outline"></i>종목</label>
+              <input type="text" v-model="site.businessItem" class="form-input" placeholder="예: 건물(시설)관리, 경비" />
+            </div>
+            <div class="form-group full-width">
+              <label class="form-label"><i class="mdi mdi-email-outline"></i>이메일(세금계산서/공문 수신용)</label>
+              <input type="email" v-model="site.email" class="form-input" placeholder="예: example@email.com" />
             </div>
           </div>
 
