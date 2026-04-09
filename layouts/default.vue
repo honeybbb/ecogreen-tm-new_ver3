@@ -2,11 +2,13 @@
 import { ref, watch, onMounted, computed } from 'vue';
 import { useRoute, navigateTo, useRouter } from '#app';
 import { useAuthStore } from '@/stores/auth';
+import { useTabStore } from '@/stores/tab';
 import axios from "axios";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const tabStore = useTabStore();
 
 // === 1. 상태 및 반응성 변수 ===
 const isProfileOpen = ref(false);
@@ -24,6 +26,19 @@ const myManagerNm = computed(() => authStore.user?.managerNm ?? null);
 // === 2. 메뉴 데이터 ===
 const items = ref([]);
 const systemItems = ref([]);
+
+//현재 경로에 맞는 메뉴 타이틀을 찾아주는 재귀 함수
+const findMenuTitle = (path, menuTree) => {
+  if (path === '/') return 'Home';
+  for (const item of menuTree) {
+    if (item.to === path) return item.title;
+    if (item.child && item.child.length > 0) {
+      const childTitle = findMenuTitle(path, item.child);
+      if (childTitle) return childTitle;
+    }
+  }
+  return null;
+};
 
 // === 3. 메서드 ===
 const isActive = (item) => {
@@ -62,7 +77,21 @@ watch(() => route.path, (newPath) => {
   }
   mobileMenuOpen.value = false;
   isProfileOpen.value = false;
+
+  const title = findMenuTitle(newPath, [...items.value, ...systemItems.value]) || '새 탭';
+  tabStore.addTab({ title, path: newPath });
+
 }, { immediate: true });
+
+const closeTab = (path) => {
+  // 닫으려는 탭이 현재 보고 있는 탭이라면? -> 이전 탭으로 라우팅 이동 후 닫기
+  if (route.path === path) {
+    const index = tabStore.tabs.findIndex(t => t.path === path);
+    const prevTab = tabStore.tabs[index - 1] || tabStore.tabs[0];
+    if (prevTab) router.push(prevTab.path);
+  }
+  tabStore.removeTab(path);
+};
 
 const logout = () => {
   authStore.logout();
@@ -311,6 +340,20 @@ onMounted(() => {
           </transition>
         </div>
       </header>
+
+      <div class="eg-tab-bar desktop-only">
+        <div
+            v-for="tab in tabStore.tabs"
+            :key="tab.path"
+            :class="['eg-tab-item', { 'active': route.path === tab.path }]"
+            @click="router.push(tab.path)"
+        >
+          <span class="eg-tab-title">{{ tab.title }}</span>
+          <button v-if="tab.path !== '/'" class="eg-tab-close" @click.stop="closeTab(tab.path)">
+            <i class="mdi mdi-close"></i>
+          </button>
+        </div>
+      </div>
 
       <main class="eg-main-content">
         <div class="eg-container">
@@ -611,4 +654,72 @@ body.theme-dark .theme-toggle i { color: var(--primary-hover); }
   .eg-dropdown-content { right: 8px; width: calc(100vw - 16px); max-width: 300px; }
   .session-mini-badge { padding: 4px 8px; font-size: 12px; }
 }
+
+/* === 멀티 탭 바 스타일 === */
+.eg-tab-bar {
+  display: flex;
+  background-color: var(--bg-hover); /* 회색 배경 */
+  padding: 8px 16px 0 16px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 4px;
+  overflow-x: auto;
+}
+.eg-tab-bar::-webkit-scrollbar { display: none; } /* 스크롤바 숨김 */
+
+.eg-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  min-width: 120px;
+  max-width: 200px;
+  color: var(--text-sub);
+  transition: all 0.2s;
+  position: relative;
+  top: 1px; /* border 겹침 효과 */
+}
+
+.eg-tab-item:hover {
+  background-color: var(--bg-surface);
+}
+
+.eg-tab-item.active {
+  background-color: var(--bg-surface); /* 활성화 시 하얀 배경 */
+  color: var(--primary);
+  font-weight: 600;
+  border-top: 2px solid var(--primary); /* 위쪽 강조 선 */
+  z-index: 10;
+}
+
+.eg-tab-title {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.eg-tab-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.eg-tab-close:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+.eg-tab-close i { font-size: 14px; }
 </style>
