@@ -45,6 +45,11 @@ const site = ref({
   siteName: '',
   siteId: '',
   siteType: '',
+  businessNumber: '',
+  representative: '',
+  businessType: '',
+  businessItem: '',
+  email: '',
   zipcode: '',
   address: '',
   addressDetail: '',
@@ -530,6 +535,11 @@ const getSiteData = async () => {
       siteName:       result.name,
       siteId:         result.site_id,
       siteType:       result.sType,
+      businessNumber: result.businessNumber || '',
+      representative: result.representative || '',
+      businessType:   result.businessType || '',
+      businessItem:   result.businessItem || '',
+      email:          result.email || '',
       status:         result.status === 'Y' ? '운영 중' : '계약 종료',
       areaGross:      result.area,
       areaOver:       result.areaOver,
@@ -614,6 +624,11 @@ const saveSiteData = async () => {
       name:             site.value.siteName,
       site_id:          site.value.siteId,
       status:           site.value.status,
+      businessNumber:   site.value.businessNumber,
+      representative:   site.value.representative,
+      businessType:     site.value.businessType,
+      businessItem:     site.value.businessItem,
+      email:            site.value.email,
       area:             site.value.areaGross, // 연면적
       areaOver:         site.value.areaOver,  // 과세 면적 (정산서 VAT 계산 근거)
       areaUnder:        site.value.areaUnder, // 면세 면적
@@ -943,6 +958,39 @@ onMounted(async () => {
             </div>
           </div>
 
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-card-account-details-outline"></i>
+              <h3>사업자 정보</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <label>사업자등록번호</label>
+                <input v-if="isEditing" type="text" v-model="site.businessNumber" class="info-input" placeholder="예: 123-45-67890" />
+                <span v-else class="info-value">{{ site.businessNumber || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>대표자명</label>
+                <input v-if="isEditing" type="text" v-model="site.representative" class="info-input" />
+                <span v-else class="info-value">{{ site.representative || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>업태</label>
+                <input v-if="isEditing" type="text" v-model="site.businessType" class="info-input" />
+                <span v-else class="info-value">{{ site.businessType || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>종목</label>
+                <input v-if="isEditing" type="text" v-model="site.businessItem" class="info-input" />
+                <span v-else class="info-value">{{ site.businessItem || '-' }}</span>
+              </div>
+              <div class="info-item">
+                <label>이메일 (세금계산서/공문 수신용)</label>
+                <input v-if="isEditing" type="email" v-model="site.email" class="info-input" />
+                <span v-else class="info-value">{{ site.email || '-' }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
