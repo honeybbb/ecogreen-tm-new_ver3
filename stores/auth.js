@@ -1,8 +1,8 @@
 // stores/auth.js
 import { defineStore } from 'pinia';
 
-const SESSION_DURATION = 60 * 60;      // 세션 총 시간: 60분 (초)
-const WARN_BEFORE     = 5 * 60;        // 만료 몇 초 전에 경고 모달 표시: 5분 전
+const SESSION_DURATION = 8 * 60 * 60;  // 8시간 (기존 60분 → 8시간)
+const WARN_BEFORE      = 10 * 60;       // 10분 전 경고
 
 export const useAuthStore = defineStore('auth', () => {
 
