@@ -14,7 +14,7 @@ export default defineNuxtConfig({
         '~/plugins/axios.js'
     ],
     app: {
-        pageTransition: { name: 'page', mode: 'out-in' },
+        // pageTransition: { name: 'page', mode: 'out-in' },
         head: {
             title: '에코그린티엠(ver3)',
             meta: [
@@ -26,7 +26,9 @@ export default defineNuxtConfig({
                     href: 'https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css'
                 },
             ]
-        }
+        },
+        pageTransition: false,
+        keepalive: true,
     },
     runtimeConfig: {
         public: {

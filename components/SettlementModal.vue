@@ -42,13 +42,24 @@ const meltOptions = reactive({
   severance: false
 });
 
+const isInitializing = ref(false);
+
 const dragIndex = ref(null);
 
 // ──────────────────────────────────────────────
 // 2. 폼 데이터 상태
 // ──────────────────────────────────────────────
 const formData = ref({
-  sIdx: '', siteName: '', is_vat: 'N', type: '', target_month: '', docNo: '', billingDt: '', subTotal: 0, vatAmount: 0, grandTotal: 0,
+  sIdx: '',
+  siteName: '',
+  is_vat: 'N',
+  type: '',
+  target_month: '',
+  docNo: '',
+  billingDt: '',
+  subTotal: 0,
+  vatAmount: 0,
+  grandTotal: 0,
   billingData: {
     summary: '',
     workerCount: 0,
@@ -61,7 +72,6 @@ const formData = ref({
     insuranceDiff: 0
   },
   payrollData: [],
-  viewConfig: null,
 });
 
 // ──────────────────────────────────────────────
@@ -280,7 +290,13 @@ const onSalaryInput = (row) => {
   calculateRow(row);
 };
 
-watch(meltOptions, () => { formData.value.payrollData.forEach(row => { recalculateInsurances(row); calculateRow(row); }); }, { deep: true });
+watch(meltOptions, () => {
+  if (isInitializing.value) return; //초기화 중엔 무시
+  formData.value.payrollData.forEach(row => {
+    recalculateInsurances(row);
+    calculateRow(row);
+  });
+}, { deep: true });
 watch(() => currentConfig.activeDeductionCodes, () => { formData.value.payrollData.forEach(row => calculateRow(row)); }, { deep: true });
 
 // ──────────────────────────────────────────────
@@ -510,6 +526,8 @@ const handleManualBreakdownUpdate = () => {
 // ──────────────────────────────────────────────
 const initForm = () => {
   if (props.initialData && Object.keys(props.initialData).length > 0) {
+    isInitializing.value = true;
+
     const data = JSON.parse(JSON.stringify(props.initialData));
     if (!data.payrollData) data.payrollData = [];
     if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', insuranceDiff: 0 };
@@ -526,34 +544,93 @@ const initForm = () => {
       row.reserves.empInsEmployer = row.reserves.empInsEmployer || 0;
       row.reserves.sanjae = row.reserves.sanjae || 0;
 
-      row.originalDeductions = JSON.parse(JSON.stringify(row.deductionItems));
-      row.originalSanjae = row.reserves.sanjae;
+      // ★ 추가됨: 이미 저장된 원본 데이터(originalDeductions)가 없을 때만 현재값을 원본으로 복사
+      if (!row.originalDeductions || Object.keys(row.originalDeductions).length === 0) {
+        row.originalDeductions = JSON.parse(JSON.stringify(row.deductionItems));
+      }
+      if (row.originalSanjae === undefined) {
+        row.originalSanjae = row.reserves.sanjae;
+      }
     });
 
     const selectedSite = siteOptions.value.find(s => s.idx === data.sIdx);
     data.is_vat = selectedSite ? selectedSite.is_vat : (data.vatAmount > 0 ? 'Y' : 'N');
 
+    // 서버에서 내려온 viewConfig에서 화면 설정과 meltOptions(연차/퇴직 포함 토글) 복구
     if (data.viewConfig) {
       const savedConfig = data.viewConfig.site || data.viewConfig;
       Object.assign(currentConfig, savedConfig);
+      if (savedConfig.meltOptions) {
+        Object.assign(meltOptions, savedConfig.meltOptions);
+      }
+
       if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
       if (!currentConfig.summarySigns) {
         currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
       }
     } else {
       currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+      meltOptions.annualLeave = false;
+      meltOptions.severance = false;
     }
+
+    // 세팅이 끝났으니 formData에 들어가지 않도록 삭제하여 상태를 깔끔하게 유지
+    delete data.viewConfig;
 
     if (data.defaultTab) activeTab.value = data.defaultTab;
     formData.value = data;
+    formData.value.payrollData.forEach(row => {
+      calculateRow(row); // 합계/netPay만 재계산, 보험료는 건드리지 않음
+    });
+
     if (formData.value.sIdx && formData.value.type) fetchContractData();
+
+    nextTick(() => {
+      isInitializing.value = false;
+    });
+
   } else {
     formData.value = {
-      sIdx: '', siteName: '', is_vat: 'N', type: '', target_month: '', docNo: '', billingDt: '', subTotal: 0, vatAmount: 0, grandTotal: 0,
-      billingData: { summary: '', workerCount: 0, bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', items: [{ period: '', category: '', detail: '', amount: 0, note: '' }], vatBreakdown: { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } }, insuranceDiff: 0 },
-      payrollData: [], viewConfig: null,
+      sIdx: '',
+      siteName: '',
+      is_vat: 'N',
+      type: '',
+      target_month: '',
+      docNo: '',
+      billingDt: '',
+      subTotal: 0,
+      vatAmount: 0,
+      grandTotal: 0,
+      billingData: {
+        summary: '',
+        workerCount: 0,
+        bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
+        items: [
+            {
+              period: '',
+              category: '',
+              detail: '',
+              amount: 0,
+              note: ''
+            }
+        ],
+        vatBreakdown: {
+          under135: { area: '', unitPrice: '', supply: 0 },
+          over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
+        },
+        insuranceDiff: 0
+      },
+      payrollData: []
     };
-    currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+    currentConfig.summarySigns = {
+      severance: -1,
+      annualLeave: -1,
+      estimatedIns: -1,
+      actualIns: -1,
+      insuranceDiff: -1
+    };
+    meltOptions.annualLeave = false;
+    meltOptions.severance = false;
   }
 };
 
@@ -756,6 +833,7 @@ const handleSave = async () => {
     const sIdx = formData.value.sIdx;
     if (!sIdx) { alert('현장을 선택해주세요.'); return; }
     const [year, month] = (formData.value.target_month || formData.value.billingDt).split('-');
+    if(!year || !month) { alert('날짜를 선택해주세요.'); return; }
 
     const payload = {
       idx:         props.settlementId,
@@ -769,7 +847,11 @@ const handleSave = async () => {
       grandTotal:  formData.value.grandTotal,
       billingData: formData.value.billingData,
       payrollData: formData.value.payrollData,
-      viewConfig:  JSON.parse(JSON.stringify(currentConfig)),
+      // ★ 추가됨: 서버에 저장할 때 viewConfig를 만들어서 토글 상태(meltOptions)를 포함시킴
+      viewConfig:  JSON.parse(JSON.stringify({
+        ...currentConfig,
+        meltOptions: meltOptions
+      })),
       cIdx:        authStore.user?.cIdx || 0,
     };
 

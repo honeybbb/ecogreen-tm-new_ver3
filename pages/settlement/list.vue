@@ -339,6 +339,7 @@ onMounted(async () => {
             새 정산서 작성
             <i class="mdi mdi-chevron-down"></i>
           </button>
+          <ClientOnly>
           <div v-if="isCreateMenuOpen" class="create-menu">
             <button class="cm-item" @click="openCreateModal('SERVICE')">
               <i class="mdi mdi-file-document-outline"></i>
@@ -350,6 +351,7 @@ onMounted(async () => {
               <span class="cm-title">연차·퇴직금 정산서</span>
             </button>
           </div>
+          </ClientOnly>
         </div>
       </div>
     </div>
