@@ -97,6 +97,11 @@ export const useAuthStore = defineStore('auth', () => {
         token.value      = authData.token;
         userCookie.value = authData.user;
         user.value       = authData.user;
+
+        if (authData.refreshToken) {
+            useCookie('refresh_token', { maxAge: 60 * 60 * 24 * 7, sameSite: 'lax' }).value = authData.refreshToken;
+        }
+
         startTimer();
     };
 
@@ -107,6 +112,7 @@ export const useAuthStore = defineStore('auth', () => {
         token.value      = null;
         userCookie.value = null;
         user.value       = null;
+        useCookie('refresh_token').value = null;
         showWarningModal.value = false;
         isExpired.value        = false;
         clearTimer();

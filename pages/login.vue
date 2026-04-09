@@ -34,6 +34,7 @@ const handleLogin = async () => {
     if (res.data.result) {
       authStore.setLogin({
         user: res.data.data[0],
+        refreshToken: res.data.refreshToken,
         token: res.data.token,
       });
       await navigateTo('/', { replace: true });
