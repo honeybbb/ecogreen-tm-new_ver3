@@ -471,7 +471,13 @@ const syncBillingItems = () => {
 };
 
 // 합계가 변하거나, 선택 조건이 변하면 자동 동기화 실행!
-watch([totalSummary, () => formData.value.type, () => formData.value.billingDt, () => formData.value.target_month], () => {
+watch([
+  totalSummary,
+  () => formData.value.type,
+  () => formData.value.billingDt,
+  () => formData.value.target_month
+], () => {
+  if (isInitializing.value) return;
   // 현장이 선택되어 데이터가 있을 때만 동기화 실행
   if (formData.value.sIdx) {
     syncBillingItems();
@@ -635,6 +641,60 @@ const initForm = () => {
 };
 
 watch(() => props.initialData, initForm, { immediate: true });
+
+const resetAll = () => {
+  if (!confirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값은 유지됩니다.')) return;
+
+  isInitializing.value = true; // ★ 초기화 시작 (자동 동기화 차단)
+
+  // 현장/날짜/구분 유지용 백업
+  const { sIdx, type, target_month, billingDt } = formData.value;
+
+  // 청구 공문 초기화
+  formData.value = {
+    sIdx,
+    siteName: '',
+    is_vat: 'N',
+    type, target_month, billingDt,
+    docNo: '',
+    subTotal: 0, vatAmount: 0, grandTotal: 0,
+    billingData: {
+      summary: '',
+      workerCount: 0,
+      bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
+      items: [{ period: '', category: '', detail: '', amount: 0, note: '' }], // 빈 칸 하나로 리셋
+      vatBreakdown: {
+        under135: { area: '', unitPrice: '', supply: 0 },
+        over135:  { area: '', unitPrice: '', supply: 0, vat: 0 }
+      },
+      insuranceDiff: 0
+    },
+    payrollData: [],
+  };
+
+  // 급여 내역 설정 초기화
+  meltOptions.annualLeave = false;
+  meltOptions.severance   = false;
+  currentConfig.showGrossPay    = true;
+  currentConfig.showAnnualLeave = true;
+  currentConfig.showSeverance   = true;
+  currentConfig.showSanjae      = true;
+  currentConfig.summarySigns    = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+  if (deductionItems.value.length > 0) {
+    currentConfig.activeDeductionCodes = deductionItems.value.map(i => i.itemCd);
+  }
+
+  // docNo 재생성 + 현장 관련 데이터 유지
+  updateDocNo();
+  if (sIdx) {
+    handleSiteChange();
+  }
+
+  // ★ 0.1초 뒤에 차단 해제 (테이블이 완벽히 지워진 후 복구)
+  setTimeout(() => {
+    isInitializing.value = false;
+  }, 100);
+};
 
 const loadPayrollData = async () => {
   if (!formData.value.sIdx) { alert('현장을 먼저 선택해주세요.'); return; }
@@ -880,6 +940,10 @@ onMounted(async () => {
           <span class="badge">{{ formData.siteName || '현장 미지정' }} ({{ formData.target_month || '연월 미지정' }})</span>
         </div>
         <div class="header-actions">
+          <button class="btn-excel" @click="resetAll">
+            <i class="mdi mdi-refresh"></i>
+            <span class="btn-text">초기화</span>
+          </button>
           <button class="btn-excel" @click="exportToExcel"><i class="mdi mdi-microsoft-excel"></i><span class="btn-text">엑셀 저장</span></button>
           <button class="btn-save" @click="handleSave"><i class="mdi mdi-content-save"></i><span class="btn-text">저장하기</span></button>
           <button class="btn-close" @click="closeModal"><i class="mdi mdi-close"></i></button>
@@ -1276,6 +1340,22 @@ onMounted(async () => {
 .btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
 .btn-close { background: none; border: none; font-size: 22px; color: var(--text-muted); cursor: pointer; transition: .2s; padding: 4px; line-height: 1; border-radius: 6px; }
 .btn-close:hover { background: var(--bg-hover); color: var(--danger); }
+.btn-reset {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.btn-reset:hover { background: #f59e0b; color: #fff; }
 .modal-tabs { display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); flex-shrink: 0; }
 .tab-btn { padding: 14px 18px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap; }
 .tab-btn:hover  { color: var(--text-main); }
