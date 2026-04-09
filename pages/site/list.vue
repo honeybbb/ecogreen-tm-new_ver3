@@ -9,21 +9,22 @@ const router = useRouter();
 // 1. 상태 및 검색 조건
 const searchTerm = ref('');
 const selectedStatus = ref('전체');
+const selectedType = ref('전체');
+const selectedVat = ref('전체');
 const statusOptions = ref(['전체', '운영 중', '준비 중', '계약 종료']);
+const typeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
+const vatOptions = ref([
+  { label: '전체', value: '전체' },
+  { label: '과세', value: 'Y' },
+  { label: '면세', value: 'N' }
+]);
 
 // 2. 정렬 관련 상태
 const sortKey = ref('idx');
 const sortOrder = ref('asc');
 
 // 3. 현장 목록 데이터
-const sites = ref([
-    /*
-  { idx: 101, name: 'LH 위례 6단지', address: '경기 성남시 수정구 위례광장로 11', manager: '김철수', contract: '2023-01-01 ~ 2024-12-31', status: '운영 중', type: '아파트' },
-  { idx: 102, name: '강서 대명 강동', address: '서울 강서구 양천로 1111', manager: '이영희', contract: '2024-05-01 ~ 2026-04-30', status: '운영 중', type: '주상복합' },
-  { idx: 103, name: 'LH 율곡 제일 8단지', address: '경기 파주시 교하로 222', manager: '박민수', contract: '2025-01-01 ~ 2026-12-31', status: '준비 중', type: '아파트' },
-  { idx: 104, name: '폐지된 현장 A', address: '데이터 없음', manager: '-', contract: '2021-01-01 ~ 2022-12-31', status: '계약 종료', type: '오피스텔' },
-*/
-]);
+const sites = ref([]);
 
 const isLoading = ref(false);
 const error = ref(null);
@@ -42,12 +43,23 @@ const toggleSort = (key) => {
   }
 };
 
+//필터 초기화
+const resetFilters = () => {
+  searchTerm.value     = '';
+  selectedStatus.value   = '전체';
+  selectedType.value   = '전체';
+  selectedVat.value = '전체';
+  currentPage.value = 1;
+};
+
 // 5. 필터링 및 정렬된 현장 목록
 const filteredSites = computed(() => {
   let result = sites.value.filter(site => {
     const statusMatch = selectedStatus.value === '전체' || site.status === selectedStatus.value;
+    const typeMatch   = selectedType.value === '전체' || site.sType === selectedType.value || site.type === selectedType.value;
+    const vatMatch    = selectedVat.value === '전체' || site.is_vat === selectedVat.value;
     const searchMatch = site.name.toLowerCase().includes(searchTerm.value.toLowerCase());
-    return statusMatch && searchMatch;
+    return statusMatch && typeMatch && vatMatch && searchMatch;
   });
 
   result.sort((a, b) => {
@@ -86,6 +98,8 @@ const handlePageChange = () => {
   document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+// 필터 변경 시 첫 페이지로
+const onFilterChange = () => { currentPage.value = 1; };
 
 // 6. 이벤트 핸들러
 const handleSearch = () => {
@@ -180,10 +194,10 @@ const goToDetail = (id) => router.push(`/site/${id}`);
 
     <div class="filter-panel">
       <div class="filter-row">
+
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-filter-variant"></i>
-            상태
+            <i class="mdi mdi-filter-variant"></i> 상태
           </label>
           <select v-model="selectedStatus" class="filter-select">
             <option v-for="status in statusOptions" :key="status" :value="status">
@@ -192,7 +206,29 @@ const goToDetail = (id) => router.push(`/site/${id}`);
           </select>
         </div>
 
-        <div class="search-group">
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-office-building-cog-outline"></i> 현장 형태
+          </label>
+          <select v-model="selectedType" class="filter-select">
+            <option v-for="type in typeOptions" :key="type" :value="type">
+              {{ type }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-cash-register"></i> 과세 여부
+          </label>
+          <select v-model="selectedVat" class="filter-select">
+            <option v-for="vat in vatOptions" :key="vat.value" :value="vat.value">
+              {{ vat.label }}
+            </option>
+          </select>
+        </div>
+
+        <div class="search-group" style="flex: 1;">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
             <input
@@ -200,15 +236,14 @@ const goToDetail = (id) => router.push(`/site/${id}`);
                 v-model="searchTerm"
                 placeholder="현장명으로 검색..."
                 class="search-input"
-                @keyup.enter="handleSearch"
             />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+            <button v-if="searchTerm" @click="searchTerm = ''; onFilterChange()" class="search-clear">
               <i class="mdi mdi-close"></i>
             </button>
           </div>
-          <button @click="handleSearch" class="btn-search">
-            <i class="mdi mdi-magnify"></i>
-            <span>검색</span>
+          <button @click="resetFilters" class="btn-search" title="필터 초기화">
+            <i class="mdi mdi-filter-off"></i>
+            <span>초기화</span>
           </button>
         </div>
       </div>
