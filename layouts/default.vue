@@ -158,6 +158,13 @@ watch(() => cIdx.value, (val) => {
 }, { immediate: true });
 
 onMounted(() => {
+  // 세션 스토리지에서 탭 목록 복구
+  tabStore.initTabs();
+
+  // 만약 새로고침 후 접속한 현재 주소가 복구된 탭 목록에 없다면 현재 탭 추가
+  const currentTitle = findMenuTitle(route.path, [...items.value, ...systemItems.value]) || '새 탭';
+  tabStore.addTab({ title: currentTitle, path: route.path });
+
   // 저장된 테마 확인
   const savedTheme = localStorage.getItem('theme');
   if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -165,7 +172,7 @@ onMounted(() => {
     document.body.classList.add('theme-dark');
   }
 
-  // ★ 세션 타이머 시작 (이미 로그인된 상태로 레이아웃이 마운트됐을 때)
+  // 세션 타이머 시작 (이미 로그인된 상태로 레이아웃이 마운트됐을 때)
   // 토큰이 있고 타이머가 아직 안 돌고 있을 때만 시작
   if (authStore.token && authStore.remainingSeconds === 60 * 60) {
     authStore.startTimer();
@@ -341,7 +348,7 @@ onMounted(() => {
         </div>
       </header>
 
-      <div class="eg-tab-bar desktop-only">
+      <div class="eg-tab-bar">
         <div
             v-for="tab in tabStore.tabs"
             :key="tab.path"

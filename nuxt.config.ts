@@ -14,7 +14,7 @@ export default defineNuxtConfig({
         '~/plugins/axios.js'
     ],
     app: {
-        pageTransition: { name: 'page', mode: 'out-in' },
+        // pageTransition: { name: 'page', mode: 'out-in' },
         head: {
             title: '에코그린티엠(ver3)',
             meta: [

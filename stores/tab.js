@@ -3,26 +3,40 @@ import { defineStore } from 'pinia';
 
 export const useTabStore = defineStore('tab', {
     state: () => ({
-        // 기본으로 열려있을 홈(대시보드) 탭
         tabs: [
-            { title: 'Home', path: '/' }
+            { title: 'Home', path: '/' } // 기본 탭
         ],
     }),
     actions: {
+        // 1. 저장된 탭 불러오기 (새로고침 시 실행)
+        initTabs() {
+            if (process.client) { // Nuxt의 SSR 에러 방지를 위해 브라우저 환경인지 체크
+                const savedTabs = sessionStorage.getItem('erp-tabs');
+                if (savedTabs) {
+                    this.tabs = JSON.parse(savedTabs);
+                }
+            }
+        },
+        // 2. 현재 탭 목록을 스토리지에 저장
+        saveTabs() {
+            if (process.client) {
+                sessionStorage.setItem('erp-tabs', JSON.stringify(this.tabs));
+            }
+        },
         addTab(tab) {
-            // 이미 열려있는 탭인지 확인
             const exists = this.tabs.find(t => t.path === tab.path);
             if (!exists) {
                 this.tabs.push(tab);
+                this.saveTabs(); // 탭 추가 시 저장
             }
         },
         removeTab(path) {
-            // Home 탭은 닫히지 않도록 방어 로직 (선택 사항)
             if (path === '/') return;
 
             const index = this.tabs.findIndex(t => t.path === path);
             if (index !== -1) {
                 this.tabs.splice(index, 1);
+                this.saveTabs(); // 탭 닫을 때 저장
             }
         }
     }
