@@ -173,6 +173,45 @@ const resetBasePay = (row) => {
   calculateInsurances(row);
 };
 
+const resetCalculatedPay = () => {
+  const selectedRows = payrollList.value.filter(p => p.selected);
+
+  if (selectedRows.length === 0) {
+    alert('초기화할 직원을 체크해주세요.');
+    return;
+  }
+
+  if (!confirm('선택한 직원의 급여 계산 내역을 초기화하시겠습니까?\n(저장하지 않은 내역은 모두 0원으로 되돌아갑니다.)')) {
+    return;
+  }
+
+  selectedRows.forEach(row => {
+    // 상태를 '계산 전(0)'으로 변경
+    row.status = 0;
+    row.workedDays = 0;
+    row.absentDays = 0;
+    row.originalBasePay = undefined;
+
+    // 원본 백업 데이터 삭제 (재계산 시 다시 불러오도록)
+    if (row._originalPayItems) {
+      delete row._originalPayItems;
+    }
+
+    // 지급 항목 0원 초기화
+    payItems.value.forEach(item => {
+      row.payItems[item.itemCd] = 0;
+    });
+
+    // 공제 항목 0원 초기화
+    deductionItems.value.forEach(item => {
+      row.deductionItems[item.itemCd] = 0;
+    });
+
+    // 선택 해제
+    row.selected = false;
+  });
+};
+
 const fetchCalculatedPay = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
   if (selectedRows.length === 0) { alert('급여를 계산할 직원을 체크해주세요.'); return; }
@@ -870,6 +909,10 @@ onMounted(async () => {
         <p class="page-subtitle">계약 급여와 실제 근무일을 대조하여 정산을 진행합니다</p>
       </div>
       <div class="header-actions">
+        <button @click="resetCalculatedPay" class="btn-refresh">
+          <i class="mdi mdi-refresh"></i>
+          <span>선택 초기화</span>
+        </button>
         <button @click="fetchCalculatedPay" class="btn-calculate">
           <i class="mdi mdi-lightning-bolt-outline"></i>
           <span>선택 급여 계산</span>
@@ -878,7 +921,7 @@ onMounted(async () => {
           <i class="mdi mdi-content-save-outline"></i>
           <span>선택 결과 저장</span>
         </button>
-        <!-- ✅ 지급대장 출력 버튼 -->
+        <!-- 지급대장 출력 버튼 -->
         <button @click="exportPayrollExcel" class="btn-export">
           <i class="mdi mdi-microsoft-excel"></i>
           <span>지급대장 출력</span>

@@ -952,7 +952,7 @@ onMounted(async () => {
           <span class="badge">{{ formData.siteName || '현장 미지정' }} ({{ formData.target_month || '연월 미지정' }})</span>
         </div>
         <div class="header-actions">
-          <button class="btn-excel" @click="resetAll">
+          <button class="btn-refresh" @click="resetAll">
             <i class="mdi mdi-refresh"></i>
             <span class="btn-text">초기화</span>
           </button>
@@ -1356,22 +1356,6 @@ onMounted(async () => {
 .btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
 .btn-close { background: none; border: none; font-size: 22px; color: var(--text-muted); cursor: pointer; transition: .2s; padding: 4px; line-height: 1; border-radius: 6px; }
 .btn-close:hover { background: var(--bg-hover); color: var(--danger); }
-.btn-reset {
-  background: rgba(245, 158, 11, 0.1);
-  color: #b45309;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: .2s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  white-space: nowrap;
-}
-.btn-reset:hover { background: #f59e0b; color: #fff; }
 .modal-tabs { display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); flex-shrink: 0; }
 .tab-btn { padding: 14px 18px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap; }
 .tab-btn:hover  { color: var(--text-main); }
