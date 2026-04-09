@@ -371,10 +371,13 @@ const totalSummary = computed(() => {
   const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
   const signs       = currentConfig.summarySigns;
 
-  const grandTotal  = monthlyFee
+  let grandTotal  = monthlyFee
       + (severance * signs.severance)
       + (annualLeave * signs.annualLeave)
       + (insDiff * signs.insuranceDiff);
+
+  //원 단위 절사 (1의 자리 버림, 예: 12,345 -> 12,340)
+  grandTotal = Math.floor(grandTotal / 10) * 10;
 
   return [
     { key: 'monthlyFee', label: '월간용역비', value: monthlyFee, sign: 1, toggleable: false },
@@ -384,7 +387,8 @@ const totalSummary = computed(() => {
     { key: 'estimatedIns', label: '견적서 4대보험료', value: estIns, sign: 1, toggleable: false },
     { key: 'actualIns', label: '실비정산 4대보험료', value: actIns, sign: 1, toggleable: false },
     { key: 'insuranceDiff', label: '4대보험차액', value: insDiff, sign: signs.insuranceDiff, toggleable: true },
-    { key: 'grandTotal', label: '총 청구액', value: grandTotal, sign: 1, toggleable: false }
+    //{ key: 'grandTotal', label: '총 청구액', value: grandTotal, sign: 1, toggleable: false }
+    { key: 'grandTotal', label: '총 청구액 (원 단위 절사)', value: grandTotal, sign: 1, toggleable: false }
   ];
 });
 
@@ -498,7 +502,9 @@ const colspanForSummary = computed(() => {
 const calculateAreaSupply = () => {
   const vb = formData.value.billingData.vatBreakdown;
   const totalArea = (Number(vb.under135.area) || 0) + (Number(vb.over135.area) || 0);
-  const topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  //const topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  let topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  topSum = Math.floor(topSum / 10) * 10; //원 단위 절사
 
   if (totalArea > 0 && topSum > 0) {
     const unitPrice = topSum / totalArea;
@@ -516,9 +522,15 @@ const calculateAreaSupply = () => {
 };
 
 const calculateBillingTotal = () => {
-  const topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  //const topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  let topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  topSum = Math.floor(topSum / 10) * 10; //원단위절사
   if (formData.value.is_vat === 'Y') calculateAreaSupply();
-  else { formData.value.subTotal = topSum; formData.value.vatAmount = 0; formData.value.grandTotal = topSum; }
+  else {
+    formData.value.subTotal = topSum;
+    formData.value.vatAmount = 0;
+    formData.value.grandTotal = topSum;
+  }
 };
 
 const handleManualBreakdownUpdate = () => {
@@ -1039,8 +1051,12 @@ onMounted(async () => {
                 <tfoot>
                 <tr class="bg-blue-light font-bold" style="font-size:15px;">
                   <td colspan="3" class="text-center">합계</td>
-                  <td class="text-right text-blue">{{ formatCurrency(formData.subTotal) }}</td>
-                  <td colspan="2"></td>
+                  <td class="text-right text-blue"><!--{{ formatCurrency(formData.subTotal) }}-->
+                    <input type="text" class="cell-input font-bold text-right text-blue" :value="formatCurrency(formData.subTotal)" />
+                  </td>
+                  <td colspan="2">
+                    <input type="text" class="cell-input" value="원 단위 절사" />
+                  </td>
                 </tr>
                 </tfoot>
               </table>
