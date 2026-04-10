@@ -20,6 +20,7 @@ const cIdx = authStore.user?.cIdx;
 const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
+const selectedStatus = ref('전체');
 
 const items = ref([]);
 const isLoading = ref(false);
@@ -114,13 +115,38 @@ const onFilterChange = () => { currentPage.value = 1; };
 
 // ── 필터링 + 정렬 ─────────────────────────────────
 const filteredPayrollList = computed(() => {
-  return payrollList.value
-      .filter(p =>
-          (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
-          p.staff.toLowerCase().includes(searchTerm.value.toLowerCase()) &&
-          (selectedType.value === '전체' || p.type === selectedType.value)
-      )
-      .sort((a, b) => Number(b.sIdx) - Number(a.sIdx) || Number(a.idx) - Number(b.idx));
+  const filtered = payrollList.value.filter(p =>
+      (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
+      p.staff.toLowerCase().includes(searchTerm.value.toLowerCase()) &&
+      (selectedType.value === '전체' || p.type === selectedType.value) &&
+      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value)
+  );
+
+  filtered.sort((a, b) => {
+    if (sortKey.value) {
+      const mod  = sortOrder.value === 'asc' ? 1 : -1;
+      const valA = a[sortKey.value] ?? '';
+      const valB = b[sortKey.value] ?? '';
+
+      if (sortKey.value === 'birthDt') {
+        // 생일 문자열(ex: '1990-01-01') 비교. 클수록 나이가 적음.
+        // 오름차순(asc)일 때 나이가 적은 사람(생일이 느린 사람)이 위로 오게 하려면 반대로 정렬
+        return valB.localeCompare(valA) * mod;
+      }
+
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, 'ko');
+        if (cmp !== 0) return cmp * mod;
+      } else {
+        if (valA < valB) return -1 * mod;
+        if (valA > valB) return  1 * mod;
+      }
+    }
+    // 기본 정렬: sIdx desc → idx asc
+    return Number(b.sIdx) - Number(a.sIdx) || Number(a.idx) - Number(b.idx);
+  });
+
+  return filtered;
 });
 
 // ── 전체 합계 (필터된 전체 목록 기준) ─────────────
@@ -227,8 +253,8 @@ const calculateInsurances = (row, sourceItem) => {
   } else {
     // 공제 항목 체크박스 변경
     if (!row.deductionFlags[sourceItem.itemCd]) {
-      // row.deductions[sourceItem.itemCd] = 0;
-      // if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
+      row.deductions[sourceItem.itemCd] = 0;
+      if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
       return;
     }
     if (sourceItem.itemCd === '04002001') {
@@ -311,6 +337,20 @@ const savePayroll = async () => {
   }
 };
 
+// ── 정렬 ──────────────────────────────────────────
+const sortKey   = ref('');
+const sortOrder = ref('asc');
+
+const toggleSort = (key) => {
+  if (sortKey.value === key) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortKey.value   = key;
+    sortOrder.value = 'asc';
+  }
+  currentPage.value = 1;
+};
+
 // ── API: 급여 목록 조회 ───────────────────────────
 const getPayrollList = async () => {
   isLoading.value = true;
@@ -374,6 +414,16 @@ onMounted(async () => {
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">
               {{ opt.itemNm }}
             </option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
+          <select v-model="selectedStatus" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option value="0">재직</option>
+            <option value="1">퇴사</option>
+            <option value="3">일용직</option>
+            <option value="4">대근</option>
           </select>
         </div>
         <div class="search-group">
@@ -442,18 +492,65 @@ onMounted(async () => {
 
           <thead>
           <tr>
-            <th rowspan="2" class="text-center" style="width:30px;">
+            <th rowspan="2" class="text-center sortable resizable" style="width:30px;">
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
               </label>
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th rowspan="2" class="text-center" style="width:40px;" data-col-key="no">No.<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:110px;" data-col-key="siteName">현장명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:70px;" data-col-key="role">직책<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:80px;" data-col-key="id">사번<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:80px;" data-col-key="staff">성명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
 
+            <th rowspan="2" class="text-center sortable resizable" style="width:40px;" data-col-key="no">
+              No.<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+
+            <!-- 현장명: sortable -->
+            <th rowspan="2" class="text-center sortable resizable col-site" style="width:110px;" data-col-key="siteName"
+                @click="toggleSort('siteName')">
+              <div class="th-content">
+                현장명
+                <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+
+            <!-- 직책: sortable -->
+            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="role"
+                @click="toggleSort('role')">
+              <div class="th-content">
+                직책
+                <i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+
+            <!-- 사번: sortable -->
+            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="id"
+                @click="toggleSort('id')">
+              <div class="th-content">
+                사번
+                <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+
+            <!-- 성명: sortable -->
+            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="staff"
+                @click="toggleSort('staff')">
+              <div class="th-content">
+                성명
+                <i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+            <th rowspan="2" class="text-center resizable">생년월일<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="age"
+                @click="toggleSort('birthDt')">
+              <div class="th-content">
+                나이(만)
+                <i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
             <th colspan="2" class="text-center group-header-summary group-divider">
               합계
               <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
@@ -504,14 +601,35 @@ onMounted(async () => {
               :key="p.idx"
               class="data-row"
           >
-            <td class="text-center calculate-status transition-colors" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0 }">
-              <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
+            <td
+                class="text-center calculate-status transition-colors"
+                :class="{
+                  'calculate-active': p.status == 1,
+                  'calculate-draft': p.status == 2,
+                  'calculate-inactive': p.status == 0
+            }">
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="p.selected" class="custom-checkbox" />
+              </label>
             </td>
             <td class="text-center text-gray">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
-            <td class="text-center text-dark compact-text">{{ p.siteName }}</td>
-            <td class="text-center text-gray compact-text">{{ p.role }}</td>
-            <td class="text-center text-gray compact-text">{{ p.id }}</td>
+            <td class="text-center text-dark compact-text cell-ellipsis" :title="p.siteName">
+              {{ p.siteName }}
+            </td>
+            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.role">
+              {{ p.role }}
+            </td>
+            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.id">
+              {{ p.id }}
+            </td>
             <td class="text-center font-bold text-dark member-name">{{ p.staff }}</td>
+            <td class="text-center text-gray">{{ p.birthDt }}</td>
+            <td
+                class="text-center text-gray"
+                :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }"
+                :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+              {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+            </td>
 
             <td class="text-right bg-light-gray font-bold amount-cell group-divider">
               {{ formatCurrency(calculateRow(p).gross) }}
@@ -571,7 +689,7 @@ onMounted(async () => {
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="6" class="text-center">
+            <td colspan="8" class="text-center">
               <span class="font-bold text-dark">전체 합계</span>
             </td>
             <td class="text-right font-bold group-divider">
@@ -610,6 +728,7 @@ onMounted(async () => {
 ========================================= */
 
 /* === 상태 범례 === */
+.age-warning { color: var(--danger) !important; font-weight: 600; }
 .status-legend {
   display: flex; align-items: center; gap: 16px;
   font-size: 12px; color: var(--text-sub); font-weight: 600;
@@ -679,16 +798,6 @@ onMounted(async () => {
   border-bottom: 1px solid var(--border-color);
 }
 
-/* === 데이터 셀 === */
-.data-table td {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--bg-canvas);
-  border-right: 1px solid var(--bg-hover);
-  vertical-align: middle;
-  word-break: keep-all;
-}
-.data-row { background: var(--bg-surface); }
-.data-row:hover { background-color: var(--primary-soft); }
 .amount-header,
 .amount-cell {
   min-width: 75px;
@@ -773,6 +882,12 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+/* ── 컬럼 리사이즈 ── */
+.resizable {
+  position: relative;
+  overflow: hidden; /* 셀 내용이 핸들을 밀지 않도록 */
+}
+
 /* 평소에는 완전히 투명하게 숨김 */
 .resize-handle {
   position: absolute;
@@ -833,5 +948,20 @@ body.is-resizing * {
 }
 .theme-deduct-cell {
   background-color: transparent; /* 데이터 셀은 기본 흰색 유지 */
+}
+
+/* ── 현장 컬럼 기본 너비 및 말줄임표 ── */
+.col-site {
+  min-width: 80px;
+  max-width: 160px;
+  width: 120px;
+}
+
+/* td 말줄임표 (현장 등 긴 텍스트 컬럼에 적용) */
+.cell-ellipsis {
+  max-width: 0;          /* table-layout: fixed 와 함께 동작 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
