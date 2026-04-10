@@ -878,6 +878,14 @@ onMounted(() => {
                   <input type="radio" v-model="employee.status" value="1" />
                   <span class="radio-text">퇴사</span>
                 </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="employee.status" value="2" />
+                  <span class="radio-text">일용직</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="employee.status" value="3" />
+                  <span class="radio-text">대근</span>
+                </label>
               </div>
             </div>
 

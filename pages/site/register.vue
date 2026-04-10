@@ -150,6 +150,43 @@ const removeContractGroup = (index) => {
   }
 };
 
+// =============================================
+// 스케줄(근무시간) 관리용 기본 데이터 및 함수 추가
+// =============================================
+// JS Date 기준 요일: 0(일), 1(월), 2(화), 3(수), 4(목), 5(금), 6(토)
+// 화면 표시는 월~일 순서로 하기 위해 배열을 구성합니다.
+const weekDays = [
+  { val: 1, label: '월' }, { val: 2, label: '화' }, { val: 3, label: '수' },
+  { val: 4, label: '목' }, { val: 5, label: '금' }, { val: 6, label: '토' }, { val: 0, label: '일' }
+];
+
+// 직책별 기본 스케줄 객체 생성기
+const createDefaultSchedule = () => {
+  const schedule = {};
+  for (let i = 0; i <= 6; i++) {
+    schedule[i] = {
+      isActive: i >= 1 && i <= 5, // 기본적으로 평일(월~금)만 활성화
+      startTime: '09:00',
+      endTime: '18:00',
+      breakTime: 60, // 휴게시간(분)
+      isBiweekly: false // 격주 여부
+    };
+  }
+  return schedule;
+};
+
+// 평일(월요일 기준) 일괄 적용 함수
+const applyToWeekdays = (schedule) => {
+  const mon = schedule[1];
+  [2, 3, 4, 5].forEach(day => {
+    schedule[day].isActive = mon.isActive;
+    schedule[day].startTime = mon.startTime;
+    schedule[day].endTime = mon.endTime;
+    schedule[day].breakTime = mon.breakTime;
+  });
+  alert('월요일의 일정이 화~금요일에 일괄 적용되었습니다.');
+};
+
 const addStaffToGroup = (groupIndex) => {
   const group = contractGroups.value[groupIndex];
   if (!group.tempJobCode) { alert('직책을 선택해주세요.'); return; }
@@ -157,10 +194,17 @@ const addStaffToGroup = (groupIndex) => {
 
   const jobInfo = positionOptions.value.find(p => p.itemCd === group.tempJobCode);
   const existing = group.staffList.find(s => s.code === jobInfo.itemCd);
+
   if (existing) {
     existing.count += Number(group.tempCount);
   } else {
-    group.staffList.push({ code: jobInfo.itemCd, name: jobInfo.itemNm, count: Number(group.tempCount) });
+    group.staffList.push({
+      code: jobInfo.itemCd,
+      name: jobInfo.itemNm,
+      count: Number(group.tempCount),
+      schedule: createDefaultSchedule(), // 신규: 스케줄 객체 추가
+      showSchedule: true                 // 신규: 추가 즉시 설정창 열기
+    });
   }
 
   syncCostBreakdownToStaff(group);
@@ -710,16 +754,76 @@ onMounted(() => {
                   </button>
                 </div>
                 <div v-if="group.staffList && group.staffList.length > 0" class="staff-list">
-                  <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item">
-                    <div class="staff-info">
-                      <i class="mdi mdi-account-outline"></i>
-                      <span class="staff-position-name">{{ staff.name }}</span>
-                      <span class="staff-count-badge">{{ staff.count }}명</span>
+                  <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
+
+                    <div class="staff-item">
+                      <div class="staff-info">
+                        <i class="mdi mdi-account-outline"></i>
+                        <span class="staff-position-name">{{ staff.name }}</span>
+                        <span class="staff-count-badge">{{ staff.count }}명</span>
+                      </div>
+                      <div class="staff-actions">
+                        <button type="button" @click="staff.showSchedule = !staff.showSchedule" class="btn-toggle-schedule" :class="{ 'active': staff.showSchedule }">
+                          <i class="mdi" :class="staff.showSchedule ? 'mdi-calendar-collapse-horizontal' : 'mdi-calendar-expand-horizontal'"></i>
+                          근무 설정
+                        </button>
+                        <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff">
+                          <i class="mdi mdi-close"></i>
+                        </button>
+                      </div>
                     </div>
-                    <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff">
-                      <i class="mdi mdi-close"></i>
-                    </button>
+
+                    <div v-show="staff.showSchedule" class="schedule-panel">
+                      <div class="schedule-header">
+                        <span><i class="mdi mdi-clock-outline"></i> 요일별 근무시간 설정</span>
+                        <button type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">
+                          <i class="mdi mdi-layers-outline"></i> 평일(월~금) 일괄 적용
+                        </button>
+                      </div>
+
+                      <table class="schedule-table">
+                        <thead>
+                        <tr>
+                          <th class="col-day">요일</th>
+                          <th class="col-time">출근 ~ 퇴근</th>
+                          <th class="col-break">휴게(분)</th>
+                          <th class="col-opt">옵션</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr v-for="day in weekDays" :key="day.val" :class="{'inactive-row': !staff.schedule[day.val].isActive}">
+                          <td>
+                            <label class="day-checkbox">
+                              <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
+                              <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
+                            </label>
+                          </td>
+
+                          <td>
+                            <div class="time-inputs">
+                              <input type="time" v-model="staff.schedule[day.val].startTime" :disabled="!staff.schedule[day.val].isActive" class="form-input time-input" />
+                              <span>~</span>
+                              <input type="time" v-model="staff.schedule[day.val].endTime" :disabled="!staff.schedule[day.val].isActive" class="form-input time-input" />
+                            </div>
+                          </td>
+
+                          <td>
+                            <input type="number" v-model="staff.schedule[day.val].breakTime" :disabled="!staff.schedule[day.val].isActive" class="form-input break-input" min="0" placeholder="0" />
+                          </td>
+
+                          <td>
+                            <label class="biweekly-checkbox">
+                              <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" :disabled="!staff.schedule[day.val].isActive" />
+                              <span>격주</span>
+                            </label>
+                          </td>
+                        </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
                   </div>
+
                   <div class="staff-total">
                     <i class="mdi mdi-sigma"></i>
                     <span>합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
@@ -1401,4 +1505,42 @@ onMounted(() => {
   .form-actions { flex-direction: column; }
   .btn-prev, .btn-next, .btn-submit { width: 100%; justify-content: center; }
 }
+
+/* =========================================
+   직책별 스케줄 패널 스타일
+========================================= */
+.staff-item-wrapper { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); padding: 6px; }
+.staff-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: none; background: transparent; }
+.staff-actions { display: flex; align-items: center; gap: 8px; }
+
+.btn-toggle-schedule { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bg-canvas); border: 1px solid var(--border-focus); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: 0.2s; }
+.btn-toggle-schedule.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.btn-toggle-schedule:hover { background: var(--bg-hover); }
+
+.schedule-panel { margin: 4px 10px 10px; border: 1px solid var(--border-focus); border-radius: 8px; overflow: hidden; background: var(--bg-canvas); }
+.schedule-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border-bottom: 1px solid var(--border-focus); }
+.schedule-header span { font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
+.btn-batch-apply { padding: 4px 10px; background: var(--primary); color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.btn-batch-apply:hover { background: var(--primary-hover); }
+
+.schedule-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
+.schedule-table th { padding: 8px; background: var(--bg-hover); color: var(--text-sub); font-weight: 600; border-bottom: 1px solid var(--border-color); }
+.schedule-table td { padding: 8px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.schedule-table tbody tr:last-child td { border-bottom: none; }
+.inactive-row td { background-color: var(--bg-hover); opacity: 0.6; }
+
+.col-day { width: 60px; }
+.col-time { width: auto; }
+.col-break { width: 80px; }
+.col-opt { width: 70px; }
+
+.day-checkbox { display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; cursor: pointer; }
+.text-red { color: var(--danger); }
+.text-blue { color: #3b82f6; }
+
+.time-inputs { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.time-input { padding: 4px 6px; font-size: 12px; width: 100px; text-align: center; }
+.break-input { padding: 4px; font-size: 12px; width: 60px; text-align: right; }
+
+.biweekly-checkbox { display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; }
 </style>
