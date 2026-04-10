@@ -6,6 +6,7 @@ import { useAuthStore } from "~/stores/auth.js";
 import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
+import {calculateAge} from "~/utils/formatter.js";
 
 const {
   siteOptions,
@@ -22,13 +23,15 @@ const selectedYearMonth = ref(`${new Date().getFullYear()}-${String(new Date().g
 const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
+const selectedStatus = ref('전체');
 
 const items = ref([]);
 const payrollList = ref([]);
 const isLoading = ref(false);
 const dataMode = ref(''); // 'saved' | 'draft'
 
-const targetCodes = ref({ pension: 4.5, health: 3.545, longTerm: 12.95, employment: 0.9 });
+const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
+const ageLimits    = ref({ pension: 0, employment: 0 });
 
 // ── 페이지네이션 상태 ──────────────────────────────
 const currentPage = ref(1);
@@ -44,14 +47,47 @@ const payItems = computed(() => items.value.filter(item => item.groupCd === '040
 const deductionItems = computed(() => items.value.filter(item => item.groupCd === '04002'));
 
 // 3. 필터링
-const filteredPayrollList = computed(() =>
-    payrollList.value.filter(p => {
-      const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
-      const typeMatch = selectedType.value === '전체' || p.type == selectedType.value;
-      const searchMatch = p.staff.toLowerCase().includes(searchTerm.value.toLowerCase());
-      return siteMatch && typeMatch && searchMatch;
-    })
-);
+// 3. 필터링 및 정렬
+const filteredPayrollList = computed(() => {
+  // 1. 필터링 수행
+  let filtered = payrollList.value.filter(p => {
+    const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
+    const typeMatch = selectedType.value === '전체' || p.type == selectedType.value;
+    const searchMatch = p.staff.toLowerCase().includes(searchTerm.value.toLowerCase());
+    const searchStatus = selectedStatus.value === '전체' || p.mStatus == selectedStatus.value;
+    return siteMatch && typeMatch && searchMatch && searchStatus;
+  });
+
+  // 2. 정렬 수행 (추가된 부분)
+  filtered.sort((a, b) => {
+    if (sortKey.value) {
+      const mod = sortOrder.value === 'asc' ? 1 : -1;
+      const valA = a[sortKey.value] ?? '';
+      const valB = b[sortKey.value] ?? '';
+
+      // 나이(생년월일) 정렬 시 예외 처리 (생일이 늦을수록 나이가 적음)
+      if (sortKey.value === 'birthDt') {
+        return valB.localeCompare(valA) * mod;
+      }
+
+      // 문자열 비교
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, 'ko');
+        if (cmp !== 0) return cmp * mod;
+      }
+      // 숫자 등 기타 비교
+      else {
+        if (valA < valB) return -1 * mod;
+        if (valA > valB) return  1 * mod;
+      }
+    }
+
+    // 기본 정렬: 현장 번호 역순 -> 직원 번호 순
+    return Number(b.sIdx) - Number(a.sIdx) || Number(a.idx) - Number(b.idx);
+  });
+
+  return filtered;
+});
 
 // ── 컬럼 리사이즈 ─────────────────────────────────
 const { startResize } = useTableResize();
@@ -295,6 +331,19 @@ const updatePayAsync = async (row) => {
 
   await calculateInsurances(row)
 }
+
+const fetchOverAgeOption = async () => {
+  try {
+    const res   = await axios.get(`/api/v1/code/group/02003`);
+    const codes = res.data.data || [];
+    const pensionCode = codes.find(c => c.itemNm.includes('국민연금'));
+    const employCode  = codes.find(c => c.itemNm.includes('고용보험'));
+    if (pensionCode?.option) ageLimits.value.pension    = Number(pensionCode.option);
+    if (employCode?.option)  ageLimits.value.employment = Number(employCode.option);
+  } catch (e) {
+    console.error('연령 기준 코드를 불러오지 못해 기본값을 적용합니다.', e);
+  }
+};
 
 const calculateInsurances = async (row) => {
   // ── 과세 급여 계산 (비과세 한도는 DB option에서 가져옴) ──
@@ -873,6 +922,20 @@ const getTaxRate = async () => {
   } catch(e) {}
 };
 
+// ── 정렬 ──────────────────────────────────────────
+const sortKey   = ref('');
+const sortOrder = ref('asc');
+
+const toggleSort = (key) => {
+  if (sortKey.value === key) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortKey.value   = key;
+    sortOrder.value = 'asc';
+  }
+  currentPage.value = 1;
+};
+
 const getPayrollMonth = async function () {
   const [year, month] = selectedYearMonth.value.split('-');
   try {
@@ -893,7 +956,13 @@ const getPayrollMonth = async function () {
 };
 
 onMounted(async () => {
-  await Promise.all([fetchSiteOptions(), fetchTypeOptions(), getTaxRate(), getWageCode()]);
+  await Promise.all([
+    fetchSiteOptions(),
+    fetchTypeOptions(),
+    fetchOverAgeOption(),
+    getTaxRate(),
+    getWageCode()
+  ]);
   await getPayrollMonth();
 });
 </script>
@@ -981,6 +1050,16 @@ onMounted(async () => {
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
           </select>
         </div>
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
+          <select v-model="selectedStatus" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option value="0">재직</option>
+            <option value="1">퇴사</option>
+            <option value="3">일용직</option>
+            <option value="4">대근</option>
+          </select>
+        </div>
         <div class="search-group">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
@@ -1022,16 +1101,61 @@ onMounted(async () => {
         <table class="data-table">
           <thead>
           <tr>
-            <th rowspan="2" class="text-center" style="width:40px;">
+            <th rowspan="2" class="text-center sortable resizable" style="width:30px;">
               <label class="checkbox-wrapper">
-                <input type="checkbox" v-model="selectAll" class="custom-checkbox header-checkbox" />
+                <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
               </label>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th rowspan="2" class="text-center" style="width:50px;">No.</th>
-            <th rowspan="2" class="text-center" style="width:140px;">현장명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:90px;">직책<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:90px;">사번<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center" style="width:100px;">성명<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center sortable resizable" style="width:40px;" data-col-key="no">
+              No.<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+            <th rowspan="2" class="text-center sortable resizable col-site" style="width:110px;" data-col-key="siteName"
+                @click="toggleSort('siteName')"
+            >
+              <div class="th-content">
+                현장명
+                <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="role"
+                @click="toggleSort('role')">
+              <div class="th-content">
+                직책
+                <i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+
+            <!-- 사번: sortable -->
+            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="id"
+                @click="toggleSort('id')">
+              <div class="th-content">
+                사번
+                <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+
+            <!-- 성명: sortable -->
+            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="staff"
+                @click="toggleSort('staff')">
+              <div class="th-content">
+                성명
+                <i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
+            <th rowspan="2" class="text-center sortable resizable">생년월일<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="age"
+                @click="toggleSort('birthDt')">
+              <div class="th-content">
+                나이(만)
+                <i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th>
             <th rowspan="2" class="text-center" style="width:110px;">근무/기준<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
 
             <th colspan="3" class="text-center group-header-summary group-divider">합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
@@ -1067,10 +1191,23 @@ onMounted(async () => {
               </label>
             </td>
             <td class="text-center text-gray">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
-            <td class="text-center text-dark">{{ p.siteName }}</td>
-            <td class="text-center text-gray">{{ p.role }}</td>
-            <td class="text-center text-gray">{{ p.id }}</td>
+            <td class="text-center text-dark compact-text cell-ellipsis" :title="p.siteName">
+              {{ p.siteName }}
+            </td>
+            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.role">
+              {{ p.role }}
+            </td>
+            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.id">
+              {{ p.id }}
+            </td>
             <td class="text-center font-bold text-dark member-name">{{ p.staff }}</td>
+            <td class="text-center text-gray">{{ p.birthDt }}</td>
+            <td
+                class="text-center text-gray"
+                :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }"
+                :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+              {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+            </td>
 
             <td class="text-center">
               <div class="days-input-group">
@@ -1133,7 +1270,7 @@ onMounted(async () => {
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="7" class="text-center"><span class="font-bold text-dark">전체 합계</span></td>
+            <td colspan="9" class="text-center"><span class="font-bold text-dark">전체 합계</span></td>
             <td class="text-right font-bold group-divider">{{ formatCurrency(statsInfo.gross) }}</td>
             <td class="text-right font-bold text-red">{{ formatCurrency(statsInfo.ded) }}</td>
             <td class="text-right font-bold text-blue">{{ formatCurrency(statsInfo.net) }}</td>
@@ -1161,6 +1298,8 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.age-warning { color: var(--danger) !important; font-weight: 600; }
+
 /* 지급대장 출력 버튼 */
 .btn-export {
   display: flex; align-items: center; gap: 8px;
@@ -1227,15 +1366,6 @@ onMounted(async () => {
   background-color: var(--bg-hover);
   border-bottom: 1px solid var(--border-color); }
 
-.data-table td {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-color);
-  border-right: 1px solid var(--bg-hover);
-  vertical-align: middle;
-  word-break: keep-all;
-}
-.data-row { background: var(--bg-surface); }
-.data-row:hover { background-color: var(--primary-soft); }
 .amount-header,
 .amount-cell {
   min-width: 75px;
@@ -1362,5 +1492,20 @@ body.is-resizing * {
 }
 .theme-deduct-cell {
   background-color: transparent;
+}
+
+/* ── 현장 컬럼 기본 너비 및 말줄임표 ── */
+.col-site {
+  min-width: 80px;
+  max-width: 160px;
+  width: 120px;
+}
+
+/* td 말줄임표 (현장 등 긴 텍스트 컬럼에 적용) */
+.cell-ellipsis {
+  max-width: 0;          /* table-layout: fixed 와 함께 동작 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
