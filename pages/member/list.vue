@@ -4,6 +4,8 @@ import axios from 'axios';
 import { useRouter } from 'nuxt/app';
 import Pagination from '@/components/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
+import { useTableResize } from '@/composables/useTableResize';
+const { startResize } = useTableResize();
 
 const router = useRouter();
 const {
@@ -19,6 +21,7 @@ const {
 const searchTerm     = ref('');
 const selectedSite   = ref('전체');
 const selectedType   = ref('전체');
+const selectedStatus   = ref('전체');
 
 // 입사일 기간 필터 상태 추가
 const filterStartDate = ref('');
@@ -36,6 +39,10 @@ const sortOrder = ref('asc');
 const members   = ref([]);
 const isLoading = ref(false);
 const error     = ref(null);
+
+const showRRN = ref(false);
+const revealedRRNs = ref({});
+const rrnLoading = ref(false);
 
 // ── 페이지네이션 상태 ──────────────────────────────
 const currentPage = ref(1);
@@ -78,6 +85,52 @@ const fetchMembers = async () => {
   }
 };
 
+const toggleRRN = async () => {
+  // 숨기기
+  if (showRRN.value) {
+    showRRN.value = false;
+    revealedRRNs.value = {}; // 메모리에서도 제거
+    return;
+  }
+
+  if (!confirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
+
+  rrnLoading.value = true;
+  try {
+    const mIdxList = pagedMembers.value.map(m => m.idx);
+    const res = await axios.post('/api/v1/member/rrn/batch', { mIdxList });
+
+    if (!res.data.result) {
+      alert('주민번호 조회 권한이 없습니다.');
+      return;
+    }
+
+    revealedRRNs.value = res.data.data; // { 101: '900101-1234567', ... }
+    showRRN.value = true;
+  } catch (e) {
+    alert('주민번호 조회 중 오류가 발생했습니다.');
+  } finally {
+    rrnLoading.value = false;
+  }
+};
+
+// 페이지 변경 시 토글 자동 해제 (다른 페이지 직원은 조회 안 된 상태라서)
+watch(currentPage, () => {
+  showRRN.value = false;
+  revealedRRNs.value = {};
+});
+
+const displayRRN = (member) => {
+  if (!member.rrn) return '-';
+  if (showRRN.value && revealedRRNs.value[member.idx]) {
+    const clean = revealedRRNs.value[member.idx].replace(/[^0-9]/g, '');
+    return clean.length === 13
+        ? `${clean.substring(0, 6)}-${clean.substring(6)}`
+        : revealedRRNs.value[member.idx];
+  }
+  return member.rrn; // 마스킹값 (900101-1*****)
+};
+
 // ── 정렬 ──────────────────────────────────────────
 const toggleSort = (key) => {
   if (sortKey.value === key) {
@@ -94,6 +147,7 @@ const resetFilters = () => {
   searchTerm.value     = '';
   selectedSite.value   = '전체';
   selectedType.value   = '전체';
+  selectedStatus.value   = '전체';
   filterStartDate.value  = '';
   filterEndDate.value    = '';
   filterNoPension.value    = false;
@@ -118,7 +172,8 @@ const filteredMembers = computed(() => {
 
     const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
     const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
-    const activeMatch = !filterActive.value || member.status == '재직';
+    //const activeMatch = !filterActive.value || member.status == '재직';
+    const activeMatch = selectedStatus.value === '전체' || member.status == selectedStatus.value;
 
     return siteMatch && searchMatch && typeMatch &&
         dateMatch && pensionMatch && employmentMatch &&
@@ -211,6 +266,11 @@ onMounted(async () => {
         <p class="page-subtitle">전체 직원 정보를 조회하고 관리합니다</p>
       </div>
       <div class="header-actions">
+        <button @click="toggleRRN" :class="['btn-rrn-toggle', { active: showRRN }]" :disabled="rrnLoading">
+          <i class="mdi" :class="rrnLoading ? 'mdi-loading mdi-spin' : showRRN ? 'mdi-eye-off' : 'mdi-eye'"></i>
+          <span>{{ showRRN ? '주민번호 숨기기' : '주민번호 보기' }}</span>
+        </button>
+
         <button @click="goToRegister" class="btn-add">
           <i class="mdi mdi-account-plus"></i>
           <span>직원 등록</span>
@@ -281,6 +341,16 @@ onMounted(async () => {
           </select>
         </div>
         <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
+          <select v-model="selectedStatus" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option value="0">재직</option>
+            <option value="1">퇴사</option>
+            <option value="3">일용직</option>
+            <option value="4">대근</option>
+            </select>
+        </div>
+        <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label>
           <div class="date-range-inputs">
             <input type="date" v-model="filterStartDate" @change="onFilterChange" class="filter-select date-input" />
@@ -329,10 +399,10 @@ onMounted(async () => {
             <input type="checkbox" v-model="filterForeigner" @change="onFilterChange">
             <i class="mdi mdi-earth"></i><span>외국인</span>
           </label>
-          <label class="toggle-chip" :class="{ active: filterActive }">
+          <!--label class="toggle-chip" :class="{ active: filterActive }">
             <input type="checkbox" v-model="filterActive" @change="onFilterChange">
             <i class="mdi mdi-account-check"></i><span>재직중</span>
-          </label>
+          </label-->
         </div>
       </div>
     </div>
@@ -384,41 +454,73 @@ onMounted(async () => {
           </colgroup>
           <thead>
           <tr>
-            <th @click="toggleSort('id')" class="sortable">
+            <th @click="toggleSort('id')" class="sortable resizable">
               <div class="th-content">ID <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('siteName')" class="sortable">
+            <th @click="toggleSort('siteName')" class="sortable resizable col-site">
               <div class="th-content">현장 <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('name')" class="sortable">
+            <th @click="toggleSort('name')" class="sortable resizable">
               <div class="th-content">이름 <i v-if="sortKey==='name'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('position')" class="sortable">
+            <th @click="toggleSort('position')" class="sortable resizable">
               <div class="th-content">직책 <i v-if="sortKey==='position'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('name')" class="sortable">
-              <div class="th-content">근로계약일 <i v-if="sortKey==='contract'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            <th class="resizable">
+              <div class="th-content">근로계약일</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('gender')" class="sortable">
+            <th @click="toggleSort('gender')" class="sortable resizable">
               <div class="th-content">성별 <i v-if="sortKey==='gender'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('birthDt')" class="sortable">
+            <th @click="toggleSort('birthDt')" class="sortable resizable">
               <div class="th-content">나이 <i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th>내/외국인</th>
-            <th>장애여부</th>
-            <th @click="toggleSort('inDate')" class="sortable">
+            <th class="resizable">
+              <div class="th-content">주민번호</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable">
+              <div class="th-content">내/외국인</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable">
+              <div class="th-content">장애여부</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('inDate')" class="sortable resizable">
               <div class="th-content">입사일 <i v-if="sortKey==='inDate'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('outDate')" class="sortable">
+            <th @click="toggleSort('outDate')" class="sortable resizable">
               <div class="th-content">퇴사일 <i v-if="sortKey==='outDate'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="text-center">4대보험</th>
-            <th class="text-center">퇴직연금</th>
-            <th>계좌번호</th>
-            <th>연락처</th>
-            <th @click="toggleSort('status')" class="sortable">
+            <th class="text-center resizable">
+              <div class="th-content">4대보험</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="text-center resizable">
+              <div class="th-content">퇴직연금</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable">
+              <div class="th-content">계좌번호</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable">
+              <div class="th-content">연락처</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('status')" class="sortable resizable">
               <div class="th-content">상태 <i v-if="sortKey==='status'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th class="text-center">관리</th>
           </tr>
@@ -426,7 +528,7 @@ onMounted(async () => {
           <tbody>
           <tr v-for="member in pagedMembers" :key="member.idx" class="data-row">
             <td>{{ member.id }}</td>
-            <td>{{ member.siteName }}</td>
+            <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
             <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
             <td>{{ member.position }}</td>
             <td>{{member.contract}}</td>
@@ -436,6 +538,7 @@ onMounted(async () => {
                 :title="calculateAge(member.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
               {{ calculateAge(member.birthDt) ? calculateAge(member.birthDt) + '세' : '-' }}
             </td>
+            <td>{{ displayRRN(member) }}</td>
             <td>
                 <span v-if="member.foreigner === 'Y' || member.foreigner === true"
                       class="badge badge-foreigner tooltip-container">
@@ -485,9 +588,9 @@ onMounted(async () => {
             </td>
             <td>{{member.phone}}</td>
             <td>
-                <span :class="['status-badge', member.status === '재직' ? 'status-active' : 'status-inactive']">
-                  <i :class="['mdi', member.status === '재직' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
-                  {{ member.status }}
+                <span :class="['status-badge', member.status == 0 ? 'status-active' : 'status-inactive']">
+                  <i :class="['mdi', member.status == 0 ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
+                  {{ member.status == 0 ? '재직':'퇴사' }}
                 </span>
             </td>
             <td class="text-center">
@@ -600,6 +703,16 @@ onMounted(async () => {
 }
 .account-number { font-size: 12px; color: var(--text-main); }
 
+.btn-rrn-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border-color); background: var(--bg-surface);
+  color: var(--text-sub); cursor: pointer; transition: .2s;
+}
+.btn-rrn-toggle:hover { border-color: var(--warning); color: var(--warning); }
+.btn-rrn-toggle.active { background: rgba(245,158,11,.1); border-color: var(--warning); color: #b45309; }
+.btn-rrn-toggle:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* ── 상태 배지 ── */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -638,5 +751,42 @@ onMounted(async () => {
 .date-separator {
   color: var(--text-sub);
   font-weight: bold;
+}
+
+/* ── 컬럼 리사이즈 ── */
+.resizable {
+  position: relative;
+  overflow: hidden; /* 셀 내용이 핸들을 밀지 않도록 */
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+  user-select: none;
+}
+.resize-handle:hover,
+.is-resizing .resize-handle {
+  background: var(--primary);
+  opacity: 0.5;
+}
+
+/* ── 현장 컬럼 기본 너비 및 말줄임표 ── */
+.col-site {
+  min-width: 80px;
+  max-width: 160px;
+  width: 120px;
+}
+
+/* td 말줄임표 (현장 등 긴 텍스트 컬럼에 적용) */
+.cell-ellipsis {
+  max-width: 0;          /* table-layout: fixed 와 함께 동작 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
