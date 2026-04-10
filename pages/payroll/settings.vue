@@ -274,12 +274,12 @@ onMounted(() => {
         </h1>
         <p class="page-subtitle">급여 지급 항목 및 공제 항목을 설정합니다</p>
       </div>
-      <div class="header-actions">
+      <!--div class="header-actions">
         <button @click="saveSubGroup" class="btn-save-all">
           <i class="mdi mdi-content-save-outline"></i>
           <span>전체 저장</span>
         </button>
-      </div>
+      </div-->
     </div>
 
     <div class="filter-panel">
@@ -547,7 +547,7 @@ onMounted(() => {
           <li><strong>지급 항목:</strong> 급여 지급 시 포함되는 항목입니다. (기본급, 수당 등)</li>
           <li><strong>공제 항목:</strong> 급여에서 차감되는 항목입니다. (국민연금, 건강보험 등)</li>
           <li><strong>비과세한도:</strong> 지급 항목에 대한 비과세 한도를 설정할 수 있습니다.</li>
-          <li><strong>전체 저장:</strong> 모든 변경사항을 한번에 저장하려면 우측 상단의 '전체 저장' 버튼을 클릭하세요.</li>
+          <!--li><strong>전체 저장:</strong> 모든 변경사항을 한번에 저장하려면 우측 상단의 '전체 저장' 버튼을 클릭하세요.</li-->
         </ul>
       </div>
     </div>
