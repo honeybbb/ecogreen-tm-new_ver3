@@ -1,89 +1,106 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import axios from "axios";
-import SiteSelect from "~/components/SiteSelect.vue";
-import MemberSelect from "~/components/MemberSelect.vue";
+import axios from 'axios';
+import SiteSelect from '~/components/SiteSelect.vue';
+import MemberSelect from '~/components/MemberSelect.vue';
 
-// API Composable (현장 목록 등)
 const { siteOptions, fetchSiteOptions } = useApi();
 
-// === 1. 상태 관리 ===
-const currentDate = ref(new Date());
-const schedules = ref([]);
-const isLoading = ref(false);
-
-// 모달 상태
-const isDailyModalOpen = ref(false);
-const isModalOpen = ref(false);
-const isExcelModalOpen = ref(false);
-
-// 검색 및 입력 상태
+// ================================================================
+// 상태
+// ================================================================
+const currentDate   = ref(new Date());
+const schedules     = ref([]);
+const isLoading     = ref(false);
 const currentSiteId = ref('');
-const staffSearchName = ref('');
-const staffList = ref([]);
-const form = ref({ workStartDt: '', mIdx: '', sIdx: '', workType: 'work', bigo: '' });
-const selectedDay = ref(null);
+const staffList     = ref([]);
 
-// 엑셀 업로드 상태
-const excelFile = ref(null);
-const fileInput = ref(null);
-const uploadLoading = ref(false);
+// 모달
+const modal = ref({
+  daily:    false,  // 날짜 클릭 → 일별 현황
+  form:     false,  // 근태 등록/수정
+  bulk:     false,  // 일괄 생성 확인
+});
 
-// === 2. 캘린더/날짜 계산 ===
-const selectedYear = computed(() => currentDate.value.getFullYear());
+const selectedDay     = ref(null);
+const selectedRecord  = ref(null); // 수정 대상 근태 레코드
+const isBulkLoading   = ref(false);
+
+// 폼
+const form = ref({
+  idx:         null,   // 수정 시 사용
+  workStartDt: '',
+  mIdx:        '',
+  sIdx:        '',
+  workType:    'work',
+  bigo:        '',
+});
+
+// ================================================================
+// 날짜 계산
+// ================================================================
+const selectedYear  = computed(() => currentDate.value.getFullYear());
 const selectedMonth = computed(() => currentDate.value.getMonth());
 
-const selectedYearMonth = computed(() => {
-  return `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2, '0')}`;
-});
-const monthTitle = computed(() => `${selectedYear.value}년 ${selectedMonth.value + 1}월`);
+const selectedYearMonth = computed(() =>
+    `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2, '0')}`
+);
+const monthTitle = computed(() =>
+    `${selectedYear.value}년 ${selectedMonth.value + 1}월`
+);
 
-const monthSummary = computed(() => {
-  const work = schedules.value.filter(s => s.workType === 'work').length;
-  const leave = schedules.value.filter(s => ['leave', 'annual', 'half'].includes(s.workType)).length;
-  const holiday = schedules.value.filter(s => s.workType === 'holiday').length;
-  const absent = schedules.value.filter(s => s.workType === 'absent').length;
-  const half = schedules.value.filter(s => s.workType === 'half').length; // 별도 카운트용
-
-  return { work, leave, holiday, absent, half };
-});
+const monthSummary = computed(() => ({
+  work:    schedules.value.filter(s => s.workType === 'work').length,
+  holiday: schedules.value.filter(s => s.workType === 'holiday').length,
+  leave:   schedules.value.filter(s => ['leave','annual','half'].includes(s.workType)).length,
+  absent:  schedules.value.filter(s => s.workType === 'absent').length,
+}));
 
 const calendarDays = computed(() => {
-  const daysInMonth = new Date(selectedYear.value, selectedMonth.value + 1, 0).getDate();
+  const daysInMonth   = new Date(selectedYear.value, selectedMonth.value + 1, 0).getDate();
   const firstDayOfWeek = new Date(selectedYear.value, selectedMonth.value, 1).getDay();
-  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-  const days = [];
+  const dayNames      = ['일','월','화','수','목','금','토'];
+  const days          = [];
 
+  // 앞 빈칸
   for (let i = 0; i < firstDayOfWeek; i++) {
-    days.push({ date: '', isEmpty: true });
+    days.push({ isEmpty: true });
   }
 
-  for (let i = 1; i <= daysInMonth; i++) {
-    const dateStr = `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-    const dailySchedules = schedules.value.filter(s => s.date === dateStr);
-    const dayOfWeek = new Date(selectedYear.value, selectedMonth.value, i).getDay();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const fullDate = `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const dow      = new Date(selectedYear.value, selectedMonth.value, d).getDay();
+    const daily    = schedules.value.filter(s => s.date === fullDate);
 
     days.push({
-      date: i,
-      dayName: dayNames[dayOfWeek],
-      isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
-      fullDate: dateStr,
-      isEmpty: false,
-      schedules: dailySchedules,
+      date:      d,
+      fullDate,
+      dayName:   dayNames[dow],
+      isWeekend: dow === 0 || dow === 6,
+      isEmpty:   false,
+      schedules: daily,
       summary: {
-        work: dailySchedules.filter(s => s.workType === 'work').length,
-        leave: dailySchedules.filter(s => ['leave', 'annual'].includes(s.workType)).length, //연차
-        half: dailySchedules.filter(s => s.workType === 'half').length, //반차
-        holiday: dailySchedules.filter(s => s.workType === 'holiday').length, //특근
-        absent: dailySchedules.filter(s => s.workType === 'absent').length //결근
-      }
+        work:    daily.filter(s => s.workType === 'work').length,
+        holiday: daily.filter(s => s.workType === 'holiday').length,
+        leave:   daily.filter(s => ['leave','annual'].includes(s.workType)).length,
+        half:    daily.filter(s => s.workType === 'half').length,
+        absent:  daily.filter(s => s.workType === 'absent').length,
+      },
     });
   }
   return days;
 });
 
-// === 3. 데이터 로딩 ===
-const isAssignedStaff = async () => {
+const currentSiteName = computed(() =>
+    siteOptions.value.find(s => s.idx === currentSiteId.value)?.name || ''
+);
+
+const TODAY = new Date().toISOString().split('T')[0];
+
+// ================================================================
+// 데이터 로딩
+// ================================================================
+const loadStaffList = async () => {
   if (!currentSiteId.value) return;
   try {
     const res = await axios.get(`/api/v1/member/staffing/${currentSiteId.value}`);
@@ -99,44 +116,43 @@ const fetchSchedules = async () => {
   try {
     const [workRes, leaveRes] = await Promise.all([
       axios.get(`/api/v1/work/list?month=${selectedYearMonth.value}&sIdx=${currentSiteId.value}`),
-      axios.get(`/api/v1/work/off?month=${selectedYearMonth.value}&sIdx=${currentSiteId.value}`)
+      axios.get(`/api/v1/work/off?month=${selectedYearMonth.value}&sIdx=${currentSiteId.value}`),
     ]);
 
-    let combinedSchedules = [];
+    const combined = [];
 
-    if (workRes.data.data) {
-      workRes.data.data.forEach(item => {
-        const pureDate = item.workStartDt.split(' ')[0];
-        const staff = staffList.value.find(s => s.idx === item.mIdx);
-        combinedSchedules.push({
-          mIdx: item.mIdx,
-          date: pureDate,
-          staffName: staff ? staff.name : `직원(${item.mIdx})`,
-          workType: item.workType || 'work',
+    workRes.data.data?.forEach(item => {
+      const staff = staffList.value.find(s => s.idx === item.mIdx);
+      combined.push({
+        idx:       item.idx,           // ← 삭제/수정에 필요
+        mIdx:      item.mIdx,
+        date:      item.workStartDt.split(' ')[0],
+        staffName: staff?.name || `직원(${item.mIdx})`,
+        workType:  item.workType || 'work',
+        bigo:      item.bigo || '',
+      });
+    });
+
+    leaveRes.data.data?.forEach(item => {
+      const staff = staffList.value.find(s => s.idx === item.mIdx);
+      let curr = new Date(item.startDt);
+      const end = new Date(item.endDt);
+      while (curr <= end) {
+        combined.push({
+          date:      curr.toISOString().split('T')[0],
+          staffName: staff?.name || `직원(${item.mIdx})`,
+          workType:  'leave',
         });
-      });
-    }
+        curr.setDate(curr.getDate() + 1);
+      }
+    });
 
-    if (leaveRes.data.data) {
-      leaveRes.data.data.forEach(item => {
-        const staff = staffList.value.find(s => s.idx === item.mIdx);
-        let curr = new Date(item.startDt);
-        const end = new Date(item.endDt);
-        while (curr <= end) {
-          combinedSchedules.push({
-            date: curr.toISOString().split('T')[0],
-            staffName: staff ? staff.name : `직원(${item.mIdx})`,
-            workType: 'leave'
-          });
-          curr.setDate(curr.getDate() + 1);
-        }
-      });
-    }
-    schedules.value = combinedSchedules;
+    schedules.value = combined;
 
-    if (isDailyModalOpen.value && selectedDay.value) {
-      const updatedDay = calendarDays.value.find(d => d.fullDate === selectedDay.value.fullDate);
-      if (updatedDay) selectedDay.value = updatedDay;
+    // 일별 모달 열려있으면 데이터 갱신
+    if (modal.value.daily && selectedDay.value) {
+      const updated = calendarDays.value.find(d => d.fullDate === selectedDay.value.fullDate);
+      if (updated) selectedDay.value = updated;
     }
   } catch (e) {
     console.error('스케줄 로드 실패', e);
@@ -145,108 +161,144 @@ const fetchSchedules = async () => {
   }
 };
 
-// === 4. 네비게이션 핸들러 ===
+// ================================================================
+// 네비게이션
+// ================================================================
 const prevMonth = () => { currentDate.value = new Date(selectedYear.value, selectedMonth.value - 1, 1); };
 const nextMonth = () => { currentDate.value = new Date(selectedYear.value, selectedMonth.value + 1, 1); };
-const goToday = () => { currentDate.value = new Date(); };
+const goToday   = () => { currentDate.value = new Date(); };
 
 watch([currentDate, currentSiteId], () => {
-  if (currentSiteId.value) {
-    isAssignedStaff().then(() => fetchSchedules());
-  }
+  if (currentSiteId.value) loadStaffList().then(fetchSchedules);
 });
 
-// === 5. 모달 및 수동 등록 핸들러 ===
+// ================================================================
+// 달력 클릭 → 일별 현황 모달
+// ================================================================
 const handleDayClick = (day) => {
-  if (day.isEmpty || !currentSiteId.value) {
-    if (!currentSiteId.value) alert('현장을 먼저 선택해주세요.');
-    return;
-  }
+  if (day.isEmpty) return;
+  if (!currentSiteId.value) return alert('현장을 먼저 선택해주세요.');
   selectedDay.value = day;
-  isDailyModalOpen.value = true;
+  modal.value.daily = true;
 };
 
-const openRegisterModal = () => {
-  form.value = { workStartDt: selectedDay.value.fullDate, mIdx: '', sIdx: currentSiteId.value, workType: 'work', bigo: '' };
-  staffSearchName.value = '';
-  isDailyModalOpen.value = false;
-  isModalOpen.value = true;
+// ================================================================
+// 근태 등록/수정 모달
+// ================================================================
+
+// 신규 등록 (일별 모달에서 "수동 등록" 버튼)
+const openCreateModal = () => {
+  form.value = {
+    idx:         null,
+    workStartDt: selectedDay.value.fullDate,
+    mIdx:        '',
+    sIdx:        currentSiteId.value,
+    workType:    'work',
+    bigo:        '',
+  };
+  modal.value.daily = false;
+  modal.value.form  = true;
 };
 
+// 수정 (일별 현황에서 항목 클릭)
+const openEditModal = (record) => {
+  form.value = {
+    idx:         record.idx,
+    workStartDt: record.date,
+    mIdx:        record.mIdx,
+    sIdx:        currentSiteId.value,
+    workType:    record.workType,
+    bigo:        record.bigo || '',
+  };
+  selectedRecord.value = record;
+  modal.value.daily = false;
+  modal.value.form  = true;
+};
+
+// 저장 (등록 or 수정)
 const saveSchedule = async () => {
-  if (!form.value.mIdx) return alert('직원을 선택해주세요.');  // ✅ 이것만
-
+  if (!form.value.mIdx) return alert('직원을 선택해주세요.');
   try {
-    form.value.sIdx = currentSiteId.value;
-    await axios.post(`/api/v1/work/start`, form.value);
-    isModalOpen.value = false;
-    isDailyModalOpen.value = false;
+    await axios.post('/api/v1/work/upsert', { ...form.value });
+    modal.value.form = false;
     await fetchSchedules();
   } catch (e) {
-    alert('등록 중 오류가 발생했습니다.');
+    alert('저장 중 오류가 발생했습니다.');
   }
 };
 
-const getWorkTypeName = (type) => {
-  switch(type) {
-    case 'work': return '출근';
-    case 'holiday': return '특근';
-    case 'leave':
-    case 'annual': return '연차';
-    case 'half': return '반차';
-    case 'absent': return '결근';
-    default: return '알수없음';
-  }
-};
-
-// === 6. 엑셀 업로드 핸들러 ===
-const triggerFileInput = () => { fileInput.value.click(); };
-const handleFileChange = (e) => {
-  const file = e.target.files[0];
-  if (file) excelFile.value = file;
-};
-
-const submitExcelUpload = async () => {
-  if (!excelFile.value) return alert('엑셀 파일을 선택해주세요.');
-
-  uploadLoading.value = true;
-  const formData = new FormData();
-  formData.append('sIdx', currentSiteId.value);
-  formData.append('file', excelFile.value);
-
+// ================================================================
+// 근태 삭제
+// ================================================================
+const deleteRecord = async (record) => {
+  if (!record.idx) return alert('삭제할 수 없는 항목입니다.');
+  if (!confirm(`${record.staffName}의 ${record.date} 근태를 삭제하시겠습니까?`)) return;
   try {
-    const res = await axios.post('/api/v1/upload/work', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    await axios.delete(`/api/v1/work/${record.idx}`);
+    await fetchSchedules();
+  } catch (e) {
+    alert('삭제 중 오류가 발생했습니다.');
+  }
+};
+
+// ================================================================
+// 일괄 생성
+// ================================================================
+const openBulkModal = () => {
+  if (!currentSiteId.value) return alert('현장을 먼저 선택해주세요.');
+  modal.value.bulk = true;
+};
+
+const executeBulkGenerate = async () => {
+  isBulkLoading.value = true;
+  modal.value.bulk    = false;
+  try {
+    const res = await axios.post('/api/v1/work/bulk', {
+      sIdx:  currentSiteId.value,
+      month: selectedYearMonth.value,
+    });
     if (res.data.result) {
-      alert(res.data.message || '엑셀 업로드가 완료되었습니다.');
-      isExcelModalOpen.value = false;
-      excelFile.value = null;
+      alert(`${monthTitle.value} 일괄 근태 생성 완료\n등록: ${res.data.success}건 / 삭제: ${res.data.deleted}건`);
       await fetchSchedules();
     } else {
-      alert(res.data.message || '업로드에 실패했습니다.');
+      alert(res.data.message || '생성 실패');
     }
-  } catch (error) {
-    console.error('엑셀 업로드 에러:', error);
-    alert(error.response?.data?.message || '업로드 처리 중 서버 에러가 발생했습니다.');
+  } catch (e) {
+    alert(e.response?.data?.message || '서버 오류가 발생했습니다.');
   } finally {
-    uploadLoading.value = false;
-    if (fileInput.value) fileInput.value.value = '';
+    isBulkLoading.value = false;
   }
 };
 
-onMounted(() => {
-  fetchSiteOptions();
-});
+// ================================================================
+// 유틸
+// ================================================================
+const WORK_TYPE_LABELS = {
+  work:    '출근',
+  holiday: '특근',
+  leave:   '휴무',
+  annual:  '연차',
+  half:    '반차',
+  absent:  '결근',
+};
+const getWorkTypeName = (type) => WORK_TYPE_LABELS[type] || '알수없음';
+
+const getStatusClass = (type) => type === 'annual' ? 'leave' : type;
+
+onMounted(fetchSiteOptions);
 </script>
 
 <template>
   <div class="attendance-calendar-container">
 
+    <!-- ── 헤더 ── -->
     <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title"><i class="mdi mdi-calendar-check-outline"></i> 직원 출근 관리</h1>
+        <h1 class="page-title">
+          <i class="mdi mdi-calendar-check-outline"></i> 직원 출근 관리
+        </h1>
         <p class="page-subtitle">직원들의 출퇴근 및 휴무 현황을 관리합니다</p>
       </div>
-
       <div class="header-actions">
         <div class="nav-controls">
           <button @click="prevMonth" class="btn-nav"><i class="mdi mdi-chevron-left"></i></button>
@@ -257,27 +309,18 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- ── 필터 ── -->
     <div class="filter-panel">
       <div class="filter-row">
-        <div class="filter-group">
-          <!--select v-model="currentSiteId" class="filter-select">
-            <option value="" disabled>관리할 현장을 선택하세요</option>
-            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-          </select-->
-          <SiteSelect
-              :allow-empty="false"
-              v-model="currentSiteId"
-          />
-        </div>
-
-        <div class="search-group" style="justify-content: flex-end;">
-          <button v-if="currentSiteId" @click="isExcelModalOpen = true" class="btn-excel">
-            <i class="mdi mdi-file-excel-outline"></i> <span>엑셀 일괄 업로드</span>
-          </button>
-        </div>
+        <SiteSelect :allow-empty="false" v-model="currentSiteId" />
+        <button v-if="currentSiteId" @click="openBulkModal" class="btn-bulk" :disabled="isBulkLoading">
+          <i class="mdi" :class="isBulkLoading ? 'mdi-loading mdi-spin' : 'mdi-calendar-multiselect'"></i>
+          <span>{{ monthTitle }} 일괄 생성</span>
+        </button>
       </div>
     </div>
 
+    <!-- ── 통계 ── -->
     <div class="stats-grid">
       <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-account-check-outline"></i></div>
@@ -309,75 +352,74 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- ── 캘린더 ── -->
     <div class="calendar-card">
       <div v-if="isLoading" class="loader-overlay">
         <div class="spinner"></div>
       </div>
 
       <div class="calendar-grid-header">
-        <div class="day-name sun">일</div><div class="day-name">월</div><div class="day-name">화</div><div class="day-name">수</div><div class="day-name">목</div><div class="day-name">금</div><div class="day-name sat">토</div>
+        <div class="day-name sun">일</div>
+        <div class="day-name">월</div>
+        <div class="day-name">화</div>
+        <div class="day-name">수</div>
+        <div class="day-name">목</div>
+        <div class="day-name">금</div>
+        <div class="day-name sat">토</div>
       </div>
 
       <div class="calendar-grid-body">
         <div
-            v-for="(day, index) in calendarDays"
-            :key="index"
-            :class="['day-cell', { 'empty': day.isEmpty, 'today': day.fullDate === new Date().toISOString().split('T')[0] }]"
+            v-for="(day, i) in calendarDays" :key="i"
+            :class="['day-cell', { empty: day.isEmpty, today: day.fullDate === TODAY }]"
             @click="handleDayClick(day)"
         >
           <div v-if="!day.isEmpty" class="cell-content">
-
             <div class="day-header">
               <div class="date-group">
-                <span class="date-num" :class="{ 'text-red': day.dayName === '일', 'text-blue': day.dayName === '토' }">{{ day.date }}</span>
-                <span class="mobile-day-name" :class="{ 'text-red': day.dayName === '일', 'text-blue': day.dayName === '토' }">{{ day.dayName }}</span>
+                <span class="date-num" :class="{ 'text-red': day.dayName==='일', 'text-blue': day.dayName==='토' }">
+                  {{ day.date }}
+                </span>
+                <span class="mobile-day-name" :class="{ 'text-red': day.dayName==='일', 'text-blue': day.dayName==='토' }">
+                  {{ day.dayName }}
+                </span>
               </div>
-              <i class="mdi mdi-arrow-top-right detail-icon" title="상세보기"></i>
+              <i class="mdi mdi-arrow-top-right detail-icon"></i>
             </div>
-
             <div class="summary-container custom-scrollbar">
               <template v-if="day.schedules.length > 0">
-                <div v-if="day.summary.work > 0" class="summary-badge work">
-                  출근 <strong>{{ day.summary.work }}</strong>
-                </div>
-                <div v-if="day.summary.holiday > 0" class="summary-badge holiday">
-                  특근 <strong>{{ day.summary.holiday }}</strong>
-                </div>
-                <div v-if="day.summary.leave > 0" class="summary-badge leave">
-                  연차 <strong>{{ day.summary.leave }}</strong>
-                </div>
-                <div v-if="day.summary.half > 0" class="summary-badge half">
-                  반차 <strong>{{ day.summary.half }}</strong>
-                </div>
-                <div v-if="day.summary.absent > 0" class="summary-badge absent">
-                  결근 <strong>{{ day.summary.absent }}</strong>
-                </div>
+                <div v-if="day.summary.work    > 0" class="summary-badge work">출근 <strong>{{ day.summary.work }}</strong></div>
+                <div v-if="day.summary.holiday > 0" class="summary-badge holiday">특근 <strong>{{ day.summary.holiday }}</strong></div>
+                <div v-if="day.summary.leave   > 0" class="summary-badge leave">연차 <strong>{{ day.summary.leave }}</strong></div>
+                <div v-if="day.summary.half    > 0" class="summary-badge half">반차 <strong>{{ day.summary.half }}</strong></div>
+                <div v-if="day.summary.absent  > 0" class="summary-badge absent">결근 <strong>{{ day.summary.absent }}</strong></div>
               </template>
-              <div v-else class="empty-cell-hint">
-                <i class="mdi mdi-plus"></i>
-              </div>
+              <div v-else class="empty-cell-hint"><i class="mdi mdi-plus"></i></div>
             </div>
-
           </div>
         </div>
       </div>
     </div>
 
+    <!-- ================================================================ -->
+    <!-- 모달: 일별 현황                                                    -->
+    <!-- ================================================================ -->
     <transition name="fade">
-      <div v-if="isDailyModalOpen" class="modal-overlay" @click.self="isDailyModalOpen = false">
+      <div v-if="modal.daily" class="modal-overlay" @click.self="modal.daily = false">
         <div class="modal-card">
           <div class="modal-header">
             <h3 class="modal-title">
               <i class="mdi mdi-clipboard-text-outline text-blue"></i>
               {{ selectedDay?.fullDate }} 근무 현황
             </h3>
-            <button class="modal-close" @click="isDailyModalOpen = false"><i class="mdi mdi-close"></i></button>
+            <button class="modal-close" @click="modal.daily = false"><i class="mdi mdi-close"></i></button>
           </div>
+
           <div class="modal-body list-body">
             <div class="daily-action-bar">
-              <p class="summary-text">총 <strong>{{ selectedDay?.schedules.length }}</strong>건의 기록</p>
-              <button class="btn-submit small-btn" @click="openRegisterModal">
-                <i class="mdi mdi-plus-circle-outline"></i> 근무 등록
+              <p class="summary-text">총 <strong>{{ selectedDay?.schedules.length }}</strong>건</p>
+              <button class="btn-submit small-btn" @click="openCreateModal">
+                <i class="mdi mdi-plus-circle-outline"></i> 수동 등록
               </button>
             </div>
 
@@ -386,14 +428,30 @@ onMounted(() => {
                 <i class="mdi mdi-inbox-outline"></i>
                 <p>등록된 근무 내역이 없습니다.</p>
               </div>
-              <div v-else class="daily-list-item" v-for="(sch, idx) in selectedDay.schedules" :key="idx">
+
+              <div
+                  v-else
+                  v-for="(sch, i) in selectedDay.schedules" :key="i"
+                  class="daily-list-item"
+              >
                 <div class="worker-info">
                   <div class="worker-avatar"><i class="mdi mdi-account"></i></div>
                   <span class="staff-name">{{ sch.staffName }}</span>
                 </div>
-                <span :class="['status-badge', sch.workType === 'annual' ? 'leave' : sch.workType]">
-                  {{ getWorkTypeName(sch.workType) }}
-                </span>
+
+                <div class="record-actions">
+                  <span :class="['status-badge', getStatusClass(sch.workType)]">
+                    {{ getWorkTypeName(sch.workType) }}
+                  </span>
+                  <!-- 수정 버튼 -->
+                  <button class="btn-icon edit" @click="openEditModal(sch)" title="수정">
+                    <i class="mdi mdi-pencil-outline"></i>
+                  </button>
+                  <!-- 삭제 버튼 -->
+                  <button class="btn-icon delete" @click="deleteRecord(sch)" title="삭제">
+                    <i class="mdi mdi-trash-can-outline"></i>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -401,103 +459,99 @@ onMounted(() => {
       </div>
     </transition>
 
+    <!-- ================================================================ -->
+    <!-- 모달: 근태 등록/수정                                               -->
+    <!-- ================================================================ -->
     <transition name="fade">
-      <div v-if="isModalOpen" class="modal-overlay" @click.self="isModalOpen = false">
+      <div v-if="modal.form" class="modal-overlay" @click.self="modal.form = false">
         <div class="modal-card">
           <div class="modal-header">
             <h3 class="modal-title">
-              <i class="mdi mdi-calendar-plus"></i> 근태 수동 등록
+              <i class="mdi mdi-calendar-plus"></i>
+              {{ form.idx ? '근태 수정' : '근태 수동 등록' }}
             </h3>
-            <button class="modal-close" @click="isModalOpen = false"><i class="mdi mdi-close"></i></button>
+            <button class="modal-close" @click="modal.form = false"><i class="mdi mdi-close"></i></button>
           </div>
+
           <div class="modal-body">
             <div class="info-box">
-              <span><strong>선택 날짜 :</strong> {{ form.workStartDt }}</span>
+              <strong>날짜 :</strong> {{ form.workStartDt }}
             </div>
 
-            <div class="form-group">
-              <label>직원 검색</label>
-              <MemberSelect
-                  v-model="form.mIdx"
-                  :options="staffList"
-              />
-              <!--div class="search-input-wrapper">
-                <i class="mdi mdi-magnify"></i>
-                <input list="staff-opts" v-model="staffSearchName" placeholder="직원 이름 입력">
-                <datalist id="staff-opts">
-                  <option v-for="staff in staffList" :key="staff.idx" :value="staff.name" />
-                </datalist>
-              </div-->
+            <!-- 신규 등록일 때만 직원 선택 -->
+            <div v-if="!form.idx" class="form-group">
+              <label>직원 선택</label>
+              <MemberSelect v-model="form.mIdx" :options="staffList" />
+            </div>
+            <!-- 수정일 때는 직원 이름 표시 -->
+            <div v-else class="info-box">
+              <strong>직원 :</strong> {{ selectedRecord?.staffName }}
             </div>
 
             <div class="form-group">
               <label>근태 유형</label>
               <div class="type-selector">
-                <label class="type-option">
-                  <input type="radio" v-model="form.workType" value="work">
-                  <div class="option-card work"><i class="mdi mdi-check-circle-outline"></i>출근</div>
-                </label>
-                <label class="type-option">
-                  <input type="radio" v-model="form.workType" value="holiday">
-                  <div class="option-card holiday"><i class="mdi mdi-star-circle-outline"></i>특근</div>
-                </label>
-                <label class="type-option">
-                  <input type="radio" v-model="form.workType" value="leave">
-                  <div class="option-card leave"><i class="mdi mdi-beach"></i>연차</div>
-                </label>
-                <label class="type-option">
-                  <input type="radio" v-model="form.workType" value="half">
-                  <div class="option-card half"><i class="mdi mdi-clock-outline"></i>반차</div>
-                </label>
-                <label class="type-option">
-                  <input type="radio" v-model="form.workType" value="absent">
-                  <div class="option-card absent"><i class="mdi mdi-account-remove-outline"></i>결근</div>
+                <label v-for="type in ['work','holiday','annual','half','absent']" :key="type" class="type-option">
+                  <input type="radio" v-model="form.workType" :value="type">
+                  <div :class="['option-card', type]">
+                    <i :class="['mdi', {
+                      'mdi-check-circle-outline':  type === 'work',
+                      'mdi-star-circle-outline':   type === 'holiday',
+                      'mdi-beach':                 type === 'annual',
+                      'mdi-clock-outline':         type === 'half',
+                      'mdi-account-remove-outline':type === 'absent',
+                    }]"></i>
+                    {{ getWorkTypeName(type) }}
+                  </div>
                 </label>
               </div>
             </div>
+
+            <div class="form-group">
+              <label>비고</label>
+              <input v-model="form.bigo" class="input-text" placeholder="비고 입력 (선택)">
+            </div>
           </div>
+
           <div class="modal-footer">
-            <button class="btn-cancel" @click="isModalOpen = false">취소</button>
-            <button class="btn-submit" @click="saveSchedule">등록하기</button>
+            <button class="btn-cancel" @click="modal.form = false">취소</button>
+            <button class="btn-submit" @click="saveSchedule">
+              {{ form.idx ? '수정하기' : '등록하기' }}
+            </button>
           </div>
         </div>
       </div>
     </transition>
 
+    <!-- ================================================================ -->
+    <!-- 모달: 일괄 생성 확인                                               -->
+    <!-- ================================================================ -->
     <transition name="fade">
-      <div v-if="isExcelModalOpen" class="modal-overlay" @click.self="isExcelModalOpen = false">
-        <div class="modal-card excel-modal">
+      <div v-if="modal.bulk" class="modal-overlay" @click.self="modal.bulk = false">
+        <div class="modal-card">
           <div class="modal-header">
             <h3 class="modal-title">
-              <i class="mdi mdi-file-excel-outline text-green"></i> 엑셀 일괄 업로드
+              <i class="mdi mdi-calendar-multiselect text-blue"></i> 월 일괄 근태 생성
             </h3>
-            <button class="modal-close" @click="isExcelModalOpen = false"><i class="mdi mdi-close"></i></button>
+            <button class="modal-close" @click="modal.bulk = false"><i class="mdi mdi-close"></i></button>
           </div>
           <div class="modal-body">
             <div class="info-box warning">
               <i class="mdi mdi-alert-circle-outline"></i>
-              <span>선택된 현장(<strong>{{ siteOptions.find(s => s.idx === currentSiteId)?.name }}</strong>)에 데이터가 일괄 등록됩니다. 양식에 맞춘 엑셀 파일만 업로드해주세요.</span>
+              <span>
+                <strong>{{ currentSiteName }}</strong>의
+                <strong>{{ monthTitle }}</strong> 근태 기록을 전부 삭제하고
+                계약 스케줄 기준으로 재등록합니다.
+              </span>
             </div>
-
-            <div class="file-upload-area" :class="{ 'has-file': excelFile }" @click="triggerFileInput">
-              <input type="file" ref="fileInput" @change="handleFileChange" accept=".xlsx, .xls" class="hidden-input" />
-              <div v-if="!excelFile" class="upload-placeholder">
-                <i class="mdi mdi-cloud-upload-outline"></i>
-                <p>클릭하여 엑셀 파일을 선택해주세요</p>
-              </div>
-              <div v-else class="upload-selected">
-                <i class="mdi mdi-file-excel"></i>
-                <p class="file-name">{{ excelFile.name }}</p>
-                <span class="file-change-text">파일 변경하기</span>
-              </div>
+            <div class="info-box">
+              <i class="mdi mdi-information-outline" style="margin-right:6px;"></i>
+              퇴사자는 퇴사일까지만 등록됩니다. 연차·결근 등 예외사항은 등록 후 개별 수정해주세요.
             </div>
           </div>
           <div class="modal-footer">
-            <button class="btn-cancel" @click="isExcelModalOpen = false" :disabled="uploadLoading">취소</button>
-            <button class="btn-submit green" @click="submitExcelUpload" :disabled="uploadLoading || !excelFile">
-              <i v-if="uploadLoading" class="mdi mdi-loading mdi-spin"></i>
-              <span v-else>업로드 실행</span>
-            </button>
+            <button class="btn-cancel" @click="modal.bulk = false">취소</button>
+            <button class="btn-submit" @click="executeBulkGenerate">실행</button>
           </div>
         </div>
       </div>
@@ -507,237 +561,151 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* === 캘린더 네비게이션 컨트롤 === */
-.nav-controls {
-  display: flex; align-items: center; gap: 10px; background: var(--bg-surface);
-  padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-}
-.btn-nav {
-  width: 32px; height: 32px; border-radius: 6px; border: none;
-  background: var(--bg-canvas); color: var(--text-sub); cursor: pointer;
-  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
-}
-.btn-nav:hover { background: var(--bg-hover); color: var(--text-main); border-color: var(--border-focus); }
+.filter-row { margin-bottom: 0 }
+
+/* ── 네비게이션 ── */
+.nav-controls { display: flex; align-items: center; gap: 10px; background: var(--bg-surface); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
+.btn-nav { width: 32px; height: 32px; border-radius: 6px; border: none; background: var(--bg-canvas); color: var(--text-sub); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.btn-nav:hover { background: var(--bg-hover); color: var(--text-main); }
 .current-month-label { font-size: 15px; font-weight: 700; color: var(--text-main); min-width: 100px; text-align: center; }
-.btn-today {
-  padding: 6px 14px; background: var(--bg-canvas); color: var(--text-sub);
-  border: 1px solid var(--border-color); border-radius: 6px; font-weight: 600; font-size: 13px;
-  cursor: pointer; transition: all 0.2s; white-space: nowrap;
-}
+.btn-today { padding: 6px 14px; background: var(--bg-canvas); color: var(--text-sub); border: 1px solid var(--border-color); border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
 .btn-today:hover { background: var(--bg-hover); color: var(--text-main); }
 
-/* === 캘린더 영역 === */
-.calendar-card {
-  background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm); position: relative; overflow: hidden; width: 100%;
-}
-.calendar-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); width: 100%; background: var(--bg-canvas); border-bottom: 1px solid var(--border-color); }
+/* ── 일괄 생성 버튼 ── */
+.btn-bulk { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; background: var(--primary); color: #fff; box-shadow: var(--shadow-sm); transition: all 0.2s; margin-left: auto; }
+.btn-bulk:hover:not(:disabled) { filter: brightness(0.9); transform: translateY(-1px); }
+.btn-bulk:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── 캘린더 ── */
+.calendar-card { background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
+.calendar-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--bg-canvas); border-bottom: 1px solid var(--border-color); }
 .day-name { padding: 14px 0; text-align: center; font-size: 13px; font-weight: 600; color: var(--text-sub); }
-.day-name.sun, .text-red { color: var(--danger) !important; }
-.day-name.sat, .text-blue { color: var(--primary) !important; }
+.day-name.sun { color: var(--danger); }
+.day-name.sat { color: var(--primary); }
+.text-red  { color: var(--danger)  !important; }
+.text-blue { color: var(--primary) !important; }
 .mobile-day-name { display: none; }
 
-.calendar-grid-body {
-  display: grid; grid-template-columns: repeat(7, 1fr); width: 100%;
-  background: var(--border-color); /* Grid line color */ gap: 1px;
-}
-
-.day-cell { background: var(--bg-surface); height: 140px; cursor: pointer; transition: background 0.2s; position: relative; }
+.calendar-grid-body { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--border-color); gap: 1px; }
+.day-cell { background: var(--bg-surface); height: 140px; cursor: pointer; transition: background 0.2s; }
 .day-cell:hover { background: var(--bg-hover); }
 .day-cell.empty { background: var(--bg-canvas); cursor: default; }
-/*.day-cell.today { background: rgba(16, 185, 129, 0.05); }*/
 
-.cell-content { padding: 10px; height: 100%; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;}
+.cell-content { padding: 10px; height: 100%; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
 .day-header { display: flex; justify-content: space-between; align-items: flex-start; }
-.date-group { display: flex; flex-direction: column; align-items: flex-start; }
+.date-group { display: flex; flex-direction: column; }
 .date-num { font-size: 14px; font-weight: 600; color: var(--text-main); }
-.today .date-num {
-  background: var(--success); color: var(--text-inverse) !important; width: 24px; height: 24px;
-  display: flex; align-items: center; justify-content: center; border-radius: 50%;
-  margin-top: -3px; margin-left: -3px;
-}
+.today .date-num { background: var(--success); color: #fff !important; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; margin: -3px 0 0 -3px; }
+.detail-icon { color: var(--text-muted); font-size: 16px; opacity: 0; transition: all 0.2s; }
+.day-cell:hover .detail-icon { opacity: 1; color: var(--primary); }
 
-.detail-icon { color: var(--text-muted); font-size: 16px; opacity: 0; transition: all 0.2s; transform: translate(-2px, 2px); }
-.day-cell:hover .detail-icon { opacity: 1; color: var(--primary); transform: translate(0, 0); }
-
-/* 요약 뱃지 (파스텔 플랫톤) */
 .summary-container { flex: 1; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; overflow-y: auto; padding-right: 2px; }
-.summary-badge {
-  padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.summary-badge strong { font-size: 12px; font-weight: 700; }
+.summary-badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; display: flex; justify-content: space-between; }
+.summary-badge.work    { background: var(--primary-soft); color: var(--primary); }
+.summary-badge.holiday { background: #e0f2f1; color: #00796b; }
+.summary-badge.leave   { background: #fff9c4; color: #f57f17; }
+.summary-badge.half    { background: #fff9c4; color: #f57f17; }
+.summary-badge.absent  { background: #ffebee; color: #d32f2f; }
+.empty-cell-hint { opacity: 0; flex: 1; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--text-muted); transition: opacity 0.2s; }
+.day-cell:hover .empty-cell-hint { opacity: 1; }
 
-.summary-badge.work { background-color: var(--primary-soft); color: var(--primary); } /* 출근: 하늘색 */
-.summary-badge.holiday { background-color: #e0f2f1; color: #00796b; } /* 특근: 청록색 (눈에 띔) */
-.summary-badge.leave { background-color: #fff9c4; color: #f57f17; } /* 연차: 노란색 */
-.summary-badge.half { background-color: #fff9c4; color: #f57f17; }  /* 반차: 노란색 (연차와 통일) */
-.summary-badge.absent { background-color: #ffebee; color: #d32f2f; } /* 결근: 빨간색 */
-
-.empty-cell-hint {
-  opacity: 0; height: 100%; display: flex; align-items: center; justify-content: center;
-  font-size: 18px; color: var(--text-muted); transition: opacity 0.2s;
-}
-.day-cell:hover .empty-cell-hint { opacity: 1; color: var(--text-sub); }
-
-/* === 모달 팝업 === */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(2px);
-  display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;
-}
-.modal-card {
-  background: var(--bg-surface); width: 100%; max-width: 450px; border-radius: 16px; border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-md); overflow: hidden; transform: translateY(0);
-}
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+/* ── 모달 공통 ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; }
+.modal-card { background: var(--bg-surface); width: 100%; max-width: 450px; border-radius: 16px; border: 1px solid var(--border-color); box-shadow: var(--shadow-md); overflow: hidden; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-color); }
+.modal-title { font-size: 15px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; margin: 0; }
+.modal-close { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; display: flex; align-items: center; padding: 4px; border-radius: 4px; transition: 0.2s; }
+.modal-close:hover { background: var(--bg-hover); color: var(--text-main); }
+.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; }
+.modal-footer button { flex: 1; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(10px); }
 
+/* ── 정보 박스 ── */
+.info-box { background: var(--bg-canvas); padding: 12px 16px; border-radius: 8px; font-size: 13px; color: var(--text-sub); border: 1px solid var(--border-color); }
+.info-box.warning { background: rgba(245,158,11,0.1); color: var(--warning); border-color: var(--warning); display: flex; gap: 10px; align-items: flex-start; }
 
-.modal-close { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 20px; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 4px;}
-.modal-close:hover { background: var(--bg-hover); color: var(--text-main); }
-
-.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
-.info-box { background: var(--bg-canvas); padding: 14px 16px; border-radius: 8px; font-size: 13px; color: var(--text-sub); border: 1px solid var(--border-color); }
-.info-box.warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border-color: var(--warning); display: flex; gap: 10px; align-items: flex-start; }
-.info-box.warning i { font-size: 18px; color: var(--warning); }
-
-.form-group label { font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 8px; display: block; }
-.search-input-wrapper {
-  display: flex; align-items: center; gap: 10px; border: 1px solid var(--border-color);
-  padding: 10px 14px; border-radius: 8px; transition: 0.2s; background: var(--bg-surface);
-}
-.search-input-wrapper:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-.search-input-wrapper i { color: var(--text-muted); font-size: 18px; }
-.search-input-wrapper input { border: none; outline: none; width: 100%; font-size: 13px; color: var(--text-main); background: transparent; }
-
-/* 라디오 카드형 선택기 */
-.type-selector { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.type-option input { display: none; }
-.option-card {
-  padding: 12px 0; border: 1px solid var(--border-color); border-radius: 8px; text-align: center;
-  font-size: 12px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: all 0.2s;
-  display: flex; flex-direction: column; gap: 6px; background: var(--bg-surface);
-}
-.option-card i { font-size: 20px; }
-.option-card:hover { border-color: var(--border-focus); background: var(--bg-hover); color: var(--text-main); }
-
-/* 선택 상태 컬러링 (플랫) */
-.type-option input:checked + .option-card.work {
-  border-color: var(--primary); color: var(--primary); background: var(--primary-soft);
-}
-.type-option input:checked + .option-card.holiday {
-  border-color: #00796b; color: #00796b; background: #e0f2f1;
-}
-.type-option input:checked + .option-card.leave {
-  border-color: #f57f17; color: #f57f17; background: #fff9c4;
-}
-.type-option input:checked + .option-card.half {
-  border-color: #f57f17; color: #f57f17; background: #fff9c4;
-}
-.type-option input:checked + .option-card.absent {
-  border-color: #d32f2f; color: #d32f2f; background: #ffebee;
-}
-.modal-footer {
-  padding: 16px 24px;
-  border-top: 1px solid var(--border-color);
-  display: flex; gap: 10px;
-}
-.modal-footer button { flex: 1; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;}
-
-/* 일일 리스트 팝업 (플랫 모던) */
-.list-body { padding: 20px 24px; gap: 16px; }
+/* ── 일별 현황 리스트 ── */
+.list-body { gap: 12px; }
 .daily-action-bar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
 .summary-text { font-size: 13px; color: var(--text-sub); margin: 0; }
 .summary-text strong { color: var(--text-main); font-size: 15px; }
 .small-btn { padding: 8px 14px !important; font-size: 12px !important; border-radius: 6px !important; flex: none !important; }
 
-.daily-list { max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
-.daily-list-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px; background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--border-color); transition: border-color 0.2s;
-}
+.daily-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.daily-list-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--border-color); transition: border-color 0.2s; }
 .daily-list-item:hover { border-color: var(--border-focus); }
-
 .worker-info { display: flex; align-items: center; gap: 10px; }
 .worker-avatar { width: 28px; height: 28px; background: var(--bg-canvas); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--text-sub); font-size: 14px; }
 .staff-name { font-weight: 600; color: var(--text-main); font-size: 13px; }
 
+.record-actions { display: flex; align-items: center; gap: 6px; }
 .status-badge { font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 4px; }
-.status-badge.work { background-color: var(--primary-soft); color: var(--primary); }
-.status-badge.holiday { background-color: #e0f2f1; color: #00796b; }
-.status-badge.leave { background-color: #fff9c4; color: #f57f17; }
-.status-badge.half { background-color: #fff9c4; color: #f57f17; }
-.status-badge.absent { background-color: #ffebee; color: #d32f2f; }
+.status-badge.work    { background: var(--primary-soft); color: var(--primary); }
+.status-badge.holiday { background: #e0f2f1; color: #00796b; }
+.status-badge.leave   { background: #fff9c4; color: #f57f17; }
+.status-badge.half    { background: #fff9c4; color: #f57f17; }
+.status-badge.absent  { background: #ffebee; color: #d32f2f; }
 
-/* 엑셀 파일 업로드 폼 (플랫 & 모던) */
-.file-upload-area {
-  border: 2px dashed var(--border-focus); border-radius: 10px; padding: 40px 20px; text-align: center;
-  cursor: pointer; transition: all 0.2s; background: var(--bg-canvas); display: flex; flex-direction: column; align-items: center; justify-content: center;
-}
-.file-upload-area:hover { border-color: var(--success); background: rgba(16, 185, 129, 0.05); }
-.file-upload-area.has-file { border-color: var(--success); border-style: solid; background: rgba(16, 185, 129, 0.1);}
-.hidden-input { display: none; }
+/* 수정/삭제 아이콘 버튼 */
+.btn-icon { width: 28px; height: 28px; border: none; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; transition: all 0.2s; background: transparent; }
+.btn-icon.edit   { color: var(--text-sub); }
+.btn-icon.edit:hover   { background: var(--primary-soft); color: var(--primary); }
+.btn-icon.delete { color: var(--text-sub); }
+.btn-icon.delete:hover { background: #ffebee; color: #d32f2f; }
 
-.upload-placeholder i { font-size: 40px; color: var(--text-muted); margin-bottom: 8px; transition: color 0.2s;}
-.file-upload-area:hover .upload-placeholder i { color: var(--success); }
-.upload-placeholder p { font-size: 13px; color: var(--text-sub); margin: 0; font-weight: 600; }
+/* ── 폼 요소 ── */
+.form-group label { font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 8px; display: block; }
+.input-text { width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; color: var(--text-main); background: var(--bg-surface); box-sizing: border-box; outline: none; transition: 0.2s; }
+.input-text:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 
-.upload-selected i { font-size: 28px; color: var(--success); margin-bottom: 8px; }
-.upload-selected .file-name { color: var(--text-main); font-weight: 700; font-size: 14px; margin: 0 0 4px 0;}
-.upload-selected .file-change-text { font-size: 12px; color: var(--success); text-decoration: underline; }
+.type-selector { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.type-option input { display: none; }
+.option-card { padding: 10px 0; border: 1px solid var(--border-color); border-radius: 8px; text-align: center; font-size: 11px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--bg-surface); }
+.option-card i { font-size: 18px; }
+.type-option input:checked + .option-card.work    { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.type-option input:checked + .option-card.holiday { border-color: #00796b; color: #00796b; background: #e0f2f1; }
+.type-option input:checked + .option-card.annual  { border-color: #f57f17; color: #f57f17; background: #fff9c4; }
+.type-option input:checked + .option-card.half    { border-color: #f57f17; color: #f57f17; background: #fff9c4; }
+.type-option input:checked + .option-card.absent  { border-color: #d32f2f; color: #d32f2f; background: #ffebee; }
 
-.text-blue { color: var(--primary); }
-.text-green { color: var(--success); }
+.btn-cancel { background: var(--bg-canvas); color: var(--text-sub); border: 1px solid var(--border-color) !important; }
+.btn-cancel:hover { background: var(--bg-hover); }
+.btn-submit { background: var(--primary); color: #fff; }
+.btn-submit:hover { filter: brightness(0.9); }
 
-.loader-overlay { position: absolute; inset: 0; background: var(--bg-surface); opacity: 0.8; display: flex; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(2px); }
-.spinner { width: 32px; height: 32px; border: 3px solid var(--border-color); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
-@keyframes spin { 100% { transform: rotate(360deg); } }
+/* ── 로더 ── */
+.loader-overlay { position: absolute; inset: 0; background: var(--bg-surface); opacity: 0.8; display: flex; align-items: center; justify-content: center; z-index: 10; }
+.spinner { width: 32px; height: 32px; border: 3px solid var(--border-color); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px; color: var(--text-muted); font-size: 13px; }
+.empty-state i { font-size: 32px; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* === 반응형 (모바일 캘린더 리스트 변환 포함) === */
-@media screen and (max-width: 1024px) {
-  .filter-row { flex-wrap: wrap; }
-  .filter-group, .search-group { min-width: 200px;}
+/* ── 반응형 ── */
+@media (max-width: 1024px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
-
-@media screen and (max-width: 768px) {
-  .page-header { flex-direction: column; align-items: stretch; gap: 16px; }
-  .header-actions { width: 100%; }
-  .nav-controls { justify-content: space-between; width: 100%; }
-
-  .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
-  .filter-select { width: 100%; }
-  .btn-excel { width: 100%; justify-content: center; }
-
-  /* 모바일 달력을 세로 리스트형태로 변환 */
-  .calendar-card { border-radius: 12px; border: 1px solid var(--border-color); max-height: calc(100vh - 250px); overflow-y: auto; }
+@media (max-width: 768px) {
+  .page-header { flex-direction: column; gap: 16px; }
+  .filter-row { flex-direction: column; }
+  .btn-bulk { width: 100%; justify-content: center; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .calendar-grid-header { display: none; }
-  .calendar-grid-body { display: flex; flex-direction: column; gap: 0; background: transparent;}
-
-  .day-cell { height: auto; min-height: 70px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); }
+  .calendar-grid-body { display: flex; flex-direction: column; gap: 0; background: transparent; }
+  .day-cell { height: auto; min-height: 70px; border-bottom: 1px solid var(--border-color); }
   .day-cell.empty { display: none; }
-  .day-cell:last-child { border-bottom: none; }
-
   .cell-content { flex-direction: row; align-items: center; padding: 12px 16px; gap: 16px; overflow: visible; }
-  .day-header { flex-direction: row; align-items: center; width: 60px; border-right: 1px solid var(--bg-canvas); padding-right: 12px; flex-shrink: 0; }
-  .date-group { flex-direction: column; align-items: center; gap: 2px; width: 100%;}
-  .date-num { font-size: 16px; }
+  .day-header { width: 60px; flex-direction: column; align-items: center; border-right: 1px solid var(--border-color); padding-right: 12px; flex-shrink: 0; }
   .mobile-day-name { display: block; font-size: 12px; color: var(--text-sub); font-weight: 600; }
-  .detail-icon { display: none; }
-
-  .summary-container { flex-direction: row; flex-wrap: wrap; margin-top: 0; padding: 0; overflow: visible; align-items: center;}
-  .summary-badge { padding: 4px 8px; font-size: 11px; }
-  .empty-cell-hint { justify-content: flex-start; font-size: 13px; margin-left: 10px;}
+  .summary-container { flex-direction: row; flex-wrap: wrap; margin-top: 0; overflow: visible; }
+  .type-selector { grid-template-columns: repeat(3, 1fr); }
 }
-
-@media screen and (max-width: 480px) {
-  .type-selector { grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .option-card { padding: 10px 0; }
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>
