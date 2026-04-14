@@ -506,7 +506,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="form-group full-width">
+            <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-badge-account-horizontal-outline"></i>
                 주민번호
@@ -521,7 +521,7 @@ onMounted(() => {
                 />
                 <span class="ssn-separator">-</span>
                 <input
-                    type="password"
+                    type="text"
                     v-model="employee.lastNumber"
                     class="form-input ssn-input"
                     maxlength="7"
@@ -530,6 +530,7 @@ onMounted(() => {
                 />
               </div>
             </div>
+            <div class="spacer"></div>
 
             <div class="form-group">
               <label class="form-label">
