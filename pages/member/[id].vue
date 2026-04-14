@@ -517,6 +517,14 @@ onMounted(async () => {
                       <input type="radio" v-model="employee.status" value="1" />
                       <span>퇴사</span>
                     </label>
+                    <label class="radio-label">
+                      <input type="radio" v-model="employee.status" value="3" />
+                      <span>일용직</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" v-model="employee.status" value="4" />
+                      <span>퇴사</span>
+                    </label>
                   </div>
                   <span v-else :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">
                     {{ employee.status == 0 ? '재직 중' : '퇴사' }}
