@@ -22,6 +22,13 @@ const buildTree = (data) => {
   })).sort((a, b) => a.sort - b.sort);
 };
 
+// 화면 적용 (페이지 새로고침)
+const applyToScreen = () => {
+  if (confirm("메뉴 변경 사항을 화면에 적용하시겠습니까?\n페이지가 새로고침됩니다.")) {
+    window.location.reload();
+  }
+};
+
 // 데이터 로드
 const fetchMenus = async () => {
   isLoading.value = true;
@@ -208,6 +215,11 @@ onMounted(() => {
           시스템 메뉴 설정
         </h1>
         <p class="page-subtitle">ERP 좌측 메뉴의 구성, 접근 권한, 노출 여부를 통합 관리합니다</p>
+      </div>
+      <div class="header-actions">
+        <button @click="applyToScreen" class="btn-add">
+          <i class="mdi mdi-laptop"></i> 화면 적용
+        </button>
       </div>
     </div>
 
