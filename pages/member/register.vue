@@ -464,49 +464,6 @@ onMounted(() => {
             </div>
 
             <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-phone-outline"></i>
-                연락처
-              </label>
-              <input
-                  type="tel"
-                  v-model="employee.phone"
-                  class="form-input"
-                  placeholder="010-0000-0000"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-email-outline"></i>
-                이메일
-              </label>
-              <input
-                  type="email"
-                  v-model="employee.email"
-                  class="form-input"
-                  placeholder="example@email.com"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-human-male-female"></i>
-                성별
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="M" v-model="employee.gender" />
-                  <span class="radio-text">남성</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="F" v-model="employee.gender" />
-                  <span class="radio-text">여성</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-badge-account-horizontal-outline"></i>
                 주민번호
@@ -541,6 +498,49 @@ onMounted(() => {
                   type="date"
                   v-model="employee.birthDate"
                   class="form-input"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-phone-outline"></i>
+                연락처
+              </label>
+              <input
+                  type="tel"
+                  v-model="employee.phone"
+                  class="form-input"
+                  placeholder="010-0000-0000"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-human-male-female"></i>
+                성별
+              </label>
+              <div class="radio-group">
+                <label class="radio-label">
+                  <input type="radio" value="M" v-model="employee.gender" />
+                  <span class="radio-text">남성</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" value="F" v-model="employee.gender" />
+                  <span class="radio-text">여성</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-email-outline"></i>
+                이메일
+              </label>
+              <input
+                  type="email"
+                  v-model="employee.email"
+                  class="form-input"
+                  placeholder="example@email.com"
               />
             </div>
 
