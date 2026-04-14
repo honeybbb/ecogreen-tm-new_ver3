@@ -239,11 +239,13 @@ const calculateRow = (row) => {
   row.totalDeduct = totalDeduct;
   row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
 
-  let totalGross = Number(row.grossPay) || 0;
-  if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
-  if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
+  if (!row.isCustomEmp) {
+    let totalGross = Number(row.grossPay) || 0;
+    if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
+    if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
 
-  row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+    row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+  }
 };
 
 const recalculateInsurances = (row) => {
@@ -1262,7 +1264,7 @@ onMounted(async () => {
                           type="text"
                           :value="formatCurrency(row.reserves.empInsEmployer)"
                           @focus="$event.target.select()"
-                          @input="handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')"
+                          @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')"
                           class="cell-input text-right"
                       />
                     </td>
