@@ -1,6 +1,13 @@
 // stores/tab.js
 import { defineStore } from 'pinia';
 
+const dynamicRouteMap = [
+    { regex: /^\/site\/[^/]+$/, title: '현장 상세정보' },
+    { regex: /^\/member\/[^/]+$/, title: '직원 상세정보' },
+    // 필요에 따라 아래에 계속 추가하시면 됩니다.
+    // { regex: /^\/payroll\/[^/]+$/, title: '급여 상세 내역' },
+];
+
 export const useTabStore = defineStore('tab', {
     state: () => ({
         tabs: [
@@ -26,8 +33,21 @@ export const useTabStore = defineStore('tab', {
         addTab(tab) {
             const exists = this.tabs.find(t => t.path === tab.path);
             if (!exists) {
-                this.tabs.push(tab);
-                this.saveTabs(); // 탭 추가 시 저장
+                let finalTitle = tab.title;
+
+                // 메뉴에서 넘어온 타이틀이 없거나 기본값('새 탭')일 경우 매핑 규칙 검사
+                if (!finalTitle || finalTitle === '새 탭') {
+                    const matchedRoute = dynamicRouteMap.find(route => route.regex.test(tab.path));
+                    if (matchedRoute) {
+                        finalTitle = matchedRoute.title;
+                    } else {
+                        finalTitle = '상세정보'; // 매핑 규칙에 없는 다른 동적 라우트의 기본 폴백
+                    }
+                }
+
+                // 타이틀을 덮어씌워서 push
+                this.tabs.push({ ...tab, title: finalTitle });
+                this.saveTabs();
             }
         },
         removeTab(path) {

@@ -8,6 +8,7 @@ export const useApi = () => {
     const siteOptions = ref([]);
     const typeOptions = ref([]);
     const positionOptions = ref([]);
+    const statusOptions = ref([]);
     const disabledOptions = ref([]);
     // const categoryOptions = ref([]);
     const wagesData  = ref([]);
@@ -66,6 +67,15 @@ export const useApi = () => {
         }
     }
 
+    const fetchStatusOptions = async (groupCd = '01003') => {
+        try{
+            const res = await axios.get(`/api/v1/code/group/${groupCd}`);
+            positionOptions.value = res.data.data;
+        }catch(e){
+            console.error(`재직 구분 목록(${groupCd}) 로드 실패:`, e);
+        }
+    }
+
     const fetchWageCode = async (cIdx = 1) => {
         try {
             // 실제 API 경로에 맞게 수정해주세요
@@ -102,6 +112,7 @@ export const useApi = () => {
         siteOptions,
         typeOptions,
         positionOptions,
+        statusOptions,
         disabledOptions,
         wagesData,
         overAgeOption,
@@ -110,6 +121,7 @@ export const useApi = () => {
         fetchSiteOptions,
         fetchTypeOptions,
         fetchPositionOptions,
+        fetchStatusOptions,
         fetchDisabledOptions,
         fetchWageCode,
         fetchOverAgeOption,

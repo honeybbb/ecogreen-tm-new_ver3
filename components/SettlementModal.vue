@@ -239,11 +239,13 @@ const calculateRow = (row) => {
   row.totalDeduct = totalDeduct;
   row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
 
-  let totalGross = Number(row.grossPay) || 0;
-  if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
-  if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
+  if (!row.isCustomEmp) {
+    let totalGross = Number(row.grossPay) || 0;
+    if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
+    if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
 
-  row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+    row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+  }
 };
 
 const recalculateInsurances = (row) => {
@@ -756,10 +758,22 @@ const loadPayrollData = async () => {
 };
 
 const updateDocNo = () => {
+  if (isInitializing.value) return; // 저장된 데이터 불러올 때 덮어쓰기 방지
+
   const targetDate = formData.value.target_month || formData.value.billingDt;
-  if (targetDate && formData.value.sIdx) {
+  if (targetDate) {
     const [year, month] = targetDate.split('-');
-    formData.value.docNo = `에코그린 ${year}-${month.padStart(2, '0')}-${formData.value.sIdx}호`;
+
+    // 1. 문서번호 자동 생성
+    if (formData.value.sIdx) {
+      formData.value.docNo = `에코그린 ${year}-${month.padStart(2, '0')}-${formData.value.sIdx}호`;
+    }
+
+    // 2. 제목 자동 생성
+    if (formData.value.type) {
+      const typeName = typeOptions.value.find(t => t.itemCd === formData.value.type)?.itemNm || '';
+      formData.value.billingData.summary = `${year}년 ${parseInt(month)}월 ${typeName}용역비 청구의 건`;
+    }
   }
 };
 watch(() => formData.value.sIdx, updateDocNo);
@@ -1250,7 +1264,7 @@ onMounted(async () => {
                           type="text"
                           :value="formatCurrency(row.reserves.empInsEmployer)"
                           @focus="$event.target.select()"
-                          @input="handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')"
+                          @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')"
                           class="cell-input text-right"
                       />
                     </td>
