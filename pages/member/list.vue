@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onActivated } from 'vue';
 import axios from 'axios';
 import { useRouter } from 'nuxt/app';
 import Pagination from '@/components/Pagination.vue'
@@ -250,6 +250,10 @@ onMounted(async () => {
     fetchDisabledOptions(),
     fetchOverAgeOption()
   ]);
+});
+
+// 페이지가 활성화될 때마다 실행
+onActivated(async () => {
   await fetchMembers();
 });
 </script>
