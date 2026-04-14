@@ -208,50 +208,47 @@ const saveEmployee = async () => {
 
   try {
     const memberIdx = employee.value.idx;
-    /*
+
+    // 날짜 보정 로직
+    // 1. 모달(ContractModal)을 통해 임시 저장된 날짜가 있는지 확인
+    // 2. 없다면 기존 employee.value.contract에 담겨있던 날짜 사용
+    // 3. 그것도 없다면 입사/퇴사일 사용
+    const finalStartDt = contractDataTemp.value?.contractStartDt
+        || employee.value.contract?.contractStartDt
+        || employee.value.inDate;
+
+    const finalEndDt = contractDataTemp.value?.contractEndDt
+        || employee.value.contract?.contractEndDt
+        || employee.value.outDate;
+
     const payload = {
       ...employee.value,
-      outDate: employee.value.outDate,
-      outReason: employee.value.outReason,
-
-      contract: {
-        ...(employee.value.contract || {}), // 기존에 있던 계약 정보 유지
-        sIdx: employee.value.sIdx,          // 선택된 현장 idx
-        type: employee.value.typeCd || employee.value.type
-      },
-
-      // 2. 배치(staffing) 객체 생성 및 sIdx 주입
-      staffing: {
-        sIdx: employee.value.sIdx           // 선택된 현장 idx
-      }
-    };
-
-     */
-    const payload = {
-      ...employee.value,
-      ...employee.value, // 기본적으로 모든 정보 포함
-      type: employee.value.typeCd, // 명시적으로 typeCd를 보냄 (백엔드에서 처리)
+      type: employee.value.typeCd,
       position: employee.value.positionCd,
       bankName: employee.value.bank,
-      address: employee.value.address, // API는 addr 또는 address 혼용 주의
+      address: employee.value.address,
       joinDate: employee.value.inDate,
       endDate: employee.value.outDate,
       endReason: employee.value.outReason,
 
-      // 계약 및 배치 데이터 (sIdx 필수)
       sIdx: employee.value.sIdx,
-      wageInputs: wageInputs.value, // ContractModal에서 저장된 값
 
-      // 계약 날짜가 없을 경우 입사/퇴사일로 보정
-      contractStartDt: contractDataTemp.value?.contractStartDt || employee.value.inDate,
-      contractEndDt: contractDataTemp.value?.contractEndDt || employee.value.outDate
+      // 임금 항목 (수정 안했을 경우를 대비해 기존 값과 병합)
+      wageInputs: Object.keys(wageInputs.value).length > 0
+          ? wageInputs.value
+          : JSON.parse(employee.value.contract?.jsonData || '{}'),
+
+      // 보정된 계약 날짜 전송
+      contractStartDt: finalStartDt,
+      contractEndDt: finalEndDt
     };
 
     await axios.put(`/api/v1/member/data/${memberIdx}`, payload);
 
     alert('저장되었습니다.');
     isEditing.value = false;
-    await loadEmployeeData(); // 최신 데이터 다시 로드
+    contractDataTemp.value = null; // 저장 후 임시 데이터 초기화
+    await loadEmployeeData();
   } catch (error) {
     console.error('저장 실패:', error);
     alert('저장에 실패했습니다.');
