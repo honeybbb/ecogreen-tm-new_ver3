@@ -422,8 +422,8 @@ onMounted(async () => {
             <option value="전체">전체</option>
             <option value="0">재직</option>
             <option value="1">퇴사</option>
-            <option value="3">일용직</option>
-            <option value="4">대근</option>
+            <option value="2">일용직</option>
+            <option value="3">대근</option>
           </select>
         </div>
         <div class="search-group">
@@ -489,198 +489,77 @@ onMounted(async () => {
       <!-- 스크롤 컨테이너 -->
       <div class="table-scroll-container">
         <table class="data-table">
-
           <thead>
           <tr>
-            <th rowspan="2" class="text-center sortable resizable" style="width:30px;">
-              <label class="checkbox-wrapper">
-                <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
-              </label>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-1" style="min-width:30px; max-width:30px;">
+              <label class="checkbox-wrapper"><input type="checkbox" v-model="selectAll" class="custom-checkbox" /></label>
+            </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" style="min-width:40px; max-width:40px;" data-col-key="no">No.</th>
+            <th rowspan="2" class="text-center sortable col-site sticky-col sticky-col-3" style="min-width:110px; max-width:110px;" data-col-key="siteName" @click="toggleSort('siteName')">
+              <div class="th-content">현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-4" style="min-width:70px; max-width:70px;" data-col-key="role" @click="toggleSort('role')">
+              <div class="th-content">직책<i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-5" style="min-width:80px; max-width:80px;" data-col-key="id" @click="toggleSort('id')">
+              <div class="th-content">사번<i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-6" style="min-width:80px; max-width:80px;" data-col-key="staff" @click="toggleSort('staff')">
+              <div class="th-content">성명<i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th rowspan="2" class="text-center sticky-col sticky-col-7" style="min-width:100px; max-width:100px;">생년월일</th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" style="min-width:70px; max-width:70px;" data-col-key="age" @click="toggleSort('birthDt')">
+              <div class="th-content">나이(만)<i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
 
-            <th rowspan="2" class="text-center sortable resizable" style="width:40px;" data-col-key="no">
-              No.<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
+            <th colspan="2" class="text-center group-header-summary group-divider sticky-col sticky-col-group">합계</th>
 
-            <!-- 현장명: sortable -->
-            <th rowspan="2" class="text-center sortable resizable col-site" style="width:110px;" data-col-key="siteName"
-                @click="toggleSort('siteName')">
-              <div class="th-content">
-                현장명
-                <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 직책: sortable -->
-            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="role"
-                @click="toggleSort('role')">
-              <div class="th-content">
-                직책
-                <i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 사번: sortable -->
-            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="id"
-                @click="toggleSort('id')">
-              <div class="th-content">
-                사번
-                <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-
-            <!-- 성명: sortable -->
-            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="staff"
-                @click="toggleSort('staff')">
-              <div class="th-content">
-                성명
-                <i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-            <th rowspan="2" class="text-center resizable">생년월일<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="age"
-                @click="toggleSort('birthDt')">
-              <div class="th-content">
-                나이(만)
-                <i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-            <th colspan="2" class="text-center group-header-summary group-divider">
-              합계
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">
-              지급 항목
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">
-              공제 항목 (체크 시 자동계산)
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
+            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">공제 항목 (체크 시 자동계산)<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
           </tr>
 
           <tr>
-            <th class="text-right sub-header group-divider" data-col-key="gross">
-              지급합계
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th class="text-right sub-header group-divider sticky-col sticky-col-9" style="min-width:80px; max-width:80px;" data-col-key="gross">지급합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-10 sticky-divider" style="min-width:80px; max-width:80px;" data-col-key="ded">공제합계</th>
+
+            <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-pay-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'pay-' + item.itemCd">
+              {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th class="text-right sub-header" data-col-key="ded">
-              공제합계
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-            <th
-                v-for="(item, index) in payItems"
-                :key="item.itemCd"
-                :class="['text-right sub-header amount-header theme-pay-sub', { 'group-divider': index === 0 }]"
-                :data-col-key="'pay-' + item.itemCd"
-            >
-              {{ item.itemNm }}
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
-            <th
-                v-for="(item, index) in deductionItems"
-                :key="item.itemCd"
-                :class="['text-right sub-header amount-header theme-deduct-sub', { 'group-divider': index === 0 }]"
-                :data-col-key="'ded-' + item.itemCd"
-            >
-              {{ item.itemNm }}
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
+              {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
           </tr>
           </thead>
 
           <tbody>
-          <tr
-              v-for="(p, i) in pagedPayrollList"
-              :key="p.idx"
-              class="data-row"
-          >
-            <td
-                class="text-center calculate-status transition-colors"
-                :class="{
-                  'calculate-active': p.status == 1,
-                  'calculate-draft': p.status == 2,
-                  'calculate-inactive': p.status == 0
-            }">
-              <label class="checkbox-wrapper">
-                <input type="checkbox" v-model="p.selected" class="custom-checkbox" />
-              </label>
+          <tr v-for="(p, i) in pagedPayrollList" :key="p.idx" class="data-row">
+            <td class="text-center calculate-status transition-colors sticky-col sticky-col-1" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0}">
+              <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
-            <td class="text-center text-gray">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
-            <td class="text-center text-dark compact-text cell-ellipsis" :title="p.siteName">
-              {{ p.siteName }}
-            </td>
-            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.role">
-              {{ p.role }}
-            </td>
-            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.id">
-              {{ p.id }}
-            </td>
-            <td class="text-center font-bold text-dark member-name">{{ p.staff }}</td>
-            <td class="text-center text-gray">{{ p.birthDt }}</td>
-            <td
-                class="text-center text-gray"
-                :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }"
-                :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+            <td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
+            <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
+            <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
+            <td class="text-center text-gray sticky-col sticky-col-8" :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }" :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
               {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
             </td>
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-9">{{ formatCurrency(calculateRow(p).gross) }}</td>
+            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-10 sticky-divider">{{ formatCurrency(calculateRow(p).ded) }}</td>
 
-            <td class="text-right bg-light-gray font-bold amount-cell group-divider">
-              {{ formatCurrency(calculateRow(p).gross) }}
+            <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
+              <input v-if="p.payments" @focus="$event.target.select()" type="text" :value="formatCurrency(p.payments[item.itemCd])" @input="onInputAmount(p, item, 'pay', $event)" class="inline-input" />
             </td>
-            <td class="text-right bg-light-gray font-bold text-red amount-cell">
-              {{ formatCurrency(calculateRow(p).ded) }}
-            </td>
-
-            <td
-                v-for="(item, index) in payItems"
-                :key="item.itemCd"
-                :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]"
-            >
-              <input
-                  v-if="p.payments"
-                  @focus="$event.target.select()"
-                  type="text"
-                  :value="formatCurrency(p.payments[item.itemCd])"
-                  @input="onInputAmount(p, item, 'pay', $event)"
-                  class="inline-input"
-              />
-            </td>
-
-            <td
-                v-for="(item, index) in deductionItems"
-                :key="item.itemCd"
-                :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]"
-            >
+            <td v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
               <div class="deduction-combo-box">
-                <label class="checkbox-wrapper-sm">
-                  <input
-                      type="checkbox"
-                      v-model="p.deductionFlags[item.itemCd]"
-                      @change="markAsDraft(p); calculateInsurances(p, item)"
-                      class="custom-checkbox custom-checkbox-sm"
-                  />
-                </label>
-                <input
-                    v-if="p.deductions"
-                    type="text"
-                    @focus="$event.target.select()"
-                    @input="onInputAmount(p, item, 'deduct', $event)"
-                    :value="formatCurrency(p.deductions[item.itemCd])"
-                    class="inline-input"
-                />
+                <label class="checkbox-wrapper-sm"><input type="checkbox" v-model="p.deductionFlags[item.itemCd]" @change="markAsDraft(p); calculateInsurances(p, item)" class="custom-checkbox custom-checkbox-sm" /></label>
+                <input v-if="p.deductions" type="text" @focus="$event.target.select()" @input="onInputAmount(p, item, 'deduct', $event)" :value="formatCurrency(p.deductions[item.itemCd])" class="inline-input" />
               </div>
             </td>
           </tr>
-
           <tr v-if="filteredPayrollList.length === 0">
-            <td :colspan="8 + payItems.length + deductionItems.length" class="empty-state">
+            <td :colspan="10 + payItems.length + deductionItems.length" class="empty-state">
               <i class="mdi mdi-text-box-search-outline"></i>
               <p>조건에 맞는 급여 데이터가 없습니다.</p>
             </td>
@@ -689,15 +568,9 @@ onMounted(async () => {
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="8" class="text-center">
-              <span class="font-bold text-dark">전체 합계</span>
-            </td>
-            <td class="text-right font-bold group-divider">
-              {{ formatCurrency(totalSummary.gross) }}
-            </td>
-            <td class="text-right font-bold text-red">
-              {{ formatCurrency(totalSummary.ded) }}
-            </td>
+            <td colspan="8" class="text-center sticky-col" style="left:0; z-index: 35;"><span class="font-bold text-dark">전체 합계</span></td>
+            <td class="text-right font-bold group-divider sticky-col sticky-col-9">{{ formatCurrency(totalSummary.gross) }}</td>
+            <td class="text-right font-bold text-red sticky-col sticky-col-10 sticky-divider">{{ formatCurrency(totalSummary.ded) }}</td>
             <td :colspan="payItems.length" class="bg-light-gray border-none theme-pay-sub group-divider"></td>
             <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none theme-deduct-sub group-divider">
               <div class="net-pay-box">
@@ -770,39 +643,6 @@ onMounted(async () => {
   font-size: 12px; color: var(--text-sub);
 }
 
-/* === 스크롤 컨테이너 === */
-.table-scroll-container {
-  overflow: auto;
-  max-width: 100%;
-  max-height: calc(100vh - 350px);
-}
-.table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
-.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
-.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
-.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-/* === 테이블 헤더 sticky === */
-.data-table thead { position: sticky; top: 0; z-index: 30; }
-.data-table th:last-child,
-.data-table td:last-child { border-right: none; }
-
-/* === 그룹/서브 헤더 색상 === */
-.group-header-summary,
-.group-header-pay,
-.group-header-deduction {
-  background-color: var(--bg-canvas);
-  border-bottom: 1px solid var(--border-color);
-}
-.sub-header {
-  background-color: var(--bg-hover);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.amount-header,
-.amount-cell {
-  min-width: 75px;
-}
-
 /* === 공제 콤보 === */
 .deduction-combo-box { display: flex; gap: 4px; align-items: center; }
 
@@ -831,8 +671,8 @@ onMounted(async () => {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .inline-input:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-
-/* === 커스텀 체크박스 === */
+.amount-cell { width: 120px; }
+  /* === 커스텀 체크박스 === */
 .checkbox-wrapper    { display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; cursor: pointer; }
 .checkbox-wrapper-sm { display: flex; align-items: center; cursor: pointer; }
 .custom-checkbox {
@@ -855,15 +695,6 @@ onMounted(async () => {
   top: 1px; left: 3px; width: 3px; height: 7px;
 }
 
-/* === sticky footer === */
-.table-footer.sticky-footer {
-  position: sticky; bottom: 0; z-index: 25;
-  background-color: var(--bg-canvas);
-  border-top: 2px solid var(--border-focus);
-  box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.05);
-}
-.table-footer td { padding: 14px 10px; font-size: 14px; }
-
 .net-pay-box {
   display: inline-flex; align-items: center; gap: 12px;
   background-color: var(--primary-soft); padding: 8px 20px;
@@ -872,23 +703,11 @@ onMounted(async () => {
 .net-pay-label { font-size: 13px; color: var(--primary); font-weight: 600; }
 .net-pay-value { font-size: 18px; color: var(--primary); font-weight: 700; letter-spacing: 0.5px; }
 
-/* =========================================
-   컬럼 리사이즈 핸들
-========================================= */
-.data-table th {
-  position: relative; /* 핸들의 절대 위치 기준점 */
-  overflow: hidden; /* 글자가 넘치지 않게 */
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ── 컬럼 리사이즈 ── */
 .resizable {
   position: relative;
   overflow: hidden; /* 셀 내용이 핸들을 밀지 않도록 */
 }
-
-/* 평소에는 완전히 투명하게 숨김 */
 .resize-handle {
   position: absolute;
   top: 0;
@@ -900,68 +719,190 @@ onMounted(async () => {
   background-color: transparent;
   transition: background-color 0.2s ease;
 }
-
-/* 마우스를 올릴 때만 은은한 회색 선 표시 */
 .resize-handle:hover,
 .resize-handle:active {
   background-color: var(--border-focus);
 }
-
-/* 리사이즈 중일 때 커서 고정 */
 body.is-resizing,
 body.is-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }
-/* === 반응형 === */
+
 @media (max-width: 768px) {
   .status-legend         { width: 100%; justify-content: space-between; padding: 10px 0; }
   .header-right-controls { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
 }
 
-/* 그룹간 명확한 세로 구분선 */
-.group-divider {
-  border-left: 2px solid var(--border-color) !important;
+/* =========================================
+   테이블 스크롤 & 레이아웃 코어 (투명도/깨짐 완벽 해결판)
+========================================= */
+
+.table-scroll-container {
+  overflow-x: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 350px);
+  position: relative;
+  background-color: #ffffff; /* 스크롤 뒷배경 하얗게 */
+}
+.table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.data-table {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+
+  /* ★ 핵심: border-collapse: collapse 대신 separate를 써야 틀고정 테두리 깨짐이 방지됨 */
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-/* 지급 항목 테마 (상단 포인트 라인 + 아주 연한 배경) */
-.theme-pay-header {
-  background-color: #f8fafc !important; /* 아주 연한 쿨그레이 (거의 흰색에 가까움) */
-  border-top: 2px solid #3b82f6 !important; /* 상단에만 파란색 포인트 라인 */
-  color: #1e40af !important;
+/* separate 사용으로 인해 테두리를 직접 그려줘야 함 */
+.data-table th, .data-table td {
+  box-sizing: border-box;
+  /*
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+   */
+  background-clip: padding-box; /* 글자 비침 원천 차단 */
+  padding: 6px 10px;
+  vertical-align: middle;
 }
-.theme-pay-sub {
-  border-bottom: 1px solid var(--border-color) !important;
-}
-.theme-pay-cell {
-  background-color: transparent; /* 데이터 셀은 기본 흰색 유지 (지저분함 방지) */
-}
-
-/* 공제 항목 테마 (상단 포인트 라인 + 아주 연한 배경) */
-.theme-deduct-header {
-  background-color: #fef2f2 !important; /* 아주 연한 파스텔 레드 */
-  border-top: 2px solid #ef4444 !important; /* 상단에만 빨간색 포인트 라인 */
-  color: #991b1b !important;
-}
-.theme-deduct-sub {
-  border-bottom: 1px solid var(--border-color) !important;
-}
-.theme-deduct-cell {
-  background-color: transparent; /* 데이터 셀은 기본 흰색 유지 */
+/*.data-table th { border-top: 1px solid var(--border-color); }*/
+.data-table tr td:first-child,
+.data-table tr th:first-child {
+  border-left: 1px solid var(--border-color);
 }
 
-/* ── 현장 컬럼 기본 너비 및 말줄임표 ── */
-.col-site {
-  min-width: 80px;
-  max-width: 160px;
-  width: 120px;
-}
-
-/* td 말줄임표 (현장 등 긴 텍스트 컬럼에 적용) */
-.cell-ellipsis {
-  max-width: 0;          /* table-layout: fixed 와 함께 동작 */
+.data-table th {
+  position: relative;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 그룹/서브 헤더 색상 */
+.group-header-summary,
+.group-header-pay,
+.group-header-deduction {
+  border-bottom: 1px solid var(--border-color);
+}
+.sub-header {
+  border-bottom: 1px solid var(--border-color);
+}
+/*
+.group-divider {
+  border-left: 2px solid var(--border-color) !important;
+}
+*/
+.theme-pay-header { background-color: #f8fafc !important; border-top: 2px solid #3b82f6 !important; color: #1e40af !important; }
+.theme-pay-sub { border-bottom: 1px solid var(--border-color) !important; background-color: #f8fafc !important; }
+.theme-deduct-header { background-color: #fef2f2 !important; border-top: 2px solid #ef4444 !important; color: #991b1b !important; }
+.theme-deduct-sub { border-bottom: 1px solid var(--border-color) !important; background-color: #fef2f2 !important; }
+
+/* ── 현장 컬럼 기본 너비 및 말줄임표 ── */
+.col-site { min-width: 80px; max-width: 160px; width: 120px; }
+.cell-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* =========================================
+   가로 스크롤 & 고정 너비 틀고정 (Sticky)
+========================================= */
+
+.sticky-col {
+  position: sticky !important;
+  z-index: 3;
+  overflow: hidden;
+}
+
+/* 테이블 헤더 Z-index 및 불투명 배경 처리 (rgba 금지) */
+thead .sticky-col {
+  z-index: 50 !important;
+  background-color: #f8fafc !important; /* 불투명 연회색 */
+}
+thead tr:nth-child(2) .sticky-col {
+  background-color: #f1f5f9 !important; /* 불투명 연회색 (살짝 짙음) */
+}
+
+/* tfoot 고정 셀 */
+tfoot .sticky-col {
+  z-index: 35 !important;
+  background-color: #f8fafc !important;
+}
+
+/* 각 컬럼 left 위치 (정확한 픽셀 고정) */
+.sticky-col-1  { left: 0px;   min-width: 40px;  max-width: 40px;  width: 40px; }
+.sticky-col-2  { left: 40px;  min-width: 40px;  max-width: 40px;  width: 40px; }
+.sticky-col-3  { left: 80px;  min-width: 110px; max-width: 110px; width: 110px; }
+.sticky-col-4  { left: 190px; min-width: 70px;  max-width: 70px;  width: 70px; }
+.sticky-col-5  { left: 260px; min-width: 80px;  max-width: 80px;  width: 80px; }
+.sticky-col-6  { left: 340px; min-width: 80px;  max-width: 80px;  width: 80px; }
+.sticky-col-7  { left: 420px; min-width: 100px; max-width: 100px; width: 100px; }
+.sticky-col-8  { left: 520px; min-width: 70px;  max-width: 70px;  width: 70px; }
+
+/* tfoot의 "전체 합계" colspan=8 셀: 너비 580px(1~8 합산)으로 고정 */
+tfoot .sticky-col-span8 {
+  position: sticky !important;
+  left: 0px;
+  width: 590px;
+  min-width: 590px;
+  z-index: 35 !important;
+  background-color: #f8fafc !important;
+  overflow: hidden;
+}
+
+/* 합계 그룹 (상단 병합 헤더) -> 이전 너비 총합 590px */
+.sticky-col-group { left: 590px; z-index: 41 !important; border-right: 2px solid var(--border-focus) !important; }
+
+/* 9: 지급합계, 10: 공제합계 (+10px) */
+.sticky-col-9  { left: 590px; min-width: 80px;  max-width: 80px;  width: 80px; }
+.sticky-col-10 { left: 670px; min-width: 80px;  max-width: 80px;  width: 80px; }
+
+/* 마지막 고정 컬럼(공제합계) 우측에 그림자 효과 */
+.sticky-divider {
+  border-right: 2px solid var(--border-focus) !important;
+  /*box-shadow: 4px 0 6px -4px rgba(0,0,0,0.15) !important;
+  clip-path: inset(0 -10px 0 0); 우측으로만 그림자가 퍼지도록 제한
+
+   */
+}
+
+/* =========================================
+   데이터 상태별 배경색 덮어쓰기 (★글자 비침 방지를 위해 rgba 금지, Hex 컬러 사용)
+========================================= */
+
+/* 1. 비활성 (기본 흰색) */
+tr.data-row:has(td.calculate-inactive) .sticky-col {
+  background-color: #ffffff !important;
+}
+
+/* 2. 저장 대기 (노랑/주황 계열) */
+tr.data-row:has(td.calculate-draft) td {
+  background-color: rgba(245, 158, 11, 0.10); /* 우측 스크롤 영역은 기존대로 투명도 사용 가능 */
+}
+tr.data-row:has(td.calculate-draft) td.sticky-col {
+  background-color: #fef3c7 !important; /* ★ 고정 영역은 무조건 불투명 컬러 */
+}
+
+/* 3. 저장 완료 (초록 계열) */
+tr.data-row:has(td.calculate-active) td {
+  background-color: rgba(16, 185, 129, 0.08); /* 우측 스크롤 영역 */
+}
+tr.data-row:has(td.calculate-active) td.sticky-col {
+  background-color: #d1fae5 !important; /* ★ 고정 영역은 무조건 불투명 컬러 */
+}
+
+/* 호버 시 sticky 셀도 같이 어두워지게 반응 */
+tr.data-row:hover td.sticky-col {
+  filter: brightness(0.97);
+}
+
+/* 푸터 고정(하단 sticky) 관련 z-index */
+.table-footer.sticky-footer {
+  position: sticky; bottom: 0; z-index: 25;
+  background-color: #f8fafc;
+  border-top: 2px solid var(--border-focus);
 }
 </style>
