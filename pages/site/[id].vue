@@ -505,38 +505,73 @@ const removeContractGroup = (index) => {
 };
 
 // =============================================
-// 정산 설정 (Melt Options & Display Settings) 👈 [신규 추가]
+// ★ 정산 설정 — 산출내역서 기반 동적 항목 (상세 페이지용)
 // =============================================
+
+// 직접노무비 중 정산 설정에서 개별 제어할 특수 지급항목 키워드
+const PAY_CONTROL_KEYWORDS = ['연차', '퇴직', '근로자의날'];
+
+// 산출내역서에서 동적으로 수집된 항목들 (제경비 제외)
+const dynamicSettlementItems = computed(() => {
+  const paySet = new Map();       // label → true (직접노무비 중 특수항목)
+  const deductionSet = new Map(); // label → true (간접노무비)
+
+  contractGroups.value.forEach(group => {
+    if (!group.costBreakdown) return;
+
+    // 직접노무비 중 특수 지급항목 추출
+    (group.costBreakdown.directLabor || []).forEach(item => {
+      if (!item.label) return;
+      const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label.includes(kw));
+      if (isSpecial) paySet.set(item.label, true);
+    });
+
+    // 간접노무비 전체
+    (group.costBreakdown.indirectLabor || []).forEach(item => {
+      if (item.label) deductionSet.set(item.label, true);
+    });
+  });
+
+  return {
+    payItems:       Array.from(paySet.keys()),
+    deductionItems: Array.from(deductionSet.keys()),
+  };
+});
+
 const settlementConfig = ref({
-  showGrossPay: true,
-  showAnnualLeave: true,
-  showSeverance: true,
-  showSanjae: true,
-  activeDeductionCodes: [],
+  // 직접노무비 특수 지급항목 표시 여부 (label 배열)
+  activePayLabels: [],
+  // 간접노무비(공제항목) 표시 여부 (label 배열)
+  activeDeductionLabels: [],
+
+  // Melt Options — 공제 계산 베이스에 포함 여부
   meltOptions: {
     annualLeave: false,
-    severance: false
+    severance: false,
+    workersDay: false // ★ 근로자의 날 수당 포함 옵션
   }
 });
 
-// 공제 항목(4대보험 등) 리스트 추출 (wagesData 활용)
-const deductionItems = computed(() => {
-  if (!wagesData.value || !Array.isArray(wagesData.value)) return [];
-  // groupCd가 '04002'인 공제 항목 필터링 (없을 경우 이름으로 폴백)
-  let result = wagesData.value.filter(item => item.groupCd === '04002');
-  if(result.length === 0) {
-    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
-    result = wagesData.value.filter(item => defaultKeywords.some(kw => item.itemNm.includes(kw)));
-  }
-  return result;
-});
+// 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
+watch(dynamicSettlementItems, (newItems) => {
+  // 지급항목 자동 체크
+  newItems.payItems.forEach(label => {
+    if (!settlementConfig.value.activePayLabels.includes(label)) {
+      settlementConfig.value.activePayLabels.push(label);
+    }
+  });
+  settlementConfig.value.activePayLabels =
+      settlementConfig.value.activePayLabels.filter(l => newItems.payItems.includes(l));
 
-// 공제 항목이 로드되면 기본적으로 모두 체크되도록 초기화
-watch(deductionItems, (newItems) => {
-  if (newItems.length > 0 && settlementConfig.value.activeDeductionCodes.length === 0) {
-    settlementConfig.value.activeDeductionCodes = newItems.map(i => i.itemCd);
-  }
-}, { immediate: true });
+  // 공제항목 자동 체크
+  newItems.deductionItems.forEach(label => {
+    if (!settlementConfig.value.activeDeductionLabels.includes(label)) {
+      settlementConfig.value.activeDeductionLabels.push(label);
+    }
+  });
+  settlementConfig.value.activeDeductionLabels =
+      settlementConfig.value.activeDeductionLabels.filter(l => newItems.deductionItems.includes(l));
+}, { deep: true });
 
 // =============================================
 // 데이터 로드 / 저장 / 삭제
@@ -650,22 +685,20 @@ const getSiteData = async () => {
       zipcode:        result.zipcode || '',
     };
 
+    // viewConfig 불러오기 (getSiteData 내부)
     if (result.viewConfig) {
       try {
-        const parsed =
-            typeof result.viewConfig === 'string' ?
-            JSON.parse(result.viewConfig) : result.viewConfig;
+        const parsed = typeof result.viewConfig === 'string'
+            ? JSON.parse(result.viewConfig)
+            : result.viewConfig;
 
-        // 데이터 병합
         settlementConfig.value = {
-          showGrossPay: parsed.showGrossPay ?? true,
-          showAnnualLeave: parsed.showAnnualLeave ?? true,
-          showSeverance: parsed.showSeverance ?? true,
-          showSanjae: parsed.showSanjae ?? true,
-          activeDeductionCodes: parsed.activeDeductionCodes || settlementConfig.value.activeDeductionCodes,
+          activePayLabels:       parsed.activePayLabels       ?? [],
+          activeDeductionLabels: parsed.activeDeductionLabels ?? [],
           meltOptions: {
             annualLeave: parsed.meltOptions?.annualLeave ?? false,
-            severance: parsed.meltOptions?.severance ?? false
+            severance:   parsed.meltOptions?.severance   ?? false,
+            workersDay:  parsed.meltOptions?.workersDay  ?? false
           }
         };
       } catch(e) { console.error('viewConfig 파싱 에러:', e); }
@@ -1624,7 +1657,7 @@ onMounted(async () => {
               <h3>공제 계산 시 포함 (Melt Options)</h3>
             </div>
             <p class="info-helper-text" style="margin-bottom:20px;">
-              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
+              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금 등을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
               * 정산서 모달을 열 때마다 여기서 설정한 값이 기본으로 적용됩니다.
             </p>
 
@@ -1644,6 +1677,14 @@ onMounted(async () => {
                   <span class="slider round"></span>
                 </div>
               </label>
+
+              <label class="config-toggle-item" :class="{'disabled': !isEditing}">
+                <span class="font-bold text-red">근로자의날수당 포함</span>
+                <div class="switch">
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.workersDay" :disabled="!isEditing" />
+                  <span class="slider round"></span>
+                </div>
+              </label>
             </div>
           </div>
 
@@ -1653,40 +1694,55 @@ onMounted(async () => {
               <h3>정산 세부내역서 표시 항목 설정</h3>
             </div>
             <p class="info-helper-text" style="margin-bottom:20px;">
-              * 정산 세부내역서 엑셀 테이블에서 기본적으로 노출/숨김 처리할 항목을 선택합니다.
+              * <strong>산출내역서</strong>에 입력한 항목들이 자동으로 표시됩니다.<br>
+              * 체크된 항목은 정산 세부내역서 엑셀 테이블에 기본으로 노출됩니다.
             </p>
 
-            <div class="deduction-toggles-grid">
-              <div class="grid-group-label">기본 급여/수당 영역</div>
-              <div class="config-checkbox-group">
-                <label class="config-checkbox" :class="{'disabled': !isEditing}">
-                  <input type="checkbox" v-model="settlementConfig.showGrossPay" :disabled="!isEditing" />
-                  <span class="font-bold text-blue">급여(지급총액)</span>
-                </label>
-                <label class="config-checkbox" :class="{'disabled': !isEditing}">
-                  <input type="checkbox" v-model="settlementConfig.showAnnualLeave" :disabled="!isEditing" />
-                  <span class="font-bold text-orange">연차수당</span>
-                </label>
-                <label class="config-checkbox" :class="{'disabled': !isEditing}">
-                  <input type="checkbox" v-model="settlementConfig.showSeverance" :disabled="!isEditing" />
-                  <span class="font-bold text-orange">퇴직충당금</span>
-                </label>
-              </div>
+            <div v-if="
+              dynamicSettlementItems.payItems.length === 0 &&
+              dynamicSettlementItems.deductionItems.length === 0
+            " class="settlement-empty-notice">
+              <i class="mdi mdi-information-outline"></i>
+              <span>계약 그룹의 산출내역서에 항목을 입력하면 여기에 자동으로 표시됩니다.</span>
+            </div>
 
-              <div class="grid-divider"></div>
+            <div v-else class="deduction-toggles-grid">
 
-              <div class="grid-group-label">보험/공제 영역</div>
-              <div class="config-checkbox-group">
-                <label class="config-checkbox" :class="{'disabled': !isEditing}">
-                  <input type="checkbox" v-model="settlementConfig.showSanjae" :disabled="!isEditing" />
-                  <span class="font-bold text-orange">산재보험</span>
-                </label>
+              <template v-if="dynamicSettlementItems.payItems.length > 0">
+                <div class="grid-group-label">
+                  <span class="cost-block-label label-direct" style="font-size:12px; margin-right:6px;">A</span>
+                  지급항목 (직접노무비 중 정산 제어 항목)
+                </div>
+                <div class="config-checkbox-group">
+                  <label v-for="label in dynamicSettlementItems.payItems"
+                         :key="'pay-'+label" class="config-checkbox" :class="{'disabled': !isEditing}">
+                    <input type="checkbox"
+                           :value="label"
+                           v-model="settlementConfig.activePayLabels"
+                           :disabled="!isEditing" />
+                    <span class="font-bold text-orange">{{ label }}</span>
+                  </label>
+                </div>
+                <div v-if="dynamicSettlementItems.deductionItems.length > 0" class="grid-divider"></div>
+              </template>
 
-                <label v-for="item in deductionItems" :key="item.itemCd" class="config-checkbox" :class="{'disabled': !isEditing}">
-                  <input type="checkbox" :value="item.itemCd" v-model="settlementConfig.activeDeductionCodes" :disabled="!isEditing" />
-                  <span>{{ item.itemNm }}</span>
-                </label>
-              </div>
+              <template v-if="dynamicSettlementItems.deductionItems.length > 0">
+                <div class="grid-group-label">
+                  <span class="cost-block-label label-indirect" style="font-size:12px; margin-right:6px;">B</span>
+                  공제항목 (간접노무비)
+                </div>
+                <div class="config-checkbox-group">
+                  <label v-for="label in dynamicSettlementItems.deductionItems"
+                         :key="'ded-'+label" class="config-checkbox" :class="{'disabled': !isEditing}">
+                    <input type="checkbox"
+                           :value="label"
+                           v-model="settlementConfig.activeDeductionLabels"
+                           :disabled="!isEditing" />
+                    <span>{{ getItemName(label) }}</span>
+                  </label>
+                </div>
+              </template>
+
             </div>
           </div>
 
