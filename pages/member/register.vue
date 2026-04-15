@@ -759,14 +759,13 @@ onActivated(() => {
             </div>
 
             <div class="form-group">
-              <label class="form-label required">
+              <label class="form-label">
                 <i class="mdi mdi-calendar-start-outline"></i>
                 입사일
               </label>
               <input
                   type="date"
                   v-model="employee.joinDate"
-                  required
                   class="form-input"
               />
             </div>
@@ -776,7 +775,7 @@ onActivated(() => {
                 <i class="mdi mdi-account-check-outline"></i>
                 재직 상태
               </label>
-              <div class="radio-group">
+              <div class="radio-group" style="word-break:keep-all;">
                 <label class="radio-label">
                   <input type="radio" v-model="employee.status" value="0" required />
                   <span class="radio-text">재직</span>
@@ -807,6 +806,12 @@ onActivated(() => {
                   required
                   class="form-input"
               />
+            </div>
+
+            <div v-if="employee.status == 1" class="form-group">
+              <label class="form-label required">퇴사 사유</label>
+              <input type="text" v-model="employee.outReason" class="form-input" placeholder="퇴사 사유를 입력하세요" />
+
             </div>
           </div>
 

@@ -601,9 +601,16 @@ onActivated(async () => {
             </td>
             <td>{{member.phone}}</td>
             <td>
-                <span :class="['status-badge', member.status == 0 ? 'status-active' : 'status-inactive']">
-                  <i :class="['mdi', member.status == 0 ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
-                  {{ member.status == 0 ? '재직':'퇴사' }}
+                <span :class="['status-badge',
+                  member.status == 0 ? 'status-active' :
+                  member.status == 1 ? 'status-inactive':'status-preparing']">
+                  <i :class="[
+                      'mdi',
+                      member.status == 0 ? 'mdi-check-circle' :
+                      member.status == 1 ? 'mdi-close-circle' :
+                      member.status == 2 ? 'mdi-calendar-check' : 'mdi-swap-horizontal'
+                  ]"></i>
+                  {{ member.status == 0 ? '재직': member.status == 1 ? '퇴사' : member.status == 2 ? '일용직': '대근' }}
                 </span>
             </td>
             <td class="text-center">
@@ -733,6 +740,7 @@ onActivated(async () => {
 }
 .status-active   { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .status-inactive { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.status-preparing { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
 
 /* 상태 표시 컴포넌트들 */
 .loading-state {
