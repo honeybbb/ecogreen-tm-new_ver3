@@ -198,6 +198,77 @@ const syncCostBreakdownToStaff = (group) => {
   });
 };
 
+const onInputCost = (item, code, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart; // 현재 커서 위치 저장
+  const oldLength = el.value.length;
+
+  // 숫자만 추출
+  const rawValue = el.value.replace(/[^\d]/g, '');
+
+  // 데이터 업데이트: 빈 문자열이면 데이터도 빈 값으로, 아니면 숫자로 저장
+  const numValue = rawValue === '' ? '' : Number(rawValue);
+  item.values[code] = numValue;
+
+  // 화면 표시값 즉시 포맷팅
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  // 커서 위치 보정: 콤마 추가로 인한 길이 변화 계산
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
+const onInputSingleCost = (obj, code, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = rawValue === '' ? '' : Number(rawValue);
+
+  obj[code] = numValue;
+
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
+// 자동 계산된 총계와 수동 입력된 총계를 제어하는 함수
+const getDisplayMonthlyTotal = (group) => {
+  // 수동으로 입력한 값이 존재하면 그 값을 반환
+  if (group.manualMonthlyTotal !== undefined && group.manualMonthlyTotal !== null && group.manualMonthlyTotal !== '') {
+    return group.manualMonthlyTotal;
+  }
+  // 수동 입력값이 없으면 자동 계산된 값 반환
+  return getTotalMonthlyFee(group);
+};
+
+// 월간 용역비 총계 입력 핸들러 (콤마 및 커서 유지)
+const onInputMonthlyTotal = (group, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  // 숫자만 추출
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = rawValue === '' ? '' : Number(rawValue);
+
+  // 수동 입력값 저장 (빈 값이면 다시 자동계산으로 돌아감)
+  group.manualMonthlyTotal = numValue;
+
+  // 화면 포맷팅
+  const formatted = formatCurrency(numValue === '' ? getTotalMonthlyFee(group) : numValue);
+  el.value = formatted;
+
+  // 커서 위치 보정
+  const nextPos = selectionStart + (formatted.length - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
 // =============================================
 // 계약 그룹 CRUD
 // =============================================
@@ -924,9 +995,13 @@ onMounted(() => {
                             />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]"
-                                   @focus="$event.target.select()"
-                                   type="number" class="tbl-value-input" min="0" />
+                            <input
+                                type="text"
+                                :value="formatCurrency(item.values[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputCost(item, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
                           <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
@@ -978,9 +1053,13 @@ onMounted(() => {
                             <CodeSelect v-model="item.label" :allow-empty="false" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]"
-                                   @focus="$event.target.select()"
-                                   type="number" class="tbl-value-input" min="0" />
+                            <input
+                                type="text"
+                                :value="formatCurrency(item.values[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputCost(item, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
                           <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
@@ -1032,9 +1111,13 @@ onMounted(() => {
                             <CodeSelect v-model="item.label" :allow-empty="false" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="item.values[staff.code]"
-                                   @focus="$event.target.select()"
-                                   type="number" class="tbl-value-input" min="0" />
+                            <input
+                                type="text"
+                                :value="formatCurrency(item.values[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputCost(item, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
                           <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
@@ -1088,8 +1171,13 @@ onMounted(() => {
                         <tr class="summary-row row-e">
                           <td><div class="summary-label-rate"><span class="summary-label"><span class="cost-block-label label-mgmt">E</span>일반관리비</span></div></td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="group.costBreakdown.managementFee[staff.code]"
-                                   @focus="$event.target.select()" type="number" class="tbl-value-input" min="0" />
+                            <input
+                                type="text"
+                                :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span></td>
                           <td><input type="text" class="tbl-value-input"></td>
@@ -1098,8 +1186,13 @@ onMounted(() => {
                         <tr class="summary-row row-f">
                           <td><div class="summary-label-rate"><span class="summary-label"><span class="cost-block-label label-profit">F</span>기업이윤</span></div></td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input v-model.number="group.costBreakdown.profit[staff.code]"
-                                   @focus="$event.target.select()" type="number" class="tbl-value-input" min="0" />
+                            <input
+                                type="text"
+                                :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
+                                @focus="$event.target.select()"
+                                @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
+                                class="tbl-value-input"
+                            />
                           </td>
                           <td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span></td>
                           <td><input type="text" class="tbl-value-input"></td>
@@ -1113,13 +1206,28 @@ onMounted(() => {
                           <td></td>
                         </tr>
                         <tr class="summary-row row-total-fee">
-                          <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>월간 용역비 총계</span></td>
-                          <td :colspan="group.staffList.length"><span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span></td>
+                          <td>
+                            <span class="summary-label">
+                              <span class="cost-block-label label-total-fee">합</span>
+                              월간 용역비 총계
+                            </span>
+                          </td>
+                          <td :colspan="group.staffList.length">
+                            <input
+                                type="text"
+                                :value="formatCurrency(getDisplayMonthlyTotal(group))"
+                                @focus="$event.target.select()"
+                                @input="onInputMonthlyTotal(group, $event)"
+                                class="tbl-value-input grand-total-input"
+                                style="font-size: 15px; font-weight: 800; color: var(--primary);"
+                            />
+                          </td>
+
                           <td class="col-rowtotal-cell"></td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-                        <tr>
+                        <!--tr>
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 <br>(계약기간 총 용역비)</span></td>
                           <td :colspan="group.staffList.length + 1">
                             <input v-model.number="group.totalCost" @focus="$event.target.select()"
@@ -1127,7 +1235,7 @@ onMounted(() => {
                           </td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
-                        </tr>
+                        </tr-->
                         </tbody>
                       </table>
 
