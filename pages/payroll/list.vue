@@ -123,27 +123,35 @@ const filteredPayrollList = computed(() => {
   );
 
   filtered.sort((a, b) => {
+    // ★ 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
     if (sortKey.value) {
-      const mod  = sortOrder.value === 'asc' ? 1 : -1;
+      const mod = sortOrder.value === 'asc' ? 1 : -1;
       const valA = a[sortKey.value] ?? '';
       const valB = b[sortKey.value] ?? '';
 
       if (sortKey.value === 'birthDt') {
-        // 생일 문자열(ex: '1990-01-01') 비교. 클수록 나이가 적음.
-        // 오름차순(asc)일 때 나이가 적은 사람(생일이 느린 사람)이 위로 오게 하려면 반대로 정렬
-        return valB.localeCompare(valA) * mod;
+        return valB.localeCompare(valA) * mod;   // 생년월일은 역순 처리 유지
       }
-
       if (typeof valA === 'string' && typeof valB === 'string') {
         const cmp = valA.localeCompare(valB, 'ko');
         if (cmp !== 0) return cmp * mod;
       } else {
         if (valA < valB) return -1 * mod;
-        if (valA > valB) return  1 * mod;
+        if (valA > valB) return 1 * mod;
       }
+      return 0;
     }
-    // 기본 정렬: sIdx desc → idx asc
-    return Number(b.sIdx) - Number(a.sIdx) || Number(a.idx) - Number(b.idx);
+
+    // 1. 현장 내림차순 (s.idx)
+    if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
+
+    // 2. 직책 sort 오름차순 (c.sort ASC) → NULL은 가장 뒤로
+    const sortA = a.sort != null ? Number(a.sort) : 999999;
+    const sortB = b.sort != null ? Number(b.sort) : 999999;
+    if (sortA !== sortB) return sortA - sortB;
+
+    // 3. 직원 idx 오름차순
+    return Number(a.idx) - Number(b.idx);
   });
 
   return filtered;
@@ -355,7 +363,7 @@ const toggleSort = (key) => {
 const getPayrollList = async () => {
   isLoading.value = true;
   try {
-    const res      = await axios.get('/api/v1/member/payroll');
+    const res = await axios.get('/api/v1/member/payroll');
     payrollList.value = res.data.data?.length ? transformPayrollList(res.data.data) : [];
     currentPage.value = 1;
   } catch {

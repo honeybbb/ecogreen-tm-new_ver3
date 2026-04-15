@@ -503,7 +503,7 @@ onMounted(async () => {
                   </select>
                   <span v-else class="info-value">{{ employee.positionName }}</span>
                 </div>
-                <div class="info-item">
+                <div class="info-item " style="word-break:keep-all;">
                   <label>재직 상태</label>
                   <div v-if="isEditing" class="radio-group">
                     <label class="radio-label">
@@ -515,12 +515,12 @@ onMounted(async () => {
                       <span>퇴사</span>
                     </label>
                     <label class="radio-label">
-                      <input type="radio" v-model="employee.status" value="3" />
+                      <input type="radio" v-model="employee.status" value="2" />
                       <span>일용직</span>
                     </label>
                     <label class="radio-label">
-                      <input type="radio" v-model="employee.status" value="4" />
-                      <span>퇴사</span>
+                      <input type="radio" v-model="employee.status" value="3" />
+                      <span>대근</span>
                     </label>
                   </div>
                   <span v-else :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">

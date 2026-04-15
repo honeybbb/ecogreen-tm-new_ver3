@@ -181,9 +181,18 @@ const filteredMembers = computed(() => {
   });
 
   // 기본 정렬 (idx asc, sIdx desc)
+  // 기본 정렬 (idx asc, sIdx desc) 부분을 이렇게 교체
   result.sort((a, b) => {
-    if (a.idx !== b.idx) return a.idx - b.idx;
-    return b.sIdx - a.sIdx;
+    // 1. 현장 내림차순
+    if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
+
+    // 2. 직책 sort 오름차순 (null/undefined는 가장 뒤로)
+    const sortA = a.sort != null ? Number(a.sort) : 999999;
+    const sortB = b.sort != null ? Number(b.sort) : 999999;
+    if (sortA !== sortB) return sortA - sortB;
+
+    // 3. idx 오름차순
+    return Number(a.idx) - Number(b.idx);
   });
 
   // 사용자 정렬
