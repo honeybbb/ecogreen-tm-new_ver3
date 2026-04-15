@@ -388,49 +388,6 @@ onActivated(() => {
             </div>
 
             <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-phone-outline"></i>
-                연락처
-              </label>
-              <input
-                  type="tel"
-                  v-model="employee.phone"
-                  class="form-input"
-                  placeholder="010-0000-0000"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-email-outline"></i>
-                이메일
-              </label>
-              <input
-                  type="email"
-                  v-model="employee.email"
-                  class="form-input"
-                  placeholder="example@email.com"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-human-male-female"></i>
-                성별
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="M" v-model="employee.gender" required />
-                  <span class="radio-text">남성</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="F" v-model="employee.gender" required />
-                  <span class="radio-text">여성</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-badge-account-horizontal-outline"></i>
                 주민번호
@@ -456,7 +413,6 @@ onActivated(() => {
                 />
               </div>
             </div>
-            <div class="spacer"></div>
 
             <div class="form-group">
               <label class="form-label">
@@ -467,6 +423,49 @@ onActivated(() => {
                   type="date"
                   v-model="employee.birthDate"
                   class="form-input"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-phone-outline"></i>
+                연락처
+              </label>
+              <input
+                  type="tel"
+                  v-model="employee.phone"
+                  class="form-input"
+                  placeholder="010-0000-0000"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-human-male-female"></i>
+                성별
+              </label>
+              <div class="radio-group">
+                <label class="radio-label">
+                  <input type="radio" value="M" v-model="employee.gender" required />
+                  <span class="radio-text">남성</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" value="F" v-model="employee.gender" required />
+                  <span class="radio-text">여성</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-email-outline"></i>
+                이메일
+              </label>
+              <input
+                  type="email"
+                  v-model="employee.email"
+                  class="form-input"
+                  placeholder="example@email.com"
               />
             </div>
 
@@ -992,9 +991,23 @@ onActivated(() => {
 .form-textarea { resize: vertical; min-height: 80px; }
 
 /* 주민번호 그룹 */
-.ssn-group { display: flex; align-items: center; gap: 10px; }
-.ssn-input { flex: 1; text-align: center; letter-spacing: 2px; }
-.ssn-separator { font-size: 18px; font-weight: 700; color: var(--text-muted); }
+.ssn-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%; /* 부모 너비를 넘지 않도록 꽉 채움 */
+}
+.ssn-input {
+  flex: 1;
+  text-align: center;
+  letter-spacing: 2px;
+  min-width: 0; /* 🌟 핵심: input의 기본 너비 제한을 풀어주어 영역에 맞게 줄어들 수 있도록 함 */
+}
+.ssn-separator {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
 
 /* 라디오 그룹 */
 .radio-group { display: flex; gap: 12px; padding: 4px 0; }
