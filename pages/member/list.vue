@@ -350,8 +350,8 @@ onActivated(async () => {
             <option value="전체">전체</option>
             <option value="0">재직</option>
             <option value="1">퇴사</option>
-            <option value="3">일용직</option>
-            <option value="4">대근</option>
+            <option value="2">일용직</option>
+            <option value="3">대근</option>
             </select>
         </div>
         <div class="filter-group">
