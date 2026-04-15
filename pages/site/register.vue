@@ -8,7 +8,6 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 
-// ★ wagesData, fetchWageCode 추가
 const {
   positionOptions,
   typeOptions,
@@ -22,11 +21,10 @@ const {
 const formatCurrency = (val) => Number(val || 0).toLocaleString();
 
 const currentStep = ref(1);
-const totalSteps = 4; // 총 4단계로 구성
+const totalSteps = 4;
 
 const progressPercentage = computed(() => (currentStep.value / totalSteps) * 100);
 
-// ★ STEP 4: 정산 설정 추가
 const steps = [
   { number: 1, title: '기본 정보',  icon: 'mdi-office-building-outline' },
   { number: 2, title: '계약 정보',  icon: 'mdi-file-document-outline' },
@@ -38,11 +36,11 @@ const site = ref({
   siteName: '',
   siteId: '',
   siteType: '',
-  businessNumber: '', // 사업자번호
-  representative: '', // 대표자
-  businessType: '',   // 업태
-  businessItem: '',   // 종목
-  email: '',          // 메일주소
+  businessNumber: '',
+  representative: '',
+  businessType: '',
+  businessItem: '',
+  email: '',
   postalCode: '',
   addressMain: '',
   addressDetail: '',
@@ -70,37 +68,82 @@ const bigoHistory    = ref([]);
 const detailInput    = ref(null);
 
 // =============================================
-// ★ 정산 설정 (Melt Options & Display Settings)
+// ★ 정산 설정 — 산출내역서 기반 동적 항목
 // =============================================
+
+/**
+ * 산출내역서의 실제 입력 항목들을 읽어서 정산 설정 체크박스로 구성합니다.
+ *
+ * - payItems      : 직접노무비 중 '연차적립금', '퇴직적립금', '근로자의날수당' 등 특수 지급항목
+ * - deductionItems: 간접노무비 전체 항목 (건강보험, 국민연금 등 공제항목)
+ *
+ * 각 항목은 label(표시명)을 key로 사용합니다.
+ */
+
+// 직접노무비 중 정산 설정에서 개별 제어할 특수 지급항목 키워드
+const PAY_CONTROL_KEYWORDS = ['연차', '퇴직', '근로자의날'];
+
+// 산출내역서에서 동적으로 수집된 항목들
+const dynamicSettlementItems = computed(() => {
+  const paySet = new Map();       // label → true (직접노무비 중 특수항목)
+  const deductionSet = new Map(); // label → true (간접노무비)
+
+  contractGroups.value.forEach(group => {
+    if (!group.costBreakdown) return;
+
+    // 직접노무비 중 특수 지급항목 추출
+    (group.costBreakdown.directLabor || []).forEach(item => {
+      if (!item.label) return;
+      const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label.includes(kw));
+      if (isSpecial) paySet.set(item.label, true);
+    });
+
+    // 간접노무비 전체
+    (group.costBreakdown.indirectLabor || []).forEach(item => {
+      if (item.label) deductionSet.set(item.label, true);
+    });
+  });
+
+  return {
+    payItems:       Array.from(paySet.keys()),
+    deductionItems: Array.from(deductionSet.keys()),
+  };
+});
+
 const settlementConfig = ref({
-  showGrossPay: true,
-  showAnnualLeave: true,
-  showSeverance: true,
-  showSanjae: true,
-  activeDeductionCodes: [],
+  // 직접노무비 특수 지급항목 표시 여부 (label 배열)
+  activePayLabels: [],
+  // 간접노무비(공제항목) 표시 여부 (label 배열)
+  activeDeductionLabels: [],
+
+  // Melt Options — 공제 계산 베이스에 포함 여부
   meltOptions: {
     annualLeave: false,
-    severance: false
+    severance: false,
+    workersDay: false // ★ 근로자의 날 수당 포함 옵션 추가
   }
 });
 
-// 공제 항목(4대보험 등) 리스트 추출
-const deductionItems = computed(() => {
-  if (!wagesData.value || !Array.isArray(wagesData.value)) return [];
-  let result = wagesData.value.filter(item => item.groupCd === '04002');
-  if(result.length === 0) {
-    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
-    result = wagesData.value.filter(item => defaultKeywords.some(kw => item.itemNm.includes(kw)));
-  }
-  return result;
-});
+// 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
+watch(dynamicSettlementItems, (newItems) => {
+  // 지급항목: 새로 추가된 항목 자동 체크
+  newItems.payItems.forEach(label => {
+    if (!settlementConfig.value.activePayLabels.includes(label)) {
+      settlementConfig.value.activePayLabels.push(label);
+    }
+  });
+  settlementConfig.value.activePayLabels =
+      settlementConfig.value.activePayLabels.filter(l => newItems.payItems.includes(l));
 
-// 처음 로드될 때 모든 공제 항목을 기본적으로 체크
-watch(deductionItems, (newItems) => {
-  if (newItems.length > 0 && settlementConfig.value.activeDeductionCodes.length === 0) {
-    settlementConfig.value.activeDeductionCodes = newItems.map(i => i.itemCd);
-  }
-}, { immediate: true });
+  // 공제항목
+  newItems.deductionItems.forEach(label => {
+    if (!settlementConfig.value.activeDeductionLabels.includes(label)) {
+      settlementConfig.value.activeDeductionLabels.push(label);
+    }
+  });
+  settlementConfig.value.activeDeductionLabels =
+      settlementConfig.value.activeDeductionLabels.filter(l => newItems.deductionItems.includes(l));
+}, { deep: true });
 
 // =============================================
 // costBreakdown 기본값 생성
@@ -116,7 +159,7 @@ const createDefaultCostBreakdown = (staffList = []) => ({
     { label: '기본급',        values: makeValuesObj(staffList) },
     { label: '야간근로수당',   values: makeValuesObj(staffList) },
     { label: '직책수당',       values: makeValuesObj(staffList) },
-    { label: '근로자의날 수당', values: makeValuesObj(staffList) },
+    { label: '근로자의날수당', values: makeValuesObj(staffList) },
     { label: '연차적립금',     values: makeValuesObj(staffList) },
     { label: '퇴직적립금',     values: makeValuesObj(staffList) },
   ],
@@ -187,7 +230,7 @@ const removeContractGroup = (index) => {
 };
 
 // =============================================
-// 스케줄(근무시간) 관리용
+// 스케줄(근무시간) 관리
 // =============================================
 const weekDays = [
   { val: 1, label: '월' }, { val: 2, label: '화' }, { val: 3, label: '수' },
@@ -197,7 +240,13 @@ const weekDays = [
 const createDefaultSchedule = () => {
   const schedule = {};
   for (let i = 0; i <= 6; i++) {
-    schedule[i] = { isActive: i >= 1 && i <= 5, startTime: '09:00', endTime: '18:00', breakTime: 60, isBiweekly: false };
+    schedule[i] = {
+      isActive: i >= 1 && i <= 5,
+      startTime: '09:00',
+      endTime: '18:00',
+      breakTime: 60,
+      isBiweekly: false
+    };
   }
   return schedule;
 };
@@ -229,7 +278,7 @@ const addStaffToGroup = (groupIndex) => {
       name: jobInfo.itemNm,
       count: Number(group.tempCount),
       schedule: createDefaultSchedule(),
-      showSchedule: true
+      showSchedule: true   // 추가 시 바로 펼침
     });
   }
 
@@ -316,8 +365,8 @@ const handleSubmit = async () => {
   if (!site.value.building_su) { alert('건물 수를 입력해주세요.'); currentStep.value = 1; return; }
   if (!site.value.unit_su) { alert('세대 수를 입력해주세요.'); currentStep.value = 1; return; }
   if (!site.value.payment_day) { alert('급여지급일을 선택해주세요.'); currentStep.value = 1; return; }
-  if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); currentStep.value = 3; return; }
-  if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); currentStep.value = 3; return; }
+  if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); currentStep.value = 4; return; }
+  if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); currentStep.value = 4; return; }
 
   try {
     const finalContractGroups = contractGroups.value.map(group => {
@@ -329,8 +378,6 @@ const handleSubmit = async () => {
     });
 
     const contractsJson = JSON.stringify(finalContractGroups);
-
-    // ★ settlementConfig.value를 문자열로 변환
     const viewConfigJson = JSON.stringify(settlementConfig.value);
 
     const params = {
@@ -361,7 +408,7 @@ const handleSubmit = async () => {
       directorContact: site.value.directorContact,
       bigo: site.value.bigo,
       contract_details: contractsJson,
-      viewConfig: viewConfigJson // ★ API 파라미터에 추가
+      viewConfig: viewConfigJson
     };
 
     const res = await axios.post(`/api/v1/site/register`, params);
@@ -420,7 +467,11 @@ const getSiteData = async () => {
         workDays: item.workDays,
         workSchedule: item.workSchedule,
         breakTime: item.breaktime,
-        staffList: item.staffList || [],
+        staffList: (item.staffList || []).map(staff => ({
+          ...staff,
+          schedule: staff.schedule || createDefaultSchedule(),
+          showSchedule: false
+        })),
         tempJobCode: '',
         tempCount: 1,
         costBreakdown: item.costBreakdown || createDefaultCostBreakdown(item.staffList || []),
@@ -435,19 +486,20 @@ const getSiteData = async () => {
       } catch { bigoHistory.value = []; }
     }
 
-    // ★ viewConfig (정산 설정) 불러오기
+    // viewConfig 불러오기 — 새 구조(label 기반)와 구 구조(code 기반) 모두 대응
     if (result.viewConfig) {
       try {
-        const parsed = typeof result.viewConfig === 'string' ? JSON.parse(result.viewConfig) : result.viewConfig;
+        const parsed = typeof result.viewConfig === 'string'
+            ? JSON.parse(result.viewConfig)
+            : result.viewConfig;
+
         settlementConfig.value = {
-          showGrossPay: parsed.showGrossPay ?? true,
-          showAnnualLeave: parsed.showAnnualLeave ?? true,
-          showSeverance: parsed.showSeverance ?? true,
-          showSanjae: parsed.showSanjae ?? true,
-          activeDeductionCodes: parsed.activeDeductionCodes || settlementConfig.value.activeDeductionCodes,
+          activePayLabels:       parsed.activePayLabels       ?? [],
+          activeDeductionLabels: parsed.activeDeductionLabels ?? [],
           meltOptions: {
             annualLeave: parsed.meltOptions?.annualLeave ?? false,
-            severance: parsed.meltOptions?.severance ?? false
+            severance:   parsed.meltOptions?.severance   ?? false,
+            workersDay:  parsed.meltOptions?.workersDay  ?? false // ★ 로드 시 반영
           }
         };
       } catch(e) { console.error('viewConfig 파싱 에러:', e); }
@@ -503,7 +555,7 @@ const prevStep = () => {
 onMounted(() => {
   fetchPositionOptions();
   fetchTypeOptions();
-  fetchWageCode(); // ★ 공제항목을 가져오기 위함
+  fetchWageCode();
   getSiteData();
 });
 </script>
@@ -546,6 +598,7 @@ onMounted(() => {
     <form @submit.prevent="handleSubmit">
       <div class="form-container">
 
+        <!-- ===== STEP 1: 기본 정보 ===== -->
         <div v-if="currentStep === 1" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-office-building-outline"></i>
@@ -583,7 +636,6 @@ onMounted(() => {
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
-
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 이하 (면세 면적)</label>
               <div style="position: relative;">
@@ -591,7 +643,6 @@ onMounted(() => {
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
-
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 초과 (과세 면적)</label>
               <div style="position: relative;">
@@ -599,7 +650,6 @@ onMounted(() => {
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
-
             <div class="form-group">
               <label class="form-label"><i class="mdi mdi-calculator"></i>총 관리면적 (자동계산)</label>
               <div style="position: relative;">
@@ -677,6 +727,7 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- ===== STEP 2: 계약 정보 ===== -->
         <div v-if="currentStep === 2" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-file-document-outline"></i><h2>계약 및 인원 정보</h2>
@@ -759,6 +810,7 @@ onMounted(() => {
                 </div>
               </div>
 
+              <!-- 인원 구성 -->
               <div class="staff-section">
                 <label class="section-label"><i class="mdi mdi-account-group-outline"></i>인원 구성</label>
                 <div class="staff-input-group">
@@ -772,9 +824,11 @@ onMounted(() => {
                     <i class="mdi mdi-plus"></i>추가
                   </button>
                 </div>
+
                 <div v-if="group.staffList && group.staffList.length > 0" class="staff-list">
                   <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
 
+                    <!-- 직책 행 -->
                     <div class="staff-item">
                       <div class="staff-info">
                         <i class="mdi mdi-account-outline"></i>
@@ -782,8 +836,14 @@ onMounted(() => {
                         <span class="staff-count-badge">{{ staff.count }}명</span>
                       </div>
                       <div class="staff-actions">
-                        <button type="button" @click="staff.showSchedule = !staff.showSchedule" class="btn-toggle-schedule" :class="{ 'active': staff.showSchedule }">
-                          <i class="mdi" :class="staff.showSchedule ? 'mdi-calendar-collapse-horizontal' : 'mdi-calendar-expand-horizontal'"></i>
+                        <button type="button"
+                                @click="staff.showSchedule = !staff.showSchedule"
+                                class="btn-toggle-schedule"
+                                :class="{ 'active': staff.showSchedule }">
+                          <i class="mdi"
+                             :class="staff.showSchedule
+                               ? 'mdi-calendar-collapse-horizontal'
+                               : 'mdi-calendar-expand-horizontal'"></i>
                           근무 설정
                         </button>
                         <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff">
@@ -792,6 +852,7 @@ onMounted(() => {
                       </div>
                     </div>
 
+                    <!-- ★ 스케줄 패널 (상세 페이지와 동일) -->
                     <div v-show="staff.showSchedule" class="schedule-panel">
                       <div class="schedule-header">
                         <span><i class="mdi mdi-clock-outline"></i> 요일별 근무시간 설정</span>
@@ -799,49 +860,57 @@ onMounted(() => {
                           <i class="mdi mdi-layers-outline"></i> 평일(월~금) 일괄 적용
                         </button>
                       </div>
-
-                      <table class="schedule-table">
-                        <thead>
-                        <tr>
-                          <th class="col-day">요일</th>
-                          <th class="col-time">출근 ~ 퇴근</th>
-                          <th class="col-break">휴게(분)</th>
-                          <th class="col-opt">옵션</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="day in weekDays" :key="day.val" :class="{'inactive-row': !staff.schedule[day.val].isActive}">
-                          <td>
-                            <label class="day-checkbox">
-                              <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
-                              <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
-                            </label>
-                          </td>
-
-                          <td>
-                            <div class="time-inputs">
-                              <input type="time" v-model="staff.schedule[day.val].startTime" :disabled="!staff.schedule[day.val].isActive" class="form-input time-input" />
-                              <span>~</span>
-                              <input type="time" v-model="staff.schedule[day.val].endTime" :disabled="!staff.schedule[day.val].isActive" class="form-input time-input" />
-                            </div>
-                          </td>
-
-                          <td>
-                            <input type="number" v-model="staff.schedule[day.val].breakTime" :disabled="!staff.schedule[day.val].isActive" class="form-input break-input" min="0" placeholder="0" />
-                          </td>
-
-                          <td>
-                            <label class="biweekly-checkbox">
-                              <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" :disabled="!staff.schedule[day.val].isActive" />
-                              <span>격주</span>
-                            </label>
-                          </td>
-                        </tr>
-                        </tbody>
-                      </table>
+                      <div class="schedule-table-wrap">
+                        <table class="schedule-table">
+                          <thead>
+                          <tr>
+                            <th class="col-day">요일</th>
+                            <th class="col-time">출근 ~ 퇴근</th>
+                            <th class="col-break">휴게(분)</th>
+                            <th class="col-opt">옵션</th>
+                          </tr>
+                          </thead>
+                          <tbody>
+                          <tr v-for="day in weekDays" :key="day.val"
+                              :class="{'inactive-row': !staff.schedule[day.val].isActive}">
+                            <td>
+                              <label class="day-checkbox">
+                                <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
+                                <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
+                              </label>
+                            </td>
+                            <td>
+                              <div v-if="staff.schedule[day.val].isActive" class="time-inputs">
+                                <input type="time" v-model="staff.schedule[day.val].startTime"
+                                       class="form-input time-input" />
+                                <span>~</span>
+                                <input type="time" v-model="staff.schedule[day.val].endTime"
+                                       class="form-input time-input" />
+                              </div>
+                              <span v-else class="text-muted" style="font-size:12px;">휴무</span>
+                            </td>
+                            <td>
+                              <input v-if="staff.schedule[day.val].isActive"
+                                     type="number"
+                                     v-model="staff.schedule[day.val].breakTime"
+                                     class="form-input break-input"
+                                     min="0" placeholder="0" />
+                              <span v-else class="text-muted">-</span>
+                            </td>
+                            <td>
+                              <label v-if="staff.schedule[day.val].isActive" class="biweekly-checkbox">
+                                <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" />
+                                <span>격주</span>
+                              </label>
+                              <span v-else class="text-muted">-</span>
+                            </td>
+                          </tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
 
-                  </div>
+                  </div><!-- /staff-item-wrapper -->
 
                   <div class="staff-total">
                     <i class="mdi mdi-sigma"></i>
@@ -850,6 +919,7 @@ onMounted(() => {
                 </div>
               </div>
 
+              <!-- 산출내역서 -->
               <div class="cost-breakdown-wrapper">
                 <button type="button" class="btn-toggle-cost"
                         @click="group.showCostBreakdown = !group.showCostBreakdown">
@@ -870,6 +940,7 @@ onMounted(() => {
                   <template v-else>
                     <div class="cost-scroll-area">
 
+                      <!-- 직접노무비 -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-direct">A</span>
                         직접노무비 <em>(지급내역)</em>
@@ -900,17 +971,11 @@ onMounted(() => {
                             />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                v-model.number="item.values[staff.code]"
-                                @focus="$event.target.select()"
-                                type="number"
-                                class="tbl-value-input"
-                                min="0"
-                            />
+                            <input v-model.number="item.values[staff.code]"
+                                   @focus="$event.target.select()"
+                                   type="number" class="tbl-value-input" min="0" />
                           </td>
-                          <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
-                          </td>
+                          <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
                           <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
                           <td class="col-action">
                             <button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost">
@@ -934,6 +999,7 @@ onMounted(() => {
                         </tfoot>
                       </table>
 
+                      <!-- 간접노무비 -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-indirect">B</span>
                         간접노무비 <em>(공제내역)</em>
@@ -960,20 +1026,12 @@ onMounted(() => {
                             <CodeSelect v-model="item.label" :allow-empty="false" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                v-model.number="item.values[staff.code]"
-                                @focus="$event.target.select()"
-                                type="number"
-                                class="tbl-value-input"
-                                min="0"
-                            />
+                            <input v-model.number="item.values[staff.code]"
+                                   @focus="$event.target.select()"
+                                   type="number" class="tbl-value-input" min="0" />
                           </td>
-                          <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
-                          </td>
-                          <td class="">
-                            <input type="text" class="tbl-value-input" v-model="item.bigo">
-                          </td>
+                          <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
+                          <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
                           <td class="col-action">
                             <button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost">
                               <i class="mdi mdi-close"></i>
@@ -996,6 +1054,7 @@ onMounted(() => {
                         </tfoot>
                       </table>
 
+                      <!-- 제경비 -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-expense">C</span>
                         제경비
@@ -1022,20 +1081,12 @@ onMounted(() => {
                             <CodeSelect v-model="item.label" :allow-empty="false" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                v-model.number="item.values[staff.code]"
-                                @focus="$event.target.select()"
-                                type="number"
-                                class="tbl-value-input"
-                                min="0"
-                            />
+                            <input v-model.number="item.values[staff.code]"
+                                   @focus="$event.target.select()"
+                                   type="number" class="tbl-value-input" min="0" />
                           </td>
-                          <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
-                          </td>
-                          <td class="">
-                            <input type="text" class="tbl-value-input" v-model="item.bigo">
-                          </td>
+                          <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
+                          <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
                           <td class="col-action">
                             <button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost">
                               <i class="mdi mdi-close"></i>
@@ -1058,6 +1109,7 @@ onMounted(() => {
                         </tfoot>
                       </table>
 
+                      <!-- 합계 -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-total">합계</span>
                         노무비 합계 및 용역비 산출
@@ -1077,158 +1129,78 @@ onMounted(() => {
                         </thead>
                         <tbody>
                         <tr class="summary-row row-d">
-                          <td>
-                              <span class="summary-label">
-                                <span class="cost-block-label label-total">D</span>
-                                노무비 합계 (A+B+C)
-                              </span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span>
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span>
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
+                          <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td>
+                          <td class="col-rowtotal-cell"><span class="summary-val bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-
                         <tr class="summary-row row-e">
-                          <td>
-                            <div class="summary-label-rate">
-                                <span class="summary-label">
-                                  <span class="cost-block-label label-mgmt">E</span>일반관리비
-                                </span>
-                            </div>
-                          </td>
+                          <td><div class="summary-label-rate"><span class="summary-label"><span class="cost-block-label label-mgmt">E</span>일반관리비</span></div></td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                v-model.number="group.costBreakdown.managementFee[staff.code]"
-                                @focus="$event.target.select()"
-                                type="number"
-                                class="tbl-value-input"
-                                min="0"
-                            />
+                            <input v-model.number="group.costBreakdown.managementFee[staff.code]"
+                                   @focus="$event.target.select()" type="number" class="tbl-value-input" min="0" />
                           </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span>
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
+                          <td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-
                         <tr class="summary-row row-f">
-                          <td>
-                            <div class="summary-label-rate">
-                                <span class="summary-label">
-                                  <span class="cost-block-label label-profit">F</span>기업이윤
-                                </span>
-                            </div>
-                          </td>
+                          <td><div class="summary-label-rate"><span class="summary-label"><span class="cost-block-label label-profit">F</span>기업이윤</span></div></td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                v-model.number="group.costBreakdown.profit[staff.code]"
-                                @focus="$event.target.select()"
-                                type="number"
-                                class="tbl-value-input"
-                                min="0"
-                            />
+                            <input v-model.number="group.costBreakdown.profit[staff.code]"
+                                   @focus="$event.target.select()" type="number" class="tbl-value-input" min="0" />
                           </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span>
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
+                          <td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-
                         <tr class="summary-row row-monthly">
-                          <td>
-                              <span class="summary-label">
-                                <span class="cost-block-label label-monthly">월</span>
-                                1인당 월 용역비 (D+E+F)
-                              </span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                              <span class="summary-val highlight">
-                                {{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}
-                              </span>
-                          </td>
+                          <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
                           <td class="col-rowtotal-cell">-</td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-
                         <tr class="summary-row row-total-fee">
-                          <td>
-                              <span class="summary-label">
-                                <span class="cost-block-label label-total-fee">합</span>
-                                월간 용역비 총계
-                              </span>
-                          </td>
-                          <td :colspan="group.staffList.length">
-                            <span class="summary-val grand-total">
-                              {{ formatCurrency(getTotalMonthlyFee(group)) }}
-                            </span>
-                          </td>
-                          <td class="col-rowtotal-cell">
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
+                          <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>월간 용역비 총계</span></td>
+                          <td :colspan="group.staffList.length"><span class="summary-val grand-total">{{ formatCurrency(getTotalMonthlyFee(group)) }}</span></td>
+                          <td class="col-rowtotal-cell"></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-
                         <tr>
-                          <td>
-                            <span class="summary-label">
-                              <span class="cost-block-label label-total-fee">합</span>
-                              입찰 금액 <br>(계약기간 총 용역비)
-                            </span>
-                          </td>
+                          <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 <br>(계약기간 총 용역비)</span></td>
                           <td :colspan="group.staffList.length + 1">
-                            <input
-                                v-model.number="group.totalCost"
-                                @focus="$event.target.select()"
-                                type="number"
-                                class="tbl-value-input"
-                                placeholder="0"
-                                min="0"
-                            >
+                            <input v-model.number="group.totalCost" @focus="$event.target.select()"
+                                   type="number" class="tbl-value-input" placeholder="0" min="0">
                           </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
+                          <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
                         </tbody>
                       </table>
 
-                    </div>
+                    </div><!-- /cost-scroll-area -->
+
                     <div class="cost-special-note">
-                      <label class="form-label">
-                        <i class="mdi mdi-text-box-edit-outline"></i>특이사항
-                      </label>
+                      <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i>특이사항</label>
                       <textarea v-model="group.costBreakdown.specialNote" class="form-textarea" rows="3"
                                 placeholder="예: 최저임금 기준 적용, 5대보험 인원전원 가입 조건으로 산출 등"></textarea>
                     </div>
-
                   </template>
                 </div>
               </div>
             </div>
-          </div>
+          </div><!-- /contract-card -->
+
           <div class="form-actions">
             <button type="button" @click="prevStep" class="btn-prev"><i class="mdi mdi-arrow-left"></i>이전</button>
             <button type="button" @click="nextStep" class="btn-next">다음 단계<i class="mdi mdi-arrow-right"></i></button>
           </div>
         </div>
 
+        <!-- ===== STEP 3: 정산 설정 ===== -->
         <div v-if="currentStep === 3" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-calculator-variant"></i><h2>정산 기본 설정</h2>
@@ -1237,7 +1209,7 @@ onMounted(() => {
           <div class="form-group full-width" style="margin-bottom: 32px;">
             <label class="section-label"><i class="mdi mdi-calculator"></i>공제 계산 시 포함 (Melt Options)</label>
             <p class="info-helper-text" style="margin-bottom: 16px;">
-              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
+              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금 등을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
               * 정산서 모달을 열 때마다 여기서 설정한 값이 기본으로 적용됩니다.
             </p>
             <div class="config-toggle-wrapper">
@@ -1248,11 +1220,17 @@ onMounted(() => {
                   <span class="slider round"></span>
                 </div>
               </label>
-
               <label class="config-toggle-item">
                 <span class="font-bold text-red">퇴직충당금 포함</span>
                 <div class="switch">
                   <input type="checkbox" v-model="settlementConfig.meltOptions.severance" />
+                  <span class="slider round"></span>
+                </div>
+              </label>
+              <label class="config-toggle-item">
+                <span class="font-bold text-red">근로자의날수당 포함</span>
+                <div class="switch">
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.workersDay" />
                   <span class="slider round"></span>
                 </div>
               </label>
@@ -1262,39 +1240,53 @@ onMounted(() => {
           <div class="form-group full-width">
             <label class="section-label"><i class="mdi mdi-filter-variant"></i>정산 세부내역서 표시 항목 설정</label>
             <p class="info-helper-text" style="margin-bottom: 16px;">
-              * 정산 세부내역서 엑셀 테이블에서 기본적으로 노출/숨김 처리할 항목을 선택합니다.
+              * STEP 2 산출내역서에 입력한 항목들이 자동으로 표시됩니다.<br>
+              * 체크된 항목은 정산 세부내역서 엑셀 테이블에 기본으로 노출됩니다.
             </p>
-            <div class="deduction-toggles-grid">
-              <div class="grid-group-label">기본 급여/수당 영역</div>
-              <div class="config-checkbox-group">
-                <label class="config-checkbox">
-                  <input type="checkbox" v-model="settlementConfig.showGrossPay" />
-                  <span class="font-bold text-blue">급여(지급총액)</span>
-                </label>
-                <label class="config-checkbox">
-                  <input type="checkbox" v-model="settlementConfig.showAnnualLeave" />
-                  <span class="font-bold text-orange">연차수당</span>
-                </label>
-                <label class="config-checkbox">
-                  <input type="checkbox" v-model="settlementConfig.showSeverance" />
-                  <span class="font-bold text-orange">퇴직충당금</span>
-                </label>
-              </div>
 
-              <div class="grid-divider"></div>
+            <div v-if="
+              dynamicSettlementItems.payItems.length === 0 &&
+              dynamicSettlementItems.deductionItems.length === 0
+            " class="settlement-empty-notice">
+              <i class="mdi mdi-information-outline"></i>
+              <span>STEP 2에서 계약 그룹을 추가하고 산출내역서 항목을 입력하면 여기에 자동으로 표시됩니다.</span>
+            </div>
 
-              <div class="grid-group-label">보험/공제 영역</div>
-              <div class="config-checkbox-group">
-                <label class="config-checkbox">
-                  <input type="checkbox" v-model="settlementConfig.showSanjae" />
-                  <span class="font-bold text-orange">산재보험</span>
-                </label>
+            <div v-else class="deduction-toggles-grid">
 
-                <label v-for="item in deductionItems" :key="item.itemCd" class="config-checkbox">
-                  <input type="checkbox" :value="item.itemCd" v-model="settlementConfig.activeDeductionCodes" />
-                  <span>{{ item.itemNm }}</span>
-                </label>
-              </div>
+              <template v-if="dynamicSettlementItems.payItems.length > 0">
+                <div class="grid-group-label">
+                  <span class="cost-block-label label-direct" style="font-size:12px; margin-right:6px;">A</span>
+                  지급항목 (직접노무비 중 정산 제어 항목)
+                </div>
+                <div class="config-checkbox-group">
+                  <label v-for="label in dynamicSettlementItems.payItems"
+                         :key="'pay-'+label" class="config-checkbox">
+                    <input type="checkbox"
+                           :value="label"
+                           v-model="settlementConfig.activePayLabels" />
+                    <span class="font-bold text-orange">{{ label }}</span>
+                  </label>
+                </div>
+                <div v-if="dynamicSettlementItems.deductionItems.length > 0" class="grid-divider"></div>
+              </template>
+
+              <template v-if="dynamicSettlementItems.deductionItems.length > 0">
+                <div class="grid-group-label">
+                  <span class="cost-block-label label-indirect" style="font-size:12px; margin-right:6px;">B</span>
+                  공제항목 (간접노무비)
+                </div>
+                <div class="config-checkbox-group">
+                  <label v-for="label in dynamicSettlementItems.deductionItems"
+                         :key="'ded-'+label" class="config-checkbox">
+                    <input type="checkbox"
+                           :value="label"
+                           v-model="settlementConfig.activeDeductionLabels" />
+                    <span>{{ label }}</span>
+                  </label>
+                </div>
+              </template>
+
             </div>
           </div>
 
@@ -1304,6 +1296,7 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- ===== STEP 4: 담당자 정보 ===== -->
         <div v-if="currentStep === 4" class="form-step">
           <div class="step-header">
             <i class="mdi mdi-account-tie-outline"></i><h2>담당자 및 기타 정보</h2>
@@ -1402,11 +1395,6 @@ onMounted(() => {
 .radio-label input[type="radio"] { display: none; }
 .radio-label:has(input:checked) { border-color: var(--primary); background-color: var(--primary-soft); color: var(--primary); font-weight: 600; }
 
-.area-wrapper { display: flex; gap: 12px; align-items: center; }
-.area-wrapper .form-input { flex: 1; }
-.checkbox-inline { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--danger); font-weight: 600; white-space: nowrap; cursor: pointer; }
-.checkbox-inline input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--danger); }
-
 .address-search-group { display: flex; gap: 10px; }
 .postal-input { width: 140px; background-color: var(--bg-canvas); }
 .btn-search-address { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background-color: var(--primary); border: none; border-radius: 8px; color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
@@ -1461,14 +1449,51 @@ onMounted(() => {
 .btn-add-staff { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background-color: var(--success); border: none; border-radius: 8px; color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: 0.2s; }
 .btn-add-staff:hover { background-color: var(--success-hover); }
 .staff-list { display: flex; flex-direction: column; gap: 8px; }
-.staff-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; }
+.staff-total { margin-top: 12px; padding: 10px 14px; background-color: var(--primary-soft); border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--primary); font-weight: 600; }
+
+/* =========================================
+   ★ 직책별 스케줄 패널 (상세 페이지와 동일)
+========================================= */
+.staff-item-wrapper { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); overflow: hidden; }
+.staff-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
 .staff-info { display: flex; align-items: center; gap: 10px; flex: 1; }
 .staff-info i { font-size: 18px; color: var(--primary); }
 .staff-position-name { font-size: 13px; color: var(--text-main); font-weight: 500; }
 .staff-count-badge { padding: 3px 8px; background-color: var(--primary-soft); color: var(--primary); border-radius: 6px; font-size: 12px; font-weight: 600; }
+.staff-actions { display: flex; align-items: center; gap: 8px; }
+.btn-toggle-schedule { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bg-canvas); border: 1px solid var(--border-focus); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: 0.2s; }
+.btn-toggle-schedule.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.btn-toggle-schedule:hover { background: var(--bg-hover); }
 .btn-remove-staff { width: 24px; height: 24px; border-radius: 6px; background: rgba(239,68,68,0.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
 .btn-remove-staff:hover { background: rgba(239,68,68,0.2); }
-.staff-total { margin-top: 12px; padding: 10px 14px; background-color: var(--primary-soft); border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--primary); font-weight: 600; }
+
+.schedule-panel { border-top: 1px solid var(--border-focus); background: var(--bg-canvas); }
+.schedule-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border-bottom: 1px solid var(--border-focus); }
+.schedule-header span { font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
+.btn-batch-apply { padding: 4px 10px; background: var(--primary); color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.btn-batch-apply:hover { background: var(--primary-hover); }
+
+.schedule-table-wrap { overflow-x: auto; }
+.schedule-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; min-width: 400px; }
+.schedule-table th { padding: 8px; background: var(--bg-hover); color: var(--text-sub); font-weight: 600; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.schedule-table td { padding: 8px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.schedule-table tbody tr:last-child td { border-bottom: none; }
+.inactive-row td { background-color: var(--bg-hover); opacity: 0.6; }
+
+.col-day { width: 60px; }
+.col-time { width: auto; }
+.col-break { width: 80px; }
+.col-opt { width: 70px; }
+
+.day-checkbox { display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; cursor: pointer; }
+.text-red { color: var(--danger); }
+.text-blue { color: #3b82f6; }
+.text-muted { color: var(--text-muted); }
+
+.time-inputs { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.time-input { padding: 4px 6px; font-size: 12px; width: 100px; text-align: center; }
+.break-input { padding: 4px; font-size: 12px; width: 60px; text-align: right; margin: 0 auto; }
+.biweekly-checkbox { display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; }
 
 /* =========================================
    산출내역서 토글
@@ -1476,30 +1501,23 @@ onMounted(() => {
 .cost-breakdown-wrapper { margin-top: 24px; }
 .btn-toggle-cost { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 18px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text-main); cursor: pointer; transition: all 0.2s; text-align: left; }
 .btn-toggle-cost:hover { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.btn-toggle-cost i { font-size: 18px; }
 .btn-toggle-cost span:nth-child(2) { flex: 1; }
 .cost-preview-badge { padding: 3px 10px; background: var(--primary); color: var(--text-inverse); border-radius: 20px; font-size: 12px; font-weight: 700; }
 
-/* =========================================
-   산출내역서 본체
-========================================= */
+/* 산출내역서 본체 */
 .cost-breakdown-section { margin-top: 8px; border: 1px solid var(--border-focus); border-radius: 10px; overflow: hidden; }
-
 .cost-no-staff { padding: 40px 20px; text-align: center; color: var(--text-sub); }
 .cost-no-staff i { font-size: 40px; margin-bottom: 12px; opacity: 0.5; display: block; }
 .cost-no-staff p { font-size: 13px; line-height: 1.7; margin: 0; }
 
-/* 섹션 타이틀 */
 .cost-section-title { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--bg-canvas); border-top: 1px solid var(--border-color); font-size: 13px; font-weight: 700; color: var(--text-main); }
 .cost-section-title:first-child { border-top: none; }
 .cost-section-title em { font-style: normal; font-weight: 400; font-size: 12px; color: var(--text-sub); margin-left: 2px; }
 
-/* 항목 추가 버튼 */
 .btn-add-cost-item { display: flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; background: var(--bg-surface); border: 1px dashed var(--primary); border-radius: 6px; color: var(--primary); cursor: pointer; transition: 0.2s; margin-left: auto; white-space: nowrap; }
 .btn-add-cost-item:hover { background: var(--primary-soft); }
 .btn-add-cost-item i { font-size: 14px; }
 
-/* 라벨 뱃지 */
 .cost-block-label { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text-inverse); flex-shrink: 0; }
 .label-direct    { background-color: #3b82f6; }
 .label-indirect  { background-color: #8b5cf6; }
@@ -1510,59 +1528,43 @@ onMounted(() => {
 .label-monthly   { background-color: #0ea5e9; }
 .label-total-fee { background-color: #f97316; }
 
-/* 가로 스크롤 */
 .cost-scroll-area { overflow-x: auto; }
-
-/* ── 공통 테이블 ── */
-.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed;}
+.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed; }
 .cost-table thead tr { background: var(--bg-canvas); }
 .cost-table th, .cost-table td { padding: 8px 10px; border: 1px solid var(--border-color); vertical-align: middle; }
 .cost-table th { font-size: 11px; font-weight: 700; color: var(--text-sub); text-align: center; white-space: nowrap; }
 .cost-table tbody tr:hover { background: var(--bg-hover); }
-
 .col-label    { min-width: 140px; width: 160px; }
 .col-staff    { min-width: 130px; text-align: center; }
 .col-rowtotal-head { min-width: 120px; text-align: right; }
 .col-rowtotal { min-width: 120px; text-align: right; font-weight: 600; background: rgba(99,102,241,0.04); }
 .col-action   { width: 36px; text-align: center; }
 .col-rowtotal-cell { text-align: right; font-weight: bold; background: rgba(99,102,241,0.04); }
-
 .staff-th-name  { display: block; font-size: 12px; font-weight: 700; color: var(--text-main); }
 .staff-th-count { display: block; font-size: 11px; color: var(--text-sub); font-weight: 400; }
-
-.tbl-label-input { width: 100%; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px; color: var(--text-main); background: var(--bg-surface); box-sizing: border-box; }
-.tbl-label-input:focus { outline: none; border-color: var(--primary); }
 .tbl-value-input { width: 100%; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px; color: var(--text-main); background: var(--bg-surface); text-align: right; box-sizing: border-box; }
 .tbl-value-input:focus { outline: none; border-color: var(--primary); }
-.row-total-val { font-weight: 600; font-size: 12px; color: var(--text-main); }
-
 .btn-remove-cost { width: 24px; height: 24px; border-radius: 4px; background: rgba(239,68,68,0.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
 .btn-remove-cost:hover { background: rgba(239,68,68,0.25); }
 .btn-remove-cost i { font-size: 13px; }
-
-/* tfoot 소계 */
 .tfoot-subtotal td { background: var(--bg-canvas); font-size: 12px; font-weight: 700; color: var(--text-main); text-align: right; border-top: 2px solid var(--border-focus); }
 .tfoot-subtotal td:first-child { text-align: left; }
+.subtotal-rowtotal { background: rgba(99,102,241,0.10) !important; font-size: 13px; }
 
-/* 합계 테이블 */
 .summary-table tbody tr td { background: var(--bg-surface); }
 .summary-row td { padding: 10px; }
-
 .summary-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; white-space: nowrap; }
 .summary-label-rate { display: flex; flex-direction: column; gap: 5px; }
-
 .summary-val { display: block; text-align: right; font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; }
 .summary-val.bold { font-weight: 800; font-size: 13px; }
 .summary-val.highlight { color: var(--primary); font-weight: 700; }
 .summary-val.grand-total { font-size: 15px; font-weight: 800; color: var(--primary); text-align: right; }
-
 .row-d td        { background: rgba(16,185,129,0.04) !important; }
 .row-e td        { background: rgba(107,114,128,0.04) !important; }
 .row-f td        { background: rgba(236,72,153,0.04) !important; }
 .row-monthly td  { background: rgba(14,165,233,0.06) !important; }
 .row-total-fee td{ background: var(--primary-soft) !important; }
 
-/* 특이사항 */
 .cost-special-note { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-color); }
 
 /* 비고 히스토리 */
@@ -1584,53 +1586,14 @@ onMounted(() => {
 .btn-submit:hover { background-color: var(--success-hover); transform: translateY(-1px); }
 
 /* =========================================
-   직책별 스케줄 패널 스타일
-========================================= */
-.staff-item-wrapper { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); padding: 6px; }
-.staff-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border: none; background: transparent; }
-.staff-actions { display: flex; align-items: center; gap: 8px; }
-
-.btn-toggle-schedule { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bg-canvas); border: 1px solid var(--border-focus); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: 0.2s; }
-.btn-toggle-schedule.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.btn-toggle-schedule:hover { background: var(--bg-hover); }
-
-.schedule-panel { margin: 4px 10px 10px; border: 1px solid var(--border-focus); border-radius: 8px; overflow: hidden; background: var(--bg-canvas); }
-.schedule-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border-bottom: 1px solid var(--border-focus); }
-.schedule-header span { font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
-.btn-batch-apply { padding: 4px 10px; background: var(--primary); color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-.btn-batch-apply:hover { background: var(--primary-hover); }
-
-.schedule-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
-.schedule-table th { padding: 8px; background: var(--bg-hover); color: var(--text-sub); font-weight: 600; border-bottom: 1px solid var(--border-color); }
-.schedule-table td { padding: 8px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
-.schedule-table tbody tr:last-child td { border-bottom: none; }
-.inactive-row td { background-color: var(--bg-hover); opacity: 0.6; }
-
-.col-day { width: 60px; }
-.col-time { width: auto; }
-.col-break { width: 80px; }
-.col-opt { width: 70px; }
-
-.day-checkbox { display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; cursor: pointer; }
-.text-red { color: var(--danger); }
-.text-blue { color: #3b82f6; }
-
-.time-inputs { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.time-input { padding: 4px 6px; font-size: 12px; width: 100px; text-align: center; }
-.break-input { padding: 4px; font-size: 12px; width: 60px; text-align: right; }
-
-.biweekly-checkbox { display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; }
-
-/* =========================================
-   정산 설정 탭 (STEP 4) 전용 스타일
+   정산 설정 탭 (STEP 3) 전용 스타일
 ========================================= */
 .info-helper-text { font-size: 12px; color: var(--text-sub); line-height: 1.5; }
 .text-orange { color: #b45309; }
+.text-blue   { color: #2563eb; }
 
 .config-toggle-wrapper { display: flex; gap: 24px; flex-wrap: wrap; }
 .config-toggle-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; cursor: pointer; transition: all 0.2s; }
-.config-toggle-item.disabled { opacity: 0.6; cursor: not-allowed; background: var(--bg-hover); }
-.config-toggle-item.disabled .switch { opacity: 0.8; }
 
 .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }
@@ -1641,14 +1604,31 @@ onMounted(() => {
 input:checked + .slider { background-color: #dc2626; }
 input:checked + .slider:before { transform: translateX(18px); }
 
+/* 항목 없을 때 안내 */
+.settlement-empty-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 20px 24px;
+  background: var(--bg-canvas);
+  border: 1px dashed var(--border-focus);
+  border-radius: 10px;
+  color: var(--text-sub);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.settlement-empty-notice i { font-size: 20px; color: var(--primary); flex-shrink: 0; margin-top: 2px; }
+
 .deduction-toggles-grid { display: flex; flex-direction: column; gap: 16px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
-.grid-group-label { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
-.config-checkbox-group { display: flex; gap: 16px; flex-wrap: wrap; }
-.config-checkbox { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; color: var(--text-main); padding: 6px 12px; background: var(--bg-surface); border-radius: 6px; border: 1px solid var(--border-focus); transition: 0.2s; }
-.config-checkbox:hover { border-color: var(--primary-soft); background: var(--bg-hover); }
-.config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0; }
-.config-checkbox.disabled { opacity: 0.6; cursor: not-allowed; }
+.grid-group-label { display: flex; align-items: center; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
+.config-checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
+.config-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text-main); padding: 6px 12px; background: var(--bg-surface); border-radius: 6px; border: 1px solid var(--border-focus); transition: 0.2s; }
+.config-checkbox:hover { border-color: var(--primary); background: var(--primary-soft); }
+.config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; margin: 0; }
 .grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+
+.font-bold { font-weight: 700; }
+.text-right { text-align: right; }
 
 /* =========================================
    반응형
@@ -1665,5 +1645,7 @@ input:checked + .slider:before { transform: translateX(18px); }
   .btn-add-contract { width: 100%; justify-content: center; }
   .form-actions { flex-direction: column; }
   .btn-prev, .btn-next, .btn-submit { width: 100%; justify-content: center; }
+  .config-toggle-wrapper { flex-direction: column; }
+  .schedule-table-wrap { overflow-x: auto; }
 }
 </style>
