@@ -505,7 +505,7 @@ onMounted(async () => {
                 </div>
                 <div class="info-item " style="word-break:keep-all;">
                   <label>재직 상태</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div v-if="isEditing" class="radio-group ">
                     <label class="radio-label">
                       <input type="radio" v-model="employee.status" value="0" />
                       <span>재직</span>
@@ -523,8 +523,10 @@ onMounted(async () => {
                       <span>대근</span>
                     </label>
                   </div>
-                  <span v-else :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">
-                    {{ employee.status == 0 ? '재직 중' : '퇴사' }}
+                  <span v-else :class="[
+                      'status-badge',
+                      employee.status == 0 ? 'status-active' : employee.status == 1 ? 'status-inactive' : 'status-preparing']">
+                    {{ employee.status == 0 ? '재직 중' : employee.status == 1 ? '퇴사' : employee.status == 2? '일용직':'대근' }}
                   </span>
                 </div>
                 <div class="info-item">
@@ -1142,8 +1144,9 @@ onMounted(async () => {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
   border-radius: 6px; font-size: 13px; font-weight: 600;
 }
-.status-active { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.status-inactive { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
+.status-preparing { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
 
 /* 텍스트 유틸 */
 .text-red { color: var(--danger) !important; font-weight: 600; }
