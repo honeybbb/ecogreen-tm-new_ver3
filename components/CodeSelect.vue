@@ -1,35 +1,69 @@
 <script setup>
 /**
- * CodeSelect — 급여/공제 항목 검색 + 선택 (목록에 있는 항목만 선택 가능)
+ * CodeSelect — 급여/공제/정산 항목 검색 + 선택 (목록에 있는 항목만 선택 가능)
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Multiselect from 'vue-multiselect'
+import axios from 'axios'
 
 const props = defineProps({
   modelValue:  { default: '' },
   placeholder: { type: String,  default: '항목 선택' },
   allowEmpty:  { type: Boolean, default: false },
   disabled:    { type: Boolean, default: false },
-  width:       { type: String,  default: '100%' }
+  width:       { type: String,  default: '100%' },
+  defaultLabel:{ type: String,  default: '' } // 초기 라벨(예: 기본급, 국민연금) 유지를 위한 prop
 })
 
 const emit = defineEmits(['update:modelValue', 'update:label'])
 
 const { wagesData, fetchWageCode } = useApi()
 
+// 04003 정산항목 데이터를 담을 배열
+const settleData = ref([])
+
+// 정산항목 (04003) 별도 호출 함수
+const fetchSettleCode = async () => {
+  try {
+    const res = await axios.get('/api/v1/code/group/04003')
+    if (res.data && res.data.data) {
+      settleData.value = res.data.data
+    }
+  } catch (error) {
+    console.error('정산항목 04003 로드 실패:', error)
+  }
+}
+
 // ────────────────────────────────────────────────────────────
-// 옵션 구성
+// 옵션 구성 (지급 04001, 공제 04002 + 정산 04003 병합)
 // ────────────────────────────────────────────────────────────
 const options = computed(() => {
-  const base = wagesData.value.map(wage => ({
-    itemCd: wage.itemCd,
-    itemNm: wage.itemNm,
-    label:  wage.itemNm,
-  }))
+  const map = new Map()
+
+  // 1. 기존 wagesData (04001, 04002 등) 추가
+  wagesData.value.forEach(wage => {
+    map.set(wage.itemCd, {
+      itemCd: wage.itemCd,
+      itemNm: wage.itemNm,
+      label:  wage.itemNm,
+    })
+  })
+
+  // 2. 정산항목 (04003) 추가
+  settleData.value.forEach(code => {
+    map.set(code.itemCd, {
+      itemCd: code.itemCd,
+      itemNm: code.itemNm,
+      label:  code.itemNm,
+    })
+  })
+
+  const merged = Array.from(map.values())
+
   if (props.allowEmpty) {
-    return [{ itemCd: null, itemNm: '', label: '전체' }, ...base]
+    return [{ itemCd: null, itemNm: '', label: '전체' }, ...merged]
   }
-  return base
+  return merged
 })
 
 // ────────────────────────────────────────────────────────────
@@ -37,7 +71,14 @@ const options = computed(() => {
 // ────────────────────────────────────────────────────────────
 const innerValue = computed({
   get() {
-    return options.value.find(o => o.itemCd === props.modelValue) || null
+    const found = options.value.find(o => o.itemCd === props.modelValue)
+    if (found) return found;
+
+    // 코드가 아직 없지만 기본 라벨(defaultLabel)이 있는 경우 (초기 렌더링 시 이름 유지용)
+    if (props.defaultLabel) {
+      return options.value.find(o => o.itemNm === props.defaultLabel) || { itemCd: '', itemNm: props.defaultLabel, label: props.defaultLabel }
+    }
+    return null;
   },
   set(val) {
     emit('update:modelValue', val?.itemCd || '');
@@ -46,7 +87,10 @@ const innerValue = computed({
 })
 
 // 초기 로드
-fetchWageCode()
+onMounted(() => {
+  fetchWageCode()
+  fetchSettleCode() // 정산항목 추가 로드
+})
 </script>
 
 <template>
@@ -92,10 +136,7 @@ fetchWageCode()
 </template>
 
 <style scoped>
-/* ==============================================
-   테이블 내부 input과 완벽하게 높이를 맞추기 위한 CSS
-   (+ scoped 및 :deep 적용으로 겹침 현상 완벽 해결)
-============================================== */
+/* 기존 스타일 그대로 유지 */
 .code-select {
   font-family: inherit;
   font-size: 12px;
@@ -128,7 +169,6 @@ fetchWageCode()
   border-radius: 5px 5px 0 0;
 }
 
-/* 선택된 텍스트 */
 :deep(.multiselect__single) {
   background: transparent;
   border: none;
@@ -143,7 +183,6 @@ fetchWageCode()
   text-overflow: ellipsis;
 }
 
-/* 검색창 */
 :deep(.multiselect__input) {
   background: transparent;
   border: none;
@@ -157,7 +196,6 @@ fetchWageCode()
   box-shadow: none !important;
 }
 
-/* ★ 핵심 해결: 입력창 플레이스홀더를 숨겨서 겹침 방지 (선명하게 보이도록 처리) */
 :deep(.multiselect__input::placeholder) {
   color: transparent !important;
 }
@@ -165,7 +203,6 @@ fetchWageCode()
   color: var(--text-muted) !important;
 }
 
-/* 커스텀 플레이스홀더 */
 :deep(.multiselect__placeholder) {
   font-size: 12px;
   color: var(--text-muted);
@@ -174,31 +211,31 @@ fetchWageCode()
   line-height: 1.2;
 }
 
-/* 드롭다운 패널 */
 :deep(.multiselect__content-wrapper) {
-  position: absolute;
+  position: absolute !important;
   left: -1px; right: -1px; top: 100%;
-  border: 1px solid var(--primary);
-  border-top: none;
-  border-radius: 0 0 5px 5px;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-md);
-  max-height: 200px;
-  z-index: 999;
+  border: 1px solid var(--primary) !important;
+  border-top: none !important;
+  border-radius: 0 0 5px 5px !important;
+  background: var(--bg-surface, #ffffff) !important;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
+  max-height: 200px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  z-index: 9999 !important;
 }
 
-/* 리스트 스타일 제거 */
 :deep(.multiselect__content),
 :deep(.multiselect__element) {
   list-style: none !important;
-  padding: 0; margin: 0;
+  padding: 0 !important; margin: 0 !important;
+  width: 100% !important;
 }
 :deep(.multiselect__element::before),
 :deep(.multiselect__element::after) {
   display: none !important;
 }
 
-/* 커스텀 옵션 디자인 */
 .ss-option {
   display: flex; align-items: center; gap: 6px;
   padding: 8px 10px;
@@ -216,7 +253,6 @@ fetchWageCode()
 :deep(.multiselect__option--selected::after) { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 :deep(.multiselect__option::after) { display: none !important; }
 
-/* 우측 화살표 (Caret) */
 :deep(.multiselect__select) { display: none; }
 .ss-caret {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
@@ -226,7 +262,6 @@ fetchWageCode()
 :deep(.multiselect--active) .ss-caret { transform: translateY(-50%) rotate(180deg); }
 .ss-caret i { font-size: 16px; }
 
-/* 비활성화 상태 */
 :deep(.multiselect--disabled) { pointer-events: none; }
 :deep(.multiselect--disabled .multiselect__tags) { background: var(--bg-canvas); opacity: 0.7; }
 
@@ -238,43 +273,6 @@ fetchWageCode()
 }
 .ss-no-result i { font-size: 16px; opacity: 0.5; }
 
-/* ── 드롭다운 패널 (스크롤 강제 생성 및 겹침 완벽 방지) ── */
-:deep(.multiselect__content-wrapper) {
-  position: absolute !important;
-  left: -1px;
-  right: -1px;
-  top: 100%;
-
-  /* 배경, 테두리, 그림자 설정 */
-  background-color: var(--bg-surface, #ffffff) !important;
-  border: 1px solid var(--primary) !important;
-  border-top: none !important;
-  border-radius: 0 0 5px 5px !important;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15) !important;
-
-  /* ★ 핵심: 높이를 200px로 제한하고 넘어갈 경우 무조건 스크롤바 생성 */
-  max-height: 200px !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-
-  /* 테이블 tr보다 무조건 위로 뜨게 설정 */
-  z-index: 9999 !important;
-}
-
-/* ★ 추가 방어: 내부 ul 태그가 제멋대로 커지는 것 방지 */
-:deep(.multiselect__content) {
-  display: block !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  width: 100% !important;
-}
-
-/* 스크롤바 디자인 (옵션) */
-:deep(.multiselect__content-wrapper::-webkit-scrollbar) {
-  width: 6px;
-}
-:deep(.multiselect__content-wrapper::-webkit-scrollbar-thumb) {
-  background: var(--border-focus);
-  border-radius: 3px;
-}
+:deep(.multiselect__content-wrapper::-webkit-scrollbar) { width: 6px; }
+:deep(.multiselect__content-wrapper::-webkit-scrollbar-thumb) { background: var(--border-focus); border-radius: 3px; }
 </style>
