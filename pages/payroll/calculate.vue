@@ -47,33 +47,43 @@ const deductionItems = computed(() => items.value.filter(item => item.groupCd ==
 
 // 3. 필터링 및 정렬
 const filteredPayrollList = computed(() => {
-  let filtered = payrollList.value.filter(p => {
-    const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
-    const typeMatch = selectedType.value === '전체' || p.type == selectedType.value;
-    const searchMatch = p.staff.toLowerCase().includes(searchTerm.value.toLowerCase());
-    const searchStatus = selectedStatus.value === '전체' || p.mStatus == selectedStatus.value;
-    return siteMatch && typeMatch && searchMatch && searchStatus;
-  });
+  const filtered = payrollList.value.filter(p =>
+      (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
+      p.staff.toLowerCase().includes(searchTerm.value.toLowerCase()) &&
+      (selectedType.value === '전체' || p.type === selectedType.value) &&
+      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value)
+  );
 
   filtered.sort((a, b) => {
+    // ★ 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
     if (sortKey.value) {
       const mod = sortOrder.value === 'asc' ? 1 : -1;
       const valA = a[sortKey.value] ?? '';
       const valB = b[sortKey.value] ?? '';
 
       if (sortKey.value === 'birthDt') {
-        return valB.localeCompare(valA) * mod;
+        return valB.localeCompare(valA) * mod;   // 생년월일은 역순 처리 유지
       }
-
       if (typeof valA === 'string' && typeof valB === 'string') {
         const cmp = valA.localeCompare(valB, 'ko');
         if (cmp !== 0) return cmp * mod;
       } else {
         if (valA < valB) return -1 * mod;
-        if (valA > valB) return  1 * mod;
+        if (valA > valB) return 1 * mod;
       }
+      return 0;
     }
-    return Number(b.sIdx) - Number(a.sIdx) || Number(a.idx) - Number(b.idx);
+
+    // 1. 현장 오름차순 (s.idx ASC)
+    if (a.sIdx !== b.sIdx) return Number(a.sIdx) - Number(b.sIdx);
+
+    // 2. 직책 sort 오름차순 (c.sort ASC) → NULL은 가장 뒤로
+    const sortA = a.sort != null ? Number(a.sort) : 999999;
+    const sortB = b.sort != null ? Number(b.sort) : 999999;
+    if (sortA !== sortB) return sortA - sortB;
+
+    // 3. 직원 idx 오름차순
+    return Number(a.idx) - Number(b.idx);
   });
 
   return filtered;
