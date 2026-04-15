@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
-// import * as XLSX from 'xlsx';
 import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
@@ -46,10 +45,8 @@ watch([selectedSite, selectedType, searchTerm, selectedYearMonth], () => {
 const payItems = computed(() => items.value.filter(item => item.groupCd === '04001'));
 const deductionItems = computed(() => items.value.filter(item => item.groupCd === '04002'));
 
-// 3. 필터링
 // 3. 필터링 및 정렬
 const filteredPayrollList = computed(() => {
-  // 1. 필터링 수행
   let filtered = payrollList.value.filter(p => {
     const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
     const typeMatch = selectedType.value === '전체' || p.type == selectedType.value;
@@ -58,31 +55,24 @@ const filteredPayrollList = computed(() => {
     return siteMatch && typeMatch && searchMatch && searchStatus;
   });
 
-  // 2. 정렬 수행 (추가된 부분)
   filtered.sort((a, b) => {
     if (sortKey.value) {
       const mod = sortOrder.value === 'asc' ? 1 : -1;
       const valA = a[sortKey.value] ?? '';
       const valB = b[sortKey.value] ?? '';
 
-      // 나이(생년월일) 정렬 시 예외 처리 (생일이 늦을수록 나이가 적음)
       if (sortKey.value === 'birthDt') {
         return valB.localeCompare(valA) * mod;
       }
 
-      // 문자열 비교
       if (typeof valA === 'string' && typeof valB === 'string') {
         const cmp = valA.localeCompare(valB, 'ko');
         if (cmp !== 0) return cmp * mod;
-      }
-      // 숫자 등 기타 비교
-      else {
+      } else {
         if (valA < valB) return -1 * mod;
         if (valA > valB) return  1 * mod;
       }
     }
-
-    // 기본 정렬: 현장 번호 역순 -> 직원 번호 순
     return Number(b.sIdx) - Number(a.sIdx) || Number(a.idx) - Number(b.idx);
   });
 
@@ -111,14 +101,11 @@ const onInputAmount = (row, item, group, event) => {
   const selectionStart = el.selectionStart;
   const oldLength = el.value.length;
 
-  // 1. 숫자 이외의 문자 제거 및 숫자 변환
   const rawValue = el.value.replace(/[^\d]/g, '');
   const numValue = Number(rawValue) || 0;
 
-  // 2. 데이터 업데이트
   if (group === 'pay') {
     row.payItems[item.itemCd] = numValue;
-    // 기본급(04001001) 수정 시 원본 기준급 업데이트 (기존 resetBasePay 역할)
     if (item.itemCd === '04001001') {
       row.originalBasePay = numValue;
     }
@@ -126,19 +113,16 @@ const onInputAmount = (row, item, group, event) => {
     row.deductionItems[item.itemCd] = numValue;
   }
 
-  // 3. 화면 포맷팅 (콤마 추가)
   const formatted = formatCurrency(numValue);
   el.value = formatted;
 
-  // 4. 커서 위치 보정
   const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 
-  // 5. 상태 변경 및 재계산
   markAsDraft(row);
   if (group === 'pay') {
-    calculateInsurances(row); // 지급항목 변경 시 보험료 재계산
+    calculateInsurances(row);
   }
 };
 
@@ -190,7 +174,6 @@ const updatePay = (row) => {
       row.payItems[item.itemCd] = 0
     })
   } else {
-    // 원본 복원 후 기본급만 일할 계산
     payItems.value.forEach(item => {
       row.payItems[item.itemCd] = row._originalPayItems[item.itemCd] || 0
     })
@@ -222,28 +205,23 @@ const resetCalculatedPay = () => {
   }
 
   selectedRows.forEach(row => {
-    // 상태를 '계산 전(0)'으로 변경
     row.status = 0;
     row.workedDays = 0;
     row.absentDays = 0;
     row.originalBasePay = undefined;
 
-    // 원본 백업 데이터 삭제 (재계산 시 다시 불러오도록)
     if (row._originalPayItems) {
       delete row._originalPayItems;
     }
 
-    // 지급 항목 0원 초기화
     payItems.value.forEach(item => {
       row.payItems[item.itemCd] = 0;
     });
 
-    // 공제 항목 0원 초기화
     deductionItems.value.forEach(item => {
       row.deductionItems[item.itemCd] = 0;
     });
 
-    // 선택 해제
     row.selected = false;
   });
 };
@@ -269,24 +247,23 @@ const fetchCalculatedPay = async () => {
               : calcData.checkedItems
         }
 
-        // payItems 원본 항상 세팅 (근무일 0여도 기준값 필요)
         row.payItems = typeof calcData.payItems === 'string'
             ? JSON.parse(calcData.payItems || '{}')
             : (calcData.payItems || {})
 
         row.deductionItems  = {}
         row.deductionFlags  = {}
-        row.workedDays      = calcData.workedDays    // 0이면 0
+        row.workedDays      = calcData.workedDays
         row.scheduledDays   = calcData.scheduledDays
         row.absentDays      = calcData.absentDays
-        row.originalBasePay = undefined              // updatePayAsync가 payItems에서 읽음
+        row.originalBasePay = undefined
 
         deductionItems.value.forEach(i => {
           row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false
         })
 
         row.status = 2
-        await updatePayAsync(row)  // 여기서 workedDays 0이면 자동으로 0 계산됨
+        await updatePayAsync(row)
       }
       dataMode.value = 'draft';
     }
@@ -295,7 +272,6 @@ const fetchCalculatedPay = async () => {
 
 const backupOriginalPayItems = (row) => {
   if (!row._originalPayItems) {
-    // 최초 1회만 백업
     row._originalPayItems = { ...row.payItems }
   }
 }
@@ -313,12 +289,10 @@ const updatePayAsync = async (row) => {
   const absent    = Number(row.absentDays)    || 0
 
   if (worked === 0) {
-    // 근무일 0 → 모든 지급항목 0
     payItems.value.forEach(item => {
       row.payItems[item.itemCd] = 0
     })
   } else {
-    // 근무일 있음 → 원본 payItems 복원 후 기본급만 일할 계산
     payItems.value.forEach(item => {
       row.payItems[item.itemCd] = row._originalPayItems[item.itemCd] || 0
     })
@@ -346,21 +320,14 @@ const fetchOverAgeOption = async () => {
 };
 
 const calculateInsurances = async (row) => {
-  // ── 과세 급여 계산 (비과세 한도는 DB option에서 가져옴) ──
   let taxablePay = 0
   payItems.value.forEach(item => {
     const amt   = Number(row.payItems[item.itemCd] || 0)
     const limit = item.taxFreeLimit
     const taxed = limit > 0 ? Math.max(0, amt - limit) : amt
-
-    // ── 확인용 ──
-    console.log(`[${item.itemNm}] 금액=${amt}, 비과세한도=${limit}, 과세금액=${taxed}`)
-
     taxablePay += taxed
   })
-  console.log('최종 과세급여:', taxablePay)
 
-  // ── 보험료 계산 (기존 코드 그대로) ──────────────────────
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
   let incomeTax = 0, localTax = 0;
@@ -424,9 +391,6 @@ const savePayroll = async () => {
   } catch (e) { alert('저장 실패'); }
 };
 
-// ════════════════════════════════════════════════════════════
-// ✅ 지급대장 엑셀 출력 함수 (SheetJS 방식 - npm install xlsx)
-// ════════════════════════════════════════════════════════════
 const exportPayrollExcel = () => {
   const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value
   if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return }
@@ -434,7 +398,6 @@ const exportPayrollExcel = () => {
   const [year, month] = selectedYearMonth.value.split('-')
   const wb = XLSX.utils.book_new()
 
-  // ── 현장별 그룹핑 → 7명씩 페이지 분할 ───────────────────
   const siteGroups = []
   target.forEach(emp => {
     const last = siteGroups[siteGroups.length - 1]
@@ -455,54 +418,29 @@ const exportPayrollExcel = () => {
     }
   })
 
-  // ── 스타일 상수 ───────────────────────────────────────────
-  const FH = { patternType: 'solid', fgColor: { rgb: 'E6E6FA' } }  // 헤더 배경
-  const FN = { patternType: 'none' }                                 // 배경 없음
-
+  const FH = { patternType: 'solid', fgColor: { rgb: 'E6E6FA' } }
+  const FN = { patternType: 'none' }
   const FB  = { name: '맑은 고딕', sz: 9, bold: true }
   const FN9 = { name: '맑은 고딕', sz: 9 }
-
   const AC = { horizontal: 'center',      vertical: 'center' }
   const AR = { horizontal: 'right',       vertical: 'center' }
   const AL = { horizontal: 'left',        vertical: 'center' }
   const AD = { horizontal: 'distributed', vertical: 'center' }
 
   const T = (s) => ({ style: s })
-  const TN = T(null)
   const TT = T('thin')
   const TM = T('medium')
   const TD = T('double')
 
   const bd = (t, b, l, r) => ({ top: t, bottom: b, left: l, right: r })
 
-  // 자주 쓰는 테두리
   const B = {
-    // 헤더
-    hOL:  bd(TT, TT, TM, TT),   // 헤더 외곽 왼쪽
-    hSL:  bd(TT, TT, TD, TT),   // 헤더 구역 왼쪽
-    hSR:  bd(TT, TT, TT, TD),   // 헤더 구역 오른쪽
-    hMid: bd(TT, TT, TT, TT),   // 헤더 내부
-    // 데이터 첫행
-    d0OL:  bd(TM, TT, TM, TT),
-    d0SL:  bd(TM, TT, TD, TT),
-    d0SR:  bd(TM, TT, TT, TD),
-    d0Mid: bd(TM, TT, TT, TT),
-    d0OR:  bd(TM, TT, TT, TM),
-    // 데이터 중간행
-    dOL:  bd(TT, TT, TM, TT),
-    dSL:  bd(TT, TT, TD, TT),
-    dSR:  bd(TT, TT, TT, TD),
-    dMid: bd(TT, TT, TT, TT),
-    dOR:  bd(TT, TT, TT, TM),
-    // 데이터 마지막행
-    dbOL:  bd(TT, TM, TM, TT),
-    dbSL:  bd(TT, TM, TD, TT),
-    dbSR:  bd(TT, TM, TT, TD),
-    dbMid: bd(TT, TM, TT, TT),
-    dbOR:  bd(TT, TM, TT, TM),
+    hOL:  bd(TT, TT, TM, TT), hSL:  bd(TT, TT, TD, TT), hSR:  bd(TT, TT, TT, TD), hMid: bd(TT, TT, TT, TT),
+    d0OL:  bd(TM, TT, TM, TT), d0SL:  bd(TM, TT, TD, TT), d0SR:  bd(TM, TT, TT, TD), d0Mid: bd(TM, TT, TT, TT), d0OR:  bd(TM, TT, TT, TM),
+    dOL:  bd(TT, TT, TM, TT), dSL:  bd(TT, TT, TD, TT), dSR:  bd(TT, TT, TT, TD), dMid: bd(TT, TT, TT, TT), dOR:  bd(TT, TT, TT, TM),
+    dbOL:  bd(TT, TM, TM, TT), dbSL:  bd(TT, TM, TD, TT), dbSR:  bd(TT, TM, TT, TD), dbMid: bd(TT, TM, TT, TT), dbOR:  bd(TT, TM, TT, TM),
   }
 
-  // 셀 생성 헬퍼
   const c = (v, font, fill, align, border) => ({
     v: v ?? '', t: typeof v === 'number' ? 'n' : 's',
     s: { font, fill, alignment: align, border }
@@ -520,57 +458,41 @@ const exportPayrollExcel = () => {
   const mg = (rs, cs, re, ce) => merges.push({ s: { r: rs, c: cs }, e: { r: re, c: ce } })
   let R = 0
 
-  // ── 페이지 루프 ───────────────────────────────────────────
   for (let pgIdx = 0; pgIdx < pages.length; pgIdx++) {
     const { emps: pgEmps, siteName: siteLabel, isLastPage, siteGroup } = pages[pgIdx]
-
-    // 현장 내 페이지 번호
     const sitePages    = pages.filter(p => p.siteName === siteLabel)
     const sitePageNo   = sitePages.findIndex((_, i) => pages.indexOf(sitePages[i]) === pgIdx) + 1
     const siteTotalPg  = sitePages.length
 
-    // ── 제목 ────────────────────────────────────────────────
     const r0 = ec()
     r0[9] = { v: `${year}년 ${month.padStart(2,'0')}월 급여 지급대장`, t: 's',
       s: { font: { name: '맑은 고딕', sz: 13, bold: true }, fill: FN, alignment: AC } }
     wsData.push(r0); mg(R,9,R,14); R++
 
-    // ── 지급일자 ────────────────────────────────────────────
     const r1 = ec()
     r1[9] = { v: `지급일자 : ${year}년 ${String(parseInt(month)+1).padStart(2,'0')}월 10일`, t: 's',
       s: { font: FN9, fill: FN, alignment: AC } }
     wsData.push(r1); mg(R,9,R,14); R++
 
-    // ── 현장명 ──────────────────────────────────────────────
     const r2 = ec()
     r2[1] = { v: siteLabel, t: 's', s: { font: FN9, fill: FN, alignment: AL } }
     wsData.push(r2); R++
-
-    // ── 빈 행 ───────────────────────────────────────────────
     wsData.push(ec()); R++
 
-    // ── 그룹 타이틀 행 ──────────────────────────────────────
     const rG = ec()
-    rG[1]  = hc('', FN9, AC, bd(TM,TT,TM,TT))
-    rG[2]  = hc('', FN9, AC, bd(TM,TT,TT,TD))
-    rG[3]  = hc('', FN9, AC, bd(TM,TT,TT,TT))
-    rG[4]  = hc('', FN9, AC, bd(TM,TT,TT,TT))
-    rG[5]  = hc('', FN9, AC, bd(TM,TT,TT,TD))
-    rG[6]  = hc('지  급  내  역', FB, AC, bd(TM,TT,TD,TD))
+    rG[1]  = hc('', FN9, AC, bd(TM,TT,TM,TT)); rG[2]  = hc('', FN9, AC, bd(TM,TT,TT,TD))
+    rG[3]  = hc('', FN9, AC, bd(TM,TT,TT,TT)); rG[4]  = hc('', FN9, AC, bd(TM,TT,TT,TT))
+    rG[5]  = hc('', FN9, AC, bd(TM,TT,TT,TD)); rG[6]  = hc('지  급  내  역', FB, AC, bd(TM,TT,TD,TD))
     for (let i = 7; i <= 12; i++) rG[i] = hc('', FB, AC, bd(TM,TT,TT, i===12 ? TD : TT))
     rG[13] = hc('공   제   내   역', FB, AC, bd(TM,TT,TD,TD))
     for (let i = 14; i <= 16; i++) rG[i] = hc('', FB, AC, bd(TM,TT,TT, i===16 ? TD : TT))
     rG[17] = hc('합계', FN9, AC, bd(TM,TT,TD,TT))
-    rG[18] = hc('', FN9, AC, bd(TM,TT,TT,TT))
-    rG[19] = hc('', FN9, AC, bd(TM,TT,TT,TT))
-    rG[20] = hc('영수인', FN9, AC, bd(TM,TT,TT,TT))
-    rG[21] = hc('', FN9, AC, bd(TM,TT,TT,TM))
+    rG[18] = hc('', FN9, AC, bd(TM,TT,TT,TT)); rG[19] = hc('', FN9, AC, bd(TM,TT,TT,TT))
+    rG[20] = hc('영수인', FN9, AC, bd(TM,TT,TT,TT)); rG[21] = hc('', FN9, AC, bd(TM,TT,TT,TM))
     wsData.push(rG)
     mg(R,1,R,1); mg(R,2,R,5); mg(R,6,R,12); mg(R,13,R,16)
     mg(R,17,R,19); mg(R,20,R+5,21); R++
 
-    // ── 헤더 5행 ────────────────────────────────────────────
-    // 행0: 사원번호 / 기본급 / 야간 / 식대 / 건강 / 장기요양 / 국민연금
     const h0 = ec()
     h0[1]  = hc('사 원 번 호', FN9, AC, bd(TT,TT,TM,TT))
     h0[2]  = hc('입 사 일 자', FN9, AC, bd(TT,TT,TT,TD))
@@ -590,7 +512,6 @@ const exportPayrollExcel = () => {
     h0[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h0[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
     wsData.push(h0); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-    // 행1: 직위 / 기타수당 / 대근비 / 고용보험 / 기타공제 / 환급소득세
     const h1 = ec()
     h1[1]  = hc('직위',      FN9, AD, bd(TT,TT,TM,TT))
     h1[2]  = hc('경',        FN9, AC, B.hMid)
@@ -612,7 +533,6 @@ const exportPayrollExcel = () => {
     h1[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h1[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
     wsData.push(h1); mg(R,2,R,3); mg(R,4,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-    // 행2: 성명 / 환급주민세 / 신원보증 / 피복비 / 지급합계
     const h2 = ec()
     h2[1]  = hc('성명',      FN9, AD, bd(TT,TT,TM,TT))
     h2[2]  = hc('배',        FN9, AC, B.hMid)
@@ -629,7 +549,6 @@ const exportPayrollExcel = () => {
     h2[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h2[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
     wsData.push(h2); mg(R,7,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-    // 행3: 근로일수 / 공제합계
     const h3 = ec()
     h3[1]  = hc('근로일수',  FN9, AD, bd(TT,TT,TM,TT))
     h3[2]  = hc('연장',      FN9, AD, B.hMid)
@@ -643,7 +562,6 @@ const exportPayrollExcel = () => {
     h3[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h3[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
     wsData.push(h3); mg(R,2,R,3); mg(R,4,R,5); mg(R,7,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-    // 행4: 근로시간수 / 소득세 / 지방소득세 / 차인지급액
     const h4 = ec()
     h4[1]  = hc('근로시간수',FN9, AD, bd(TT,TT,TM,TT))
     h4[2]  = hc('휴일',      FN9, AD, B.hMid)
@@ -660,13 +578,11 @@ const exportPayrollExcel = () => {
     h4[20] = hc('',FN9,AC,bd(TT,TT,TT,TT)); h4[21] = hc('',FN9,AC,bd(TT,TT,TT,TM))
     wsData.push(h4); mg(R,2,R,3); mg(R,4,R,5); mg(R,7,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-    // ── 직원 데이터 (1인 5행) ────────────────────────────────
     for (const emp of pgEmps) {
       const pay = emp.payItems || {}
       const ded = emp.deductionItems || {}
       const s   = calculateRowSummary(emp)
 
-      // 직원 행0 — 사번 / 입사일 / 기본급 / 직책 / 야간 / 연차 / 식대 / 건강 / 장기 / 국민
       const e0 = ec()
       e0[1]  = dc(emp.id||'',     FN9, AC, B.d0OL)
       e0[2]  = dc(emp.inDate||'', FN9, AC, bd(TM,TT,TT,TD))
@@ -689,7 +605,6 @@ const exportPayrollExcel = () => {
       e0[20] = dc('',FN9,AC,B.d0Mid); e0[21] = dc('',FN9,AC,B.d0OR)
       wsData.push(e0); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-      // 직원 행1 — 직위 / 기타수당 / 고용보험
       const e1 = ec()
       e1[1]  = dc(emp.role||'', FN9, AC, B.dOL)
       e1[2]  = dc('0',FN9,AC,B.dMid); e1[3]=dc('0',FN9,AC,B.dMid)
@@ -706,7 +621,6 @@ const exportPayrollExcel = () => {
       e1[20] = dc('',FN9,AC,B.dMid); e1[21]=dc('',FN9,AC,B.dOR)
       wsData.push(e1); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-      // 직원 행2 — 성명 / 환급주민세 / 신원보증 / 피복비 / 지급합계
       const e2 = ec()
       e2[1]  = dc(emp.staff||'', FN9, AC, B.dOL)
       e2[2]  = dc('',FN9,AC,B.dMid); e2[3]=dc('0',FN9,AC,B.dMid)
@@ -723,7 +637,6 @@ const exportPayrollExcel = () => {
       e2[20] = dc('',FN9,AC,B.dMid); e2[21]=dc('',FN9,AC,B.dOR)
       wsData.push(e2); mg(R,3,R,5); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-      // 직원 행3 — 근로일수 / 공제합계
       const e3 = ec()
       e3[1]  = dc(String(emp.workedDays||0), FN9, AC, B.dOL)
       e3[2]  = dc('0.00',FN9,AC,B.dMid); e3[3]=dc('',FN9,AC,B.dMid)
@@ -738,7 +651,6 @@ const exportPayrollExcel = () => {
       e3[20] = dc('',FN9,AC,B.dMid); e3[21]=dc('',FN9,AC,B.dOR)
       wsData.push(e3); mg(R,2,R,3); mg(R,4,R,5); mg(R,6,R,9); mg(R,17,R,19); R++
 
-      // 직원 행4 — 근로시간수 / 소득세 / 지방소득세 / 차인지급액
       const e4 = ec()
       e4[1]  = dc('209.00', FN9, AC, B.dbOL)
       e4[2]  = dc('0.00',FN9,AC,B.dbMid); e4[3]=dc('',FN9,AC,B.dbMid)
@@ -756,7 +668,6 @@ const exportPayrollExcel = () => {
       wsData.push(e4); mg(R,2,R,3); mg(R,4,R,5); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
     }
 
-    // ── 합계 (현장 마지막 페이지만) ─────────────────────────
     if (isLastPage) {
       const allEmps = siteGroup
       const totalG  = allEmps.reduce((s,e) => s + calculateRowSummary(e).gross, 0)
@@ -771,7 +682,6 @@ const exportPayrollExcel = () => {
       for (let rep = 0; rep < 2; rep++) {
         const label = rep === 0 ? '부서계' : '합계'
 
-        // 합계 행0
         const s0 = ec()
         s0[1]  = dc(label,     FB, AC, B.d0OL)
         s0[2]  = dc(siteLabel, FB, AC, bd(TM,TT,TT,TD))
@@ -789,10 +699,9 @@ const exportPayrollExcel = () => {
         s0[20] = dc('',FN9,AC,B.d0Mid); s0[21]=dc('',FN9,AC,B.d0OR)
         wsData.push(s0); mg(R,2,R,5); mg(R,7,R,9); mg(R,14,R,15); R++
 
-        // 합계 행1
         const s1 = ec()
         s1[1]  = dc('',FN9,AC,B.dOL)
-        s1[2]  = dc('',FN9,AC,B.dSR); // C:F 병합
+        s1[2]  = dc('',FN9,AC,B.dSR)
         s1[6]  = dc('',FN9,AC,B.dSL)
         s1[7]  = dc('',FN9,AC,B.dMid); s1[8]=dc('',FN9,AC,B.dMid); s1[9]=dc('',FN9,AC,B.dMid)
         s1[12] = dc('',FN9,AC,B.dSR)
@@ -803,7 +712,6 @@ const exportPayrollExcel = () => {
         s1[20] = dc('',FN9,AC,B.dMid); s1[21]=dc('',FN9,AC,B.dOR)
         wsData.push(s1); mg(R,2,R,5); mg(R,6,R,9); mg(R,14,R,15); R++
 
-        // 합계 행2 — 기타공제 / 지급합계
         const s2 = ec()
         s2[1]  = dc('',FN9,AC,B.dOL)
         s2[2]  = dc('',FN9,AC,B.dSR)
@@ -818,7 +726,6 @@ const exportPayrollExcel = () => {
         s2[20] = dc('',FN9,AC,B.dMid); s2[21]=dc('',FN9,AC,B.dOR)
         wsData.push(s2); mg(R,2,R,5); mg(R,6,R,9); mg(R,14,R,15); mg(R,17,R,19); R++
 
-        // 합계 행3 — 공제합계
         const s3 = ec()
         s3[1]  = dc('',FN9,AC,B.dOL)
         s3[2]  = dc('',FN9,AC,B.dSR)
@@ -832,7 +739,6 @@ const exportPayrollExcel = () => {
         s3[20] = dc('',FN9,AC,B.dMid); s3[21]=dc('',FN9,AC,B.dOR)
         wsData.push(s3); mg(R,2,R,5); mg(R,6,R,9); mg(R,17,R,19); R++
 
-        // 합계 행4 — 소득세 / 지방소득세 / 차인지급액
         const s4 = ec()
         s4[1]  = dc('',     FN9, AC, B.dbOL)
         s4[2]  = dc(`${allEmps.length}명`, FB, AC, B.dbMid)
@@ -850,7 +756,6 @@ const exportPayrollExcel = () => {
       }
     }
 
-    // ── 하단 ─────────────────────────────────────────────────
     wsData.push(ec()); R++
     const fNote = ec()
     fNote[1] = { v: '2026년 직장인건강검진 받아주시기 바랍니다.', t: 's',
@@ -863,7 +768,6 @@ const exportPayrollExcel = () => {
     wsData.push(ec()); R++
   }
 
-  // ── 워크시트 생성 ─────────────────────────────────────────
   const ws = XLSX.utils.aoa_to_sheet(wsData)
   ws['!merges'] = merges
   ws['!cols'] = [
@@ -878,38 +782,14 @@ const exportPayrollExcel = () => {
   XLSX.writeFile(wb, `지급대장_${year}년${month.padStart(2,'0')}월.xlsx`)
 }
 
-// 숫자 변환 헬퍼
 const n = (v) => Number(v || 0);
 
-/*
-const getWageCode = async () => {
-  try {
-    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-    items.value = res.data.data || [];
-  } catch (err) { console.error("항목 로드 실패", err); }
-};
-
- */
 const getWageCode = async () => {
   const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`)
-  // console.log('API 원본 응답 (첫번째 항목):', res.data.data?.[0])
-  // console.log('식대 항목 원본:', res.data.data?.find(i => i.itemCd?.includes('04001005')))
-
   items.value = (res.data.data || []).map(item => ({
     ...item,
     taxFreeLimit: Number(item.tax_free) || 0,
   }))
-
-  // ── 확인용 ──
-  /*
-  console.log('payItems 코드 목록:', items.value.filter(i => i.groupCd === '04001').map(i => ({
-    itemCd:       i.itemCd,
-    itemNm:       i.itemNm,
-    option:       i.option,
-    taxFreeLimit: i.taxFreeLimit,
-  })))
-
-   */
 }
 
 const getTaxRate = async () => {
@@ -922,7 +802,6 @@ const getTaxRate = async () => {
   } catch(e) {}
 };
 
-// ── 정렬 ──────────────────────────────────────────
 const sortKey   = ref('');
 const sortOrder = ref('asc');
 
@@ -990,7 +869,6 @@ onMounted(async () => {
           <i class="mdi mdi-content-save-outline"></i>
           <span>선택 결과 저장</span>
         </button>
-        <!-- 지급대장 출력 버튼 -->
         <button @click="exportPayrollExcel" class="btn-export">
           <i class="mdi mdi-microsoft-excel"></i>
           <span>지급대장 출력</span>
@@ -1037,10 +915,6 @@ onMounted(async () => {
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 근무 현장</label>
-          <!--select v-model="selectedSite" class="filter-select">
-            <option value="전체">전체</option>
-            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-          </select-->
           <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
@@ -1052,7 +926,7 @@ onMounted(async () => {
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
-          <select v-model="selectedStatus" class="filter-select" @change="onFilterChange">
+          <select v-model="selectedStatus" class="filter-select">
             <option value="전체">전체</option>
             <option value="0">재직</option>
             <option value="1">퇴사</option>
@@ -1101,167 +975,95 @@ onMounted(async () => {
         <table class="data-table">
           <thead>
           <tr>
-            <th rowspan="2" class="text-center sortable resizable" style="width:30px;">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-1">
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
               </label>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th rowspan="2" class="text-center sortable resizable" style="width:40px;" data-col-key="no">
-              No.<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" data-col-key="no">No.</th>
+            <th rowspan="2" class="text-center sortable col-site sticky-col sticky-col-3" data-col-key="siteName" @click="toggleSort('siteName')">
+              <div class="th-content">현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable resizable col-site" style="width:110px;" data-col-key="siteName"
-                @click="toggleSort('siteName')"
-            >
-              <div class="th-content">
-                현장명
-                <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-4" data-col-key="role" @click="toggleSort('role')">
+              <div class="th-content">직책<i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="role"
-                @click="toggleSort('role')">
-              <div class="th-content">
-                직책
-                <i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-5" data-col-key="id" @click="toggleSort('id')">
+              <div class="th-content">사번<i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-6" data-col-key="staff" @click="toggleSort('staff')">
+              <div class="th-content">성명<i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-7">생년월일</th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" data-col-key="age" @click="toggleSort('birthDt')">
+              <div class="th-content">나이(만)<i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+            </th>
+            <th rowspan="2" class="text-center sticky-col sticky-col-9">근무/기준</th>
 
-            <!-- 사번: sortable -->
-            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="id"
-                @click="toggleSort('id')">
-              <div class="th-content">
-                사번
-                <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th>
+            <th colspan="3" class="text-center group-header-summary group-divider sticky-col sticky-col-group">합계</th>
 
-            <!-- 성명: sortable -->
-            <th rowspan="2" class="text-center sortable resizable" style="width:80px;" data-col-key="staff"
-                @click="toggleSort('staff')">
-              <div class="th-content">
-                성명
-                <i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">
+              지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th rowspan="2" class="text-center sortable resizable">생년월일<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th rowspan="2" class="text-center sortable resizable" style="width:70px;" data-col-key="age"
-                @click="toggleSort('birthDt')">
-              <div class="th-content">
-                나이(만)
-                <i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
-              </div>
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">
+              공제 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th rowspan="2" class="text-center" style="width:110px;">근무/기준<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-
-            <th colspan="3" class="text-center group-header-summary group-divider">합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">공제 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
           </tr>
           <tr>
-            <th class="text-right sub-header group-divider">지급합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th class="text-right sub-header">공제합계<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th class="text-right sub-header">실지급액<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right theme-pay-sub amount-header', { 'group-divider': index === 0 }]">
-              {{ item.itemNm }}
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th class="text-right sub-header group-divider sticky-col sticky-col-10">지급합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-11">공제합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-12 sticky-divider">실지급액</th>
+
+            <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right theme-pay-sub amount-header resizable', { 'group-divider': index === 0 }]">
+              {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right theme-deduct-sub amount-header', { 'group-divider': index === 0 }]">
-              {{ item.itemNm }}
-              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right theme-deduct-sub amount-header resizable', { 'group-divider': index === 0 }]">
+              {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
           </tr>
           </thead>
 
           <tbody>
           <tr v-for="(p, index) in pagedPayrollList" :key="p.idx" class="data-row">
-            <td
-                class="text-center calculate-status transition-colors"
-                :class="{
-                    'calculate-active':   p.status == 1,
-                    'calculate-draft':    p.status == 2,
-                    'calculate-inactive': p.status == 0
-                }">
-              <label class="checkbox-wrapper">
-                <input type="checkbox" v-model="p.selected" class="custom-checkbox" />
-              </label>
+            <td class="text-center calculate-status transition-colors sticky-col sticky-col-1" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0}">
+              <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
-            <td class="text-center text-gray">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
-            <td class="text-center text-dark compact-text cell-ellipsis" :title="p.siteName">
-              {{ p.siteName }}
-            </td>
-            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.role">
-              {{ p.role }}
-            </td>
-            <td class="text-center text-gray compact-text cell-ellipsis" :title="p.id">
-              {{ p.id }}
-            </td>
-            <td class="text-center font-bold text-dark member-name">{{ p.staff }}</td>
-            <td class="text-center text-gray">{{ p.birthDt }}</td>
-            <td
-                class="text-center text-gray"
-                :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }"
-                :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+            <td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
+            <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
+            <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
+            <td class="text-center text-gray sticky-col sticky-col-8" :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }" :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
               {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
             </td>
 
-            <td class="text-center">
+            <td class="text-center sticky-col sticky-col-9">
               <div class="days-input-group">
-                <input type="number" class="inline-input days-input" v-model.number="p.workedDays"
-                       @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
+                <input type="number" class="inline-input days-input" v-model.number="p.workedDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
                 <span class="days-separator">/</span>
-                <input type="number" class="inline-input days-input" v-model.number="p.scheduledDays"
-                       @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="한 달 기준 근무일수" />
+                <input type="number" class="inline-input days-input" v-model.number="p.scheduledDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="한 달 기준 근무일수" />
               </div>
             </td>
 
-            <td class="text-right bg-light-gray font-bold amount-cell group-divider">
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-10">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.gross ?? 0) }}
             </td>
-            <td class="text-right bg-light-gray font-bold text-red amount-cell">
+            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.ded ?? 0) }}
             </td>
-            <td class="text-right bg-light-gray font-bold text-blue amount-cell">
+            <td class="text-right bg-light-gray font-bold text-blue amount-cell sticky-col sticky-col-12 sticky-divider">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.net ?? 0) }}
             </td>
 
-            <td
-                v-for="(item, index) in payItems"
-                :key="item.itemCd"
-                :class="[
-                    'amount-cell theme-pay-cell', { 'group-divider': index === 0 }
-                ]"
-            >
-              <input
-                  type="text"
-                  :value="formatCurrency(p.payItems[item.itemCd])"
-                  @focus="$event.target.select()"
-                  @input="onInputAmount(p, item, 'pay', $event)"
-                  class="inline-input"
-              />
+            <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
+              <input type="text" :value="formatCurrency(p.payItems[item.itemCd])" @focus="$event.target.select()" @input="onInputAmount(p, item, 'pay', $event)" class="inline-input" />
             </td>
-            <td
-                v-for="(item, index) in deductionItems"
-                :key="item.itemCd"
-                :class="[
-                    'amount-cell theme-deduct-cell', { 'group-divider': index === 0 }
-                ]"
-            >
-              <input
-                  type="text"
-                  :value="formatCurrency(p.deductionItems[item.itemCd])"
-                  @focus="$event.target.select()"
-                  @input="onInputAmount(p, item, 'deduct', $event)"
-                  class="inline-input"
-              />
+            <td v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
+              <input type="text" :value="formatCurrency(p.deductionItems[item.itemCd])" @focus="$event.target.select()" @input="onInputAmount(p, item, 'deduct', $event)" class="inline-input" />
             </td>
           </tr>
           <tr v-if="filteredPayrollList.length === 0">
-            <td :colspan="10 + payItems.length + deductionItems.length" class="empty-state">
+            <td :colspan="12 + payItems.length + deductionItems.length" class="empty-state">
               <i class="mdi mdi-calculator-variant-outline"></i>
               <p>조건에 맞는 급여 대상자가 없습니다.</p>
             </td>
@@ -1270,10 +1072,11 @@ onMounted(async () => {
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="9" class="text-center"><span class="font-bold text-dark">전체 합계</span></td>
-            <td class="text-right font-bold group-divider">{{ formatCurrency(statsInfo.gross) }}</td>
-            <td class="text-right font-bold text-red">{{ formatCurrency(statsInfo.ded) }}</td>
-            <td class="text-right font-bold text-blue">{{ formatCurrency(statsInfo.net) }}</td>
+            <td colspan="9" class="text-center sticky-col sticky-col-span9"><span class="font-bold text-dark">전체 합계</span></td>
+            <td class="text-right font-bold group-divider sticky-col sticky-col-10">{{ formatCurrency(statsInfo.gross) }}</td>
+            <td class="text-right font-bold text-red sticky-col sticky-col-11">{{ formatCurrency(statsInfo.ded) }}</td>
+            <td class="text-right font-bold text-blue sticky-col sticky-col-12 sticky-divider">{{ formatCurrency(statsInfo.net) }}</td>
+
             <td :colspan="payItems.length" class="bg-light-gray border-none group-divider"></td>
             <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none group-divider">
               <div class="net-pay-box">
@@ -1342,33 +1145,155 @@ onMounted(async () => {
 .legend-color.calculate-draft { background-color: var(--warning); }
 .legend-color.calculate-active { background-color: var(--success); }
 
+/* =========================================
+   테이블 스크롤 & 레이아웃 코어 (투명도/깨짐 완벽 해결판)
+========================================= */
+
 .table-scroll-container {
-  overflow: auto;
+  overflow-x: auto;
   max-width: 100%;
-  max-height: calc(100vh - 380px);
+  max-height: calc(100vh - 350px);
+  position: relative;
+  background-color: #ffffff; /* 스크롤 뒷배경 하얗게 */
 }
 .table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
 .table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); }
 .table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
 .table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-.data-table thead { position: sticky; top: 0; z-index: 30; }
-.data-table th:last-child,
-.data-table td:last-child { border-right: none; }
+.data-table {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+
+  /* border-collapse: separate 사용으로 틀고정 테두리 깨짐 방지 */
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table th, .data-table td {
+  box-sizing: border-box;
+  background-clip: padding-box;
+  padding: 6px 10px;
+  vertical-align: middle;
+  /*
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+   */
+}
+
+.data-table tr td:first-child,
+.data-table tr th:first-child {
+  border-left: 1px solid var(--border-color);
+}
+
+.data-table th {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .group-header-summary,
 .group-header-pay,
 .group-header-deduction {
-  background-color: var(--bg-canvas);
   border-bottom: 1px solid var(--border-color);
 }
 .sub-header {
-  background-color: var(--bg-hover);
-  border-bottom: 1px solid var(--border-color); }
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* =========================================
+   가로 스크롤 & 고정 너비 틀고정 (Sticky)
+========================================= */
+.sticky-col {
+  position: sticky !important;
+  z-index: 3;
+  overflow: visible; /* 리사이즈 핸들용 */
+}
+
+/* 테이블 헤더 Z-index 및 불투명 배경 처리 */
+thead .sticky-col {
+  z-index: 50 !important;
+  background-color: #f8fafc !important;
+}
+thead tr:nth-child(2) .sticky-col {
+  background-color: #f1f5f9 !important;
+}
+
+tfoot .sticky-col {
+  z-index: 35 !important;
+  background-color: #f8fafc !important;
+}
+
+/* 각 컬럼 left 위치 고정 (가로 너비 총합: 700px -> 합계 그룹 3개 270px -> 총 970px) */
+.sticky-col-1  { left: 0px;   min-width: 40px;  max-width: 40px;  width: 40px; }
+.sticky-col-2  { left: 40px;  min-width: 40px;  max-width: 40px;  width: 40px; }
+.sticky-col-3  { left: 80px;  min-width: 110px; max-width: 110px; width: 110px; }
+.sticky-col-4  { left: 190px; min-width: 70px;  max-width: 70px;  width: 70px; }
+.sticky-col-5  { left: 260px; min-width: 80px;  max-width: 80px;  width: 80px; }
+.sticky-col-6  { left: 340px; min-width: 80px;  max-width: 80px;  width: 80px; }
+.sticky-col-7  { left: 420px; min-width: 100px; max-width: 100px; width: 100px; }
+.sticky-col-8  { left: 520px; min-width: 70px;  max-width: 70px;  width: 70px; }
+.sticky-col-9  { left: 590px; min-width: 110px; max-width: 110px; width: 110px; }
+
+/* tfoot의 "전체 합계" colspan=9 셀: 너비 700px (1~9 합산) 고정 */
+tfoot .sticky-col-span9 {
+  position: sticky !important;
+  left: 0px;
+  width: 700px;
+  min-width: 700px;
+  z-index: 35 !important;
+  background-color: #f8fafc !important;
+}
+
+/* 합계 그룹 (상단 병합 헤더) -> 이전 너비 총합 700px */
+.sticky-col-group { left: 700px; z-index: 41 !important; border-right: 2px solid var(--border-focus) !important; }
+
+/* 10: 지급합계, 11: 공제합계, 12: 실지급액 */
+.sticky-col-10 { left: 700px; min-width: 90px;  max-width: 90px;  width: 90px; }
+.sticky-col-11 { left: 790px; min-width: 90px;  max-width: 90px;  width: 90px; }
+.sticky-col-12 { left: 880px; min-width: 90px;  max-width: 90px;  width: 90px; }
+
+/* 마지막 고정 컬럼 우측 경계선 효과 */
+.sticky-divider {
+  border-right: 2px solid var(--border-focus) !important;
+}
+
+/* =========================================
+   데이터 상태별 배경색 덮어쓰기 (★글자 비침 방지를 위해 rgba 금지)
+========================================= */
+
+tr.data-row:has(td.calculate-inactive) .sticky-col {
+  background-color: #ffffff !important;
+}
+
+tr.data-row:has(td.calculate-draft) td {
+  background-color: rgba(245, 158, 11, 0.10); /* 우측 스크롤 영역 */
+}
+tr.data-row:has(td.calculate-draft) td.sticky-col {
+  background-color: #fef3c7 !important; /* 고정 영역은 무조건 불투명 컬러 */
+}
+
+tr.data-row:has(td.calculate-active) td {
+  background-color: rgba(16, 185, 129, 0.08); /* 우측 스크롤 영역 */
+}
+tr.data-row:has(td.calculate-active) td.sticky-col {
+  background-color: #d1fae5 !important; /* 고정 영역은 무조건 불투명 컬러 */
+}
+
+/* 호버 시 sticky 셀도 같이 반응 */
+tr.data-row:hover td.sticky-col {
+  filter: brightness(0.97);
+}
+
+/* =========================================
+   기타 컴포넌트 세부 스타일
+========================================= */
 
 .amount-header,
 .amount-cell {
-  min-width: 75px;
+  width: 120px;
 }
 
 .calculate-status { position: relative; }
@@ -1386,9 +1311,9 @@ onMounted(async () => {
 .inline-input {
   box-sizing: border-box;
   width: 100%;
-  max-width: 100%; /* 부모(td)를 절대 넘지 못하게 강제 */
-  min-width: 0; /* 억지로 공간을 차지하던 min-width 제거 */
-  padding: 6px 4px; /* 좌우 여백을 살짝 줄여서 글자 들어갈 공간 최대 확보 */
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 4px;
   text-align: right;
   font-size: 13px;
   color: var(--text-main);
@@ -1427,13 +1352,6 @@ onMounted(async () => {
 }
 .net-pay-label { font-size: 13px; color: var(--primary); font-weight: 600; }
 .net-pay-value { font-size: 18px; color: var(--primary); font-weight: 700; letter-spacing: 0.5px;}
-
-.data-table th {
-  position: relative; /* 핸들의 절대 위치 기준점 */
-  overflow: hidden; /* 글자가 넘치지 않게 */
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .resize-handle {
   position: absolute;
@@ -1501,9 +1419,9 @@ body.is-resizing * {
   width: 120px;
 }
 
-/* td 말줄임표 (현장 등 긴 텍스트 컬럼에 적용) */
+/* td 말줄임표 */
 .cell-ellipsis {
-  max-width: 0;          /* table-layout: fixed 와 함께 동작 */
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
