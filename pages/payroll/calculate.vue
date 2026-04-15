@@ -1176,16 +1176,15 @@ onMounted(async () => {
   background-clip: padding-box;
   padding: 6px 10px;
   vertical-align: middle;
+  /*
   border-bottom: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
+   */
 }
 
 .data-table tr td:first-child,
 .data-table tr th:first-child {
   border-left: 1px solid var(--border-color);
-}
-.data-table thead th {
-  border-top: 1px solid var(--border-color);
 }
 
 .data-table th {
