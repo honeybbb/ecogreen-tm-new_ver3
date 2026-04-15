@@ -31,7 +31,11 @@ export default defineNuxtPlugin((nuxtApp) => {
 
                 try {
                     // access token 재발급 요청
-                    const { data } = await axios.post('/api/v1/auth/refresh', { refreshToken });
+                    //const { data } = await axios.post('/api/v1/auth/refresh', { refreshToken });
+                    const data = await $fetch('/api/v1/auth/refresh', {
+                        method: 'POST',
+                        body: { refreshToken }
+                    });
 
                     if (data.result) {
                         // 새 access token 쿠키에 저장
