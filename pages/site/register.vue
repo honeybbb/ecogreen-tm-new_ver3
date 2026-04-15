@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import { useAuthStore } from '@/stores/auth';
 import axios from 'axios';
@@ -8,25 +8,30 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 
+// ★ wagesData, fetchWageCode 추가
 const {
   positionOptions,
   typeOptions,
+  wagesData,
   fetchPositionOptions,
-  fetchTypeOptions
+  fetchTypeOptions,
+  fetchWageCode
 } = useApi();
 
 // 금액 포맷터 (세자리 콤마)
 const formatCurrency = (val) => Number(val || 0).toLocaleString();
 
 const currentStep = ref(1);
-const totalSteps = 4;
+const totalSteps = 4; // 총 4단계로 구성
 
 const progressPercentage = computed(() => (currentStep.value / totalSteps) * 100);
 
+// ★ STEP 4: 정산 설정 추가
 const steps = [
   { number: 1, title: '기본 정보',  icon: 'mdi-office-building-outline' },
   { number: 2, title: '계약 정보',  icon: 'mdi-file-document-outline' },
-  { number: 3, title: '담당자 정보', icon: 'mdi-account-tie-outline' }
+  { number: 3, title: '정산 설정',  icon: 'mdi-calculator-variant' },
+  { number: 4, title: '담당자 정보', icon: 'mdi-account-tie-outline' },
 ];
 
 const site = ref({
@@ -65,6 +70,39 @@ const bigoHistory    = ref([]);
 const detailInput    = ref(null);
 
 // =============================================
+// ★ 정산 설정 (Melt Options & Display Settings)
+// =============================================
+const settlementConfig = ref({
+  showGrossPay: true,
+  showAnnualLeave: true,
+  showSeverance: true,
+  showSanjae: true,
+  activeDeductionCodes: [],
+  meltOptions: {
+    annualLeave: false,
+    severance: false
+  }
+});
+
+// 공제 항목(4대보험 등) 리스트 추출
+const deductionItems = computed(() => {
+  if (!wagesData.value || !Array.isArray(wagesData.value)) return [];
+  let result = wagesData.value.filter(item => item.groupCd === '04002');
+  if(result.length === 0) {
+    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
+    result = wagesData.value.filter(item => defaultKeywords.some(kw => item.itemNm.includes(kw)));
+  }
+  return result;
+});
+
+// 처음 로드될 때 모든 공제 항목을 기본적으로 체크
+watch(deductionItems, (newItems) => {
+  if (newItems.length > 0 && settlementConfig.value.activeDeductionCodes.length === 0) {
+    settlementConfig.value.activeDeductionCodes = newItems.map(i => i.itemCd);
+  }
+}, { immediate: true });
+
+// =============================================
 // costBreakdown 기본값 생성
 // =============================================
 const makeValuesObj = (staffList, defaultVal = '') => {
@@ -95,7 +133,6 @@ const createDefaultCostBreakdown = (staffList = []) => ({
     { label: '소모품비',         values: makeValuesObj(staffList) },
     { label: '복리후생비',       values: makeValuesObj(staffList) },
   ],
-  // ★ 요율 대신 직접 금액을 입력받기 위한 객체
   managementFee: makeValuesObj(staffList),
   profit: makeValuesObj(staffList),
   specialNote: '',
@@ -116,7 +153,6 @@ const syncCostBreakdownToStaff = (group) => {
     });
   });
 
-  // 일반관리비, 기업이윤 객체도 인원 변경 시 동기화
   const manualItems = ['managementFee', 'profit'];
   manualItems.forEach(key => {
     currentCodes.forEach(code => {
@@ -151,31 +187,21 @@ const removeContractGroup = (index) => {
 };
 
 // =============================================
-// 스케줄(근무시간) 관리용 기본 데이터 및 함수 추가
+// 스케줄(근무시간) 관리용
 // =============================================
-// JS Date 기준 요일: 0(일), 1(월), 2(화), 3(수), 4(목), 5(금), 6(토)
-// 화면 표시는 월~일 순서로 하기 위해 배열을 구성합니다.
 const weekDays = [
   { val: 1, label: '월' }, { val: 2, label: '화' }, { val: 3, label: '수' },
   { val: 4, label: '목' }, { val: 5, label: '금' }, { val: 6, label: '토' }, { val: 0, label: '일' }
 ];
 
-// 직책별 기본 스케줄 객체 생성기
 const createDefaultSchedule = () => {
   const schedule = {};
   for (let i = 0; i <= 6; i++) {
-    schedule[i] = {
-      isActive: i >= 1 && i <= 5, // 기본적으로 평일(월~금)만 활성화
-      startTime: '09:00',
-      endTime: '18:00',
-      breakTime: 60, // 휴게시간(분)
-      isBiweekly: false // 격주 여부
-    };
+    schedule[i] = { isActive: i >= 1 && i <= 5, startTime: '09:00', endTime: '18:00', breakTime: 60, isBiweekly: false };
   }
   return schedule;
 };
 
-// 평일(월요일 기준) 일괄 적용 함수
 const applyToWeekdays = (schedule) => {
   const mon = schedule[1];
   [2, 3, 4, 5].forEach(day => {
@@ -202,8 +228,8 @@ const addStaffToGroup = (groupIndex) => {
       code: jobInfo.itemCd,
       name: jobInfo.itemNm,
       count: Number(group.tempCount),
-      schedule: createDefaultSchedule(), // 신규: 스케줄 객체 추가
-      showSchedule: true                 // 신규: 추가 즉시 설정창 열기
+      schedule: createDefaultSchedule(),
+      showSchedule: true
     });
   }
 
@@ -234,59 +260,28 @@ const getContractDuration = (group) => {
 // =============================================
 // 산출내역서 계산 함수
 // =============================================
-// 1개 항목 행합계 = (단가 × 인원수)의 합
-const getRowTotal = (item, staffList) =>
-    (staffList ?? []).reduce((s, st) => s + (Number(item.values[st.code]) || 0) * (Number(st.count) || 0), 0);
-
-// 특정 열(직책)의 단순 합계
-const getColTotal = (items, code) =>
-    items.reduce((s, item) => s + (Number(item.values[code]) || 0), 0);
-
-// 소계 영역의 행합계
-const getSubtotalRowTotal = (group, sectionFn) =>
-    group.staffList.reduce((s, st) => s + sectionFn(group, st.code) * (Number(st.count) || 0), 0);
+const getRowTotal = (item, staffList) => (staffList ?? []).reduce((s, st) => s + (Number(item.values[st.code]) || 0) * (Number(st.count) || 0), 0);
+const getColTotal = (items, code) => items.reduce((s, item) => s + (Number(item.values[code]) || 0), 0);
+const getSubtotalRowTotal = (group, sectionFn) => group.staffList.reduce((s, st) => s + sectionFn(group, st.code) * (Number(st.count) || 0), 0);
 
 const getDirectLaborColTotal   = (group, code) => getColTotal(group.costBreakdown.directLabor, code);
 const getIndirectLaborColTotal = (group, code) => getColTotal(group.costBreakdown.indirectLabor, code);
 const getExpensesColTotal      = (group, code) => getColTotal(group.costBreakdown.expenses, code);
 
-// D: 노무비 합계 (직책별)
-const getLaborColTotal = (group, code) =>
-    getDirectLaborColTotal(group, code) + getIndirectLaborColTotal(group, code) + getExpensesColTotal(group, code);
+const getLaborColTotal = (group, code) => getDirectLaborColTotal(group, code) + getIndirectLaborColTotal(group, code) + getExpensesColTotal(group, code);
+const getLaborGrandTotal = (group) => group.staffList.reduce((s, st) => s + getLaborColTotal(group, st.code) * st.count, 0);
 
-// D: 노무비 전체 행합계
-const getLaborGrandTotal = (group) =>
-    group.staffList.reduce((s, st) => s + getLaborColTotal(group, st.code) * st.count, 0);
-
-// E: 일반관리비 (직접 입력값 반환)
 const getManagementFeeCol = (group, code) => Number(group.costBreakdown.managementFee[code]) || 0;
+const getManagementFeeGrandTotal = (group) => group.staffList.reduce((s, st) => s + getManagementFeeCol(group, st.code) * st.count, 0);
 
-// E: 일반관리비 전체 행합계
-const getManagementFeeGrandTotal = (group) =>
-    group.staffList.reduce((s, st) => s + getManagementFeeCol(group, st.code) * st.count, 0);
-
-// F: 기업이윤 (직접 입력값 반환)
 const getProfitCol = (group, code) => Number(group.costBreakdown.profit[code]) || 0;
+const getProfitGrandTotal = (group) => group.staffList.reduce((s, st) => s + getProfitCol(group, st.code) * st.count, 0);
 
-// F: 기업이윤 전체 행합계
-const getProfitGrandTotal = (group) =>
-    group.staffList.reduce((s, st) => s + getProfitCol(group, st.code) * st.count, 0);
+const getMonthlyTotalCol = (group, code) => getLaborColTotal(group, code) + getManagementFeeCol(group, code) + getProfitCol(group, code);
+const getTotalMonthlyFee = (group) => group.staffList.reduce((s, st) => s + getMonthlyTotalCol(group, st.code) * st.count, 0);
 
-// 1인당 월 용역비 (D+E+F)
-const getMonthlyTotalCol = (group, code) =>
-    getLaborColTotal(group, code) + getManagementFeeCol(group, code) + getProfitCol(group, code);
-
-// 전체 월간 용역비 (총합계)
-const getTotalMonthlyFee = (group) =>
-    group.staffList.reduce((s, st) => s + getMonthlyTotalCol(group, st.code) * st.count, 0);
-
-
-const addItem = (group, section) => {
-  group.costBreakdown[section].push({ label: '', values: makeValuesObj(group.staffList) });
-};
-const removeItem = (group, section, idx) => {
-  group.costBreakdown[section].splice(idx, 1);
-};
+const addItem = (group, section) => { group.costBreakdown[section].push({ label: '', values: makeValuesObj(group.staffList) }); };
+const removeItem = (group, section, idx) => { group.costBreakdown[section].splice(idx, 1); };
 
 // =============================================
 // 폼 및 API 처리 로직
@@ -329,13 +324,15 @@ const handleSubmit = async () => {
       const calcFee = getTotalMonthlyFee(group);
       return {
         ...group,
-        // 사용자가 직접 입력한 값이 있으면 쓰고, 없거나 0이면 계산된 금액(calcFee) 대입
         totalCost: Number(group.totalCost) > 0 ? Number(group.totalCost) : calcFee
       };
     });
 
-    // 가공이 끝난 새 배열(finalContractGroups)을 JSON으로 변환
     const contractsJson = JSON.stringify(finalContractGroups);
+
+    // ★ settlementConfig.value를 문자열로 변환
+    const viewConfigJson = JSON.stringify(settlementConfig.value);
+
     const params = {
       cIdx: authStore.user?.cIdx,
       sIdx: route.query.idx || '',
@@ -363,7 +360,8 @@ const handleSubmit = async () => {
       director: site.value.director,
       directorContact: site.value.directorContact,
       bigo: site.value.bigo,
-      contract_details: contractsJson
+      contract_details: contractsJson,
+      viewConfig: viewConfigJson // ★ API 파라미터에 추가
     };
 
     const res = await axios.post(`/api/v1/site/register`, params);
@@ -386,6 +384,7 @@ const handleSubmit = async () => {
   }
 };
 
+// 수정 모드일 때 기존 데이터 불러오기
 const getSiteData = async () => {
   const sIdx = route.query.idx;
   if (!sIdx) return;
@@ -435,6 +434,25 @@ const getSiteData = async () => {
         bigoHistory.value.sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
       } catch { bigoHistory.value = []; }
     }
+
+    // ★ viewConfig (정산 설정) 불러오기
+    if (result.viewConfig) {
+      try {
+        const parsed = typeof result.viewConfig === 'string' ? JSON.parse(result.viewConfig) : result.viewConfig;
+        settlementConfig.value = {
+          showGrossPay: parsed.showGrossPay ?? true,
+          showAnnualLeave: parsed.showAnnualLeave ?? true,
+          showSeverance: parsed.showSeverance ?? true,
+          showSanjae: parsed.showSanjae ?? true,
+          activeDeductionCodes: parsed.activeDeductionCodes || settlementConfig.value.activeDeductionCodes,
+          meltOptions: {
+            annualLeave: parsed.meltOptions?.annualLeave ?? false,
+            severance: parsed.meltOptions?.severance ?? false
+          }
+        };
+      } catch(e) { console.error('viewConfig 파싱 에러:', e); }
+    }
+
     site.value.bigo = '';
   });
 };
@@ -485,6 +503,7 @@ const prevStep = () => {
 onMounted(() => {
   fetchPositionOptions();
   fetchTypeOptions();
+  fetchWageCode(); // ★ 공제항목을 가져오기 위함
   getSiteData();
 });
 </script>
@@ -1212,6 +1231,81 @@ onMounted(() => {
 
         <div v-if="currentStep === 3" class="form-step">
           <div class="step-header">
+            <i class="mdi mdi-calculator-variant"></i><h2>정산 기본 설정</h2>
+          </div>
+
+          <div class="form-group full-width" style="margin-bottom: 32px;">
+            <label class="section-label"><i class="mdi mdi-calculator"></i>공제 계산 시 포함 (Melt Options)</label>
+            <p class="info-helper-text" style="margin-bottom: 16px;">
+              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
+              * 정산서 모달을 열 때마다 여기서 설정한 값이 기본으로 적용됩니다.
+            </p>
+            <div class="config-toggle-wrapper">
+              <label class="config-toggle-item">
+                <span class="font-bold text-red">연차수당 포함</span>
+                <div class="switch">
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.annualLeave" />
+                  <span class="slider round"></span>
+                </div>
+              </label>
+
+              <label class="config-toggle-item">
+                <span class="font-bold text-red">퇴직충당금 포함</span>
+                <div class="switch">
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.severance" />
+                  <span class="slider round"></span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group full-width">
+            <label class="section-label"><i class="mdi mdi-filter-variant"></i>정산 세부내역서 표시 항목 설정</label>
+            <p class="info-helper-text" style="margin-bottom: 16px;">
+              * 정산 세부내역서 엑셀 테이블에서 기본적으로 노출/숨김 처리할 항목을 선택합니다.
+            </p>
+            <div class="deduction-toggles-grid">
+              <div class="grid-group-label">기본 급여/수당 영역</div>
+              <div class="config-checkbox-group">
+                <label class="config-checkbox">
+                  <input type="checkbox" v-model="settlementConfig.showGrossPay" />
+                  <span class="font-bold text-blue">급여(지급총액)</span>
+                </label>
+                <label class="config-checkbox">
+                  <input type="checkbox" v-model="settlementConfig.showAnnualLeave" />
+                  <span class="font-bold text-orange">연차수당</span>
+                </label>
+                <label class="config-checkbox">
+                  <input type="checkbox" v-model="settlementConfig.showSeverance" />
+                  <span class="font-bold text-orange">퇴직충당금</span>
+                </label>
+              </div>
+
+              <div class="grid-divider"></div>
+
+              <div class="grid-group-label">보험/공제 영역</div>
+              <div class="config-checkbox-group">
+                <label class="config-checkbox">
+                  <input type="checkbox" v-model="settlementConfig.showSanjae" />
+                  <span class="font-bold text-orange">산재보험</span>
+                </label>
+
+                <label v-for="item in deductionItems" :key="item.itemCd" class="config-checkbox">
+                  <input type="checkbox" :value="item.itemCd" v-model="settlementConfig.activeDeductionCodes" />
+                  <span>{{ item.itemNm }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" @click="prevStep" class="btn-prev"><i class="mdi mdi-arrow-left"></i>이전</button>
+            <button type="button" @click="nextStep" class="btn-next">다음 단계<i class="mdi mdi-arrow-right"></i></button>
+          </div>
+        </div>
+
+        <div v-if="currentStep === 4" class="form-step">
+          <div class="step-header">
             <i class="mdi mdi-account-tie-outline"></i><h2>담당자 및 기타 정보</h2>
           </div>
           <div class="form-grid">
@@ -1273,7 +1367,7 @@ onMounted(() => {
 
 /* 스텝 */
 .steps-container { background: var(--bg-surface); border-radius: 12px; padding: 24px; margin-bottom: 24px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
-.steps-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.steps-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .step-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 8px; transition: all 0.2s; background: var(--bg-canvas); }
 .step-item.active { background-color: var(--primary-soft); border: 1px solid var(--primary); }
 .step-circle { width: 40px; height: 40px; border-radius: 50%; background: var(--text-muted); color: var(--text-inverse); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; transition: all 0.2s; }
@@ -1490,23 +1584,6 @@ onMounted(() => {
 .btn-submit:hover { background-color: var(--success-hover); transform: translateY(-1px); }
 
 /* =========================================
-   반응형
-========================================= */
-@media (max-width: 1024px) { .steps-list { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 768px) {
-  .steps-list { grid-template-columns: 1fr; gap: 8px; }
-  .form-step { padding: 16px; }
-  .form-grid { grid-template-columns: 1fr; }
-  .address-search-group { flex-direction: column; }
-  .postal-input { width: 100%; }
-  .btn-search-address { width: 100%; justify-content: center; }
-  .contract-actions { flex-direction: column; }
-  .btn-add-contract { width: 100%; justify-content: center; }
-  .form-actions { flex-direction: column; }
-  .btn-prev, .btn-next, .btn-submit { width: 100%; justify-content: center; }
-}
-
-/* =========================================
    직책별 스케줄 패널 스타일
 ========================================= */
 .staff-item-wrapper { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); padding: 6px; }
@@ -1543,4 +1620,50 @@ onMounted(() => {
 .break-input { padding: 4px; font-size: 12px; width: 60px; text-align: right; }
 
 .biweekly-checkbox { display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; }
+
+/* =========================================
+   정산 설정 탭 (STEP 4) 전용 스타일
+========================================= */
+.info-helper-text { font-size: 12px; color: var(--text-sub); line-height: 1.5; }
+.text-orange { color: #b45309; }
+
+.config-toggle-wrapper { display: flex; gap: 24px; flex-wrap: wrap; }
+.config-toggle-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; cursor: pointer; transition: all 0.2s; }
+.config-toggle-item.disabled { opacity: 0.6; cursor: not-allowed; background: var(--bg-hover); }
+.config-toggle-item.disabled .switch { opacity: 0.8; }
+
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; }
+.slider.round { border-radius: 20px; }
+.slider.round:before { border-radius: 50%; }
+input:checked + .slider { background-color: #dc2626; }
+input:checked + .slider:before { transform: translateX(18px); }
+
+.deduction-toggles-grid { display: flex; flex-direction: column; gap: 16px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
+.grid-group-label { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
+.config-checkbox-group { display: flex; gap: 16px; flex-wrap: wrap; }
+.config-checkbox { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; color: var(--text-main); padding: 6px 12px; background: var(--bg-surface); border-radius: 6px; border: 1px solid var(--border-focus); transition: 0.2s; }
+.config-checkbox:hover { border-color: var(--primary-soft); background: var(--bg-hover); }
+.config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0; }
+.config-checkbox.disabled { opacity: 0.6; cursor: not-allowed; }
+.grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+
+/* =========================================
+   반응형
+========================================= */
+@media (max-width: 1024px) { .steps-list { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) {
+  .steps-list { grid-template-columns: 1fr; gap: 8px; }
+  .form-step { padding: 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .address-search-group { flex-direction: column; }
+  .postal-input { width: 100%; }
+  .btn-search-address { width: 100%; justify-content: center; }
+  .contract-actions { flex-direction: column; }
+  .btn-add-contract { width: 100%; justify-content: center; }
+  .form-actions { flex-direction: column; }
+  .btn-prev, .btn-next, .btn-submit { width: 100%; justify-content: center; }
+}
 </style>

@@ -28,6 +28,7 @@ const isStaffLoaded = ref(false);
 const tabs = [
   { id: 'info',      name: '기본정보',    icon: 'mdi-information-outline' },
   { id: 'contract',  name: '계약정보',    icon: 'mdi-file-document-outline' },
+  { id: 'settlement',name: '정산설정',   icon: 'mdi-calculator-variant' },
   { id: 'staff',     name: '배치인원',    icon: 'mdi-account-group-outline' },
   { id: 'equipment', name: '장비현황',    icon: 'mdi-wrench-outline' },
   { id: 'memo',      name: '특이사항',    icon: 'mdi-note-text-outline' },
@@ -504,6 +505,40 @@ const removeContractGroup = (index) => {
 };
 
 // =============================================
+// 정산 설정 (Melt Options & Display Settings) 👈 [신규 추가]
+// =============================================
+const settlementConfig = ref({
+  showGrossPay: true,
+  showAnnualLeave: true,
+  showSeverance: true,
+  showSanjae: true,
+  activeDeductionCodes: [],
+  meltOptions: {
+    annualLeave: false,
+    severance: false
+  }
+});
+
+// 공제 항목(4대보험 등) 리스트 추출 (wagesData 활용)
+const deductionItems = computed(() => {
+  if (!wagesData.value || !Array.isArray(wagesData.value)) return [];
+  // groupCd가 '04002'인 공제 항목 필터링 (없을 경우 이름으로 폴백)
+  let result = wagesData.value.filter(item => item.groupCd === '04002');
+  if(result.length === 0) {
+    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
+    result = wagesData.value.filter(item => defaultKeywords.some(kw => item.itemNm.includes(kw)));
+  }
+  return result;
+});
+
+// 공제 항목이 로드되면 기본적으로 모두 체크되도록 초기화
+watch(deductionItems, (newItems) => {
+  if (newItems.length > 0 && settlementConfig.value.activeDeductionCodes.length === 0) {
+    settlementConfig.value.activeDeductionCodes = newItems.map(i => i.itemCd);
+  }
+}, { immediate: true });
+
+// =============================================
 // 데이터 로드 / 저장 / 삭제
 // =============================================
 let originalData = {};
@@ -615,6 +650,27 @@ const getSiteData = async () => {
       zipcode:        result.zipcode || '',
     };
 
+    if (result.viewConfig) {
+      try {
+        const parsed =
+            typeof result.viewConfig === 'string' ?
+            JSON.parse(result.viewConfig) : result.viewConfig;
+
+        // 데이터 병합
+        settlementConfig.value = {
+          showGrossPay: parsed.showGrossPay ?? true,
+          showAnnualLeave: parsed.showAnnualLeave ?? true,
+          showSeverance: parsed.showSeverance ?? true,
+          showSanjae: parsed.showSanjae ?? true,
+          activeDeductionCodes: parsed.activeDeductionCodes || settlementConfig.value.activeDeductionCodes,
+          meltOptions: {
+            annualLeave: parsed.meltOptions?.annualLeave ?? false,
+            severance: parsed.meltOptions?.severance ?? false
+          }
+        };
+      } catch(e) { console.error('viewConfig 파싱 에러:', e); }
+    }
+
     if (result.contractList) {
       contractGroups.value = JSON.parse(result.contractList).map(item => {
         //staffList 안전 파싱 (문자열일 경우 대비)
@@ -636,7 +692,8 @@ const getSiteData = async () => {
           type:              item.type,
           contractStart:     item.contractStart || item.startDt || '',
           contractEnd:       item.contractEnd || item.endDt || '',
-          totalCost:         item.totalCost || 0,
+          totalCost:         item.totalCost || item.total_cost || 0,
+          manualMonthlyTotal: item.totalCost || item.total_cost || null,
           workDays:          item.workDays,
           workSchedule:      item.workSchedule,
           breakTime:         item.breaktime,
@@ -658,6 +715,7 @@ const getSiteData = async () => {
       site: site.value,
       contractGroups: contractGroups.value,
       assignedStaff: assignedStaff.value,
+      settlementConfig: settlementConfig.value,
     }));
 
     await fetchAssignedStaff();
@@ -672,6 +730,7 @@ const toggleEdit = () => {
       site.value           = JSON.parse(JSON.stringify(originalData.site));
       contractGroups.value = JSON.parse(JSON.stringify(originalData.contractGroups));
       assignedStaff.value  = JSON.parse(JSON.stringify(originalData.assignedStaff));
+      settlementConfig.value = JSON.parse(JSON.stringify(originalData.settlementConfig)); // 👈 [추가] 롤백
       isEditing.value = false;
     }
   } else {
@@ -683,12 +742,8 @@ const saveSiteData = async () => {
   if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
 
   contractGroups.value.forEach(group => {
-    const calcFee = getTotalMonthlyFee(group);
-
-    // 직접 입력한 입찰 금액(totalCost)이 없거나 0이라면, 계산된 총합(calcFee)을 넣습니다.
-    if (!group.totalCost || Number(group.totalCost) === 0) {
-      group.totalCost = calcFee;
-    }
+    const finalFee = getDisplayMonthlyTotal(group);
+    group.totalCost = finalFee;
   });
 
   try {
@@ -720,13 +775,19 @@ const saveSiteData = async () => {
       directorContact:  site.value.directorContact,
       bigo:             site.value.bigo,
       contract_details: JSON.stringify(contractGroups.value),
+      viewConfig:       JSON.stringify(settlementConfig.value),
     };
     if (isStaffLoaded.value) params.assigned_staff = JSON.stringify(assignedStaff.value);
 
     await axios.post('/api/v1/site/register', params);
     alert('저장되었습니다.');
     isEditing.value = false;
-    originalData = JSON.parse(JSON.stringify({ site: site.value, contractGroups: contractGroups.value, assignedStaff: assignedStaff.value }));
+    originalData = JSON.parse(JSON.stringify({
+      site: site.value,
+      contractGroups: contractGroups.value,
+      assignedStaff: assignedStaff.value,
+      settlementConfig: settlementConfig.value
+    }));
   } catch {
     alert('저장에 실패했습니다.');
   }
@@ -1230,7 +1291,10 @@ onMounted(async () => {
                 <button type="button" class="btn-toggle-cost" @click="group.showCostBreakdown = !group.showCostBreakdown">
                   <i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i>
                   <span>{{ group.showCostBreakdown ? '산출내역서 접기' : '산출내역서 펼치기' }}</span>
-                  <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">월 {{ formatCurrency(getTotalMonthlyFee(group)) }}원</span>
+
+                  <span v-if="getDisplayMonthlyTotal(group) > 0" class="cost-preview-badge">
+                    월 {{ formatCurrency(getDisplayMonthlyTotal(group)) }}원
+                  </span>
                 </button>
 
                 <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
@@ -1547,6 +1611,85 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- 정산정보 탭 -->
+      <div v-show="activeTab === 'settlement'" class="tab-panel">
+        <div class="info-sections">
+
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-calculator-variant"></i>
+              <h3>공제 계산 시 포함 (Melt Options)</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom:20px;">
+              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
+              * 정산서 모달을 열 때마다 여기서 설정한 값이 기본으로 적용됩니다.
+            </p>
+
+            <div class="config-toggle-wrapper">
+              <label class="config-toggle-item" :class="{'disabled': !isEditing}">
+                <span class="font-bold text-red">연차수당 포함</span>
+                <div class="switch">
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.annualLeave" :disabled="!isEditing" />
+                  <span class="slider round"></span>
+                </div>
+              </label>
+
+              <label class="config-toggle-item" :class="{'disabled': !isEditing}">
+                <span class="font-bold text-red">퇴직충당금 포함</span>
+                <div class="switch">
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.severance" :disabled="!isEditing" />
+                  <span class="slider round"></span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-filter-variant"></i>
+              <h3>정산 세부내역서 표시 항목 설정</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom:20px;">
+              * 정산 세부내역서 엑셀 테이블에서 기본적으로 노출/숨김 처리할 항목을 선택합니다.
+            </p>
+
+            <div class="deduction-toggles-grid">
+              <div class="grid-group-label">기본 급여/수당 영역</div>
+              <div class="config-checkbox-group">
+                <label class="config-checkbox" :class="{'disabled': !isEditing}">
+                  <input type="checkbox" v-model="settlementConfig.showGrossPay" :disabled="!isEditing" />
+                  <span class="font-bold text-blue">급여(지급총액)</span>
+                </label>
+                <label class="config-checkbox" :class="{'disabled': !isEditing}">
+                  <input type="checkbox" v-model="settlementConfig.showAnnualLeave" :disabled="!isEditing" />
+                  <span class="font-bold text-orange">연차수당</span>
+                </label>
+                <label class="config-checkbox" :class="{'disabled': !isEditing}">
+                  <input type="checkbox" v-model="settlementConfig.showSeverance" :disabled="!isEditing" />
+                  <span class="font-bold text-orange">퇴직충당금</span>
+                </label>
+              </div>
+
+              <div class="grid-divider"></div>
+
+              <div class="grid-group-label">보험/공제 영역</div>
+              <div class="config-checkbox-group">
+                <label class="config-checkbox" :class="{'disabled': !isEditing}">
+                  <input type="checkbox" v-model="settlementConfig.showSanjae" :disabled="!isEditing" />
+                  <span class="font-bold text-orange">산재보험</span>
+                </label>
+
+                <label v-for="item in deductionItems" :key="item.itemCd" class="config-checkbox" :class="{'disabled': !isEditing}">
+                  <input type="checkbox" :value="item.itemCd" v-model="settlementConfig.activeDeductionCodes" :disabled="!isEditing" />
+                  <span>{{ item.itemNm }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -2358,4 +2501,37 @@ export default {
 /* Readonly Input Styling */
 .info-input:disabled { background: var(--bg-canvas); color: var(--text-main); border-color: transparent; opacity: 1; cursor: default; }
 input[type="checkbox"]:disabled { opacity: 0.7; }
+
+/* =============================================
+   정산 설정 탭 전용 스타일
+============================================= */
+.config-toggle-wrapper { display: flex; gap: 24px; flex-wrap: wrap; }
+.config-toggle-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; cursor: pointer; transition: all 0.2s; }
+.config-toggle-item.disabled { opacity: 0.6; cursor: not-allowed; background: var(--bg-hover); }
+.config-toggle-item.disabled .switch { opacity: 0.8; }
+
+/* Switch Style (Modal과 동일하게 구성) */
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; }
+.slider.round { border-radius: 20px; }
+.slider.round:before { border-radius: 50%; }
+input:checked + .slider { background-color: #dc2626; }
+input:checked + .slider:before { transform: translateX(18px); }
+
+/* Checkbox Grid Style */
+.deduction-toggles-grid { display: flex; flex-direction: column; gap: 16px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
+.grid-group-label { font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
+.config-checkbox-group { display: flex; gap: 16px; flex-wrap: wrap; }
+.config-checkbox { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; color: var(--text-main); padding: 6px 12px; background: var(--bg-surface); border-radius: 6px; border: 1px solid var(--border-focus); transition: 0.2s; }
+.config-checkbox:hover { border-color: var(--primary-soft); background: var(--bg-hover); }
+.config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0; }
+.config-checkbox.disabled { opacity: 0.6; cursor: not-allowed; }
+.grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+
+/* 공통 텍스트 유틸리티 */
+.text-orange { color: #b45309; }
+.text-blue { color: #2563eb; }
+.text-red { color: #dc2626; }
 </style>

@@ -1,5 +1,5 @@
 <script setup>
-import {ref, computed, onMounted} from 'vue';
+import {ref, computed, onMounted, onActivated} from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from "axios";
 import Pagination from "~/components/Pagination.vue";
@@ -101,6 +101,17 @@ const handlePageChange = () => {
 // 필터 변경 시 첫 페이지로
 const onFilterChange = () => { currentPage.value = 1; };
 
+const getContractPeriods = (site) => {
+  // contracts가 없거나 배열이 아니면
+  if (!site?.contracts || !Array.isArray(site.contracts) || site.contracts.length === 0) {
+    return '-';
+  }
+
+  return site.contracts
+      .map(contract => contract?.contract_period)
+      .filter(period => period)
+      .join('<br>');
+}
 // 6. 이벤트 핸들러
 const handleSearch = () => {
   console.log('현장 검색 시작:', searchTerm.value, selectedStatus.value);
@@ -120,12 +131,8 @@ const getSites = () => {
       });
 }
 
-const refreshData = () => {
-  getSites();
-};
-
-onMounted(() => {
-  getSites();
+onActivated(async () => {
+  await getSites();
 });
 
 const goToRegister = () => router.push('/site/register');
@@ -334,7 +341,11 @@ const goToDetail = (id) => router.push(`/site/${id}`);
             <td>
               <div class="contract-cell">
                 <i class="mdi mdi-calendar-range contract-icon"></i>
-                <span>{{ site.contract }}</span>
+                <span
+                    v-if="site?.contracts?.length"
+                    v-html="getContractPeriods(site)">
+                </span>
+                <span v-else class="text-muted">-</span>
               </div>
             </td>
             <td>
