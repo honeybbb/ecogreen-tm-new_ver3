@@ -142,8 +142,8 @@ const filteredPayrollList = computed(() => {
       return 0;
     }
 
-    // 1. 현장 오름차순 (s.idx ASC)
-    if (a.sIdx !== b.sIdx) return Number(a.sIdx) - Number(b.sIdx);
+    // 1. 현장 내림차순 (s.idx)
+    if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
 
     // 2. 직책 sort 오름차순 (c.sort ASC) → NULL은 가장 뒤로
     const sortA = a.sort != null ? Number(a.sort) : 999999;
