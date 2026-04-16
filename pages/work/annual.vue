@@ -1,16 +1,6 @@
 <script setup>
 /**
  * work/annual — 연차 통합 관리
- * 탭1: 신청 관리  (연차 신청 승인/반려 + 일괄 처리)
- * 탭2: 잔여 현황  (직원별 부여/사용/잔여 + 체크박스 부여 + 중간정산)
- *
- * [리팩토링 포인트]
- * 1. 유틸 함수 상단 집중 관리
- * 2. 탭1 체크박스 추가 → 일괄 승인/반려
- * 3. 중복 로직 함수화 (openModal, resetForm)
- * 4. API 호출 try/catch → withLoading 헬퍼로 일원화
- * 5. computed 파생값 정리 (selectedReq, selectAllReq 등)
- * 6. watch 조건 명시 (immediate 제거, 탭 전환 시만 fetch)
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
@@ -28,9 +18,18 @@ const firstOfMonth = () => {
   const d = new Date()
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
 }
-const yearRange = [2026, 2025, 2024, 2023]
 
-/** 로딩 플래그를 감싸는 async 헬퍼 — try/catch/finally 중복 제거 */
+// ★ 연도 자동 계산 (현재 연도 ~ 2010년까지)
+const currentYear = new Date().getFullYear();
+const yearRange = computed(() => {
+  const years = [];
+  // 내년(currentYear + 1)을 포함하고 싶다면 let y = currentYear + 1 로 수정
+  for (let y = currentYear; y >= 2010; y--) {
+    years.push(y);
+  }
+  return years;
+});
+
 async function withLoading(loadingRef, fn) {
   loadingRef.value = true
   try   { await fn() }
@@ -53,41 +52,34 @@ const { siteOptions, fetchSiteOptions } = useApi()
 // ────────────────────────────────────────────────────────────
 const tabs = [
   { id: 'request', icon: 'mdi-inbox-arrow-down-outline', name: '신청 관리' },
-  // { id: 'quota',   icon: 'mdi-chart-donut',              name: '잔여 현황' },
+  { id: 'quota',   icon: 'mdi-chart-donut',              name: '잔여 현황' },
 ]
 
-const activeTab = ref(route.query.tab || 'request')
+const activeTab = ref('request')
 
 async function changeTab(id) {
   activeTab.value = id
-  currentPageReq.value   = 1
-  currentPageQuota.value = 1
-  await router.replace({ query: { ...route.query, tab: id } })
   if (id === 'quota') fetchQuotaList()
+  else fetchRequests()
 }
 
 // ════════════════════════════════════════════════════════════
 // 탭1 — 신청 관리
 // ════════════════════════════════════════════════════════════
-
-// ── 필터 상태 ──
 const reqFilter = ref({
   startDate: firstOfMonth(),
   endDate:   today(),
-  sIdx: '전체',
+  sIdx:      '전체',
   status:    '전체',
   keyword:   '',
 })
 
-// ── 페이지네이션 ──
 const currentPageReq = ref(1)
 const pageSizeReq    = ref(50)
 
-// ── 데이터 ──
 const isLoadingReq = ref(false)
 const requests     = ref([])
 
-// ── 통계 (computed) ──
 const statsReq = computed(() => {
   const all = requests.value
   return {
@@ -98,7 +90,6 @@ const statsReq = computed(() => {
   }
 })
 
-// ── 필터된 목록 ──
 const filteredReq = computed(() =>
     requests.value.filter(r => {
       const stOk = reqFilter.value.status === '전체' || r.status == reqFilter.value.status
@@ -108,13 +99,11 @@ const filteredReq = computed(() =>
     })
 )
 
-// ── 페이징 ──
 const pagedReq = computed(() => {
   const s = (currentPageReq.value - 1) * pageSizeReq.value
   return filteredReq.value.slice(s, s + pageSizeReq.value)
 })
 
-// ── 체크박스 (신청 관리 일괄 처리) ──
 const selectAllReq = computed({
   get: () => pagedReq.value.length > 0
       && pagedReq.value.filter(r => +r.status === 0).length > 0
@@ -123,18 +112,15 @@ const selectAllReq = computed({
 })
 const selectedReq = computed(() => filteredReq.value.filter(r => r._selected))
 
-// ── API ──
 async function fetchRequests() {
   await withLoading(isLoadingReq, async () => {
-    const { data } = await axios.get(`/api/v1/member/off/${cIdx}`, {
+    const { data } = await axios.get(`/api/v1/member/off`, {
       params: { startDt: reqFilter.value.startDate, endDt: reqFilter.value.endDate },
     })
     requests.value = (data.data || []).map(r => ({ ...r, _selected: false }))
-    currentPageReq.value = 1
   })
 }
 
-/** 단건 승인/반려 */
 async function updateStatus(idx, status) {
   const label = status === 1 ? '승인' : '반려'
   if (!confirm(`${label}하시겠습니까?`)) return
@@ -143,11 +129,10 @@ async function updateStatus(idx, status) {
     if (!data.result) throw new Error('처리 실패')
     alert(`${label} 처리가 완료되었습니다.`)
     await fetchRequests()
-    await fetchQuotaList()
+    if (activeTab.value === 'quota') await fetchQuotaList()
   })
 }
 
-/** 일괄 승인/반려 */
 async function bulkUpdateStatus(status) {
   const targets = selectedReq.value
   if (!targets.length) { alert('선택된 항목이 없습니다.'); return }
@@ -162,11 +147,10 @@ async function bulkUpdateStatus(status) {
     const fail    = results.length - success
     alert(`${success}건 ${label} 완료` + (fail > 0 ? `, ${fail}건 실패` : ''))
     await fetchRequests()
-    await fetchQuotaList()
+    if (activeTab.value === 'quota') await fetchQuotaList()
   })
 }
 
-// ── 상태 표시 헬퍼 ──
 const STATUS_MAP = {
   0: { cls: 'status-pending',  text: '승인대기', icon: 'mdi-clock-outline'         },
   1: { cls: 'status-approved', text: '승인완료', icon: 'mdi-check-circle-outline'  },
@@ -177,23 +161,18 @@ const statusInfo = (s) => STATUS_MAP[+s] ?? STATUS_MAP[0]
 // ════════════════════════════════════════════════════════════
 // 탭2 — 잔여 현황
 // ════════════════════════════════════════════════════════════
-
-// ── 필터 ──
 const quotaFilter = ref({
-  year:    new Date().getFullYear(),
+  year:    currentYear, // '전체' 또는 연도
   sIdx:    '전체',
   keyword: '',
 })
 
-// ── 페이지네이션 ──
 const currentPageQuota = ref(1)
 const pageSizeQuota    = ref(50)
 
-// ── 데이터 ──
 const isLoadingQuota = ref(false)
 const quotaList      = ref([])
 
-// ── 통계 ──
 const quotaStats = computed(() => ({
   total:    quotaList.value.length,
   granted:  quotaList.value.reduce((s, i) => s + (+i.totalCount  || 0), 0),
@@ -202,7 +181,6 @@ const quotaStats = computed(() => ({
   notGrant: quotaList.value.filter(i => !i.quotaIdx).length,
 }))
 
-// ── 필터된 목록 ──
 const filteredQuota = computed(() =>
     quotaList.value.filter(i => {
       const sOk = quotaFilter.value.sIdx === '전체' || i.sIdx == quotaFilter.value.sIdx
@@ -211,24 +189,24 @@ const filteredQuota = computed(() =>
     })
 )
 
-// ── 페이징 ──
 const pagedQuota = computed(() => {
   const s = (currentPageQuota.value - 1) * pageSizeQuota.value
   return filteredQuota.value.slice(s, s + pageSizeQuota.value)
 })
 
-// ── 체크박스 ──
 const selectAllQuota = computed({
   get: () => pagedQuota.value.length > 0 && pagedQuota.value.every(i => i._selected),
   set: (v) => pagedQuota.value.forEach(i => (i._selected = v)),
 })
 const selectedQuota = computed(() => filteredQuota.value.filter(i => i._selected))
 
-// ── API ──
 async function fetchQuotaList() {
   await withLoading(isLoadingQuota, async () => {
+    // '전체'일 경우 빈 값('')으로 백엔드에 전송
+    const sendYear = quotaFilter.value.year === '전체' ? '' : quotaFilter.value.year;
+
     const { data } = await axios.get('/api/v1/member/annual/list', {
-      params: { year: quotaFilter.value.year, sIdx: quotaFilter.value.sIdx, search: quotaFilter.value.keyword, cIdx },
+      params: { year: sendYear, sIdx: quotaFilter.value.sIdx, search: quotaFilter.value.keyword, cIdx },
     })
     quotaList.value = (data.data || []).map(r => ({
       ...r,
@@ -236,12 +214,78 @@ async function fetchQuotaList() {
       remainDays: (+r.totalCount + +(r.overCount || 0)) - +r.usedCount - +(r.payCount || 0),
       usageRate:  +r.totalCount > 0 ? Math.round((+r.usedCount / +r.totalCount) * 100) : 0,
     }))
-    currentPageQuota.value = 1
   })
 }
 
-// 연도·현장 변경 시 자동 재조회
-watch([() => quotaFilter.value.year, () => quotaFilter.value.sIdx], fetchQuotaList)
+// ════════════════════════════════════════════════════════════
+// ★ URL 쿼리 파라미터 동기화 로직
+// ════════════════════════════════════════════════════════════
+const syncFiltersFromURL = () => {
+  const q = route.query;
+
+  if (q.tab) activeTab.value = q.tab;
+
+  // 탭1: 신청관리 필터
+  if (q.reqStart)  reqFilter.value.startDate = q.reqStart;
+  if (q.reqEnd)    reqFilter.value.endDate = q.reqEnd;
+  if (q.reqSite)   reqFilter.value.sIdx = q.reqSite;
+  if (q.reqStatus) reqFilter.value.status = q.reqStatus;
+  if (q.reqKw)     reqFilter.value.keyword = q.reqKw;
+  if (q.reqPage)   currentPageReq.value = Number(q.reqPage) || 1;
+  if (q.reqSize)   pageSizeReq.value = Number(q.reqSize) || 50;
+
+  // 탭2: 잔여현황 필터
+  if (q.qYear)     quotaFilter.value.year = q.qYear === '전체' ? '전체' : Number(q.qYear);
+  if (q.qSite)     quotaFilter.value.sIdx = q.qSite;
+  if (q.qKw)       quotaFilter.value.keyword = q.qKw;
+  if (q.qPage)     currentPageQuota.value = Number(q.qPage) || 1;
+  if (q.qSize)     pageSizeQuota.value = Number(q.qSize) || 50;
+};
+
+// 필터 상태가 변할 때 URL을 업데이트합니다.
+watch(
+    [
+      activeTab,
+      () => reqFilter.value.startDate, () => reqFilter.value.endDate, () => reqFilter.value.sIdx, () => reqFilter.value.status, () => reqFilter.value.keyword,
+      currentPageReq, pageSizeReq,
+      () => quotaFilter.value.year, () => quotaFilter.value.sIdx, () => quotaFilter.value.keyword,
+      currentPageQuota, pageSizeQuota
+    ],
+    () => {
+      const query = {};
+      query.tab = activeTab.value;
+
+      // 신청 관리 파라미터 구성
+      if (reqFilter.value.startDate) query.reqStart = reqFilter.value.startDate;
+      if (reqFilter.value.endDate)   query.reqEnd = reqFilter.value.endDate;
+      if (reqFilter.value.sIdx !== '전체') query.reqSite = reqFilter.value.sIdx;
+      if (reqFilter.value.status !== '전체') query.reqStatus = reqFilter.value.status;
+      if (reqFilter.value.keyword)   query.reqKw = reqFilter.value.keyword;
+      if (currentPageReq.value !== 1) query.reqPage = currentPageReq.value;
+      if (pageSizeReq.value !== 50)   query.reqSize = pageSizeReq.value;
+
+      // 잔여 현황 파라미터 구성
+      if (quotaFilter.value.year !== currentYear) query.qYear = quotaFilter.value.year;
+      if (quotaFilter.value.sIdx !== '전체') query.qSite = quotaFilter.value.sIdx;
+      if (quotaFilter.value.keyword) query.qKw = quotaFilter.value.keyword;
+      if (currentPageQuota.value !== 1) query.qPage = currentPageQuota.value;
+      if (pageSizeQuota.value !== 50)   query.qSize = pageSizeQuota.value;
+
+      router.replace({ query });
+    },
+    { deep: true }
+);
+
+// 현장이나 연도가 변경되면 데이터 재조회
+watch([() => quotaFilter.value.year, () => quotaFilter.value.sIdx], () => {
+  currentPageQuota.value = 1;
+  fetchQuotaList();
+});
+
+watch([() => reqFilter.value.sIdx, () => reqFilter.value.status], () => {
+  currentPageReq.value = 1;
+});
+
 
 // ════════════════════════════════════════════════════════════
 // 모달 — 연차 부여
@@ -250,9 +294,9 @@ const isGrantOpen = ref(false)
 const isGranting  = ref(false)
 
 const GRANT_DEFAULTS = () => ({
-  year:       new Date().getFullYear(),
-  grantDate:  `${new Date().getFullYear()}-01-01`,
-  expireDate: `${new Date().getFullYear()}-12-31`,
+  year:       currentYear,
+  grantDate:  `${currentYear}-01-01`,
+  expireDate: `${currentYear}-12-31`,
   totalCount: 15,
   bigo:       '',
 })
@@ -322,7 +366,6 @@ const SETTLE_DEFAULTS = (item = {}) => ({
 })
 const settleForm = ref(SETTLE_DEFAULTS())
 
-/** 예상 정산금액 */
 const settleAmount = computed(() => {
   const { basicWage, workhourMonth, workhourDay, settleDays } = settleForm.value
   if (!basicWage || !workhourMonth || !workhourDay) return 0
@@ -355,16 +398,21 @@ async function executeSettle() {
 // 라이프사이클
 // ────────────────────────────────────────────────────────────
 onMounted(async () => {
+  syncFiltersFromURL() // URL 쿼리를 상태에 세팅
+
   await fetchSiteOptions()
-  await fetchRequests()
-  if (activeTab.value === 'quota') await fetchQuotaList()
+
+  if (activeTab.value === 'quota') {
+    await fetchQuotaList()
+  } else {
+    await fetchRequests()
+  }
 })
 </script>
 
 <template>
   <div class="annual-list-page">
 
-    <!-- ── 헤더 ── -->
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">
@@ -372,22 +420,20 @@ onMounted(async () => {
         </h1>
         <p class="page-subtitle">연차 신청 승인, 잔여 현황, 부여 및 중간정산을 관리합니다</p>
       </div>
-      <!-- 액션바 -->
       <div class="header-actions" v-if="activeTab === 'quota'">
         <button @click="openGrant" class="btn-add">
           <i class="mdi mdi-gift-outline"></i> 연차 부여
         </button>
       </div>
-      <!-- 일괄 처리 액션바 -->
       <div class="header-actions" v-else>
         <div class="action-bar-left">
           <transition name="fade">
             <div v-if="selectedReq.length > 0" class="bulk-actions">
               <button class="btn-save" @click="bulkUpdateStatus(1)">
-                <!--i class="mdi mdi-check-all"></i--> 일괄 승인
+                일괄 승인
               </button>
               <button class="btn-delete" @click="bulkUpdateStatus(2)">
-                <!--i class="mdi mdi-close-circle-outline"></i--> 일괄 반려
+                일괄 반려
               </button>
             </div>
           </transition>
@@ -396,7 +442,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ── 탭 ── -->
     <div class="tab-nav">
       <button
           v-for="tab in tabs" :key="tab.id"
@@ -411,12 +456,8 @@ onMounted(async () => {
       </button>
     </div>
 
-    <!-- ════════════════════════════════════════════════════
-         탭1 — 신청 관리
-    ═════════════════════════════════════════════════════ -->
     <template v-if="activeTab === 'request'">
 
-      <!-- 통계 카드 -->
       <div class="stats-grid">
         <div class="stat-card" style="--card-color:var(--primary);--card-bg:var(--primary-soft)">
           <div class="stat-icon"><i class="mdi mdi-file-document-edit-outline"></i></div>
@@ -448,7 +489,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 필터 -->
       <div class="filter-panel">
         <div class="filter-row">
           <div class="filter-group">
@@ -475,7 +515,7 @@ onMounted(async () => {
           <div class="search-group">
             <div class="search-box">
               <i class="mdi mdi-magnify"></i>
-              <input v-model="reqFilter.keyword" type="text" placeholder="직원명으로 검색..." class="search-input" />
+              <input v-model="reqFilter.keyword" type="text" placeholder="직원명으로 검색..." class="search-input" @keyup.enter="fetchRequests" />
             </div>
             <button @click="fetchRequests" class="btn-search">
               <i class="mdi mdi-magnify"></i><span>조회</span>
@@ -484,12 +524,11 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 테이블 -->
       <div class="table-card">
         <div class="table-header">
           <div class="table-title">
             <span>연차 신청 목록 ({{ filteredReq.length }}건)</span>
-            <span v-if="selectedReq.length > 0" class="selected-badge">{{ selectedReq.length }}건 선택됨</span>
+            <!--span v-if="selectedReq.length > 0" class="selected-badge">{{ selectedReq.length }}건 선택됨</span-->
           </div>
           <div class="page-size-select">
             <label>페이지당</label>
@@ -506,8 +545,8 @@ onMounted(async () => {
               <th class="text-center cb-col">
                 <input type="checkbox" v-model="selectAllReq" class="custom-cb" title="대기 항목 전체선택" />
               </th>
-              <th>신청일</th>
               <th>현장</th>
+              <th>신청일</th>
               <th>직원명</th>
               <th>사용 기간</th>
               <th class="text-center">일수</th>
@@ -517,7 +556,6 @@ onMounted(async () => {
             </tr>
             </thead>
             <tbody>
-            <!-- 로딩 -->
             <tr v-if="isLoadingReq" class="empty-row">
               <td colspan="9">
                 <div class="empty-state"><div class="spinner"></div><p>불러오는 중...</p></div>
@@ -529,7 +567,6 @@ onMounted(async () => {
                   class="data-row"
                   :class="{ 'row-selected': req._selected }"
               >
-                <!-- 체크박스: 대기 상태만 선택 가능 -->
                 <td class="text-center">
                   <input
                       v-if="+req.status === 0"
@@ -537,12 +574,12 @@ onMounted(async () => {
                   />
                   <span v-else class="cb-placeholder"></span>
                 </td>
-                <td class="text-gray text-sm">{{ req.reqDate }}</td>
                 <td class="text-gray text-sm">{{ req.site }}</td>
+                <td class="text-gray text-sm">{{ req.reqDate }}</td>
                 <td><span class="font-bold text-blue">{{ req.staff }}</span></td>
                 <td class="text-sm">{{ req.startDt }} ~ {{ req.endDt }}</td>
                 <td class="text-center font-bold text-blue">{{ req.usedCount || req.days }}일</td>
-                <td class="text-gray text-sm reason-cell">{{ req.reason || '-' }}</td>
+                <td class="text-gray text-sm reason-cell" :title="req.reason">{{ req.reason || '-' }}</td>
                 <td class="text-center">
                     <span :class="['status-badge', statusInfo(req.status).cls]">
                       <i :class="['mdi', statusInfo(req.status).icon]"></i>
@@ -582,12 +619,8 @@ onMounted(async () => {
       </div>
     </template>
 
-    <!-- ════════════════════════════════════════════════════
-         탭2 — 잔여 현황
-    ═════════════════════════════════════════════════════ -->
     <template v-if="activeTab === 'quota'">
 
-      <!-- 통계 카드 -->
       <div class="stats-grid">
         <div class="stat-card" style="--card-color:var(--primary);--card-bg:var(--primary-soft)">
           <div class="stat-icon"><i class="mdi mdi-account-group-outline"></i></div>
@@ -607,21 +640,17 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 필터 -->
       <div class="filter-panel">
         <div class="filter-row">
           <div class="filter-group">
             <label class="filter-label">연도</label>
-            <select v-model.number="quotaFilter.year" class="filter-select">
+            <select v-model="quotaFilter.year" class="filter-select">
+              <option value="전체">전체</option>
               <option v-for="y in yearRange" :key="y" :value="y">{{ y }}년</option>
             </select>
           </div>
           <div class="filter-group">
             <label class="filter-label">현장</label>
-            <!--select v-model="quotaFilter.sIdx" class="filter-select">
-              <option value="전체">전체 현장</option>
-              <option v-for="s in siteOptions" :key="s.idx" :value="s.idx">{{ s.name }}</option>
-            </select-->
             <SiteSelect v-model="quotaFilter.sIdx" />
           </div>
           <div class="search-group">
@@ -631,7 +660,7 @@ onMounted(async () => {
                   v-model="quotaFilter.keyword"
                   placeholder="직원명 검색..."
                   class="search-input"
-                  @input="fetchQuotaList"
+                  @keyup.enter="fetchQuotaList"
               />
             </div>
             <button @click="fetchQuotaList" class="btn-search">조회</button>
@@ -639,16 +668,15 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 테이블 -->
       <div class="table-card">
         <div class="table-header">
           <div class="table-title">
             연차 잔여 현황 ({{ filteredQuota.length }}명)
-            <transition name="fade">
+            <!--transition name="fade">
             <span v-if="selectedQuota.length > 0" class="selected-badge">
               {{ selectedQuota.length }}명 선택됨
             </span>
-            </transition>
+            </transition-->
           </div>
           <div class="page-size-select">
             <label>페이지당</label>
@@ -664,9 +692,9 @@ onMounted(async () => {
               <th class="text-center cb-col">
                 <input type="checkbox" v-model="selectAllQuota" class="custom-cb" />
               </th>
-              <th>직원명</th>
-              <th>발생년도</th>
               <th>현장</th>
+              <th>발생년도</th>
+              <th>직원명</th>
               <th class="text-center">입사일</th>
               <th class="text-center">부여</th>
               <th class="text-center">이월</th>
@@ -679,7 +707,7 @@ onMounted(async () => {
             </thead>
             <tbody>
             <tr v-if="isLoadingQuota" class="empty-row">
-              <td colspan="11">
+              <td colspan="12">
                 <div class="empty-state"><div class="spinner"></div><p>불러오는 중...</p></div>
               </td>
             </tr>
@@ -692,12 +720,12 @@ onMounted(async () => {
                 <td class="text-center">
                   <input type="checkbox" v-model="item._selected" class="custom-cb" />
                 </td>
+                <td class="text-gray text-sm">{{ item.siteName }}</td>
+                <td>{{ item.year || quotaFilter.year }}</td>
                 <td>
                   <span class="font-bold">{{ item.name }}</span>
                   <span class="badge badge-gray ml-1">{{ item.role }}</span>
                 </td>
-                <td>2026</td>
-                <td class="text-gray text-sm">{{ item.siteName }}</td>
                 <td class="text-center text-gray text-sm">{{ item.inDate }}</td>
                 <td class="text-center">
                   <span v-if="item.quotaIdx">{{ item.totalCount }}일</span>
@@ -734,7 +762,7 @@ onMounted(async () => {
                 </td>
               </tr>
               <tr v-if="filteredQuota.length === 0" class="empty-row">
-                <td colspan="11">
+                <td colspan="12">
                   <div class="empty-state">
                     <i class="mdi mdi-calendar-blank-outline"></i>
                     <p>연차 데이터가 없습니다</p>
@@ -754,63 +782,67 @@ onMounted(async () => {
       </div>
     </template>
 
-    <!-- ════════════════════════════════════════════════════
-         모달 — 연차 부여
-    ═════════════════════════════════════════════════════ -->
     <div v-if="isGrantOpen" class="modal-overlay" @click.self="isGrantOpen = false">
-      <div class="modal-box">
+      <div class="modal-box grant-modal">
         <div class="modal-header">
           <h2 class="modal-title">
-            <i class="mdi mdi-gift-outline"></i>
-            연차 부여
-            <span v-if="selectedQuota.length > 0" class="badge badge-blue ml-1">
-              {{ selectedQuota.length }}명 선택
-            </span>
-            <span v-else class="badge badge-gray ml-1">미부여자 전체</span>
+            <div class="icon-wrap bg-blue-tint"><i class="mdi mdi-gift-outline text-blue"></i></div>
+            연차 일괄 부여
           </h2>
           <button class="modal-close" @click="isGrantOpen = false">
             <i class="mdi mdi-close"></i>
           </button>
         </div>
+
         <div class="modal-body">
-          <div class="mform-grid">
-            <div class="mform-item">
+          <div class="modal-info-box">
+            <i class="mdi mdi-information-outline"></i>
+            <div>
+              <span v-if="selectedQuota.length > 0" class="highlight-text">{{ selectedQuota.length }}명</span>
+              <span v-else class="highlight-text">미부여자 전체</span>
+              에게 아래 설정으로 연차를 일괄 부여합니다.
+            </div>
+          </div>
+
+          <div class="mform-layout">
+            <div class="mform-group">
               <label>부여 연도</label>
-              <select v-model.number="grantForm.year" class="input-add">
-                <option v-for="y in [2026, 2025]" :key="y" :value="y">{{ y }}년</option>
+              <select v-model.number="grantForm.year" class="m-input">
+                <option v-for="y in yearRange" :key="y" :value="y">{{ y }}년</option>
               </select>
             </div>
-            <div class="mform-item">
-              <label>부여일</label>
-              <input v-model="grantForm.grantDate" type="date" class="input-add" />
+            <div class="mform-group">
+              <label>부여일 (기준일)</label>
+              <input v-model="grantForm.grantDate" type="date" class="m-input" />
             </div>
-            <div class="mform-item">
+            <div class="mform-group">
               <label>연차 개수 (일)</label>
-              <input v-model.number="grantForm.totalCount" type="number" min="1" class="input-add" />
+              <div class="input-with-suffix">
+                <input v-model.number="grantForm.totalCount" type="number" min="1" class="m-input text-right" />
+                <span class="suffix">일</span>
+              </div>
             </div>
-            <div class="mform-item">
-              <label>비고</label>
-              <input v-model="grantForm.bigo" type="text" class="input-add" placeholder="비고 (선택)" />
+            <div class="mform-group full-width">
+              <label>비고 (선택)</label>
+              <input v-model="grantForm.bigo" type="text" class="m-input" placeholder="연차 부여 관련 메모를 입력하세요" />
             </div>
           </div>
         </div>
+
         <div class="modal-footer">
-          <button class="btn-cancel btn-m" @click="isGrantOpen = false">취소</button>
-          <button class="btn-submit btn-m" @click="executeGrant" :disabled="isGranting">
-            <i class="mdi mdi-gift-outline"></i>부여 실행
+          <button class="btn-cancel" @click="isGrantOpen = false">취소</button>
+          <button class="btn-confirm primary" @click="executeGrant" :disabled="isGranting">
+            <i class="mdi mdi-check"></i> {{ isGranting ? '처리 중...' : '부여 실행' }}
           </button>
         </div>
       </div>
     </div>
 
-    <!-- ════════════════════════════════════════════════════
-         모달 — 중간정산
-    ═════════════════════════════════════════════════════ -->
     <div v-if="isSettleOpen" class="modal-overlay" @click.self="isSettleOpen = false">
-      <div class="modal-box">
+      <div class="modal-box settle-modal">
         <div class="modal-header">
           <h2 class="modal-title">
-            <i class="mdi mdi-cash-fast"></i>
+            <div class="icon-wrap bg-green-tint"><i class="mdi mdi-cash-fast text-green"></i></div>
             연차 중간정산
             <span class="modal-name-chip">{{ settleTarget?.name }}</span>
           </h2>
@@ -818,50 +850,63 @@ onMounted(async () => {
             <i class="mdi mdi-close"></i>
           </button>
         </div>
+
         <div class="modal-body">
-          <!-- 요약 -->
-          <div class="settle-summary">
+          <div class="settle-summary-box">
             <div class="ss-item">
-              <span class="ss-label">잔여 연차</span>
-              <span class="day-chip remain">{{ settleTarget?.remainDays }}일</span>
+              <span class="ss-label">현재 잔여 연차</span>
+              <span class="day-badge remain">{{ settleTarget?.remainDays }}일</span>
             </div>
             <div class="ss-divider"><i class="mdi mdi-arrow-right"></i></div>
             <div class="ss-item">
               <span class="ss-label">정산 후 잔여</span>
-              <span class="day-chip remain">
+              <span class="day-badge remain">
                 {{ Math.max(0, (settleTarget?.remainDays ?? 0) - settleForm.settleDays) }}일
               </span>
             </div>
             <div class="ss-divider">=</div>
             <div class="ss-item">
               <span class="ss-label">예상 정산금액</span>
-              <span class="settle-amount-preview">{{ fc(settleAmount) }}원</span>
+              <span class="settle-amount-preview">{{ fc(settleAmount) }}<small>원</small></span>
             </div>
           </div>
-          <!-- 입력 -->
-          <div class="mform-grid">
-            <div class="mform-item">
+
+          <div class="mform-layout">
+            <div class="mform-group">
               <label>정산 연차일수</label>
-              <input v-model.number="settleForm.settleDays" type="number" step="0.5" min="0.5" class="input-add" />
+              <div class="input-with-suffix">
+                <input v-model.number="settleForm.settleDays" type="number" step="0.5" min="0.5" class="m-input text-right highlight-input" />
+                <span class="suffix">일</span>
+              </div>
             </div>
-            <div class="mform-item">
-              <label>기본급 (원)</label>
-              <input v-model.number="settleForm.basicWage" type="number" class="input-add" />
+            <div class="mform-group">
+              <label>기본급</label>
+              <div class="input-with-suffix">
+                <input v-model.number="settleForm.basicWage" type="number" class="m-input text-right" />
+                <span class="suffix">원</span>
+              </div>
             </div>
-            <div class="mform-item">
-              <label>월 근로시간 (h)</label>
-              <input v-model.number="settleForm.workhourMonth" type="number" class="input-add" />
+            <div class="mform-group">
+              <label>월 근로시간</label>
+              <div class="input-with-suffix">
+                <input v-model.number="settleForm.workhourMonth" type="number" class="m-input text-right" />
+                <span class="suffix">시간</span>
+              </div>
             </div>
-            <div class="mform-item">
-              <label>일 근로시간 (h)</label>
-              <input v-model.number="settleForm.workhourDay" type="number" class="input-add" />
+            <div class="mform-group">
+              <label>일 근로시간</label>
+              <div class="input-with-suffix">
+                <input v-model.number="settleForm.workhourDay" type="number" class="m-input text-right" />
+                <span class="suffix">시간</span>
+              </div>
             </div>
           </div>
         </div>
+
         <div class="modal-footer">
-          <button class="btn-cancel btn-m" @click="isSettleOpen = false">취소</button>
-          <button class="btn-submit green btn-m" @click="executeSettle" :disabled="isSettling">
-            <i class="mdi mdi-check-circle-outline"></i>정산 확정
+          <button class="btn-cancel" @click="isSettleOpen = false">취소</button>
+          <button class="btn-confirm success" @click="executeSettle" :disabled="isSettling">
+            <i class="mdi mdi-check-circle-outline"></i> {{ isSettling ? '처리 중...' : '정산 확정' }}
           </button>
         </div>
       </div>
@@ -1015,55 +1060,120 @@ onMounted(async () => {
 }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-/* ── 모달 ── */
+/* ── 모달 공통 & 세련된 UI ── */
 .modal-overlay {
-  position:fixed; inset:0; background:rgba(0,0,0,.45);
-  display:flex; align-items:center; justify-content:center;
-  z-index:1000; padding:20px;
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px;
 }
 .modal-box {
-  background:var(--bg-surface); border-radius:16px;
-  box-shadow:0 20px 60px rgba(0,0,0,.2);
-  width:100%; max-width:540px; max-height:90vh;
-  display:flex; flex-direction:column; overflow:hidden;
+  background: var(--bg-surface); border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  width: 100%; display: flex; flex-direction: column; overflow: hidden;
+  animation: modal-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
+.grant-modal { max-width: 480px; }
+.settle-modal { max-width: 540px; }
+
+@keyframes modal-pop {
+  0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 20px 24px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas);
+}
+.modal-title {
+  font-size: 16px; font-weight: 700; color: var(--text-main);
+  display: flex; align-items: center; gap: 10px; margin: 0;
+}
+
+/* 헤더 아이콘 랩퍼 */
+.icon-wrap {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 8px; font-size: 18px;
+}
+.bg-blue-tint { background: rgba(37, 99, 235, 0.1); }
+.text-blue { color: #2563eb; }
+.bg-green-tint { background: rgba(16, 185, 129, 0.1); }
+.text-green { color: #10b981; }
+
+.modal-close {
+  background: none; border: none; font-size: 22px; color: var(--text-muted);
+  cursor: pointer; padding: 4px; border-radius: 6px; transition: 0.2s;
+}
+.modal-close:hover { background: var(--bg-hover); color: var(--danger); }
+
+.modal-body { padding: 24px; background: var(--bg-canvas); }
+
+/* 안내 박스 */
+.modal-info-box {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: rgba(37, 99, 235, 0.05); border: 1px dashed rgba(37, 99, 235, 0.3);
+  padding: 14px 18px; border-radius: 10px; font-size: 13.5px; color: var(--text-main);
+  margin-bottom: 20px; line-height: 1.5;
+}
+.modal-info-box i { font-size: 20px; color: #2563eb; margin-top: 2px; }
+.highlight-text { font-weight: 800; color: #2563eb; font-size: 14.5px; }
+
+/* 폼 레이아웃 */
+.mform-layout {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  background: var(--bg-surface); padding: 20px;
+  border-radius: 12px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm);
+}
+.mform-group { display: flex; flex-direction: column; gap: 8px; }
+.mform-group.full-width { grid-column: 1 / -1; }
+.mform-group label { font-size: 12px; font-weight: 700; color: var(--text-sub); }
+
+/* 모달 전용 인풋 */
+.m-input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border-focus);
+  border-radius: 8px; font-size: 14px; color: var(--text-main); font-weight: 600;
+  background: var(--bg-surface); transition: all 0.2s; box-sizing: border-box;
+}
+.m-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); outline: none; }
+.highlight-input { border-color: #10b981; color: #059669; }
+.highlight-input:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+
+.input-with-suffix { position: relative; display: flex; align-items: center; }
+.input-with-suffix .m-input { padding-right: 36px; }
+.input-with-suffix .suffix { position: absolute; right: 12px; font-size: 13px; color: var(--text-muted); font-weight: 700; pointer-events: none; }
+
+/* 모달 푸터 버튼 */
 .modal-footer {
-  display:flex; justify-content:flex-end; gap:10px;
-  padding:16px 28px; border-top:1px solid var(--border-color);
-  background:var(--bg-surface);
+  padding: 16px 24px; display: flex; justify-content: flex-end; gap: 10px;
+  background: var(--bg-surface); border-top: 1px solid var(--border-color);
 }
-.btn-m {
-  display:flex; align-items:center; gap:6px;
-  padding:10px 20px; border-radius:8px;
-  font-size:13px; font-weight:600; cursor:pointer;
-  border:none; transition:all .2s; font-family:inherit;
+.btn-cancel, .btn-confirm {
+  padding: 10px 20px; border-radius: 8px; font-size: 13.5px; font-weight: 700;
+  cursor: pointer; transition: 0.2s; border: none; display: flex; align-items: center; gap: 6px;
 }
+.btn-cancel { background: var(--bg-hover); color: var(--text-sub); }
+.btn-cancel:hover { background: var(--border-focus); color: var(--text-main); }
+.btn-confirm.primary { background: var(--primary); color: #fff; box-shadow: 0 4px 6px rgba(37,99,235,0.2); }
+.btn-confirm.primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-2px); box-shadow: 0 6px 12px rgba(37,99,235,0.3); }
+.btn-confirm.success { background: var(--success); color: #fff; box-shadow: 0 4px 6px rgba(16,185,129,0.2); }
+.btn-confirm.success:hover:not(:disabled) { background: var(--success-hover); transform: translateY(-2px); box-shadow: 0 6px 12px rgba(16,185,129,0.3); }
+.btn-confirm:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
-/* ── 정산 요약 ── */
-.settle-summary {
-  display:flex; align-items:center; gap:16px;
-  padding:14px 16px; background:var(--bg-canvas);
-  border:1px solid var(--border-color); border-radius:10px;
-  margin-bottom:20px; flex-wrap:wrap; justify-content:center;
+/* ── 중간정산 모달 전용 요약 박스 ── */
+.settle-summary-box {
+  display: flex; align-items: center; justify-content: space-around; gap: 12px;
+  padding: 16px; background: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 12px; margin-bottom: 20px; box-shadow: var(--shadow-sm); flex-wrap: wrap;
 }
-.ss-item { display:flex; flex-direction:column; align-items:center; gap:5px; }
-.ss-label { font-size:11px; color:var(--text-muted); font-weight:500; }
-.ss-divider { font-size:18px; color:var(--text-muted); display:flex; align-items:center; }
-.settle-amount-preview { font-size:20px; font-weight:800; color:var(--primary); }
-
-/* ── fade 트랜지션 ── */
-.fade-enter-active, .fade-leave-active { transition:opacity .2s, transform .2s; }
-.fade-enter-from, .fade-leave-to { opacity:0; transform:translateY(-4px); }
+.ss-item { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ss-label { font-size: 11.5px; color: var(--text-sub); font-weight: 600; }
+.day-badge { padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: 800; }
+.day-badge.remain { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+.ss-divider { font-size: 20px; color: var(--border-focus); font-weight: bold; }
+.settle-amount-preview { font-size: 22px; font-weight: 800; color: var(--primary); }
+.settle-amount-preview small { font-size: 14px; color: var(--text-sub); font-weight: 600; margin-left: 2px; }
 
 /* ── 반응형 ── */
 @media (max-width:768px) {
-  .tab-btn    { padding:11px 16px; font-size:13px; }
-  .action-bar { flex-direction:column; align-items:flex-start; }
-  .mform-grid { grid-template-columns:1fr; }
-  .settle-summary { justify-content:center; }
-  .date-range { flex-wrap:wrap; }
+  .mform-layout { grid-template-columns: 1fr; }
+  .settle-summary-box { justify-content: center; }
 }
-
-.ml-1 { margin-left:4px; }
-.text-sm { font-size:12px; }
 </style>
