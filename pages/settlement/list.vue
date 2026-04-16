@@ -183,7 +183,7 @@ async function revertStatus(item) {
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:      item.id,
-      status:   0,
+      status:   1,
       changeBy: useAuthStore().user?.managerId || 'unknown',
     })
     await fetchList()
