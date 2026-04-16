@@ -15,7 +15,7 @@ const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi(
 // 추가 상태가 필요하면 이 객체에만 추가하면 됩니다.
 // ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
-  0: { text: '진행중',   cls: 'status-pending', icon: 'mdi-progress-clock' },
+  0: { text: '작성중',   cls: 'status-pending', icon: 'mdi-progress-clock' },
   1: { text: '청구 완료',   cls: 'status-billed',  icon: 'mdi-file-document-check-outline' },
   2: { text: '입금 완료',   cls: 'status-active',  icon: 'mdi-check-circle-outline' },
   3: { text: '미수 처리',   cls: 'status-unpaid',  icon: 'mdi-alert-circle-outline' },
@@ -179,11 +179,11 @@ async function executeUnpaid() {
 
 async function revertStatus(item) {
   const label = statusInfo(item.status).text
-  if (!confirm(`[${item.siteName}] ${label} 상태를 진행중으로 되돌리시겠습니까?`)) return
+  if (!confirm(`[${item.siteName}] ${label} 상태를 작성중으로 되돌리시겠습니까?`)) return
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:      item.id,
-      status:   0,
+      status:   1,
       changeBy: useAuthStore().user?.managerId || 'unknown',
     })
     await fetchList()
@@ -244,27 +244,36 @@ function toggleSort(key) {
   currentPage.value = 1
 }
 
-const filteredSettlements = computed(() => {
+const baseFilteredSettlements = computed(() => {
   const { month } = selectedYear
   let list = settlements.value.filter(item => {
     if (item.target_month !== month)                                         return false
     if (selectedSite.value !== '전체' && item.sIdx !== selectedSite.value)   return false
     if (selectedType.value !== '전체' && item.type !== selectedType.value)   return false
     if (!item.siteName.toLowerCase().includes(searchTerm.value.toLowerCase())) return false
-    if (filterStatus.value === 'deposit' && +item.status !== 1)             return false
-    if (filterStatus.value === 'unpaid'  && +item.status !== 2)             return false
-    if (filterStatus.value === 'pending' && +item.status !== 0)             return false
     return true
   })
 
   // ── 현장 + 월 + 구분 기준으로 중복 제거 (가장 최근 idx 우선) ──
-  // "한 현장당 1건"을 보장합니다.
   const seen = new Map()
   list.forEach(item => {
     const key = `${item.sIdx}-${item.target_month}-${item.type}`
     if (!seen.has(key) || item.id > seen.get(key).id) seen.set(key, item)
   })
-  list = [...seen.values()]
+
+  return [...seen.values()]
+})
+
+// 상태 필터와 정렬을 추가 적용
+const filteredSettlements = computed(() => {
+  let list = baseFilteredSettlements.value.filter(item => {
+    // 상태 매칭 코드 정상화 (0: 진행중, 1: 청구완료, 2: 입금완료, 3: 미수처리)
+    if (filterStatus.value === 'pending' && +item.status !== 0) return false
+    if (filterStatus.value === 'billed'  && +item.status !== 1) return false
+    if (filterStatus.value === 'deposit' && +item.status !== 2) return false
+    if (filterStatus.value === 'unpaid'  && +item.status !== 3) return false
+    return true
+  })
 
   list.sort((a, b) => {
     const mod = sortOrder.value === 'asc' ? 1 : -1
@@ -272,6 +281,7 @@ const filteredSettlements = computed(() => {
     if (typeof vA === 'string') return vA.localeCompare(vB) * mod
     return (vA < vB ? -1 : vA > vB ? 1 : 0) * mod
   })
+
   return list
 })
 
@@ -280,15 +290,16 @@ const pagedSettlements = computed(() => {
   return filteredSettlements.value.slice(s, s + pageSize.value)
 })
 
-// 통계
+//통계
 const statsInfo = computed(() => {
-  const d = filteredSettlements.value
+  const d = baseFilteredSettlements.value
   return {
     totalCount:   d.length,
     totalAmount:  d.reduce((s, i) => s + (i.total_amount || 0), 0),
-    depositCount: d.filter(i => +i.status === 1).length,
-    unpaidCount:  d.filter(i => +i.status === 2).length,
     pendingCount: d.filter(i => +i.status === 0).length,
+    billedCount:  d.filter(i => +i.status === 1).length,
+    depositCount: d.filter(i => +i.status === 2).length,
+    unpaidCount:  d.filter(i => +i.status === 3).length,
   }
 })
 
@@ -447,18 +458,18 @@ onMounted(async () => {
         <div class="filter-toggles">
           <button
               v-for="opt in [
-              { val:'all',     icon:'mdi-view-list',              label:'전체',    count: statsInfo.totalCount },
-              { val:'pending', icon:'mdi-dots-horizontal-circle', label:'진행중',  count: statsInfo.pendingCount },
-              { val:'deposit', icon:'mdi-check-circle-outline',   label:'입금완료', count: statsInfo.depositCount },
-              { val:'unpaid',  icon:'mdi-alert-circle-outline',   label:'미수처리', count: statsInfo.unpaidCount },
-            ]"
+        { val:'all',     icon:'mdi-view-list',                   label:'전체',     count: statsInfo.totalCount },
+        { val:'pending', icon:'mdi-progress-clock',              label:'작성중',   count: statsInfo.pendingCount },
+        { val:'billed',  icon:'mdi-file-document-check-outline', label:'청구완료', count: statsInfo.billedCount },
+        { val:'deposit', icon:'mdi-check-circle-outline',        label:'입금완료', count: statsInfo.depositCount },
+        { val:'unpaid',  icon:'mdi-alert-circle-outline',        label:'미수처리', count: statsInfo.unpaidCount },
+      ]"
               :key="opt.val"
               :class="['toggle-chip', { active: filterStatus === opt.val }]"
               @click="filterStatus = opt.val"
           >
             <i :class="['mdi', opt.icon]"></i>
             <span>{{ opt.label }}</span>
-            <span class="chip-count">{{ opt.count }}</span>
           </button>
         </div>
       </div>
@@ -623,7 +634,7 @@ onMounted(async () => {
 
                 <span class="icon-divider"></span>
 
-                <!-- 진행중 → 입금확인 / 미수처리 -->
+                <!-- 작성중 → 입금확인 / 미수처리 -->
                 <template v-if="item.status === 0">
                   <button
                       @click="sendReceipe(item)"
@@ -650,7 +661,7 @@ onMounted(async () => {
                   <button
                       @click="revertStatus(item)"
                       class="icon-btn"
-                      title="진행중으로 되돌리기"
+                      title="작성중으로 되돌리기"
                   ><i class="mdi mdi-undo-variant"></i></button>
                 </template>
               </div>
@@ -893,7 +904,7 @@ onMounted(async () => {
   display:inline-flex; align-items:center; gap:4px;
   padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600;
 }
-/* 0: 진행중 (주황색/노란색 계열) - 대기 중이거나 작업 중인 상태 */
+/* 0: 작성중 (주황색/노란색 계열) - 대기 중이거나 작업 중인 상태 */
 .status-pending {
   background: rgba(245, 158, 11, 0.1);
   color: var(--warning, #f59e0b);
