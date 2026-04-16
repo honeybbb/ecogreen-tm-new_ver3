@@ -515,6 +515,10 @@ onActivated(async () => {
               <div class="th-content">퇴사일 <i v-if="sortKey==='outDate'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
+            <th class="resizable">
+              <div class="th-content">퇴직사유</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <th class="text-center resizable">
               <div class="th-content">4대보험</div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
@@ -584,6 +588,7 @@ onActivated(async () => {
             </td>
             <td>{{ formatDate(member.inDate) }}</td>
             <td>{{ formatDate(member.outDate) }}</td>
+            <td>{{member.outReason}}</td>
             <td class="text-center">
               <i v-if="member.four_ins === 'Y' || member.four_ins === true" class="mdi mdi-check-circle check-icon"></i>
               <i v-else class="mdi mdi-close-circle uncheck-icon"></i>

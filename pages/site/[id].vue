@@ -831,7 +831,7 @@ const deleteSite = async () => {
   try {
     await axios.delete(`/api/v1/site/${route.params.id || route.query.idx}`);
     alert('삭제되었습니다.');
-    router.push('/site/list');
+    await router.push('/site/list');
   } catch {
     alert('삭제에 실패했습니다.');
   }
