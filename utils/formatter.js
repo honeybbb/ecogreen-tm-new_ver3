@@ -44,7 +44,7 @@ export const getMonthsDiff = (dateStr) => {
 };
 
 export const formatCurrency = (amount) => {
-    if (amount === null || amount === undefined) return '0';
+    if (amount === null || amount === undefined || amount == '') return '0';
     // 금액은 정수로 처리합니다.
     const numberAmount = typeof amount === 'string' ? parseInt(amount.replace(/,/g, ''), 10) : amount;
     return new Intl.NumberFormat('ko-KR').format(numberAmount);

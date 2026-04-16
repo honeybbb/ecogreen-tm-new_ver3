@@ -27,7 +27,6 @@ const currentConfig = reactive({
   showSeverance: true,
   showSanjae: true,
   activeDeductionCodes: [],
-  // ★ 하단 요약 항목들의 양수(+1) / 음수(-1) 토글 상태 저장
   summarySigns: {
     severance: -1,
     annualLeave: -1,
@@ -65,14 +64,39 @@ const formData = ref({
     workerCount: 0,
     bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
     items: [],
+    customSummaryItems: [],
     vatBreakdown: {
       under135: { area: '', unitPrice: '', supply: 0 },
       over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
     },
-    insuranceDiff: 0
+    insuranceDiff: 0,
+    memo: '' // ★ 신규: 정산 세부내역 하단 메모
   },
   payrollData: [],
 });
+
+// ──────────────────────────────────────────────
+// ★ 커스텀 정산 항목 컨트롤 함수
+// ──────────────────────────────────────────────
+const addCustomSummaryItem = () => {
+  if (!formData.value.billingData.customSummaryItems) {
+    formData.value.billingData.customSummaryItems = [];
+  }
+  formData.value.billingData.customSummaryItems.push({
+    label: '',
+    amount: 0,
+    sign: 1
+  });
+};
+
+const removeCustomSummaryItem = (index) => {
+  formData.value.billingData.customSummaryItems.splice(index, 1);
+};
+
+const toggleCustomSign = (index) => {
+  const item = formData.value.billingData.customSummaryItems[index];
+  item.sign = item.sign === 1 ? -1 : 1;
+};
 
 // ──────────────────────────────────────────────
 // 3. 계약 데이터 및 적용 요율
@@ -127,7 +151,33 @@ const fetchContractData = async () => {
     const res = await axios.get(`/api/v1/site/data/${sIdx}`);
     const siteData = res.data.data?.[0];
 
-    if (!siteData || !siteData.contractList) return;
+    if (!siteData) return;
+
+    if ((!props.settlementId || !isInitializing.value) && siteData.viewConfig) {
+      try {
+        const parsedConfig = typeof siteData.viewConfig === 'string'
+            ? JSON.parse(siteData.viewConfig)
+            : siteData.viewConfig;
+
+        currentConfig.showGrossPay    = parsedConfig.showGrossPay ?? true;
+        currentConfig.showAnnualLeave = parsedConfig.showAnnualLeave ?? true;
+        currentConfig.showSeverance   = parsedConfig.showSeverance ?? true;
+        currentConfig.showSanjae      = parsedConfig.showSanjae ?? true;
+
+        if (Array.isArray(parsedConfig.activeDeductionCodes) && parsedConfig.activeDeductionCodes.length > 0) {
+          currentConfig.activeDeductionCodes = parsedConfig.activeDeductionCodes;
+        }
+
+        if (parsedConfig.meltOptions) {
+          meltOptions.annualLeave = parsedConfig.meltOptions.annualLeave ?? false;
+          meltOptions.severance   = parsedConfig.meltOptions.severance ?? false;
+        }
+      } catch (e) {
+        console.error('현장 viewConfig 파싱 에러:', e);
+      }
+    }
+
+    if (!siteData.contractList) return;
 
     const parsedContractList = typeof siteData.contractList === 'string' ? JSON.parse(siteData.contractList) : siteData.contractList;
     const targetContract = parsedContractList.find(c => c.type === type);
@@ -141,7 +191,9 @@ const fetchContractData = async () => {
       contractStaffList.value = Array.isArray(targetContract.staffList) ? targetContract.staffList : [];
       contractTotalCost.value = Number(targetContract.totalCost) || 0;
     }
-  } catch (error) { console.error('계약 정보를 불러오는 중 오류 발생:', error); }
+  } catch (error) {
+    console.error('계약 정보를 불러오는 중 오류 발생:', error);
+  }
 };
 
 const deductionItems = computed(() => {
@@ -193,11 +245,6 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
   let newCursorPos = cursorPosition + diff;
   if (newCursorPos < 0) newCursorPos = 0;
   input.setSelectionRange(newCursorPos, newCursorPos);
-};
-
-const formatCurrency = (val) => {
-  if (val === undefined || val === null || val === '') return '0';
-  return Number(val).toLocaleString();
 };
 
 // ──────────────────────────────────────────────
@@ -293,7 +340,7 @@ const onSalaryInput = (row) => {
 };
 
 watch(meltOptions, () => {
-  if (isInitializing.value) return; //초기화 중엔 무시
+  if (isInitializing.value) return;
   formData.value.payrollData.forEach(row => {
     recalculateInsurances(row);
     calculateRow(row);
@@ -302,16 +349,14 @@ watch(meltOptions, () => {
 watch(() => currentConfig.activeDeductionCodes, () => { formData.value.payrollData.forEach(row => calculateRow(row)); }, { deep: true });
 
 // ──────────────────────────────────────────────
-// 6. 총계 & 부가세 계산 (토글 기능 포함)
+// 6. 총계 & 부가세 계산 (커스텀 항목 및 고정값 포함)
 // ──────────────────────────────────────────────
 const payrollTotals = computed(() => {
-  const totals = { grossPay: 0, totalDeduct: 0, netPay: 0, annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0, insuranceTotal: 0, deductionItems: {} };
+  const totals = { grossPay: 0, totalDeduct: 0, netPay: 0, empInsEmployer: 0, sanjae: 0, insuranceTotal: 0, deductionItems: {} };
   formData.value.payrollData.forEach(row => {
     totals.grossPay       += Number(row.grossPay)    || 0;
     totals.totalDeduct    += Number(row.totalDeduct) || 0;
     totals.netPay         += Number(row.netPay)      || 0;
-    totals.annualLeave    += Number(row.reserves?.annualLeave) || 0;
-    totals.severance      += Number(row.reserves?.severance)   || 0;
     totals.sanjae         += Number(row.reserves?.sanjae)      || 0;
     totals.empInsEmployer += Number(row.reserves?.empInsEmployer) || 0;
 
@@ -326,6 +371,35 @@ const payrollTotals = computed(() => {
     totals.insuranceTotal += rowInsTotal;
   });
   return totals;
+});
+
+// ★ 산출내역서(계약) 기준 고정 적립금 총액 계산
+const contractAnnualLeaveTotal = computed(() => {
+  let target = contractDirectLabor.value.find(d => d.label === '04003001' || String(d.label).includes('연차'));
+  if (!target && contractIndirectLabor.value) {
+    target = contractIndirectLabor.value.find(d => d.label === '04003001' || String(d.label).includes('연차'));
+  }
+  if (!target || !target.values) return 0;
+
+  let total = 0;
+  contractStaffList.value.forEach(staff => {
+    total += (Number(target.values[staff.code]) || 0) * (Number(staff.count) || 1);
+  });
+  return total;
+});
+
+const contractSeveranceTotal = computed(() => {
+  let target = contractDirectLabor.value.find(d => d.label === '04003003' || String(d.label).includes('퇴직'));
+  if (!target && contractIndirectLabor.value) {
+    target = contractIndirectLabor.value.find(d => d.label === '04003003' || String(d.label).includes('퇴직'));
+  }
+  if (!target || !target.values) return 0;
+
+  let total = 0;
+  contractStaffList.value.forEach(staff => {
+    total += (Number(target.values[staff.code]) || 0) * (Number(staff.count) || 1);
+  });
+  return total;
 });
 
 const estimatedInsuranceTotal = computed(() => {
@@ -366,31 +440,48 @@ const toggleSummarySign = (key) => {
 
 const totalSummary = computed(() => {
   const monthlyFee  = contractTotalCost.value || 0;
-  const severance   = payrollTotals.value.severance || 0;
-  const annualLeave = payrollTotals.value.annualLeave || 0;
+  // ★ 테이블 합산(payrollTotals) 대신 산출내역서 고정값 사용
+  const severance   = contractSeveranceTotal.value || 0;
+  const annualLeave = contractAnnualLeaveTotal.value || 0;
   const estIns      = estimatedInsuranceTotal.value || 0;
   const actIns      = actualInsuranceTotal.value || 0;
   const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
   const signs       = currentConfig.summarySigns;
 
-  let grandTotal  = monthlyFee
+  let customTotal = 0;
+  const customItems = (formData.value.billingData.customSummaryItems || []).map((item, idx) => {
+    const val = Number(item.amount) || 0;
+    const itemSign = item.sign || 1;
+    customTotal += (val * itemSign);
+    return {
+      isCustom: true,
+      index: idx,
+      key: 'custom_' + idx,
+      label: item.label,
+      value: val,
+      sign: itemSign,
+      toggleable: true,
+      hiddenInBilling: false
+    };
+  });
+
+  let grandTotal = monthlyFee
       + (severance * signs.severance)
       + (annualLeave * signs.annualLeave)
-      + (insDiff * signs.insuranceDiff);
+      + (insDiff * signs.insuranceDiff)
+      + customTotal;
 
-  //원 단위 절사 (1의 자리 버림, 예: 12,345 -> 12,340)
   grandTotal = Math.floor(grandTotal / 10) * 10;
 
   return [
-    { key: 'monthlyFee', label: '월간용역비', value: monthlyFee, sign: 1, toggleable: false },
-    { key: 'severance', label: '퇴직적립금', value: severance, sign: signs.severance, toggleable: true },
-    { key: 'annualLeave', label: '연차적립금', value: annualLeave, sign: signs.annualLeave, toggleable: true },
-    // ★ 견적서 및 실비정산은 토글 비활성화, 기호 무조건 1 (UI에서는 안보이게)
-    { key: 'estimatedIns', label: '견적서 4대보험료', value: estIns, sign: 1, toggleable: false },
-    { key: 'actualIns', label: '실비정산 4대보험료', value: actIns, sign: 1, toggleable: false },
-    { key: 'insuranceDiff', label: '4대보험차액', value: insDiff, sign: signs.insuranceDiff, toggleable: true },
-    //{ key: 'grandTotal', label: '총 청구액', value: grandTotal, sign: 1, toggleable: false }
-    { key: 'grandTotal', label: '총 청구액 (원 단위 절사)', value: grandTotal, sign: 1, toggleable: false }
+    { key: 'monthlyFee', label: '월간용역비', value: monthlyFee, sign: 1, toggleable: false, hiddenInBilling: false },
+    { key: 'severance', label: '퇴직적립금', value: severance, sign: signs.severance, toggleable: true, hiddenInBilling: false },
+    { key: 'annualLeave', label: '연차적립금', value: annualLeave, sign: signs.annualLeave, toggleable: true, hiddenInBilling: false },
+    { key: 'estimatedIns', label: '견적서 4대보험료', value: estIns, sign: 1, toggleable: false, hiddenInBilling: true },
+    { key: 'actualIns', label: '실비정산 4대보험료', value: actIns, sign: 1, toggleable: false, hiddenInBilling: true },
+    { key: 'insuranceDiff', label: '4대보험차액', value: insDiff, sign: signs.insuranceDiff, toggleable: true, hiddenInBilling: false },
+    ...customItems,
+    { key: 'grandTotal', label: '총 청구액 (원 단위 절사)', value: grandTotal, sign: 1, toggleable: false, hiddenInBilling: true }
   ];
 });
 
@@ -398,7 +489,6 @@ const totalSummary = computed(() => {
 // ★ 6-1. 세부내역서 -> 청구 공문(표지) 자동 동기화 로직
 // ──────────────────────────────────────────────
 const syncBillingItems = () => {
-  // 1. 산정기간 계산 (1일 ~ 말일)
   let periodStr = '';
   let monthNum = '';
   const targetDateStr = formData.value.target_month || formData.value.billingDt;
@@ -411,72 +501,65 @@ const syncBillingItems = () => {
       const yearStr = String(yyyy).slice(2);
       const monthStr = String(mm).padStart(2, '0');
       monthNum = String(mm);
-      const lastDay = new Date(yyyy, mm, 0).getDate(); // 월의 말일 계산 완벽 보장
+      const lastDay = new Date(yyyy, mm, 0).getDate();
       periodStr = `${yearStr}.${monthStr}.01~${monthStr}.${lastDay}`;
     }
   }
 
-  // 2. 구분값 계산 (type에 따른 텍스트)
   let categoryStr = '';
   if (formData.value.type && typeOptions.value) {
     const matched = typeOptions.value.find(t => t.itemCd === formData.value.type);
     if (matched) categoryStr = matched.itemNm;
   }
 
-  // 3. 반영할 타겟 항목들 (4대보험차액만 반영)
-  const targetKeys = ['monthlyFee', 'severance', 'annualLeave', 'insuranceDiff'];
+  let newItems = [];
   let currentItems = [...formData.value.billingData.items];
 
-  // (비어있는 초기 기본행 1개가 있다면 지우기)
   if (currentItems.length === 1 && !currentItems[0].detail && currentItems[0].amount === 0) {
     currentItems = [];
   }
 
-  targetKeys.forEach(key => {
-    const summaryObj = totalSummary.value.find(s => s.key === key);
-    if (!summaryObj) return;
+  totalSummary.value.forEach(summaryObj => {
+    if (summaryObj.hiddenInBilling) return;
 
-    // 토글 상태(양수/음수)가 반영된 실제 금액
     const signedAmount = summaryObj.value * summaryObj.sign;
+    if (summaryObj.key !== 'monthlyFee' && signedAmount === 0) return;
 
-    // 해당 항목이 청구 테이블에 이미 있는지 키워드로 유연하게 검색
     let existIdx = -1;
-    if (key === 'monthlyFee') existIdx = currentItems.findIndex(i => i.detail.includes('용역비') || i.detail.includes('도급비'));
-    else if (key === 'severance') existIdx = currentItems.findIndex(i => i.detail.includes('퇴직'));
-    else if (key === 'annualLeave') existIdx = currentItems.findIndex(i => i.detail.includes('연차'));
-    else if (key === 'insuranceDiff') existIdx = currentItems.findIndex(i => i.detail.includes('보험') && i.detail.includes('차액'));
+    if (summaryObj.key === 'monthlyFee') existIdx = currentItems.findIndex(i => i._syncKey === 'monthlyFee' || i.detail.includes('용역비') || i.detail.includes('도급비'));
+    else if (summaryObj.key === 'severance') existIdx = currentItems.findIndex(i => i._syncKey === 'severance' || i.detail.includes('퇴직'));
+    else if (summaryObj.key === 'annualLeave') existIdx = currentItems.findIndex(i => i._syncKey === 'annualLeave' || i.detail.includes('연차'));
+    else if (summaryObj.key === 'insuranceDiff') existIdx = currentItems.findIndex(i => i._syncKey === 'insuranceDiff' || (i.detail.includes('보험') && i.detail.includes('차액')));
+    else if (summaryObj.isCustom) existIdx = currentItems.findIndex(i => i._syncKey === summaryObj.key);
 
-    const defaultDetail = key === 'monthlyFee' ? `${monthNum ? monthNum + '월 ' : ''}${categoryStr}용역비` : summaryObj.label;
+    const defaultDetail = summaryObj.key === 'monthlyFee' ? `${monthNum ? monthNum + '월 ' : ''}${categoryStr}용역비` : (summaryObj.label || '추가 항목');
 
     if (existIdx > -1) {
-      // 이미 존재하면 값 업데이트 (산정기간과 구분도 동기화)
-      currentItems[existIdx].period = periodStr || currentItems[existIdx].period;
-      currentItems[existIdx].category = categoryStr || currentItems[existIdx].category;
-      currentItems[existIdx].amount = signedAmount;
-
-      // 용역비가 아닌데 금액이 0원이 되면 삭제 (청구서에 0원은 안보이게)
-      if (key !== 'monthlyFee' && signedAmount === 0) {
-        currentItems.splice(existIdx, 1);
-      }
+      let existing = currentItems.splice(existIdx, 1)[0];
+      existing.period = periodStr || existing.period;
+      existing.category = categoryStr || existing.category;
+      existing.amount = signedAmount;
+      if (summaryObj.isCustom) existing.detail = summaryObj.label;
+      existing._syncKey = summaryObj.key;
+      newItems.push(existing);
     } else {
-      // 없으면 신규 행 추가
-      if (key === 'monthlyFee' || signedAmount !== 0) {
-        currentItems.push({
-          period: periodStr,
-          category: categoryStr,
-          detail: defaultDetail,
-          amount: signedAmount,
-          note: ''
-        });
-      }
+      newItems.push({
+        _syncKey: summaryObj.key,
+        period: periodStr,
+        category: categoryStr,
+        detail: defaultDetail,
+        amount: signedAmount,
+        note: ''
+      });
     }
   });
 
-  formData.value.billingData.items = currentItems;
+  newItems = newItems.concat(currentItems);
+
+  formData.value.billingData.items = newItems;
   calculateBillingTotal();
 };
 
-// 합계가 변하거나, 선택 조건이 변하면 자동 동기화 실행!
 watch([
   totalSummary,
   () => formData.value.type,
@@ -484,7 +567,6 @@ watch([
   () => formData.value.target_month
 ], () => {
   if (isInitializing.value) return;
-  // 현장이 선택되어 데이터가 있을 때만 동기화 실행
   if (formData.value.sIdx) {
     syncBillingItems();
   }
@@ -504,9 +586,8 @@ const colspanForSummary = computed(() => {
 const calculateAreaSupply = () => {
   const vb = formData.value.billingData.vatBreakdown;
   const totalArea = (Number(vb.under135.area) || 0) + (Number(vb.over135.area) || 0);
-  //const topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   let topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  topSum = Math.floor(topSum / 10) * 10; //원 단위 절사
+  topSum = Math.floor(topSum / 10) * 10;
 
   if (totalArea > 0 && topSum > 0) {
     const unitPrice = topSum / totalArea;
@@ -524,9 +605,8 @@ const calculateAreaSupply = () => {
 };
 
 const calculateBillingTotal = () => {
-  //const topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   let topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-  topSum = Math.floor(topSum / 10) * 10; //원단위절사
+  topSum = Math.floor(topSum / 10) * 10;
   if (formData.value.is_vat === 'Y') calculateAreaSupply();
   else {
     formData.value.subTotal = topSum;
@@ -550,8 +630,10 @@ const initForm = () => {
 
     const data = JSON.parse(JSON.stringify(props.initialData));
     if (!data.payrollData) data.payrollData = [];
-    if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', insuranceDiff: 0 };
+    if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', insuranceDiff: 0, customSummaryItems: [], memo: '' };
     if (!data.billingData.items) data.billingData.items = [];
+    if (!data.billingData.customSummaryItems) data.billingData.customSummaryItems = [];
+    if (!data.billingData.memo) data.billingData.memo = '';
     if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } };
     data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
 
@@ -564,7 +646,6 @@ const initForm = () => {
       row.reserves.empInsEmployer = row.reserves.empInsEmployer || 0;
       row.reserves.sanjae = row.reserves.sanjae || 0;
 
-      // ★ 추가됨: 이미 저장된 원본 데이터(originalDeductions)가 없을 때만 현재값을 원본으로 복사
       if (!row.originalDeductions || Object.keys(row.originalDeductions).length === 0) {
         row.originalDeductions = JSON.parse(JSON.stringify(row.deductionItems));
       }
@@ -576,7 +657,6 @@ const initForm = () => {
     const selectedSite = siteOptions.value.find(s => s.idx === data.sIdx);
     data.is_vat = selectedSite ? selectedSite.is_vat : (data.vatAmount > 0 ? 'Y' : 'N');
 
-    // 서버에서 내려온 viewConfig에서 화면 설정과 meltOptions(연차/퇴직 포함 토글) 복구
     if (data.viewConfig) {
       const savedConfig = data.viewConfig.site || data.viewConfig;
       Object.assign(currentConfig, savedConfig);
@@ -594,13 +674,12 @@ const initForm = () => {
       meltOptions.severance = false;
     }
 
-    // 세팅이 끝났으니 formData에 들어가지 않도록 삭제하여 상태를 깔끔하게 유지
     delete data.viewConfig;
 
     if (data.defaultTab) activeTab.value = data.defaultTab;
     formData.value = data;
     formData.value.payrollData.forEach(row => {
-      calculateRow(row); // 합계/netPay만 재계산, 보험료는 건드리지 않음
+      calculateRow(row);
     });
 
     if (formData.value.sIdx && formData.value.type) fetchContractData();
@@ -625,19 +704,10 @@ const initForm = () => {
         summary: '',
         workerCount: 0,
         bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
-        items: [
-            {
-              period: '',
-              category: '',
-              detail: '',
-              amount: 0,
-              note: ''
-            }
-        ],
-        vatBreakdown: {
-          under135: { area: '', unitPrice: '', supply: 0 },
-          over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
-        },
+        items: [{ period: '', category: '', detail: '', amount: 0, note: '' }],
+        customSummaryItems: [],
+        memo: '',
+        vatBreakdown: { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } },
         insuranceDiff: 0
       },
       payrollData: []
@@ -659,12 +729,10 @@ watch(() => props.initialData, initForm, { immediate: true });
 const resetAll = () => {
   if (!confirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값은 유지됩니다.')) return;
 
-  isInitializing.value = true; // ★ 초기화 시작 (자동 동기화 차단)
+  isInitializing.value = true;
 
-  // 현장/날짜/구분 유지용 백업
   const { sIdx, type, target_month, billingDt } = formData.value;
 
-  // 청구 공문 초기화
   formData.value = {
     sIdx,
     siteName: '',
@@ -676,7 +744,9 @@ const resetAll = () => {
       summary: '',
       workerCount: 0,
       bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
-      items: [{ period: '', category: '', detail: '', amount: 0, note: '' }], // 빈 칸 하나로 리셋
+      items: [{ period: '', category: '', detail: '', amount: 0, note: '' }],
+      customSummaryItems: [],
+      memo: '',
       vatBreakdown: {
         under135: { area: '', unitPrice: '', supply: 0 },
         over135:  { area: '', unitPrice: '', supply: 0, vat: 0 }
@@ -686,7 +756,6 @@ const resetAll = () => {
     payrollData: [],
   };
 
-  // 급여 내역 설정 초기화
   meltOptions.annualLeave = false;
   meltOptions.severance   = false;
   currentConfig.showGrossPay    = true;
@@ -698,13 +767,11 @@ const resetAll = () => {
     currentConfig.activeDeductionCodes = deductionItems.value.map(i => i.itemCd);
   }
 
-  // docNo 재생성 + 현장 관련 데이터 유지
   updateDocNo();
   if (sIdx) {
     handleSiteChange();
   }
 
-  // ★ 0.1초 뒤에 차단 해제 (테이블이 완벽히 지워진 후 복구)
   setTimeout(() => {
     isInitializing.value = false;
   }, 100);
@@ -758,18 +825,16 @@ const loadPayrollData = async () => {
 };
 
 const updateDocNo = () => {
-  if (isInitializing.value) return; // 저장된 데이터 불러올 때 덮어쓰기 방지
+  if (isInitializing.value) return;
 
   const targetDate = formData.value.target_month || formData.value.billingDt;
   if (targetDate) {
     const [year, month] = targetDate.split('-');
 
-    // 1. 문서번호 자동 생성
     if (formData.value.sIdx) {
       formData.value.docNo = `에코그린 ${year}-${month.padStart(2, '0')}-${formData.value.sIdx}호`;
     }
 
-    // 2. 제목 자동 생성
     if (formData.value.type) {
       const typeName = typeOptions.value.find(t => t.itemCd === formData.value.type)?.itemNm || '';
       formData.value.billingData.summary = `${year}년 ${parseInt(month)}월 ${typeName}용역비 청구의 건`;
@@ -875,8 +940,8 @@ const exportToExcel = () => {
     });
 
     const totalRow = ['', '', '', '', '', '총 계'];
-    if (cfg.showAnnualLeave) totalRow.push(payrollTotals.value.annualLeave);
-    if (cfg.showSeverance) totalRow.push(payrollTotals.value.severance);
+    if (cfg.showAnnualLeave) totalRow.push(contractAnnualLeaveTotal.value);
+    if (cfg.showSeverance) totalRow.push(contractSeveranceTotal.value);
     if (cfg.showGrossPay) totalRow.push(payrollTotals.value.grossPay);
 
     visibleDeductionItems.value.forEach(item => {
@@ -890,12 +955,18 @@ const exportToExcel = () => {
 
     totalSummary.value.forEach(summary => {
       const row = Array(header1.length).fill('');
-      row[row.length - 3] = summary.label;
+      row[row.length - 3] = summary.label || '추가항목';
       let displayValue = summary.value;
       if (summary.sign < 0 && summary.value !== 0) displayValue = -summary.value;
       row[row.length - 1] = displayValue;
       payrollRows.push(row);
     });
+
+    // 엑셀에 메모 추가
+    if (formData.value.billingData.memo) {
+      payrollRows.push([]);
+      payrollRows.push(['특이사항 및 메모:\n' + formData.value.billingData.memo]);
+    }
 
     const ws2 = XLSX.utils.aoa_to_sheet(payrollRows);
     const colWidths = [{ wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
@@ -933,7 +1004,6 @@ const handleSave = async () => {
       grandTotal:  formData.value.grandTotal,
       billingData: formData.value.billingData,
       payrollData: formData.value.payrollData,
-      // ★ 추가됨: 서버에 저장할 때 viewConfig를 만들어서 토글 상태(meltOptions)를 포함시킴
       viewConfig:  JSON.parse(JSON.stringify({
         ...currentConfig,
         meltOptions: meltOptions
@@ -1065,7 +1135,7 @@ onMounted(async () => {
                 <tfoot>
                 <tr class="bg-blue-light font-bold" style="font-size:15px;">
                   <td colspan="3" class="text-center">합계</td>
-                  <td class="text-right text-blue"><!--{{ formatCurrency(formData.subTotal) }}-->
+                  <td class="text-right text-blue">
                     <input type="text" class="cell-input font-bold text-right text-blue" :value="formatCurrency(formData.subTotal)" />
                   </td>
                   <td colspan="2">
@@ -1299,8 +1369,8 @@ onMounted(async () => {
               <tfoot v-if="formData.payrollData.length > 0">
               <tr class="bg-gray-50 font-bold" style="font-size:14px;">
                 <td colspan="6" class="text-center">총 계</td>
-                <td v-if="currentConfig.showAnnualLeave" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(payrollTotals.annualLeave) }}</td>
-                <td v-if="currentConfig.showSeverance" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(payrollTotals.severance) }}</td>
+                <td v-if="currentConfig.showAnnualLeave" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(contractAnnualLeaveTotal) }}</td>
+                <td v-if="currentConfig.showSeverance" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(contractSeveranceTotal) }}</td>
                 <td v-if="currentConfig.showGrossPay" class="text-right text-blue bg-blue-light">{{ formatCurrency(payrollTotals.grossPay) }}</td>
 
                 <template v-for="item in visibleDeductionItems" :key="'foot-'+item.itemCd">
@@ -1317,35 +1387,78 @@ onMounted(async () => {
                 <td></td>
               </tr>
 
-              <tr v-for="(summary, sIdx) in totalSummary" :key="'summary-'+sIdx">
-                <td :colspan="colspanForSummary" style="border: none; background: transparent;"></td>
-                <td colspan="2"
-                    class="text-center bg-gray-50 font-bold"
-                    :class="{'summary-label-cell': summary.toggleable}"
-                    @click="summary.toggleable && toggleSummarySign(summary.key)"
-                    style="font-size: 13px;"
-                    :title="summary.toggleable ? '클릭하여 양수/음수 전환' : ''">
-                  <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
-                    <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
-                      {{ summary.sign < 0 ? '-' : '+' }}
-                    </span>
-                    {{ summary.label }}
-                  </div>
-                </td>
-                <td colspan="2" class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color);">
-                  <template v-if="summary.key === 'insuranceDiff'">
-                    <div style="display: flex; align-items: center; padding-left: 8px;">
-                      <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                      <input type="text" :value="formatCurrency(formData.billingData.insuranceDiff)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+              <template v-for="(summary, sIdx) in totalSummary" :key="'summary-'+summary.key">
+                <tr v-if="summary.key === 'grandTotal'">
+                  <td colspan="4" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
+                    <button @click="addCustomSummaryItem" class="btn-add-row" style="font-size: 12px; padding: 4px 10px; display: inline-flex; float: right;">
+                      <i class="mdi mdi-plus-thick"></i> 정산 항목 추가
+                    </button>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td v-if="sIdx === 0"
+                      :rowspan="totalSummary.length + 1"
+                      :colspan="colspanForSummary"
+                      class="memo-container-cell">
+                    <div class="memo-wrapper">
+                      <div class="memo-header">
+                        <i class="mdi mdi-note-edit-outline"></i>
+                        <span>정산 특이사항 및 메모</span>
+                      </div>
+                      <textarea
+                          v-model="formData.billingData.memo"
+                          class="memo-textarea"
+                          placeholder="급여 및 정산에 관련된 특이사항을 입력하세요.&#13;&#10;(줄바꿈이 지원되며, 엑셀 출력 시 하단에 함께 표기됩니다.)"
+                      ></textarea>
                     </div>
-                  </template>
-                  <template v-else>
-                    <div style="padding: 6px;" :class="summary.sign < 0 ? 'text-red' : (summary.toggleable ? 'text-blue' : '')">
-                      <span v-if="summary.value !== 0">{{ summary.sign < 0 ? '- ' : (summary.toggleable ? '+ ' : '') }}</span>{{ formatCurrency(summary.value) }}
+                  </td>
+                  <td colspan="2" class="text-center bg-gray-50 font-bold"
+                      :class="{'summary-label-cell': summary.toggleable && !summary.isCustom}"
+                      @click="summary.toggleable && !summary.isCustom && toggleSummarySign(summary.key)"
+                      style="font-size: 13px;"
+                      :title="summary.toggleable && !summary.isCustom ? '클릭하여 양수/음수 전환' : ''">
+                    <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
+                      <template v-if="summary.isCustom">
+                        <button @click.stop="toggleCustomSign(summary.index)" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'" style="border: none; cursor: pointer; flex-shrink: 0;">
+                          {{ summary.sign < 0 ? '-' : '+' }}
+                        </button>
+                        <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 4px; box-sizing: border-box;" />
+                      </template>
+                      <template v-else>
+                        <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
+                          {{ summary.sign < 0 ? '-' : '+' }}
+                        </span>
+                        {{ summary.label }}
+                      </template>
                     </div>
-                  </template>
-                </td>
-              </tr>
+                  </td>
+
+                  <td colspan="2" class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color); position: relative;">
+                    <button v-if="summary.isCustom" @click="removeCustomSummaryItem(summary.index)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
+                      <i class="mdi mdi-minus"></i>
+                    </button>
+
+                    <template v-if="summary.key === 'insuranceDiff'">
+                      <div style="display: flex; align-items: center; padding-left: 8px;">
+                        <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
+                        <input type="text" :value="formatCurrency(formData.billingData.insuranceDiff)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+                      </div>
+                    </template>
+                    <template v-else-if="summary.isCustom">
+                      <div style="display: flex; align-items: center; padding-left: 8px;">
+                        <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
+                        <input type="text" :value="formatCurrency(formData.billingData.customSummaryItems[summary.index].amount)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div style="padding: 6px;" :class="summary.sign < 0 ? 'text-red' : (summary.toggleable ? 'text-blue' : '')">
+                        <span v-if="summary.value !== 0">{{ summary.sign < 0 ? '- ' : (summary.toggleable ? '+ ' : '') }}</span>{{ formatCurrency(summary.value) }}
+                      </div>
+                    </template>
+                  </td>
+                </tr>
+              </template>
               </tfoot>
             </table>
           </div>
@@ -1403,9 +1516,44 @@ onMounted(async () => {
 .btn-load-data:hover { background: var(--primary-soft); transform: translateY(-1px); }
 .table-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 4px; }
 .excel-table-wrapper { background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--border-color); overflow-x: auto; box-shadow: var(--shadow-sm); -webkit-overflow-scrolling: touch; }
-.excel-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-.excel-table th, .excel-table td { border: 1px solid var(--border-color); padding: 6px; vertical-align: middle; }
-.excel-table thead th { background: var(--bg-hover); font-weight: 600; text-align: center; color: var(--text-main); padding: 10px 8px; white-space: nowrap; line-height: 1.3; position: sticky; top: 0; z-index: 10; }
+
+/* =========================================
+   테이블 CSS
+========================================= */
+.excel-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.excel-table th, .excel-table td {
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  padding: 6px 10px;
+  vertical-align: middle;
+  background-clip: padding-box;
+}
+
+.excel-table tr td:first-child,
+.excel-table tr th:first-child {
+  border-left: 1px solid var(--border-color);
+}
+
+.excel-table thead th {
+  background: var(--bg-hover);
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-main);
+  padding: 10px 8px;
+  white-space: nowrap;
+  line-height: 1.3;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-top: 1px solid var(--border-color);
+}
+
 .statement-table tfoot td { padding: 10px; }
 .bank-info { display: flex; align-items: center; gap: 10px; background: var(--bg-canvas); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; }
 .bank-info label { font-weight: 600; color: var(--text-main); white-space: nowrap; }
@@ -1431,7 +1579,31 @@ onMounted(async () => {
 .mt-5 { margin-top: 30px; }
 input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 @media (max-width: 1024px) { .modal-overlay { padding: 10px; } .modal-container { height: 95vh; } .document-paper { padding: 24px 20px; } }
-@media (max-width: 768px) { .modal-overlay { padding: 0; align-items: flex-end; } .modal-container { height: 96vh; border-radius: 16px 16px 0 0; max-width: 100%; } .modal-header { padding: 12px 16px; } .header-title h2 { font-size: 15px; } .badge { display: none; } .modal-tabs { padding: 0 8px; } .tab-btn { padding: 12px 12px; font-size: 13px; } .tab-text { display: none; } .switcher-label { display: none; } .modal-body { padding: 12px; } .document-paper { padding: 16px 14px; } .doc-header h1 { font-size: 18px; letter-spacing: 4px; margin-bottom: 20px; } .form-grid { grid-template-columns: 1fr; gap: 12px; } .btn-text { display: none; } .action-btns { gap: 6px; } .btn-add-row, .btn-load-data { padding: 7px 10px; } .excel-table { font-size: 12px; } .excel-table thead th { padding: 8px 6px; font-size: 11px; } .excel-table td { padding: 4px; } .cell-input { font-size: 12px; padding: 3px; } .deduction-toggles { gap: 8px; padding: 10px; } }
+
+/* 모바일 뷰 */
+@media (max-width: 768px) {
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal-container { height: 96vh; border-radius: 16px 16px 0 0; max-width: 100%; }
+  .modal-header { padding: 12px 16px; }
+  .header-title h2 { font-size: 15px; }
+  .badge { display: none; }
+  .modal-tabs { padding: 0 8px; }
+  .tab-btn { padding: 12px 12px; font-size: 13px; }
+  .tab-text { display: none; }
+  .switcher-label { display: none; }
+  .modal-body { padding: 12px; }
+  .document-paper { padding: 16px 14px; }
+  .doc-header h1 { font-size: 18px; letter-spacing: 4px; margin-bottom: 20px; }
+  .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .btn-text { display: none; }
+  .action-btns { gap: 6px; }
+  .btn-add-row, .btn-load-data { padding: 7px 10px; }
+  .excel-table { font-size: 12px; }
+  .excel-table thead th { padding: 8px 6px; font-size: 11px; }
+  .excel-table td { padding: 4px; }
+  .cell-input { font-size: 12px; padding: 3px; }
+  .deduction-toggles { gap: 8px; padding: 10px; }
+}
 @media (max-width: 480px) { .header-title h2 { font-size: 14px; } .modal-body { padding: 8px; } .document-paper { padding: 12px 10px; } .doc-header h1 { font-size: 16px; letter-spacing: 3px; } .tab-btn { padding: 10px 10px; } }
 
 .melt-toggles-group {
@@ -1476,4 +1648,84 @@ input:checked + .slider:before { transform: translateX(14px); }
 .sign-badge { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; font-size: 12px; font-weight: 900; color: white; }
 .bg-red-badge { background-color: #ef4444; }
 .bg-blue-badge { background-color: #3b82f6; }
+
+/* =========================================
+   ★ 메모 영역 (특이사항) 전용 스타일 ★
+========================================= */
+.memo-container-cell {
+  background: var(--bg-surface);
+  padding: 16px 20px;
+  vertical-align: top;
+  border-bottom: none !important;
+  border-left: none !important;
+}
+
+.memo-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 150px;
+  gap: 10px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-focus);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s;
+}
+
+.memo-wrapper:focus-within {
+  border-color: var(--primary);
+  background: var(--bg-surface);
+  box-shadow: inset 0 2px 4px rgba(37, 99, 235, 0.05), 0 0 0 3px var(--primary-soft);
+}
+
+.memo-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.memo-header i {
+  color: var(--primary);
+  font-size: 18px;
+  background: var(--primary-soft);
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.memo-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 120px;
+  resize: none;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-main);
+  outline: none;
+}
+
+.memo-textarea::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* --- 메모 영역 반응형 (모바일) --- */
+@media (max-width: 768px) {
+  .memo-container-cell {
+    padding: 12px;
+  }
+  .memo-wrapper {
+    min-height: 160px;
+    min-width: 300px; /* 모바일에서 너무 찌그러지지 않게 최소 가로폭 유지 */
+  }
+  .memo-textarea {
+    font-size: 12px;
+  }
+}
 </style>
