@@ -15,10 +15,11 @@ const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi(
 // 추가 상태가 필요하면 이 객체에만 추가하면 됩니다.
 // ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
-  0: { text: '진행중',   cls: 'status-pending', icon: 'mdi-dots-horizontal-circle' },
-  1: { text: '입금완료', cls: 'status-active',  icon: 'mdi-check-circle' },
-  2: { text: '미수처리', cls: 'status-unpaid',  icon: 'mdi-alert-circle' },
-}
+  0: { text: '진행중',   cls: 'status-pending', icon: 'mdi-progress-clock' },
+  1: { text: '청구 완료',   cls: 'status-billed',  icon: 'mdi-file-document-check-outline' },
+  2: { text: '입금 완료',   cls: 'status-active',  icon: 'mdi-check-circle-outline' },
+  3: { text: '미수 처리',   cls: 'status-unpaid',  icon: 'mdi-alert-circle-outline' },
+};
 const statusInfo = (s) => STATUS_MAP[+s] ?? STATUS_MAP[0]
 
 // ────────────────────────────────────────────────────────────
@@ -120,12 +121,27 @@ async function fetchList() {
   }
 }
 
+async function sendReceipe(item) {
+  if (!confirm(`[${item.siteName}] 청구 완료 처리하시겠습니까?`)) return
+  try {
+    await axios.post('/api/v1/settle/site/status', {
+      idx:       item.id,
+      status:    1,
+      changedBy: useAuthStore().user?.managerId,
+    })
+    alert('청구 완료 처리가 완료되었습니다.')
+    await fetchList()
+  } catch {
+    alert('처리 중 오류가 발생했습니다.')
+  }
+}
+
 async function confirmDeposit(item) {
   if (!confirm(`[${item.siteName}] 입금 확인 처리하시겠습니까?`)) return
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:       item.id,
-      status:    1,
+      status:    2,
       changedBy: useAuthStore().user?.managerId,
     })
     alert('입금 확인 처리가 완료되었습니다.')
@@ -147,7 +163,7 @@ async function executeUnpaid() {
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:      unpaidTarget.value.id,
-      status:   2,
+      status:   3,
       bigo:     bigo.value.trim(),
       changeBy: useAuthStore().user?.managerId || 'unknown',
     })
@@ -512,9 +528,14 @@ onMounted(async () => {
             </th>
             <th class="text-center" style="width:100px">상태</th>
             <th class="text-center" style="width:150px">미수 사유</th>
-            <th class="sortable text-center" style="width:90px" @click="toggleSort('regDtShort')">
+            <th class="sortable text-center" style="width:90px" @click="toggleSort('regDt')">
               <div class="th-content justify-center">
-                작성일<i v-if="sortKey==='regDtShort'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+                작성일<i v-if="sortKey==='regDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+              </div>
+            </th>
+            <th class="sortable text-center" style="width:90px" @click="toggleSort('modDt')">
+              <div class="th-content justify-center">
+                수정일<i v-if="sortKey==='modDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
               </div>
             </th>
             <th class="text-center" style="width:150px">관리</th>
@@ -577,7 +598,8 @@ onMounted(async () => {
               <span v-else class="text-gray text-sm">—</span>
             </td>
 
-            <td class="text-center text-gray text-sm">{{ item.regDtShort }}</td>
+            <td class="text-center text-gray text-sm">{{ item.regDt }}</td>
+            <td class="text-center text-gray text-sm">{{ item.modDt }}</td>
 
             <!-- 관리 버튼 -->
             <td class="text-center">
@@ -602,7 +624,15 @@ onMounted(async () => {
                 <span class="icon-divider"></span>
 
                 <!-- 진행중 → 입금확인 / 미수처리 -->
-                <template v-if="+item.status === 0">
+                <template v-if="item.status === 0">
+                  <button
+                      @click="sendReceipe(item)"
+                      class="icon-btn"
+                      title="청구 완료"
+                  ><i class="mdi mdi-check-circle-outline"></i></button>
+                </template>
+
+                <template v-else-if="item.status === 1">
                   <button
                       @click="confirmDeposit(item)"
                       class="icon-btn icon-btn--green"
@@ -863,9 +893,29 @@ onMounted(async () => {
   display:inline-flex; align-items:center; gap:4px;
   padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600;
 }
-.status-active  { background:rgba(16,185,129,.1); color:var(--success); }
-.status-pending { background:rgba(245,158,11,.1);  color:var(--warning); }
-.status-unpaid  { background:rgba(239,68,68,.1);   color:var(--danger); }
+/* 0: 진행중 (주황색/노란색 계열) - 대기 중이거나 작업 중인 상태 */
+.status-pending {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning, #f59e0b);
+}
+
+/* 1: 청구 완료 (파란색 계열) - 문서 발행은 완료되었으나 아직 입금 전인 상태 */
+.status-billed {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--primary, #3b82f6);
+}
+
+/* 2: 입금 완료 (초록색 계열) - 최종적으로 정상 완료된 상태 */
+.status-active {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success, #10b981);
+}
+
+/* 3: 미수 처리 (빨간색 계열) - 문제가 발생하여 확인이 필요한 상태 */
+.status-unpaid {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger, #ef4444);
+}
 
 .unpaid-note {
   display:inline-flex; align-items:center; gap:4px;
