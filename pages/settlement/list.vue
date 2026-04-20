@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, reactive, watch } from 'vue'
 import axios from 'axios'
 
 import SettlementModal      from '@/components/SettlementModal.vue'
@@ -342,6 +342,10 @@ onMounted(async () => {
   ])
   await fetchList()
 })
+
+onActivated(async () => {
+  await fetchList();
+});
 </script>
 
 <template>
