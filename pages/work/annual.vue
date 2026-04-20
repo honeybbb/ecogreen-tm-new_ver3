@@ -19,11 +19,10 @@ const firstOfMonth = () => {
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10)
 }
 
-// ★ 연도 자동 계산 (현재 연도 ~ 2010년까지)
+// ★ 연도 자동 계산 (현재 연도 ~ 2010년까지) - 부여 모달에서 사용
 const currentYear = new Date().getFullYear();
 const yearRange = computed(() => {
   const years = [];
-  // 내년(currentYear + 1)을 포함하고 싶다면 let y = currentYear + 1 로 수정
   for (let y = currentYear; y >= 2010; y--) {
     years.push(y);
   }
@@ -158,11 +157,11 @@ const STATUS_MAP = {
 }
 const statusInfo = (s) => STATUS_MAP[+s] ?? STATUS_MAP[0]
 
+
 // ════════════════════════════════════════════════════════════
-// 탭2 — 잔여 현황
+// 탭2 — 잔여 현황 (백엔드 계산 데이터 연동)
 // ════════════════════════════════════════════════════════════
 const quotaFilter = ref({
-  year:    currentYear, // '전체' 또는 연도
   sIdx:    '전체',
   keyword: '',
 })
@@ -171,14 +170,15 @@ const currentPageQuota = ref(1)
 const pageSizeQuota    = ref(50)
 
 const isLoadingQuota = ref(false)
-const quotaList      = ref([])
+const quotaList      = ref([]) // 백엔드에서 받은 누적 데이터를 바로 씁니다.
 
 const quotaStats = computed(() => ({
   total:    quotaList.value.length,
-  granted:  quotaList.value.reduce((s, i) => s + (+i.totalCount  || 0), 0),
-  used:     quotaList.value.reduce((s, i) => s + (+i.usedCount   || 0), 0),
-  remain:   quotaList.value.reduce((s, i) => s + (+i.remainDays  || 0), 0),
-  notGrant: quotaList.value.filter(i => !i.quotaIdx).length,
+  // 백엔드에서 합산해준 필드명(totalCountSum, usedCountSum 등)을 사용합니다.
+  granted:  quotaList.value.reduce((s, i) => s + (Number(i.totalCountSum || 0) + Number(i.overCountSum || 0)), 0),
+  used:     quotaList.value.reduce((s, i) => s + (Number(i.usedCountSum || 0) + Number(i.payCountSum || 0)), 0),
+  remain:   quotaList.value.reduce((s, i) => s + Number(i.remainDays || 0), 0),
+  notGrant: quotaList.value.filter(i => !i.hasQuota).length,
 }))
 
 const filteredQuota = computed(() =>
@@ -202,17 +202,15 @@ const selectedQuota = computed(() => filteredQuota.value.filter(i => i._selected
 
 async function fetchQuotaList() {
   await withLoading(isLoadingQuota, async () => {
-    // '전체'일 경우 빈 값('')으로 백엔드에 전송
-    const sendYear = quotaFilter.value.year === '전체' ? '' : quotaFilter.value.year;
-
+    // year 파라미터가 제거되었습니다. 검색어와 현장만 보냅니다.
     const { data } = await axios.get('/api/v1/member/annual/list', {
-      params: { year: sendYear, sIdx: quotaFilter.value.sIdx, search: quotaFilter.value.keyword, cIdx },
+      params: { sIdx: quotaFilter.value.sIdx, search: quotaFilter.value.keyword, cIdx }
     })
-    quotaList.value = (data.data || []).map(r => ({
-      ...r,
-      _selected:  false,
-      remainDays: (+r.totalCount + +(r.overCount || 0)) - +r.usedCount - +(r.payCount || 0),
-      usageRate:  +r.totalCount > 0 ? Math.round((+r.usedCount / +r.totalCount) * 100) : 0,
+
+    quotaList.value = (data.data || []).map(item => ({
+      ...item,
+      _selected: false,
+      hasQuota: !!item.hasQuota // DB에서 1 or 0으로 오기 때문에 Boolean으로 변환
     }))
   })
 }
@@ -225,7 +223,6 @@ const syncFiltersFromURL = () => {
 
   if (q.tab) activeTab.value = q.tab;
 
-  // 탭1: 신청관리 필터
   if (q.reqStart)  reqFilter.value.startDate = q.reqStart;
   if (q.reqEnd)    reqFilter.value.endDate = q.reqEnd;
   if (q.reqSite)   reqFilter.value.sIdx = q.reqSite;
@@ -234,28 +231,24 @@ const syncFiltersFromURL = () => {
   if (q.reqPage)   currentPageReq.value = Number(q.reqPage) || 1;
   if (q.reqSize)   pageSizeReq.value = Number(q.reqSize) || 50;
 
-  // 탭2: 잔여현황 필터
-  if (q.qYear)     quotaFilter.value.year = q.qYear === '전체' ? '전체' : Number(q.qYear);
   if (q.qSite)     quotaFilter.value.sIdx = q.qSite;
   if (q.qKw)       quotaFilter.value.keyword = q.qKw;
   if (q.qPage)     currentPageQuota.value = Number(q.qPage) || 1;
   if (q.qSize)     pageSizeQuota.value = Number(q.qSize) || 50;
 };
 
-// 필터 상태가 변할 때 URL을 업데이트합니다.
 watch(
     [
       activeTab,
       () => reqFilter.value.startDate, () => reqFilter.value.endDate, () => reqFilter.value.sIdx, () => reqFilter.value.status, () => reqFilter.value.keyword,
       currentPageReq, pageSizeReq,
-      () => quotaFilter.value.year, () => quotaFilter.value.sIdx, () => quotaFilter.value.keyword,
+      () => quotaFilter.value.sIdx, () => quotaFilter.value.keyword,
       currentPageQuota, pageSizeQuota
     ],
     () => {
       const query = {};
       query.tab = activeTab.value;
 
-      // 신청 관리 파라미터 구성
       if (reqFilter.value.startDate) query.reqStart = reqFilter.value.startDate;
       if (reqFilter.value.endDate)   query.reqEnd = reqFilter.value.endDate;
       if (reqFilter.value.sIdx !== '전체') query.reqSite = reqFilter.value.sIdx;
@@ -264,8 +257,6 @@ watch(
       if (currentPageReq.value !== 1) query.reqPage = currentPageReq.value;
       if (pageSizeReq.value !== 50)   query.reqSize = pageSizeReq.value;
 
-      // 잔여 현황 파라미터 구성
-      if (quotaFilter.value.year !== currentYear) query.qYear = quotaFilter.value.year;
       if (quotaFilter.value.sIdx !== '전체') query.qSite = quotaFilter.value.sIdx;
       if (quotaFilter.value.keyword) query.qKw = quotaFilter.value.keyword;
       if (currentPageQuota.value !== 1) query.qPage = currentPageQuota.value;
@@ -276,8 +267,8 @@ watch(
     { deep: true }
 );
 
-// 현장이나 연도가 변경되면 데이터 재조회
-watch([() => quotaFilter.value.year, () => quotaFilter.value.sIdx], () => {
+// 현장이 변경되면 데이터 재조회
+watch([() => quotaFilter.value.sIdx], () => {
   currentPageQuota.value = 1;
   fetchQuotaList();
 });
@@ -285,7 +276,6 @@ watch([() => quotaFilter.value.year, () => quotaFilter.value.sIdx], () => {
 watch([() => reqFilter.value.sIdx, () => reqFilter.value.status], () => {
   currentPageReq.value = 1;
 });
-
 
 // ════════════════════════════════════════════════════════════
 // 모달 — 연차 부여
@@ -302,7 +292,6 @@ const GRANT_DEFAULTS = () => ({
 })
 const grantForm = ref(GRANT_DEFAULTS())
 
-// 연도 변경 시 날짜 자동 세팅
 watch(() => grantForm.value.year, (y) => {
   grantForm.value.grantDate  = `${y}-01-01`
   grantForm.value.expireDate = `${y}-12-31`
@@ -316,7 +305,7 @@ function openGrant() {
 async function executeGrant() {
   const targets = selectedQuota.value.length > 0
       ? selectedQuota.value
-      : filteredQuota.value.filter(i => !i.quotaIdx)
+      : filteredQuota.value.filter(i => !i.hasQuota)
 
   if (!targets.length) { alert('부여 대상 직원이 없습니다.'); return }
   if (!confirm(`${grantForm.value.year}년 연차를 ${targets.length}명에게 부여하시겠습니까?`)) return
@@ -355,7 +344,7 @@ const settleTarget  = ref(null)
 
 const SETTLE_DEFAULTS = (item = {}) => ({
   mIdx:          item.mIdx       ?? null,
-  quotaIdx:      item.quotaIdx   ?? null,
+  quotaIdx:      item.quotaIdx   ?? null, // 참고: 이제는 직원단위 모달이라 quotaIdx가 모호할 수 있습니다. 백엔드 처리 방식에 맞게 조정 필요
   sIdx:          item.sIdx       ?? null,
   settleDays:    item.remainDays > 0 ? item.remainDays : 0,
   basicWage:     item.basicWage  ?? 0,
@@ -398,7 +387,7 @@ async function executeSettle() {
 // 라이프사이클
 // ────────────────────────────────────────────────────────────
 onMounted(async () => {
-  syncFiltersFromURL() // URL 쿼리를 상태에 세팅
+  syncFiltersFromURL()
 
   await fetchSiteOptions()
 
@@ -422,23 +411,18 @@ onMounted(async () => {
       </div>
       <div class="header-actions" v-if="activeTab === 'quota'">
         <button @click="openGrant" class="btn-add">
-          <i class="mdi mdi-gift-outline"></i> 연차 부여
+          <i class="mdi mdi-gift-outline"></i> 연차 일괄 부여
         </button>
       </div>
       <div class="header-actions" v-else>
         <div class="action-bar-left">
           <transition name="fade">
             <div v-if="selectedReq.length > 0" class="bulk-actions">
-              <button class="btn-save" @click="bulkUpdateStatus(1)">
-                일괄 승인
-              </button>
-              <button class="btn-delete" @click="bulkUpdateStatus(2)">
-                일괄 반려
-              </button>
+              <button class="btn-save" @click="bulkUpdateStatus(1)">일괄 승인</button>
+              <button class="btn-delete" @click="bulkUpdateStatus(2)">일괄 반려</button>
             </div>
           </transition>
         </div>
-
       </div>
     </div>
 
@@ -457,7 +441,6 @@ onMounted(async () => {
     </div>
 
     <template v-if="activeTab === 'request'">
-
       <div class="stats-grid">
         <div class="stat-card" style="--card-color:var(--primary);--card-bg:var(--primary-soft)">
           <div class="stat-icon"><i class="mdi mdi-file-document-edit-outline"></i></div>
@@ -528,7 +511,6 @@ onMounted(async () => {
         <div class="table-header">
           <div class="table-title">
             <span>연차 신청 목록 ({{ filteredReq.length }}건)</span>
-            <!--span v-if="selectedReq.length > 0" class="selected-badge">{{ selectedReq.length }}건 선택됨</span-->
           </div>
           <div class="page-size-select">
             <label>페이지당</label>
@@ -610,12 +592,7 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
-
-        <Pagination
-            v-model:currentPage="currentPageReq"
-            v-model:pageSize="pageSizeReq"
-            :totalCount="filteredReq.length"
-        />
+        <Pagination v-model:currentPage="currentPageReq" v-model:pageSize="pageSizeReq" :totalCount="filteredReq.length" />
       </div>
     </template>
 
@@ -628,27 +605,20 @@ onMounted(async () => {
         </div>
         <div class="stat-card" style="--card-color:#0ea5e9;--card-bg:rgba(14,165,233,.1)">
           <div class="stat-icon"><i class="mdi mdi-gift-outline"></i></div>
-          <div class="stat-content"><span class="stat-label">총 부여</span><span class="stat-value">{{ quotaStats.granted }}<small>일</small></span></div>
+          <div class="stat-content"><span class="stat-label">누적 총 부여</span><span class="stat-value">{{ quotaStats.granted }}<small>일</small></span></div>
         </div>
         <div class="stat-card" style="--card-color:var(--warning);--card-bg:rgba(245,158,11,.1)">
           <div class="stat-icon"><i class="mdi mdi-calendar-remove-outline"></i></div>
-          <div class="stat-content"><span class="stat-label">총 사용</span><span class="stat-value">{{ quotaStats.used }}<small>일</small></span></div>
+          <div class="stat-content"><span class="stat-label">누적 총 사용</span><span class="stat-value">{{ quotaStats.used }}<small>일</small></span></div>
         </div>
         <div class="stat-card" style="--card-color:var(--success);--card-bg:rgba(16,185,129,.1)">
           <div class="stat-icon"><i class="mdi mdi-calendar-clock-outline"></i></div>
-          <div class="stat-content"><span class="stat-label">총 잔여</span><span class="stat-value">{{ quotaStats.remain }}<small>일</small></span></div>
+          <div class="stat-content"><span class="stat-label">최종 총 잔여</span><span class="stat-value">{{ quotaStats.remain }}<small>일</small></span></div>
         </div>
       </div>
 
       <div class="filter-panel">
         <div class="filter-row">
-          <div class="filter-group">
-            <label class="filter-label">연도</label>
-            <select v-model="quotaFilter.year" class="filter-select">
-              <option value="전체">전체</option>
-              <option v-for="y in yearRange" :key="y" :value="y">{{ y }}년</option>
-            </select>
-          </div>
           <div class="filter-group">
             <label class="filter-label">현장</label>
             <SiteSelect v-model="quotaFilter.sIdx" />
@@ -671,12 +641,7 @@ onMounted(async () => {
       <div class="table-card">
         <div class="table-header">
           <div class="table-title">
-            연차 잔여 현황 ({{ filteredQuota.length }}명)
-            <!--transition name="fade">
-            <span v-if="selectedQuota.length > 0" class="selected-badge">
-              {{ selectedQuota.length }}명 선택됨
-            </span>
-            </transition-->
+            직원별 누적 연차 현황 ({{ filteredQuota.length }}명)
           </div>
           <div class="page-size-select">
             <label>페이지당</label>
@@ -693,22 +658,21 @@ onMounted(async () => {
                 <input type="checkbox" v-model="selectAllQuota" class="custom-cb" />
               </th>
               <th>현장</th>
-              <th>발생년도</th>
               <th>직원명</th>
               <th class="text-center">입사일</th>
-              <th class="text-center">부여</th>
-              <th class="text-center">이월</th>
-              <th class="text-center">사용</th>
-              <th class="text-center">정산</th>
-              <th class="text-center">잔여</th>
+              <th class="text-center">총 부여</th>
+              <th class="text-center">총 이월</th>
+              <th class="text-center">총 사용</th>
+              <th class="text-center">총 정산</th>
+              <th class="text-center">최종 잔여</th>
               <th class="text-center">사용률</th>
               <th class="text-center">관리</th>
             </tr>
             </thead>
             <tbody>
             <tr v-if="isLoadingQuota" class="empty-row">
-              <td colspan="12">
-                <div class="empty-state"><div class="spinner"></div><p>불러오는 중...</p></div>
+              <td colspan="11">
+                <div class="empty-state"><div class="spinner"></div><p>데이터를 불러오는 중입니다...</p></div>
               </td>
             </tr>
             <template v-else>
@@ -721,23 +685,23 @@ onMounted(async () => {
                   <input type="checkbox" v-model="item._selected" class="custom-cb" />
                 </td>
                 <td class="text-gray text-sm">{{ item.siteName }}</td>
-                <td>{{ item.year || quotaFilter.year }}</td>
                 <td>
                   <span class="font-bold">{{ item.name }}</span>
                   <span class="badge badge-gray ml-1">{{ item.role }}</span>
                 </td>
-                <td class="text-center text-gray text-sm">{{ item.inDate }}</td>
+                <td class="text-center text-gray text-sm">{{ item.inDate || '-' }}</td>
+
                 <td class="text-center">
-                  <span v-if="item.quotaIdx">{{ item.totalCount }}일</span>
-                  <span v-else class="badge badge-red">미부여</span>
+                  <span v-if="item.hasQuota">{{ item.totalCountSum }}일</span>
+                  <span v-else class="badge badge-red">기록없음</span>
                 </td>
                 <td class="text-center">
-                  <span v-if="+item.overCount > 0" class="badge badge-blue">+{{ item.overCount }}일</span>
+                  <span v-if="item.overCountSum > 0" class="badge badge-blue">+{{ item.overCountSum }}일</span>
                   <span v-else class="text-gray">-</span>
                 </td>
-                <td class="text-center"><span class="day-chip used">{{ item.usedCount }}일</span></td>
+                <td class="text-center"><span class="day-chip used">{{ item.usedCountSum }}일</span></td>
                 <td class="text-center">
-                  <span v-if="+item.payCount > 0" class="badge badge-red">{{ item.payCount }}일</span>
+                  <span v-if="item.payCountSum > 0" class="badge badge-red">{{ item.payCountSum }}일</span>
                   <span v-else class="text-gray">-</span>
                 </td>
                 <td class="text-center">
@@ -757,12 +721,12 @@ onMounted(async () => {
                   <button
                       @click="openSettle(item)"
                       class="btn-detail"
-                      :disabled="!item.quotaIdx || item.remainDays <= 0"
+                      :disabled="!item.hasQuota || item.remainDays <= 0"
                   >정산</button>
                 </td>
               </tr>
               <tr v-if="filteredQuota.length === 0" class="empty-row">
-                <td colspan="12">
+                <td colspan="11">
                   <div class="empty-state">
                     <i class="mdi mdi-calendar-blank-outline"></i>
                     <p>연차 데이터가 없습니다</p>
@@ -799,7 +763,7 @@ onMounted(async () => {
             <i class="mdi mdi-information-outline"></i>
             <div>
               <span v-if="selectedQuota.length > 0" class="highlight-text">{{ selectedQuota.length }}명</span>
-              <span v-else class="highlight-text">미부여자 전체</span>
+              <span v-else class="highlight-text">기록없는 직원 전체</span>
               에게 아래 설정으로 연차를 일괄 부여합니다.
             </div>
           </div>
@@ -917,9 +881,8 @@ onMounted(async () => {
 
 <style scoped>
 /* ──────────────────────────────────────────────────────────
-   공통 CSS 변수는 global.css 에서 주입 — 여기는 이 페이지 전용만
+   기존 CSS 전체 유지
 ──────────────────────────────────────────────────────────── */
-
 /* ── 탭 ── */
 .tab-nav { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border-color); }
 .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 13px; font-weight: 600; color: var(--text-sub); cursor: pointer; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 7px; transition: all .2s; position: relative; bottom: -2px; font-family: inherit; letter-spacing: -.02em; }
