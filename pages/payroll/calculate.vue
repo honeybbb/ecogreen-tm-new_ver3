@@ -6,6 +6,7 @@ import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
 import {calculateAge} from "~/utils/formatter.js";
+import {formatCurrency} from "../../utils/formatter.js";
 
 const {
   siteOptions,
@@ -23,6 +24,7 @@ const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
+const selectedPaymentDay = ref('전체');
 
 const items = ref([]);
 const payrollList = ref([]);
@@ -31,13 +33,20 @@ const dataMode = ref(''); // 'saved' | 'draft'
 
 const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
 const ageLimits    = ref({ pension: 0, employment: 0 });
+const paymentDayOptions = computed(() => {
+  const days = [];
+  for (let i = 1; i <= 31; i++) {
+    days.push(String(i));
+  }
+  return days;
+});
 
 // ── 페이지네이션 상태 ──────────────────────────────
 const currentPage = ref(1);
 const pageSize    = ref(50);
 const pageSizeOptions = [50, 100, 200, 500];
 
-watch([selectedSite, selectedType, searchTerm, selectedYearMonth], () => {
+watch([selectedSite, selectedType, searchTerm, selectedYearMonth, selectedPaymentDay], () => {
   currentPage.value = 1;
 });
 
@@ -49,9 +58,10 @@ const deductionItems = computed(() => items.value.filter(item => item.groupCd ==
 const filteredPayrollList = computed(() => {
   const filtered = payrollList.value.filter(p =>
       (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
-      p.staff.toLowerCase().includes(searchTerm.value.toLowerCase()) &&
       (selectedType.value === '전체' || p.type === selectedType.value) &&
-      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value)
+      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
+      (selectedPaymentDay.value === '전체' || String(p.paymentDay) === selectedPaymentDay.value) &&
+      p.staff.toLowerCase().includes(searchTerm.value.toLowerCase())
   );
 
   filtered.sort((a, b) => {
@@ -922,6 +932,17 @@ onMounted(async () => {
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-calendar-month-outline"></i> 급여연월</label>
           <input type="month" v-model="selectedYearMonth" class="filter-select" @change="getPayrollMonth"/>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-cash-calendar"></i> 지급일
+          </label>
+          <select v-model="selectedPaymentDay" class="filter-select">
+            <option value="전체">전체</option>
+            <option v-for="day in paymentDayOptions" :key="day" :value="day">
+              {{ day }}일
+            </option>
+          </select>
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 근무 현장</label>
