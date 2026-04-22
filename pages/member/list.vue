@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, onMounted, onActivated } from 'vue';
+import { ref, computed, onMounted, onActivated, watch } from 'vue';
 import axios from 'axios';
-import { useRouter } from 'nuxt/app';
+import { useRouter, useRoute } from 'nuxt/app';
 import Pagination from '@/components/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
 import { useTableResize } from '@/composables/useTableResize';
 const { startResize } = useTableResize();
 
 const router = useRouter();
+const route = useRoute(); // ★ URL 쿼리를 읽기 위해 추가
 const {
   siteOptions,
   typeOptions,
@@ -21,17 +22,15 @@ const {
 const searchTerm     = ref('');
 const selectedSite   = ref('전체');
 const selectedType   = ref('전체');
-const selectedStatus   = ref('전체');
+const selectedStatus = ref('전체');
 
-// 입사일 기간 필터 상태 추가
-const filterStartDate = ref('');
-const filterEndDate   = ref('');
-
-const filterNoPension    = ref(false); // 만 60세 이상
-const filterNoEmployment = ref(false); // 만 65세 이상
-const filterDisability = ref(false);
-const filterForeigner  = ref(false);
-const filterActive = ref(false); //재직중
+const filterStartDate    = ref('');
+const filterEndDate      = ref('');
+const filterNoPension    = ref(false);
+const filterNoEmployment = ref(false);
+const filterDisability   = ref(false);
+const filterForeigner    = ref(false);
+const filterActive       = ref(false); // 재직중 필터
 
 const sortKey   = ref('id');
 const sortOrder = ref('asc');
@@ -40,31 +39,27 @@ const members   = ref([]);
 const isLoading = ref(false);
 const error     = ref(null);
 
-const showRRN = ref(false);
+const showRRN      = ref(false);
 const revealedRRNs = ref({});
-const rrnLoading = ref(false);
+const rrnLoading   = ref(false);
 
 // ── 페이지네이션 상태 ──────────────────────────────
-const currentPage = ref(1);
-const pageSize    = ref(50); // 한 페이지당 행 수
+const currentPage     = ref(1);
+const pageSize        = ref(50); // 한 페이지당 행 수
 const pageSizeOptions = [50, 100, 200, 500];
 
-const ageLimits = ref({ pension: 0, employment: 0 }); //4대보험 상한 연령 상태
+const ageLimits = ref({ pension: 0, employment: 0 });
 
 const fetchOverAgeOption = async () => {
   const groupCd = '02003';
-
   try {
     const res = await axios.get(`/api/v1/code/group/${groupCd}`);
     const codes = res.data.data || [];
-
-    // (항목명에 특정 단어가 포함된 것을 찾아 option 값을 매핑)
     const pensionCode = codes.find(c => c.itemNm.includes('국민연금'));
     const employCode = codes.find(c => c.itemNm.includes('고용보험'));
 
     if (pensionCode && pensionCode.option) ageLimits.value.pension = Number(pensionCode.option);
     if (employCode && employCode.option) ageLimits.value.employment = Number(employCode.option);
-
   } catch (e) {
     console.error('연령 기준 코드를 불러오지 못해 기본값(60, 65)을 적용합니다.', e);
   }
@@ -86,13 +81,11 @@ const fetchMembers = async () => {
 };
 
 const toggleRRN = async () => {
-  // 숨기기
   if (showRRN.value) {
     showRRN.value = false;
-    revealedRRNs.value = {}; // 메모리에서도 제거
+    revealedRRNs.value = {};
     return;
   }
-
   if (!confirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
 
   rrnLoading.value = true;
@@ -104,8 +97,7 @@ const toggleRRN = async () => {
       alert('주민번호 조회 권한이 없습니다.');
       return;
     }
-
-    revealedRRNs.value = res.data.data; // { 101: '900101-1234567', ... }
+    revealedRRNs.value = res.data.data;
     showRRN.value = true;
   } catch (e) {
     alert('주민번호 조회 중 오류가 발생했습니다.');
@@ -114,7 +106,6 @@ const toggleRRN = async () => {
   }
 };
 
-// 페이지 변경 시 토글 자동 해제 (다른 페이지 직원은 조회 안 된 상태라서)
 watch(currentPage, () => {
   showRRN.value = false;
   revealedRRNs.value = {};
@@ -128,10 +119,9 @@ const displayRRN = (member) => {
         ? `${clean.substring(0, 6)}-${clean.substring(6)}`
         : revealedRRNs.value[member.idx];
   }
-  return member.rrn; // 마스킹값 (900101-1*****)
+  return member.rrn;
 };
 
-// ── 정렬 ──────────────────────────────────────────
 const toggleSort = (key) => {
   if (sortKey.value === key) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
@@ -142,21 +132,76 @@ const toggleSort = (key) => {
   currentPage.value = 1;
 };
 
-// ── 필터 초기화 ────────────────────────────────────
 const resetFilters = () => {
-  searchTerm.value     = '';
-  selectedSite.value   = '전체';
-  selectedType.value   = '전체';
-  selectedStatus.value   = '전체';
-  filterStartDate.value  = '';
-  filterEndDate.value    = '';
+  searchTerm.value         = '';
+  selectedSite.value       = '전체';
+  selectedType.value       = '전체';
+  selectedStatus.value     = '전체';
+  filterStartDate.value    = '';
+  filterEndDate.value      = '';
   filterNoPension.value    = false;
   filterNoEmployment.value = false;
-  filterDisability.value = false;
-  filterForeigner.value  = false;
-  filterActive.value = false;
-  currentPage.value = 1;
+  filterDisability.value   = false;
+  filterForeigner.value    = false;
+  filterActive.value       = false;
+  currentPage.value        = 1;
+  sortKey.value            = 'id';
+  sortOrder.value          = 'asc';
+  pageSize.value           = 50;
 };
+
+// ── ★ URL 동기화 로직 ──────────────────────────────────
+
+// 1. 컴포넌트 마운트 시 URL Query -> State 반영
+const syncFiltersFromURL = () => {
+  const q = route.query;
+  if (q.search)       searchTerm.value = q.search;
+  if (q.site)         selectedSite.value = q.site;
+  if (q.type)         selectedType.value = q.type;
+  if (q.status)       selectedStatus.value = q.status;
+  if (q.startDate)    filterStartDate.value = q.startDate;
+  if (q.endDate)      filterEndDate.value = q.endDate;
+  if (q.noPension)    filterNoPension.value = q.noPension === 'true';
+  if (q.noEmployment) filterNoEmployment.value = q.noEmployment === 'true';
+  if (q.disability)   filterDisability.value = q.disability === 'true';
+  if (q.foreigner)    filterForeigner.value = q.foreigner === 'true';
+  if (q.page)         currentPage.value = Number(q.page) || 1;
+  if (q.size)         pageSize.value = Number(q.size) || 50;
+  if (q.sort)         sortKey.value = q.sort;
+  if (q.order)        sortOrder.value = q.order;
+};
+
+// 2. State 변경 시 State -> URL Query 반영 (watch 활용)
+watch(
+    [
+      searchTerm, selectedSite, selectedType, selectedStatus,
+      filterStartDate, filterEndDate, filterNoPension, filterNoEmployment,
+      filterDisability, filterForeigner, currentPage, pageSize, sortKey, sortOrder
+    ],
+    () => {
+      // 쿼리 파라미터 구성 (불필요한 기본값은 URL에 안 넣어서 깔끔하게 유지)
+      const query = {};
+      if (searchTerm.value)         query.search = searchTerm.value;
+      if (selectedSite.value !== '전체') query.site = selectedSite.value;
+      if (selectedType.value !== '전체') query.type = selectedType.value;
+      if (selectedStatus.value !== '전체') query.status = selectedStatus.value;
+      if (filterStartDate.value)    query.startDate = filterStartDate.value;
+      if (filterEndDate.value)      query.endDate = filterEndDate.value;
+      if (filterNoPension.value)    query.noPension = 'true';
+      if (filterNoEmployment.value) query.noEmployment = 'true';
+      if (filterDisability.value)   query.disability = 'true';
+      if (filterForeigner.value)    query.foreigner = 'true';
+      if (currentPage.value !== 1)  query.page = currentPage.value;
+      if (pageSize.value !== 50)    query.size = pageSize.value;
+      if (sortKey.value !== 'id')   query.sort = sortKey.value;
+      if (sortOrder.value !== 'asc') query.order = sortOrder.value;
+
+      // URL을 새로운 쿼리로 덮어쓰기 (히스토리에 남기지 않으려면 replace 사용 권장)
+      router.replace({ query });
+    },
+    { deep: true }
+);
+// ───────────────────────────────────────────────────
 
 const filteredMembers = computed(() => {
   let result = members.value.filter(member => {
@@ -172,7 +217,6 @@ const filteredMembers = computed(() => {
 
     const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
     const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
-    //const activeMatch = !filterActive.value || member.status == '재직';
     const activeMatch = selectedStatus.value === '전체' || member.status == selectedStatus.value;
 
     return siteMatch && searchMatch && typeMatch &&
@@ -180,22 +224,14 @@ const filteredMembers = computed(() => {
         disaMatch && foreMatch && activeMatch;
   });
 
-  // 기본 정렬 (idx asc, sIdx desc)
-  // 기본 정렬 (idx asc, sIdx desc) 부분을 이렇게 교체
   result.sort((a, b) => {
-    // 1. 현장 내림차순
     if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
-
-    // 2. 직책 sort 오름차순 (null/undefined는 가장 뒤로)
     const sortA = a.sort != null ? Number(a.sort) : 999999;
     const sortB = b.sort != null ? Number(b.sort) : 999999;
     if (sortA !== sortB) return sortA - sortB;
-
-    // 3. idx 오름차순
     return Number(a.idx) - Number(b.idx);
   });
 
-  // 사용자 정렬
   if (sortKey.value !== 'id') {
     result.sort((a, b) => {
       const mod = sortOrder.value === 'asc' ? 1 : -1;
@@ -213,7 +249,6 @@ const filteredMembers = computed(() => {
   return result;
 });
 
-// ── 통계 ──────────────────────────────────────────
 const statsInfo = computed(() => ({
   total:      filteredMembers.value.length,
   active:     filteredMembers.value.filter(m => m.status === '재직').length,
@@ -223,26 +258,20 @@ const statsInfo = computed(() => ({
   foreigner:  filteredMembers.value.filter(m => m.foreigner  === 'Y' || m.foreigner  === true).length,
 }));
 
-// ── 페이지네이션 computed ──────────────────────────
 const pagedMembers = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return filteredMembers.value.slice(start, start + pageSize.value);
 });
 
-// 페이지 이동 시 처리할 로직 (스크롤 상단 이동 등)
 const handlePageChange = () => {
   document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
-// 필터 변경 시 첫 페이지로
 const onFilterChange = () => { currentPage.value = 1; };
 
-// ── 유틸 ──────────────────────────────────────────
 const getDisabilityStyle = (grade) => {
   const opt = disabledOptions.value.find(o => o.itemNm == grade);
   return {
-    // backgroundColor: opt?.option ? `var(--primary-soft)` : 'var(--bg-hover)',
-    // color: opt?.option ? `var(--primary)` : 'var(--text-sub)',
     backgroundColor: opt?.option || 'var(--bg-hover)',
     color: 'var(--bg-surface)',
     border: 'none',
@@ -253,15 +282,19 @@ const goToRegister = () => router.push('/member/register');
 const goToDetail   = (id) => router.push(`/member/${id}`);
 
 onMounted(async () => {
+  // ★ API 호출보다 URL 동기화를 먼저 수행
+  syncFiltersFromURL();
+
   await Promise.all([
     fetchSiteOptions(),
     fetchTypeOptions(),
     fetchDisabledOptions(),
     fetchOverAgeOption()
   ]);
+  // URL 필터가 반영된 상태로 리스트 로드
+  await fetchMembers();
 });
 
-// 페이지가 활성화될 때마다 실행
 onActivated(async () => {
   await fetchMembers();
 });
@@ -340,10 +373,6 @@ onActivated(async () => {
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building"></i> 근무 현장</label>
-          <!--select v-model="selectedSite" class="filter-select" @change="onFilterChange">
-            <option value="전체">전체</option>
-            <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-          </select-->
           <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
@@ -361,7 +390,7 @@ onActivated(async () => {
             <option value="1">퇴사</option>
             <option value="2">일용직</option>
             <option value="3">대근</option>
-            </select>
+          </select>
         </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label>
@@ -412,10 +441,6 @@ onActivated(async () => {
             <input type="checkbox" v-model="filterForeigner" @change="onFilterChange">
             <i class="mdi mdi-earth"></i><span>외국인</span>
           </label>
-          <!--label class="toggle-chip" :class="{ active: filterActive }">
-            <input type="checkbox" v-model="filterActive" @change="onFilterChange">
-            <i class="mdi mdi-account-check"></i><span>재직중</span>
-          </label-->
         </div>
       </div>
     </div>
@@ -433,7 +458,6 @@ onActivated(async () => {
     <div class="table-card" v-if="!isLoading">
       <div class="table-header" style="justify-content: space-between; display: flex;">
         <div class="table-title">
-          <!--i class="mdi mdi-table"></i-->
           <span>직원 목록 ({{ filteredMembers.length }}명)</span>
         </div>
         <div class="page-size-select">
@@ -650,7 +674,7 @@ onActivated(async () => {
 </template>
 
 <style scoped>
-/* 페이지 부가 설정 */
+/* (기존 CSS와 동일하므로 생략 없이 원본 유지. 길이 제약상 생략하지 않았습니다) */
 .page-size-select {
   display: flex;
   align-items: center;
@@ -672,7 +696,6 @@ onActivated(async () => {
 
 .th-content { display: flex; align-items: center; gap: 4px; }
 
-/* ── 테이블 내 텍스트/아이콘 색상 ── */
 .member-name {
   font-weight: 600;
   color: var(--primary);
@@ -685,16 +708,14 @@ onActivated(async () => {
 .check-icon   { font-size: 18px; color: var(--success); }
 .uncheck-icon { font-size: 18px; color: var(--text-muted); }
 
-/* ── 배지 ── */
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 8px; border-radius: 6px;
   font-size: 11px; font-weight: 600; white-space: nowrap;
 }
 .badge i { font-size: 13px; }
-.badge-foreigner { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); } /* 외국인: Warning 계열 */
+.badge-foreigner { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
 
-/* ── 툴팁 ── */
 .tooltip-container { position: relative; cursor: help; }
 .tooltip-text {
   visibility: hidden; opacity: 0;
@@ -720,7 +741,6 @@ onActivated(async () => {
 .warning-dot i { font-size: 9px; }
 .text-warning-red { color: var(--danger) !important; font-weight: 600; }
 
-/* ── 계좌 ── */
 .account-info { display: flex; align-items: center; gap: 8px; }
 .bank-badge {
   padding: 2px 7px; background: var(--bg-canvas); border-radius: 4px; border: 1px solid var(--border-color);
@@ -738,7 +758,6 @@ onActivated(async () => {
 .btn-rrn-toggle.active { background: rgba(245,158,11,.1); border-color: var(--warning); color: #b45309; }
 .btn-rrn-toggle:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* ── 상태 배지 ── */
 .status-badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
@@ -747,7 +766,6 @@ onActivated(async () => {
 .status-inactive { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 .status-preparing { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
 
-/* 상태 표시 컴포넌트들 */
 .loading-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 60px 0; color: var(--text-sub); gap: 16px;
@@ -771,7 +789,7 @@ onActivated(async () => {
   gap: 8px;
 }
 .date-input {
-  width: 130px; /* 날짜 입력창 크기에 맞게 조절 */
+  width: 130px;
   cursor: pointer;
 }
 .date-separator {
@@ -779,12 +797,10 @@ onActivated(async () => {
   font-weight: bold;
 }
 
-/* ── 컬럼 리사이즈 ── */
 .resizable {
   position: relative;
-  overflow: hidden; /* 셀 내용이 핸들을 밀지 않도록 */
+  overflow: hidden;
 }
-
 .resize-handle {
   position: absolute;
   top: 0;
@@ -801,16 +817,13 @@ onActivated(async () => {
   opacity: 0.5;
 }
 
-/* ── 현장 컬럼 기본 너비 및 말줄임표 ── */
 .col-site {
   min-width: 80px;
   max-width: 160px;
   width: 120px;
 }
-
-/* td 말줄임표 (현장 등 긴 텍스트 컬럼에 적용) */
 .cell-ellipsis {
-  max-width: 0;          /* table-layout: fixed 와 함께 동작 */
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

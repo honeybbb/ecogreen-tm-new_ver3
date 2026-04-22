@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, reactive, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, reactive, watch } from 'vue'
 import axios from 'axios'
 
 import SettlementModal      from '@/components/SettlementModal.vue'
@@ -12,7 +12,6 @@ const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi(
 
 // ────────────────────────────────────────────────────────────
 // 상태 정의 (status 코드 → 표시 정보)
-// 추가 상태가 필요하면 이 객체에만 추가하면 됩니다.
 // ────────────────────────────────────────────────────────────
 const STATUS_MAP = {
   0: { text: '작성중',   cls: 'status-pending', icon: 'mdi-progress-clock' },
@@ -28,12 +27,17 @@ const statusInfo = (s) => STATUS_MAP[+s] ?? STATUS_MAP[0]
 const isLoading   = ref(false)
 const settlements = ref([])
 
-// 필터
-const selectedYear = reactive({ month: new Date().toISOString().slice(0, 7) })
+// 기간 검색용 시작/종료 연월 분리
+const todayMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+const selectedPeriod = reactive({
+  start: todayMonth,
+  end: todayMonth
+})
+
 const searchTerm   = ref('')
 const selectedSite = ref('전체')
 const selectedType = ref('전체')
-const filterStatus = ref('all') // 'all' | 'deposit' | 'unpaid' | 'pending'
+const filterStatus = ref('all')
 
 // 정렬
 const sortKey   = ref('id')
@@ -81,10 +85,6 @@ function safeParse(val, fallback) {
   try { return JSON.parse(val) } catch { return fallback }
 }
 
-/**
- * 서버 raw 데이터 → 화면 표시용 객체로 변환
- * mapItem을 통해 모든 데이터 가공이 한 곳에서 이루어집니다.
- */
 function mapItem(item) {
   const site     = siteOptions.value.find(s => s.idx === item.sIdx)
   const siteName = site ? site.name : `알수없는현장(${item.sIdx})`
@@ -107,10 +107,22 @@ function mapItem(item) {
 // API
 // ────────────────────────────────────────────────────────────
 async function fetchList() {
+  // 시작일이 종료일보다 늦으면 예외처리
+  if (selectedPeriod.start > selectedPeriod.end) {
+    alert('시작 연월이 종료 연월보다 클 수 없습니다.')
+    return
+  }
+
   isLoading.value = true
   try {
-    const [year, month] = selectedYear.month.split('-')
-    const { data } = await axios.get('/api/v1/settle/site/list', { params: { year, month } })
+    // 'YYYY-MM' -> 'YYYYMM' 변환하여 백엔드로 전송
+    const startStr = selectedPeriod.start.replace('-', '')
+    const endStr   = selectedPeriod.end.replace('-', '')
+
+    const { data } = await axios.get('/api/v1/settle/site/list', {
+      params: { startMonth: startStr, endMonth: endStr }
+    })
+
     settlements.value = (data.data || []).map(mapItem)
     currentPage.value = 1
   } catch (e) {
@@ -183,7 +195,7 @@ async function revertStatus(item) {
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:      item.id,
-      status:   1,
+      status:   0, // ★ 작성중으로 되돌리기이므로 0으로 전송
       changeBy: useAuthStore().user?.managerId || 'unknown',
     })
     await fetchList()
@@ -228,7 +240,9 @@ function handlePrint() {
 watch([selectedSite, selectedType, searchTerm, filterStatus], () => {
   currentPage.value = 1
 })
-watch(() => selectedYear.month, fetchList)
+
+// ★ 기간이 변경되면 fetchList 재호출
+watch(() => [selectedPeriod.start, selectedPeriod.end], fetchList)
 
 function resetFilters() {
   searchTerm.value   = ''
@@ -245,9 +259,10 @@ function toggleSort(key) {
 }
 
 const baseFilteredSettlements = computed(() => {
-  const { month } = selectedYear
+  const { start, end } = selectedPeriod
   let list = settlements.value.filter(item => {
-    if (item.target_month !== month)                                         return false
+    // ★ 기간 필터링 적용 (YYYY-MM 문자열 비교)
+    if (item.target_month < start || item.target_month > end)                return false
     if (selectedSite.value !== '전체' && item.sIdx !== selectedSite.value)   return false
     if (selectedType.value !== '전체' && item.type !== selectedType.value)   return false
     if (!item.siteName.toLowerCase().includes(searchTerm.value.toLowerCase())) return false
@@ -267,7 +282,6 @@ const baseFilteredSettlements = computed(() => {
 // 상태 필터와 정렬을 추가 적용
 const filteredSettlements = computed(() => {
   let list = baseFilteredSettlements.value.filter(item => {
-    // 상태 매칭 코드 정상화 (0: 진행중, 1: 청구완료, 2: 입금완료, 3: 미수처리)
     if (filterStatus.value === 'pending' && +item.status !== 0) return false
     if (filterStatus.value === 'billed'  && +item.status !== 1) return false
     if (filterStatus.value === 'deposit' && +item.status !== 2) return false
@@ -314,11 +328,6 @@ function openCreateModal(docType = 'SERVICE') {
   isCreateMenuOpen.value    = false
 }
 
-/**
- * 편집 모달 열기
- * @param {object} item      - 정산서 데이터
- * @param {string} tabType   - 'statement' | 'details'
- */
 function openEditModal(item, tabType = 'statement') {
   selectedId.value          = item.id
   initialDataForModal.value = { ...item, defaultTab: tabType }
@@ -333,19 +342,22 @@ onMounted(async () => {
   ])
   await fetchList()
 })
+
+onActivated(async () => {
+  await fetchList();
+});
 </script>
 
 <template>
   <div class="settlement-list-page">
 
-    <!-- ── 헤더 ── -->
     <div class="page-header">
       <div class="header-left">
         <h1 class="page-title">
           <i class="mdi mdi-calculator-variant-outline"></i>
           정산서 및 내역서 관리
         </h1>
-        <p class="page-subtitle">월별 단지 정산 및 청구 내역을 관리합니다</p>
+        <p class="page-subtitle">단지 정산 및 청구 내역을 기간별로 관리합니다</p>
       </div>
       <div class="header-actions">
         <transition name="fade">
@@ -359,7 +371,6 @@ onMounted(async () => {
           </div>
         </transition>
 
-        <!-- 새 정산서 드롭다운 -->
         <div class="create-dropdown" v-click-outside="() => isCreateMenuOpen = false">
           <button @click="isCreateMenuOpen = !isCreateMenuOpen" class="btn-add">
             <i class="mdi mdi-file-document-plus-outline"></i>
@@ -367,35 +378,34 @@ onMounted(async () => {
             <i class="mdi mdi-chevron-down"></i>
           </button>
           <ClientOnly>
-          <div v-if="isCreateMenuOpen" class="create-menu">
-            <button class="cm-item" @click="openCreateModal('SERVICE')">
-              <i class="mdi mdi-file-document-outline"></i>
-              <span class="cm-title">일반 용역 정산서</span>
-            </button>
-            <div class="cm-divider"></div>
-            <button class="cm-item" @click="openCreateModal('RETIRE_ANNUAL')">
-              <i class="mdi mdi-calendar-check-outline"></i>
-              <span class="cm-title">연차·퇴직금 정산서</span>
-            </button>
-          </div>
+            <div v-if="isCreateMenuOpen" class="create-menu">
+              <button class="cm-item" @click="openCreateModal('SERVICE')">
+                <i class="mdi mdi-file-document-outline"></i>
+                <span class="cm-title">일반 용역 정산서</span>
+              </button>
+              <div class="cm-divider"></div>
+              <button class="cm-item" @click="openCreateModal('RETIRE_ANNUAL')">
+                <i class="mdi mdi-calendar-check-outline"></i>
+                <span class="cm-title">연차·퇴직금 정산서</span>
+              </button>
+            </div>
           </ClientOnly>
         </div>
       </div>
     </div>
 
-    <!-- ── 통계 카드 ── -->
     <div class="stats-grid">
       <div class="stat-card" style="--card-color:var(--primary);--card-bg:var(--primary-soft)">
         <div class="stat-icon"><i class="mdi mdi-file-document-multiple-outline"></i></div>
         <div class="stat-content">
-          <span class="stat-label">당월 총 청구</span>
+          <span class="stat-label">기간 내 총 청구</span>
           <span class="stat-value">{{ statsInfo.totalCount }}<small>건</small></span>
         </div>
       </div>
       <div class="stat-card" style="--card-color:var(--success);--card-bg:rgba(16,185,129,.1)">
         <div class="stat-icon"><i class="mdi mdi-cash-multiple"></i></div>
         <div class="stat-content">
-          <span class="stat-label">당월 총 청구금액</span>
+          <span class="stat-label">기간 내 청구금액</span>
           <span class="stat-value">{{ fmt(statsInfo.totalAmount) }}<small>원</small></span>
         </div>
       </div>
@@ -415,13 +425,17 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ── 필터 패널 ── -->
     <div class="filter-panel">
       <div class="filter-row">
-        <div class="filter-group">
+        <div class="filter-group period-group">
           <label class="filter-label"><i class="mdi mdi-calendar-month-outline"></i> 청구 연월</label>
-          <input type="month" v-model="selectedYear.month" class="filter-select" />
+          <div class="period-inputs">
+            <input type="month" v-model="selectedPeriod.start" class="filter-select period-select" />
+            <span class="period-separator">~</span>
+            <input type="month" v-model="selectedPeriod.end" class="filter-select period-select" />
+          </div>
         </div>
+
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 현장</label>
           <SiteSelect v-model="selectedSite" />
@@ -452,7 +466,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 상태 필터 토글 -->
       <div class="filter-toggles-row">
         <span class="toggles-label"><i class="mdi mdi-filter-variant"></i> 상태 필터:</span>
         <div class="filter-toggles">
@@ -470,18 +483,17 @@ onMounted(async () => {
           >
             <i :class="['mdi', opt.icon]"></i>
             <span>{{ opt.label }}</span>
+            <span class="chip-count">{{ opt.count }}</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- ── 로딩 ── -->
     <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
       <p>정산 내역을 불러오는 중...</p>
     </div>
 
-    <!-- ── 테이블 ── -->
     <div v-else class="table-card">
       <div class="table-header">
         <div class="table-title">
@@ -567,7 +579,6 @@ onMounted(async () => {
             </td>
             <td class="text-center text-gray text-sm">{{ item.id }}</td>
 
-            <!-- 문서 종류 -->
             <td>
                 <span v-if="item.docType === 'RETIRE_ANNUAL'" class="doc-type-badge retire">
                   <i class="mdi mdi-calendar-check-outline"></i> 연차/퇴직
@@ -579,7 +590,6 @@ onMounted(async () => {
 
             <td class="site-name">{{ item.siteName }}</td>
 
-            <!-- 구분 -->
             <td class="text-center">
                 <span :class="['badge',
                   item.type === '01001002' ? 'badge-clean' :
@@ -592,7 +602,6 @@ onMounted(async () => {
             <td class="text-center text-sm">{{ item.target_month }}</td>
             <td class="text-right amount-text">{{ fmt(item.total_amount) }}</td>
 
-            <!-- 상태 -->
             <td class="text-center">
                 <span :class="['status-badge', statusInfo(item.status).cls]">
                   <i :class="['mdi', statusInfo(item.status).icon]"></i>
@@ -600,9 +609,8 @@ onMounted(async () => {
                 </span>
             </td>
 
-            <!-- 미수 사유 -->
             <td class="text-center">
-                <span v-if="+item.status === 2 && item.bigo" class="unpaid-note" :title="item.bigo">
+                <span v-if="+item.status === 3 && item.bigo" class="unpaid-note" :title="item.bigo">
                   <i class="mdi mdi-note-text-outline"></i>
                   {{ item.bigo }}
                 </span>
@@ -612,13 +620,8 @@ onMounted(async () => {
             <td class="text-center text-gray text-sm">{{ item.regDt }}</td>
             <td class="text-center text-gray text-sm">{{ item.modDt }}</td>
 
-            <!-- 관리 버튼 -->
             <td class="text-center">
               <div class="action-buttons">
-                <!--
-                  정산서(청구 공문) 버튼: statement 탭으로 바로 진입
-                  내역서 버튼: details 탭으로 바로 진입 + Modal에서 현장용/세무사용 전환 가능
-                -->
                 <button
                     @click="openEditModal(item, 'statement')"
                     class="icon-btn icon-btn--blue"
@@ -634,7 +637,6 @@ onMounted(async () => {
 
                 <span class="icon-divider"></span>
 
-                <!-- 작성중 → 입금확인 / 미수처리 -->
                 <template v-if="item.status === 0">
                   <button
                       @click="sendReceipe(item)"
@@ -656,7 +658,6 @@ onMounted(async () => {
                   ><i class="mdi mdi-alert-circle-outline"></i></button>
                 </template>
 
-                <!-- 완료/미수 → 되돌리기 -->
                 <template v-else>
                   <button
                       @click="revertStatus(item)"
@@ -669,7 +670,7 @@ onMounted(async () => {
           </tr>
 
           <tr v-if="filteredSettlements.length === 0" class="empty-row">
-            <td colspan="11">
+            <td colspan="12">
               <div class="empty-state">
                 <i class="mdi mdi-text-box-search-outline"></i>
                 <p>조건에 맞는 정산 내역이 없습니다.</p>
@@ -687,7 +688,6 @@ onMounted(async () => {
       />
     </div>
 
-    <!-- ════ 미수처리 모달 ════ -->
     <div v-if="isUnpaidModalOpen" class="modal-overlay" @click.self="isUnpaidModalOpen = false">
       <div class="modal-box">
         <div class="modal-header">
@@ -738,7 +738,6 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ════ SettlementModal (일반 용역) ════ -->
     <SettlementModal
         v-if="isModalOpen && editModalType === 'SERVICE'"
         :is-open="isModalOpen"
@@ -748,7 +747,6 @@ onMounted(async () => {
         @save="fetchList"
     />
 
-    <!-- ════ EstimateModal (연차/퇴직) ════ -->
     <EstimateModal
         v-if="isModalOpen && editModalType === 'RETIRE_ANNUAL'"
         :is-open="isModalOpen"
@@ -758,7 +756,6 @@ onMounted(async () => {
         @save="fetchList"
     />
 
-    <!-- ════ 출력 모달 ════ -->
     <SettlementPrintModal
         v-if="isPrintModalOpen && printModalType === 'SERVICE'"
         :is-open="isPrintModalOpen"
@@ -823,6 +820,22 @@ onMounted(async () => {
   background:rgba(239,68,68,.05); color:var(--danger); font-family:inherit;
 }
 .btn-delete:hover { background:var(--danger); color:#fff; border-color:var(--danger); }
+
+/* ──────────────────────────────────────────────
+   ★ 기간 필터 CSS 추가
+────────────────────────────────────────────── */
+.period-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.period-select {
+  width: 130px;
+}
+.period-separator {
+  color: var(--text-sub);
+  font-weight: 700;
+}
 
 /* ──────────────────────────────────────────────
    상태 필터 토글
@@ -904,29 +917,10 @@ onMounted(async () => {
   display:inline-flex; align-items:center; gap:4px;
   padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600;
 }
-/* 0: 작성중 (주황색/노란색 계열) - 대기 중이거나 작업 중인 상태 */
-.status-pending {
-  background: rgba(245, 158, 11, 0.1);
-  color: var(--warning, #f59e0b);
-}
-
-/* 1: 청구 완료 (파란색 계열) - 문서 발행은 완료되었으나 아직 입금 전인 상태 */
-.status-billed {
-  background: rgba(59, 130, 246, 0.1);
-  color: var(--primary, #3b82f6);
-}
-
-/* 2: 입금 완료 (초록색 계열) - 최종적으로 정상 완료된 상태 */
-.status-active {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--success, #10b981);
-}
-
-/* 3: 미수 처리 (빨간색 계열) - 문제가 발생하여 확인이 필요한 상태 */
-.status-unpaid {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--danger, #ef4444);
-}
+.status-pending { background: rgba(245, 158, 11, 0.1); color: var(--warning, #f59e0b); }
+.status-billed { background: rgba(59, 130, 246, 0.1); color: var(--primary, #3b82f6); }
+.status-active { background: rgba(16, 185, 129, 0.1); color: var(--success, #10b981); }
+.status-unpaid { background: rgba(239, 68, 68, 0.1); color: var(--danger, #ef4444); }
 
 .unpaid-note {
   display:inline-flex; align-items:center; gap:4px;
