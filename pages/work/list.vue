@@ -4,7 +4,7 @@ import axios from 'axios';
 import SiteSelect from '~/components/SiteSelect.vue';
 import MemberSelect from '~/components/MemberSelect.vue';
 
-const { siteOptions, fetchSiteOptions } = useApi();
+const { siteOptions, fetchSiteOptions, typeOptions, fetchTypeOptions } = useApi();
 
 // ================================================================
 // 상태
@@ -24,6 +24,7 @@ const modal = ref({
 
 const selectedDay     = ref(null);
 const selectedRecord  = ref(null); // 수정 대상 근태 레코드
+const selectedType  = ref('');
 const isBulkLoading   = ref(false);
 
 // 폼
@@ -49,11 +50,18 @@ const monthTitle = computed(() =>
     `${selectedYear.value}년 ${selectedMonth.value + 1}월`
 );
 
+const filteredSchedules = computed(() => {
+  // 아무것도 선택하지 않았으면 전체 데이터를 보여줌
+  if (!selectedType.value) return schedules.value;
+  // 선택한 구분값과 일치하는 데이터만 필터링
+  return schedules.value.filter(s => s.type === selectedType.value);
+});
+
 const monthSummary = computed(() => ({
-  work:    schedules.value.filter(s => s.workType === 'work').length,
-  holiday: schedules.value.filter(s => s.workType === 'holiday').length,
-  leave:   schedules.value.filter(s => ['leave','annual','half'].includes(s.workType)).length,
-  absent:  schedules.value.filter(s => s.workType === 'absent').length,
+  work:    filteredSchedules.value.filter(s => s.workType === 'work').length,
+  holiday: filteredSchedules.value.filter(s => s.workType === 'holiday').length,
+  leave:   filteredSchedules.value.filter(s => ['leave','annual','half'].includes(s.workType)).length,
+  absent:  filteredSchedules.value.filter(s => s.workType === 'absent').length,
 }));
 
 const calendarDays = computed(() => {
@@ -70,7 +78,9 @@ const calendarDays = computed(() => {
   for (let d = 1; d <= daysInMonth; d++) {
     const fullDate = `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dow      = new Date(selectedYear.value, selectedMonth.value, d).getDay();
-    const daily    = schedules.value.filter(s => s.date === fullDate);
+
+    // ★ 3. 일별 스케줄 필터링 교체 (schedules.value -> filteredSchedules.value)
+    const daily    = filteredSchedules.value.filter(s => s.date === fullDate);
 
     days.push({
       date:      d,
@@ -78,7 +88,7 @@ const calendarDays = computed(() => {
       dayName:   dayNames[dow],
       isWeekend: dow === 0 || dow === 6,
       isEmpty:   false,
-      schedules: daily,
+      schedules: daily, // 달력 칸 안에 필터링된 데이터만 들어감
       summary: {
         work:    daily.filter(s => s.workType === 'work').length,
         holiday: daily.filter(s => s.workType === 'holiday').length,
@@ -123,9 +133,11 @@ const fetchSchedules = async () => {
 
     workRes.data.data?.forEach(item => {
       const staff = staffList.value.find(s => s.idx === item.mIdx);
+      // console.log(item, 'dd')
       combined.push({
-        idx:       item.idx,           // ← 삭제/수정에 필요
+        idx:       item.idx,
         mIdx:      item.mIdx,
+        type:      item.type || staff?.itemCd || staff?.type,
         date:      item.workStartDt.split(' ')[0],
         staffName: staff?.name || `직원(${item.mIdx})`,
         workType:  item.workType || 'work',
@@ -139,6 +151,10 @@ const fetchSchedules = async () => {
       const end = new Date(item.endDt);
       while (curr <= end) {
         combined.push({
+          idx:       item.idx, // 추후 삭제/수정 대비
+          mIdx:      item.mIdx,
+          // ★ 휴무 데이터에도 직원의 type을 넣어줍니다 (중요!)
+          type:      staff?.itemCd || staff?.type,
           date:      curr.toISOString().split('T')[0],
           staffName: staff?.name || `직원(${item.mIdx})`,
           workType:  'leave',
@@ -285,7 +301,10 @@ const getWorkTypeName = (type) => WORK_TYPE_LABELS[type] || '알수없음';
 
 const getStatusClass = (type) => type === 'annual' ? 'leave' : type;
 
-onMounted(fetchSiteOptions);
+onMounted(() => {
+  fetchSiteOptions()
+  fetchTypeOptions()
+})
 </script>
 
 <template>
@@ -313,6 +332,12 @@ onMounted(fetchSiteOptions);
     <div class="filter-panel">
       <div class="filter-row">
         <SiteSelect :allow-empty="false" v-model="currentSiteId" />
+        <select v-model="selectedType" required class="filter-select">
+          <option value="">선택하세요</option>
+          <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+            {{ type.itemNm }}
+          </option>
+        </select>
         <button v-if="currentSiteId" @click="openBulkModal" class="btn-bulk" :disabled="isBulkLoading">
           <i class="mdi" :class="isBulkLoading ? 'mdi-loading mdi-spin' : 'mdi-calendar-multiselect'"></i>
           <span>{{ monthTitle }} 일괄 생성</span>
