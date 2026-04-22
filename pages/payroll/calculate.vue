@@ -60,7 +60,7 @@ const filteredPayrollList = computed(() => {
       (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
       (selectedType.value === '전체' || p.type === selectedType.value) &&
       (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
-      (selectedPaymentDay.value === '전체' || String(p.paymentDay) === selectedPaymentDay.value) &&
+      (selectedPaymentDay.value === '전체' || String(p.payment_day) === selectedPaymentDay.value) &&
       p.staff.toLowerCase().includes(searchTerm.value.toLowerCase())
   );
 
