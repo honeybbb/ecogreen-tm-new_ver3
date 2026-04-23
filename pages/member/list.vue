@@ -6,6 +6,7 @@ import Pagination from '@/components/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
 import { useTableResize } from '@/composables/useTableResize';
 const { startResize } = useTableResize();
+import ExcelDownloadModal from '@/components/ExcelDownloadModal.vue';
 
 const router = useRouter();
 const route = useRoute(); // ★ URL 쿼리를 읽기 위해 추가
@@ -23,6 +24,7 @@ const searchTerm     = ref('');
 const selectedSite   = ref('전체');
 const selectedType   = ref('전체');
 const selectedStatus = ref('전체');
+const selectedGender = ref('전체');
 
 const filterStartDate    = ref('');
 const filterEndDate      = ref('');
@@ -42,6 +44,7 @@ const error     = ref(null);
 const showRRN      = ref(false);
 const revealedRRNs = ref({});
 const rrnLoading   = ref(false);
+const showExcelModal = ref(false);
 
 // ── 페이지네이션 상태 ──────────────────────────────
 const currentPage     = ref(1);
@@ -137,6 +140,7 @@ const resetFilters = () => {
   selectedSite.value       = '전체';
   selectedType.value       = '전체';
   selectedStatus.value     = '전체';
+  selectedGender.value     = '전체';
   filterStartDate.value    = '';
   filterEndDate.value      = '';
   filterNoPension.value    = false;
@@ -159,6 +163,7 @@ const syncFiltersFromURL = () => {
   if (q.site)         selectedSite.value = q.site;
   if (q.type)         selectedType.value = q.type;
   if (q.status)       selectedStatus.value = q.status;
+  if (q.gender)       selectedGender.value = q.gender;
   if (q.startDate)    filterStartDate.value = q.startDate;
   if (q.endDate)      filterEndDate.value = q.endDate;
   if (q.noPension)    filterNoPension.value = q.noPension === 'true';
@@ -174,7 +179,7 @@ const syncFiltersFromURL = () => {
 // 2. State 변경 시 State -> URL Query 반영 (watch 활용)
 watch(
     [
-      searchTerm, selectedSite, selectedType, selectedStatus,
+      searchTerm, selectedSite, selectedType, selectedStatus, selectedGender,
       filterStartDate, filterEndDate, filterNoPension, filterNoEmployment,
       filterDisability, filterForeigner, currentPage, pageSize, sortKey, sortOrder
     ],
@@ -185,6 +190,7 @@ watch(
       if (selectedSite.value !== '전체') query.site = selectedSite.value;
       if (selectedType.value !== '전체') query.type = selectedType.value;
       if (selectedStatus.value !== '전체') query.status = selectedStatus.value;
+      if (selectedGender.value !== '전체') query.gender = selectedGender.value;
       if (filterStartDate.value)    query.startDate = filterStartDate.value;
       if (filterEndDate.value)      query.endDate = filterEndDate.value;
       if (filterNoPension.value)    query.noPension = 'true';
@@ -218,10 +224,11 @@ const filteredMembers = computed(() => {
     const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
     const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
     const activeMatch = selectedStatus.value === '전체' || member.status == selectedStatus.value;
+    const genderMatch = selectedGender.value === '전체' || member.gender == selectedGender.value;
 
     return siteMatch && searchMatch && typeMatch &&
         dateMatch && pensionMatch && employmentMatch &&
-        disaMatch && foreMatch && activeMatch;
+        disaMatch && foreMatch && activeMatch && genderMatch;
   });
 
   result.sort((a, b) => {
@@ -312,6 +319,11 @@ onActivated(async () => {
         <p class="page-subtitle">전체 직원 정보를 조회하고 관리합니다</p>
       </div>
       <div class="header-actions">
+        <button @click="showExcelModal = true" class="btn-excel">
+          <i class="mdi mdi-microsoft-excel"></i>
+          <span>엑셀 다운로드</span>
+        </button>
+
         <button @click="toggleRRN" :class="['btn-rrn-toggle', { active: showRRN }]" :disabled="rrnLoading">
           <i class="mdi" :class="rrnLoading ? 'mdi-loading mdi-spin' : showRRN ? 'mdi-eye-off' : 'mdi-eye'"></i>
           <span>{{ showRRN ? '주민번호 숨기기' : '주민번호 보기' }}</span>
@@ -399,6 +411,14 @@ onActivated(async () => {
             <span class="date-separator">~</span>
             <input type="date" v-model="filterEndDate" @change="onFilterChange" class="filter-select date-input" />
           </div>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-gender-male-female"></i> 성별</label>
+          <select v-model="selectedGender" @change="onFilterChange" class="filter-select" >
+            <option value="전체">전체</option>
+            <option value="M">남성</option>
+            <option value="F">여성</option>
+          </select>
         </div>
         <div class="search-group">
           <div class="search-box">
@@ -671,6 +691,11 @@ onActivated(async () => {
 
     </div>
   </div>
+
+  <ExcelDownloadModal
+      v-model="showExcelModal"
+      :members="filteredMembers"
+  />
 </template>
 
 <style scoped>
