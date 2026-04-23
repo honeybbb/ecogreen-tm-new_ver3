@@ -24,11 +24,13 @@ const {
   fetchDisabledOptions
 } = useApi();
 
-// 현재 탭
+const isEditing = ref(false);
 const activeTab = ref(route.query.tab || 'info');
 const isLoading = ref(false);
-// 편집 모드
-const isEditing = ref(false);
+
+const showRRN = ref(false);
+const revealedRRN = ref('');
+const rrnLoading = ref(false);
 
 // 직원 정보
 const employee = ref({
@@ -129,6 +131,81 @@ const workPeriod = computed(() => {
     return remainMonths > 0 ? `${years}년 ${remainMonths}개월` : `${years}년`;
   }
   return `${months}개월`;
+});
+
+// ── 주민번호 토글 함수 ──────────────────────────────
+const toggleRRN = async () => {
+  // 이미 열려있으면 숨기기
+  if (showRRN.value) {
+    showRRN.value = false;
+    revealedRRN.value = '';
+    return;
+  }
+
+  if (!confirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
+
+  rrnLoading.value = true;
+  try {
+    // 리스트 페이지와 동일한 batch API 사용 (배열에 현재 직원의 idx만 담아서 전송)
+    const res = await axios.post('/api/v1/member/rrn/batch', { mIdxList: [employee.value.idx] });
+
+    if (!res.data.result) {
+      alert('주민번호 조회 권한이 없습니다.');
+      return;
+    }
+
+    // 응답 데이터에서 현재 직원의 복호화된 주민번호 추출
+    revealedRRN.value = res.data.data[employee.value.idx];
+    showRRN.value = true;
+  } catch (e) {
+    console.error(e);
+    alert('주민번호 조회 중 오류가 발생했습니다.');
+  } finally {
+    rrnLoading.value = false;
+  }
+};
+
+// ── 화면 출력용 Computed (깔끔하게 포맷팅 적용) ───
+// ── 화면 출력용 Computed (생년월일/성별 기반 마스킹 조립) ───
+const displayRRN = computed(() => {
+  // 1. 복호화 상태 (주민번호 보기 버튼을 눌렀을 때)
+  if (showRRN.value && revealedRRN.value) {
+    const clean = revealedRRN.value.replace(/[^0-9]/g, '');
+    return clean.length === 13
+        ? `${clean.substring(0, 6)}-${clean.substring(6)}`
+        : revealedRRN.value;
+  }
+
+  // 2. 기본(숨김) 상태: 암호화된 해시값이 있으므로, 기존 데이터를 조합해 마스킹 문자열 생성
+  if (employee.value.birthDt && employee.value.gender) {
+    const parts = employee.value.birthDt.split('-'); // ex) "1951-01-21"
+
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const yy = parts[0].substring(2, 4); // 연도 뒤 2자리 (51)
+      const mm = parts[1]; // 월 (01)
+      const dd = parts[2]; // 일 (21)
+
+      let genderDigit = '*';
+      const isForeigner = employee.value.foreigner === 'Y';
+      const isMale = employee.value.gender === 'M';
+
+      // 2000년 이전 출생자 (1, 2 / 외국인 5, 6)
+      if (year < 2000) {
+        genderDigit = isForeigner ? (isMale ? '5' : '6') : (isMale ? '1' : '2');
+      }
+      // 2000년 이후 출생자 (3, 4 / 외국인 7, 8)
+      else {
+        genderDigit = isForeigner ? (isMale ? '7' : '8') : (isMale ? '3' : '4');
+      }
+
+      // 조립된 마스킹 문자열 반환 (ex: 510121-1******)
+      return `${yy}${mm}${dd}-${genderDigit}******`;
+    }
+  }
+
+  // 생년월일이나 성별 데이터가 부족한 경우 기본 별표 처리
+  return '******-*******';
 });
 
 // 데이터 로드
@@ -319,6 +396,11 @@ onMounted(async () => {
         </div>
       </div>
       <div class="header-actions">
+        <button @click="toggleRRN" :class="['btn-rrn-toggle', { active: showRRN }]" :disabled="rrnLoading || isEditing">
+          <i class="mdi" :class="rrnLoading ? 'mdi-loading mdi-spin' : showRRN ? 'mdi-eye-off' : 'mdi-eye'"></i>
+          <span>{{ showRRN ? '주민번호 숨기기' : '주민번호 보기' }}</span>
+        </button>
+
         <template v-if="!isEditing">
           <button @click="toggleEdit" class="btn-edit">
             <i class="mdi mdi-pencil-outline"></i>
@@ -438,6 +520,11 @@ onMounted(async () => {
                     </label>
                   </div>
                   <span v-else class="info-value">{{ employee.gender === 'M' ? '남성' : '여성' }}</span>
+                </div>
+                <div class="info-item">
+                  <label>주민번호</label>
+                  <input v-if="isEditing" type="text" v-model="employee.rrn" class="info-input" placeholder="숫자만 입력 또는 000000-0000000" maxlength="14" />
+                  <span v-else class="info-value">{{ displayRRN }}</span>
                 </div>
                 <div class="info-item">
                   <label>생년월일</label>
@@ -1170,6 +1257,29 @@ onMounted(async () => {
 }
 .btn-contract-view:hover { border-color: var(--primary); color: var(--primary); }
 .btn-contract-view i { font-size: 18px; color: var(--primary); }
+
+.btn-rrn-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 16px; height: 42px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border-color); background: var(--bg-surface);
+  color: var(--text-sub); cursor: pointer; transition: all 0.2s;
+  box-shadow: var(--shadow-sm); box-sizing: border-box;
+}
+.btn-rrn-toggle:hover:not(:disabled) {
+  border-color: var(--warning);
+  color: var(--warning);
+  transform: translateY(-1px);
+}
+.btn-rrn-toggle.active {
+  background: rgba(245,158,11, 0.05);
+  border-color: var(--warning);
+  color: #b45309;
+}
+.btn-rrn-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--bg-canvas);
+}
 
 /* === 반응형 === */
 @media (max-width: 1024px) {
