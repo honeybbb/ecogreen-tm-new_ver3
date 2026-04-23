@@ -441,7 +441,7 @@ onMounted(async () => {
                 </div>
                 <div class="info-item">
                   <label>생년월일</label>
-                  <input v-if="isEditing" type="date" v-model="employee.birthDt" class="info-input" />
+                  <input v-if="isEditing" type="date" v-model="employee.birthDt" class="info-input" max="9999-12-31"/>
                   <span v-else class="info-value">{{ employee.birthDt || '-' }}</span>
                 </div>
                 <div class="info-item">
@@ -531,13 +531,13 @@ onMounted(async () => {
                 </div>
                 <div class="info-item">
                   <label>입사일</label>
-                  <input v-if="isEditing" type="date" v-model="employee.inDate" class="info-input" />
+                  <input v-if="isEditing" type="date" v-model="employee.inDate" class="info-input" max="9999-12-31" />
                   <span v-else class="info-value">{{ employee.inDate }}</span>
                 </div>
                 <template v-if="employee.status == 1">
                   <div class="info-item">
                     <label class="text-red">퇴사일</label>
-                    <input v-if="isEditing" type="date" v-model="employee.outDate" class="info-input border-red" />
+                    <input v-if="isEditing" type="date" v-model="employee.outDate" class="info-input border-red" max="9999-12-31" />
                     <span v-else class="info-value text-red">{{ employee.outDate || '미입력' }}</span>
                   </div>
                   <div class="info-item">
@@ -581,6 +581,7 @@ onMounted(async () => {
                         type="date"
                         v-model="employee.disability_date"
                         class="info-input border-red"
+                        max="9999-12-31"
                     />
                     <span v-else class="info-value">{{ employee.disability_date }}</span>
                   </div>
@@ -646,6 +647,7 @@ onMounted(async () => {
                         type="date"
                         v-model="employee.visa_date"
                         class="info-input border-red"
+                        max="9999-12-31"
                     />
                     <span v-else class="info-value">{{ employee.visa_date }}</span>
                   </div>

@@ -426,6 +426,7 @@ onActivated(() => {
                   type="date"
                   v-model="employee.birthDate"
                   class="form-input"
+                  max="9999-12-31"
               />
             </div>
 
@@ -522,6 +523,7 @@ onActivated(() => {
                   type="date"
                   v-model="employee.disability_date"
                   class="form-input"
+                  max="9999-12-31"
               />
             </div>
 
@@ -658,6 +660,7 @@ onActivated(() => {
                   type="date"
                   v-model="employee.visa_date"
                   class="form-input"
+                  max="9999-12-31"
               />
             </div>
 
@@ -769,6 +772,7 @@ onActivated(() => {
                   type="date"
                   v-model="employee.joinDate"
                   class="form-input"
+                  max="9999-12-31"
               />
             </div>
 
@@ -807,6 +811,7 @@ onActivated(() => {
                   v-model="employee.outDate"
                   required
                   class="form-input"
+                  max="9999-12-31"
               />
             </div>
 

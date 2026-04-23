@@ -407,9 +407,9 @@ onActivated(async () => {
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label>
           <div class="date-range-inputs">
-            <input type="date" v-model="filterStartDate" @change="onFilterChange" class="filter-select date-input" />
+            <input type="date" v-model="filterStartDate" @change="onFilterChange" class="filter-select date-input" max="9999-12-31" />
             <span class="date-separator">~</span>
-            <input type="date" v-model="filterEndDate" @change="onFilterChange" class="filter-select date-input" />
+            <input type="date" v-model="filterEndDate" @change="onFilterChange" class="filter-select date-input" max="9999-12-31" />
           </div>
         </div>
         <div class="filter-group">
