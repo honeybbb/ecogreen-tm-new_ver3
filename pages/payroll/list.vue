@@ -47,26 +47,36 @@ const { startResize } = useTableResize();
 const transformPayrollList = (rows) => {
   return rows.map(row => {
     let payments = {}, deductions = {}, flags = {};
-    try { payments   = typeof row.payItems       === 'string' ? JSON.parse(row.payItems)       : row.payItems       || {}; } catch {}
+
+    // 1. JSON 데이터 파싱
+    try { payments = typeof row.payItems === 'string' ? JSON.parse(row.payItems) : row.payItems || {}; } catch {}
     try { deductions = typeof row.deductionItems === 'string' ? JSON.parse(row.deductionItems) : row.deductionItems || {}; } catch {}
-    try {
-      flags = typeof row.checkedItems === 'string'
-          ? JSON.parse(row.checkedItems)
-          : (row.checkedItems || {});
-      if (Object.keys(flags).length === 0 && deductionItems.value.length) {
-        deductionItems.value.forEach(item => {
-          flags[item.itemCd] = false; // 기본값: 체크박스 해제
-          deductions[item.itemCd] = 0; // 기본값: 금액 0원
-        });
-      }
-    } catch {}
+    try { flags = typeof row.checkedItems === 'string' ? JSON.parse(row.checkedItems) : (row.checkedItems || {}); } catch {}
+
+    // 2. [핵심] 체크 정보가 없는 초기 로드 시 처리
+    if (Object.keys(flags).length === 0 && deductionItems.value.length) {
+      deductionItems.value.forEach(item => {
+        const amount = Number(deductions[item.itemCd]) || 0;
+
+        if (amount > 0) {
+          // 🌟 값이 들어있다면 체크박스를 자동으로 'true'로 설정 (데이터 유지)
+          flags[item.itemCd] = true;
+        } else {
+          // 값이 0이거나 없는 경우에만 false 및 0원 처리
+          flags[item.itemCd] = false;
+          deductions[item.itemCd] = 0;
+        }
+      });
+    }
+
     return {
       ...row,
       payments,
       deductions,
       deductionFlags: flags,
       selected: false,
-      status: row.status ?? 1,
+      // status: mbs.idx가 없으면(계약서데이터) 0, 있으면 1
+      status: row.status ?? 0,
     };
   });
 };

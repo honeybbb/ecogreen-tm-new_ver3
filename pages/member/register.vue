@@ -199,32 +199,46 @@ const getBudgetData = async function () {
     const budgetData = res.data.data[0];
     if (!budgetData) return;
 
-    // 1. 임금 항목 세팅
     const newWageInputs = {};
-    if (budgetData.jsonData?.directLabor) {
-      budgetData.jsonData.directLabor.forEach(item => {
-        if (item.label && item.values && item.values[position] !== undefined) {
-          newWageInputs[item.label] = item.values[position];
-        }
-      });
-    }
 
-    // 2. staffDetail에서 해당 직책의 스케줄만 추출
+    // 1. 임금(직접노무비) 및 공제(간접노무비) 항목 통합 세팅
+    // jsonData 내의 directLabor(04001 계열)와 indirectLabor(04002 계열)를 모두 처리합니다.
+    const laborGroups = ['directLabor', 'indirectLabor'];
+
+    laborGroups.forEach(groupKey => {
+      if (budgetData.jsonData?.[groupKey]) {
+        budgetData.jsonData[groupKey].forEach(item => {
+          // item.label은 코드번호(itemCd), item.values[position]은 해당 직책의 산출 금액
+          if (item.label && item.values && item.values[position] !== undefined) {
+            // 근로자의 날(04001008) 제외 로직이 필요하다면 여기서 필터링 가능
+            if (item.label !== '04001008') {
+              newWageInputs[item.label] = item.values[position];
+            }
+          }
+        });
+      }
+    });
+
+    // 2. staffDetail에서 해당 직책의 스케줄 추출 (기존 유지)
     let selectedSchedule = null;
     if (budgetData.staffDetail) {
       const targetStaff = budgetData.staffDetail.find(s => s.code === position);
       if (targetStaff) {
-        selectedSchedule = targetStaff.schedule; // { "0": {...}, "1": {...}, ... }
+        selectedSchedule = targetStaff.schedule;
       }
     }
 
+    // 3. 상태 업데이트
     wageInputs.value = newWageInputs;
-    // 부모의 임시 데이터에 스케줄 저장
+
+    // contractDataTemp를 갱신하여 모달과 동기화
     contractDataTemp.value = {
-      ...contractDataTemp.value,
+      ...contractDataTemp.value, // 기존에 입력된 데이터(날짜 등) 유지
       wageInputs: newWageInputs,
-      workSchedule: selectedSchedule // 통합된 스케줄 명칭 사용
+      workSchedule: selectedSchedule
     };
+
+    console.log('산출내역 기반 지급/공제 데이터 매핑 완료:', newWageInputs);
 
   } catch (err) {
     console.error('데이터 로드 실패:', err);

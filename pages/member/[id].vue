@@ -147,8 +147,61 @@ const toggleRRN = async () => {
   if (success) showRRN.value = true;
 };
 
+// 1. 날짜 유효성 검사 헬퍼 함수 추가
+const isValidDate = (dateString) => {
+  const regEx = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateString.match(regEx)) return false;
+  const d = new Date(dateString);
+  const dNum = d.getTime();
+  if (!dNum && dNum !== 0) return false;
+  return d.toISOString().slice(0, 10) === dateString;
+};
+
+// 2. 주민번호 입력 감지 및 생년월일 자동 계산 Watch 추가
+watch(
+    () => [employee.value.firstNumber, employee.value.lastNumber],
+    ([front, back]) => {
+      // 수정 모드일 때만 자동 계산 작동
+      if (!isEditing.value) return;
+      if (!front || front.length !== 6) return;
+
+      let yearPrefix = '';
+      const yearPart = front.substring(0, 2);
+      const monthPart = front.substring(2, 4);
+      const dayPart = front.substring(4, 6);
+
+      // 뒷자리 첫 숫자가 있을 경우 (성별/세대 구분)
+      if (back && back.length >= 1) {
+        const genderCode = back.substring(0, 1);
+
+        // 1, 2, 5, 6번은 1900년대생
+        if (['1', '2', '5', '6'].includes(genderCode)) {
+          yearPrefix = '19';
+        }
+        // 3, 4, 7, 8번은 2000년대생
+        else if (['3', '4', '7', '8'].includes(genderCode)) {
+          yearPrefix = '20';
+        }
+        else {
+          yearPrefix = '19';
+        }
+      }
+      // 뒷자리 입력 전일 경우 현재 연도 기준으로 추측
+      else {
+        const currentYearShort = new Date().getFullYear() % 100;
+        yearPrefix = parseInt(yearPart) > currentYearShort ? '19' : '20';
+      }
+
+      const fullDate = `${yearPrefix}${yearPart}-${monthPart}-${dayPart}`;
+
+      // 유효한 날짜일 경우에만 모델 업데이트
+      if (isValidDate(fullDate)) {
+        employee.value.birthDt = fullDate; // 상세페이지는 birthDt 필드 사용
+      }
+    }
+);
+
 // ── 화면 출력용 Computed (깔끔하게 포맷팅 적용) ───
-// ── 화면 출력용 Computed (생년월일/성별 기반 마스킹 조립) ───
 const displayRRN = computed(() => {
   // 1. 복호화 상태 (주민번호 보기 버튼을 눌렀을 때)
   if (showRRN.value && revealedRRN.value) {
@@ -237,7 +290,7 @@ const getWageCode = async function () {
 
 // 1. 예산 데이터 가져오기 함수 추가
 const getBudgetData = async function () {
-  // 상세페이지 필드명에 맞게 조정 (sIdx, typeCd, positionCd)
+  // 상세페이지 필드명: sIdx, typeCd, positionCd
   const { sIdx, typeCd, positionCd } = employee.value;
   if (!sIdx || !typeCd || !positionCd) return;
 
@@ -245,18 +298,25 @@ const getBudgetData = async function () {
     const res = await axios.get(`/api/v1/site/contract/budget`, {
       params: { sIdx: sIdx, type: typeCd }
     });
+
     const budgetData = res.data.data[0];
     if (!budgetData) return;
 
-    // 1) 임금 항목 세팅 (04001008 근로자의 날 수당 제외 로직 포함)
     const newWageInputs = {};
-    if (budgetData.jsonData?.directLabor) {
-      budgetData.jsonData.directLabor.forEach(item => {
-        if (item.label !== '04001008' && item.values && item.values[positionCd] !== undefined) {
-          newWageInputs[item.label] = item.values[positionCd];
-        }
-      });
-    }
+
+    // 1) 지급(directLabor) 및 공제(indirectLabor) 항목 통합 매핑
+    const laborKeys = ['directLabor', 'indirectLabor'];
+
+    laborKeys.forEach(key => {
+      if (budgetData.jsonData?.[key]) {
+        budgetData.jsonData[key].forEach(item => {
+          // 근로자의 날 수당(04001008) 제외 및 해당 직책(positionCd)의 값이 존재하는지 확인
+          if (item.label !== '04001008' && item.values && item.values[positionCd] !== undefined) {
+            newWageInputs[item.label] = item.values[positionCd];
+          }
+        });
+      }
+    });
 
     // 2) 스케줄 추출
     let selectedSchedule = null;
@@ -267,17 +327,18 @@ const getBudgetData = async function () {
       }
     }
 
-    // 부모 상태 반영
+    // 부모 상태 반영 (입력값 동기화)
     wageInputs.value = newWageInputs;
 
-    // contractDataTemp를 갱신하여 모달에 즉시 반영되도록 함
+    // contractDataTemp를 갱신하여 모달(근로계약서)에 즉시 반영
+    // (기존에 이미 로드된 날짜 정보 등이 있다면 유지하기 위해 전개 연산자 사용)
     contractDataTemp.value = {
       ...contractDataTemp.value,
       wageInputs: newWageInputs,
       workSchedule: selectedSchedule
     };
 
-    console.log('예산 데이터 자동 매핑 완료');
+    console.log('산출내역(지급/공제) 및 스케줄 자동 매핑 완료');
   } catch (err) {
     console.error('예산 데이터 로드 실패:', err);
   }
@@ -380,13 +441,13 @@ const saveEmployee = async () => {
     // 3. 그것도 없다면 입사/퇴사일 사용
     const finalStartDt = contractDataTemp.value?.contractStartDt
         || employee.value.contract?.contractStartDt
-        || employee.value.inDate;
+        || null;
 
     const finalEndDt = contractDataTemp.value?.contractEndDt
         || employee.value.contract?.contractEndDt
-        || employee.value.outDate;
+        || null;
 
-    const fullRRN = `${employee.value.firstNumber}${employee.value.lastNumber}`;
+    const fullRRN = `${employee.value.firstNumber}-${employee.value.lastNumber}`;
 
     const payload = {
       ...employee.value,
