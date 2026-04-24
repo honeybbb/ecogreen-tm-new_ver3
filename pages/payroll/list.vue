@@ -54,7 +54,10 @@ const transformPayrollList = (rows) => {
           ? JSON.parse(row.checkedItems)
           : (row.checkedItems || {});
       if (Object.keys(flags).length === 0 && deductionItems.value.length) {
-        deductionItems.value.forEach(item => flags[item.itemCd] = true);
+        deductionItems.value.forEach(item => {
+          flags[item.itemCd] = false; // 기본값: 체크박스 해제
+          deductions[item.itemCd] = 0; // 기본값: 금액 0원
+        });
       }
     } catch {}
     return {
@@ -72,6 +75,41 @@ const transformPayrollList = (rows) => {
 const markAsDraft = (row) => {
   row.status   = 2;
   row.selected = true;
+};
+
+// ── 4대보험 예외(경고) 상태 계산 ───────────────────
+const getInsuranceWarning = (row) => {
+  const age = calculateAge(row.birthDt);
+  if (!age) return { type: 'normal', message: '' };
+
+  const flags = row.deductionFlags || {};
+
+  // 케이스 1: 국민연금 강제 해제 (위험 - 빨간색)
+  if (age < ageLimits.value.pension && flags['04002003'] === false) {
+    return {
+      type: 'danger',
+      message: '국민연금 대상자이나 임의로 해제되었습니다.'
+    };
+  }
+
+  // 케이스 2: 고용보험 고용확대 (특이사항 - 파란색/보라색)
+  if (age >= ageLimits.value.employment && flags['04002004'] === true) {
+    return {
+      type: 'info',
+      message: '고용보험 가입 연령이 지났으나 임의 가입(고용확대) 되었습니다.'
+    };
+  }
+
+  // 케이스 3: 건강보험 강제 해제 (주의 - 주황색)
+  if (flags['04002001'] === false) {
+    return {
+      type: 'warning',
+      message: '건강보험이 임의로 해제되었습니다.'
+    };
+  }
+
+  // 정상
+  return { type: 'normal', message: '' };
 };
 
 // 입력 시 숫자만 추출하여 저장하는 함수
@@ -550,8 +588,31 @@ onMounted(async () => {
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
             <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
-            <td class="text-center text-gray sticky-col sticky-col-8" :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }" :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
-              {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+            <td class="text-center sticky-col sticky-col-8">
+              <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+                <span :class="[
+                  'font-bold',
+                  getInsuranceWarning(p).type === 'danger' ? 'text-red' :
+                  getInsuranceWarning(p).type === 'warning' ? 'text-orange' :
+                  getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray'
+                ]">
+                  {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+                </span>
+                <i v-if="getInsuranceWarning(p).type !== 'normal'"
+                   :class="[
+                     'mdi',
+                     getInsuranceWarning(p).type === 'danger' ? 'mdi-alert-circle text-red' :
+                     getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
+                     'mdi-information text-blue'
+                   ]"
+                   style="font-size: 14px;">
+                </i>
+
+                <span v-if="getInsuranceWarning(p).type !== 'normal'" class="tooltip-text">
+                  {{ getInsuranceWarning(p).message }}
+                </span>
+
+              </div>
             </td>
             <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-9">{{ formatCurrency(calculateRow(p).gross) }}</td>
             <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-10 sticky-divider">{{ formatCurrency(calculateRow(p).ded) }}</td>
@@ -679,7 +740,7 @@ onMounted(async () => {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .inline-input:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-.amount-cell { width: 120px; }
+.amount-cell { width: 90px; }
   /* === 커스텀 체크박스 === */
 .checkbox-wrapper    { display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; cursor: pointer; }
 .checkbox-wrapper-sm { display: flex; align-items: center; cursor: pointer; }
@@ -821,8 +882,8 @@ body.is-resizing * {
 
 .sticky-col {
   position: sticky !important;
-  z-index: 3;
-  overflow: hidden;
+  z-index: 1000;
+  overflow: visible !important; /* 툴팁이 셀 밖으로 나갈 수 있도록 허용 */
 }
 
 /* 테이블 헤더 Z-index 및 불투명 배경 처리 (rgba 금지) */
@@ -913,4 +974,22 @@ tr.data-row:hover td.sticky-col {
   background-color: #f8fafc;
   border-top: 2px solid var(--border-focus);
 }
+
+/* === 툴팁 디자인 === */
+.tooltip-container { position: relative; cursor: help; width: 100%; }
+.tooltip-text {
+  visibility: hidden; opacity: 0;
+  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+  background: var(--header-bg); color: var(--text-inverse);
+  padding: 8px 12px; border-radius: 6px;
+  font-size: 11px; line-height: 1.4; white-space: nowrap;
+  z-index: 100; box-shadow: var(--shadow-md);
+  transition: opacity 0.15s; pointer-events: none;
+  font-weight: 500;
+}
+.tooltip-text::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--header-bg);
+}
+.tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
 </style>
