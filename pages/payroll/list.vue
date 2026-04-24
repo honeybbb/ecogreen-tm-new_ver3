@@ -837,7 +837,7 @@ body.is-resizing * {
   border-bottom: 1px solid var(--border-color);
    */
   background-clip: padding-box; /* 글자 비침 원천 차단 */
-  padding: 6px 10px;
+  padding: 6px 6px;
   vertical-align: middle;
 }
 /*.data-table th { border-top: 1px solid var(--border-color); }*/
@@ -882,8 +882,8 @@ body.is-resizing * {
 
 .sticky-col {
   position: sticky !important;
-  z-index: 1000;
-  overflow: visible !important; /* 툴팁이 셀 밖으로 나갈 수 있도록 허용 */
+  z-index: 3;
+  overflow: visible; /* 리사이즈 핸들용 */
 }
 
 /* 테이블 헤더 Z-index 및 불투명 배경 처리 (rgba 금지) */
