@@ -116,6 +116,44 @@ const markAsDraft = (row) => {
   row.selected = true;
 };
 
+// ── 4대보험 예외(경고) 상태 계산 ───────────────────
+// ── 4대보험 예외(경고) 상태 계산 (저장 대기 상태일 때만 동작) ───────────────────
+const getInsuranceWarning = (row) => {
+  // '저장 대기' (수정 중) 상태가 아니면 경고 무시
+  if (row.status !== 2) return { type: 'normal', message: '' };
+
+  const age = calculateAge(row.birthDt);
+  if (!age) return { type: 'normal', message: '' };
+
+  const ded = row.deductionItems || {};
+
+  // 케이스 1: 국민연금 강제 해제 (위험 - 빨간색)
+  if (age < ageLimits.value.pension && (!ded['04002003'] || ded['04002003'] === 0)) {
+    return {
+      type: 'danger',
+      message: '국민연금 대상자이나 임의로 해제되었습니다.'
+    };
+  }
+
+  // 케이스 2: 고용보험 고용확대 (특이사항 - 파란색)
+  if (age >= ageLimits.value.employment && ded['04002004'] > 0) {
+    return {
+      type: 'info',
+      message: '고용보험 가입 연령이 지났으나 임의 가입(고용확대) 되었습니다.'
+    };
+  }
+
+  // 케이스 3: 건강보험 강제 해제 (주의 - 주황색)
+  if (!ded['04002001'] || ded['04002001'] === 0) {
+    return {
+      type: 'warning',
+      message: '건강보험이 임의로 해제되었습니다.'
+    };
+  }
+
+  return { type: 'normal', message: '' };
+};
+
 const onInputAmount = (row, item, group, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart;
@@ -1064,8 +1102,33 @@ onMounted(async () => {
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
             <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
-            <td class="text-center text-gray sticky-col sticky-col-8" :class="{ 'age-warning': calculateAge(p.birthDt) >= ageLimits.employment }" :title="calculateAge(p.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
-              {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+            <td class="text-center sticky-col sticky-col-8" style="overflow: visible !important;">
+              <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
+
+                <span :class="[
+                  'font-bold',
+                  getInsuranceWarning(p).type === 'danger' ? 'text-red' :
+                  getInsuranceWarning(p).type === 'warning' ? 'text-orange' :
+                  getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray'
+                ]">
+                  {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+                </span>
+
+                <i v-if="getInsuranceWarning(p).type !== 'normal'"
+                   :class="[
+                     'mdi',
+                     getInsuranceWarning(p).type === 'danger' ? 'mdi-alert-circle text-red' :
+                     getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
+                     'mdi-information text-blue'
+                   ]"
+                   style="font-size: 14px;">
+                </i>
+
+                <span v-if="getInsuranceWarning(p).type !== 'normal'" class="tooltip-text">
+                  {{ getInsuranceWarning(p).message }}
+                </span>
+
+              </div>
             </td>
 
             <td class="text-center sticky-col sticky-col-9">
@@ -1205,7 +1268,7 @@ onMounted(async () => {
 .data-table th, .data-table td {
   box-sizing: border-box;
   background-clip: padding-box;
-  padding: 6px 10px;
+  padding: 6px 6px;
   vertical-align: middle;
   /*
   border-bottom: 1px solid var(--border-color);
@@ -1324,7 +1387,7 @@ tr.data-row:hover td.sticky-col {
 
 .amount-header,
 .amount-cell {
-  width: 120px;
+  width: 90px;
 }
 
 .calculate-status { position: relative; }
@@ -1457,4 +1520,21 @@ body.is-resizing * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.tooltip-container { position: relative; cursor: help; width: 100%; }
+.tooltip-text {
+  visibility: hidden; opacity: 0;
+  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+  background: var(--header-bg); color: var(--text-inverse);
+  padding: 8px 12px; border-radius: 6px;
+  font-size: 11px; line-height: 1.4; white-space: nowrap;
+  z-index: 1000; box-shadow: var(--shadow-md);
+  transition: opacity 0.15s; pointer-events: none;
+  font-weight: 500;
+}
+.tooltip-text::after {
+  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--header-bg);
+}
+.tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
 </style>
