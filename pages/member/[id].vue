@@ -44,6 +44,8 @@ const employee = ref({
   phone: '',
   email: '',
   birthDate: '',
+  firstNumber: '',
+  lastNumber: '',
   gender: '',
   address: '',
   inDate: '',
@@ -135,34 +137,14 @@ const workPeriod = computed(() => {
 
 // ── 주민번호 토글 함수 ──────────────────────────────
 const toggleRRN = async () => {
-  // 이미 열려있으면 숨기기
   if (showRRN.value) {
     showRRN.value = false;
     revealedRRN.value = '';
     return;
   }
-
   if (!confirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
-
-  rrnLoading.value = true;
-  try {
-    // 리스트 페이지와 동일한 batch API 사용 (배열에 현재 직원의 idx만 담아서 전송)
-    const res = await axios.post('/api/v1/member/rrn/batch', { mIdxList: [employee.value.idx] });
-
-    if (!res.data.result) {
-      alert('주민번호 조회 권한이 없습니다.');
-      return;
-    }
-
-    // 응답 데이터에서 현재 직원의 복호화된 주민번호 추출
-    revealedRRN.value = res.data.data[employee.value.idx];
-    showRRN.value = true;
-  } catch (e) {
-    console.error(e);
-    alert('주민번호 조회 중 오류가 발생했습니다.');
-  } finally {
-    rrnLoading.value = false;
-  }
+  const success = await fetchRRNData();
+  if (success) showRRN.value = true;
 };
 
 // ── 화면 출력용 Computed (깔끔하게 포맷팅 적용) ───
@@ -211,17 +193,26 @@ const displayRRN = computed(() => {
 // 데이터 로드
 const loadEmployeeData = async () => {
   isLoading.value = true;
-
   try {
     const memberId = route.params.id;
     const response = await axios.get(`/api/v1/member/data/${memberId}`);
     const rawData = response.data.data[0];
+    const contract = rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} };
+    // console.log(contract);
+    // workSchedule 파싱: contract 안에 저장된 JSON 문자열이면 파싱, 아니면 그대로 사용
+    let workSchedule = null;
+    if (contract?.workSchedule) {
+      workSchedule = typeof contract.workSchedule === 'string'
+          ? JSON.parse(contract.workSchedule)
+          : contract.workSchedule;
+    }
+
     employee.value = {
       ...rawData,
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
-      contract: rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} }
+      contract,
+      workSchedule,
     };
-    console.log(rawData.contract)
     await loadSalaryHistory();
   } catch (error) {
     console.error('직원 정보 로드 실패:', error);
@@ -231,18 +222,78 @@ const loadEmployeeData = async () => {
   }
 };
 
-
 //지급항목
 const getWageCode = async function () {
   const cIdx = authStore.user?.cIdx;
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     const rawData = res.data.data || [];
-    items.value = rawData.filter(item => item.groupCd === '04001');
+    const includeCodes = ['04001001', '04001002','04001003','04001004','04001005','04001006']; // 표시할 코드만 명시
+    items.value = rawData.filter(item => includeCodes.includes(item.itemCd));
   } catch (err) {
     console.error("항목 로드 실패", err);
   }
 }
+
+// 1. 예산 데이터 가져오기 함수 추가
+const getBudgetData = async function () {
+  // 상세페이지 필드명에 맞게 조정 (sIdx, typeCd, positionCd)
+  const { sIdx, typeCd, positionCd } = employee.value;
+  if (!sIdx || !typeCd || !positionCd) return;
+
+  try {
+    const res = await axios.get(`/api/v1/site/contract/budget`, {
+      params: { sIdx: sIdx, type: typeCd }
+    });
+    const budgetData = res.data.data[0];
+    if (!budgetData) return;
+
+    // 1) 임금 항목 세팅 (04001008 근로자의 날 수당 제외 로직 포함)
+    const newWageInputs = {};
+    if (budgetData.jsonData?.directLabor) {
+      budgetData.jsonData.directLabor.forEach(item => {
+        if (item.label !== '04001008' && item.values && item.values[positionCd] !== undefined) {
+          newWageInputs[item.label] = item.values[positionCd];
+        }
+      });
+    }
+
+    // 2) 스케줄 추출
+    let selectedSchedule = null;
+    if (budgetData.staffDetail) {
+      const targetStaff = budgetData.staffDetail.find(s => s.code === positionCd);
+      if (targetStaff) {
+        selectedSchedule = targetStaff.schedule;
+      }
+    }
+
+    // 부모 상태 반영
+    wageInputs.value = newWageInputs;
+
+    // contractDataTemp를 갱신하여 모달에 즉시 반영되도록 함
+    contractDataTemp.value = {
+      ...contractDataTemp.value,
+      wageInputs: newWageInputs,
+      workSchedule: selectedSchedule
+    };
+
+    console.log('예산 데이터 자동 매핑 완료');
+  } catch (err) {
+    console.error('예산 데이터 로드 실패:', err);
+  }
+};
+
+// 2. 수정 모드일 때만 작동하는 Watch 추가
+watch(
+    () => [employee.value.sIdx, employee.value.typeCd, employee.value.positionCd],
+    ([newSite, newType, newPos]) => {
+      // ★ 중요: 수정 모드(isEditing)가 활성화된 상태에서만 자동으로 불러와야 함
+      // 그렇지 않으면 상세 페이지 진입 시 기존 저장된 데이터가 덮어씌워질 수 있음
+      if (isEditing.value && newSite && newType && newPos) {
+        getBudgetData();
+      }
+    }
+);
 
 const loadSalaryHistory = async () => {
   // 이미 로드된 데이터가 있다면 다시 호출하지 않음 (선택 사항)
@@ -261,9 +312,46 @@ const loadSalaryHistory = async () => {
   }
 };
 
+// ── 주민번호 복호화 공통 로직 ──────────────────────
+const fetchRRNData = async () => {
+  if (revealedRRN.value) return true; // 이미 있으면 통과
+
+  rrnLoading.value = true;
+  try {
+    const res = await axios.post('/api/v1/member/rrn/batch', { mIdxList: [employee.value.idx] });
+    if (res.data.result && res.data.data[employee.value.idx]) {
+      revealedRRN.value = res.data.data[employee.value.idx];
+      return true;
+    } else {
+      alert('주민번호 조회 권한이 없거나 데이터를 불러올 수 없습니다.');
+      return false;
+    }
+  } catch (e) {
+    console.error(e);
+    alert('주민번호 복호화 중 오류가 발생했습니다.');
+    return false;
+  } finally {
+    rrnLoading.value = false;
+  }
+};
+
 // 편집 모드 토글
-const toggleEdit = () => {
-  isEditing.value = !isEditing.value;
+const toggleEdit = async () => {
+  if (!isEditing.value) {
+    // 수정 모드 진입 시 주민번호 복호화 시도
+    const success = await fetchRRNData();
+    if (!success) return; // 권한 없으면 수정 모드 진입 막기
+
+    // 복호화된 번호 분리 (숫자만 추출)
+    const clean = revealedRRN.value.replace(/[^0-9]/g, '');
+    if (clean.length === 13) {
+      employee.value.firstNumber = clean.substring(0, 6);
+      employee.value.lastNumber = clean.substring(6);
+    }
+    isEditing.value = true;
+  } else {
+    isEditing.value = false;
+  }
 };
 
 const handleContractSave = (savedData) => {
@@ -298,10 +386,14 @@ const saveEmployee = async () => {
         || employee.value.contract?.contractEndDt
         || employee.value.outDate;
 
+    const fullRRN = `${employee.value.firstNumber}${employee.value.lastNumber}`;
+
     const payload = {
       ...employee.value,
+      rrn: fullRRN,
       type: employee.value.typeCd,
       position: employee.value.positionCd,
+      disability_grade: employee.value.disabilityCd,
       bankName: employee.value.bank,
       address: employee.value.address,
       joinDate: employee.value.inDate,
@@ -311,9 +403,13 @@ const saveEmployee = async () => {
       sIdx: employee.value.sIdx,
 
       // 임금 항목 (수정 안했을 경우를 대비해 기존 값과 병합)
+      /*
       wageInputs: Object.keys(wageInputs.value).length > 0
           ? wageInputs.value
           : JSON.parse(employee.value.contract?.jsonData || '{}'),
+
+       */
+      contractData: contractDataTemp.value,
 
       // 보정된 계약 날짜 전송
       contractStartDt: finalStartDt,
@@ -523,7 +619,23 @@ onMounted(async () => {
                 </div>
                 <div class="info-item">
                   <label>주민번호</label>
-                  <input v-if="isEditing" type="text" v-model="employee.rrn" class="info-input" placeholder="숫자만 입력 또는 000000-0000000" maxlength="14" />
+                  <div v-if="isEditing" class="ssn-group">
+                    <input
+                        type="text"
+                        v-model="employee.firstNumber"
+                        class="info-input ssn-input"
+                        maxlength="6"
+                        placeholder="000000"
+                    />
+                    <span class="ssn-separator">-</span>
+                    <input
+                        type="text"
+                        v-model="employee.lastNumber"
+                        class="info-input ssn-input"
+                        maxlength="7"
+                        placeholder="0000000"
+                    />
+                  </div>
                   <span v-else class="info-value">{{ displayRRN }}</span>
                 </div>
                 <div class="info-item">
@@ -674,7 +786,7 @@ onMounted(async () => {
                   </div>
                   <div class="info-item">
                     <label class="text-red">장애등급</label>
-                    <select v-if="isEditing" v-model="employee.disability_grade" class="info-select border-red">
+                    <select v-if="isEditing" v-model="employee.disabilityCd" class="info-select border-red">
                       <option value="">선택하세요</option>
                       <option v-for="item in disabledOptions" :key="item.itemCd" :value="item.itemCd">
                         {{ item.itemNm }}
@@ -928,7 +1040,15 @@ onMounted(async () => {
 
     <ContractModal
         :is-open="isContractModalOpen"
-        :employee-data="employee"
+        :employee-data="{
+          ...employee,
+          // 1. 수정 중인 wageInputs가 있으면 쓰고, 없으면 DB에서 로드된 contractData 사용
+          wageInputs: Object.keys(wageInputs).length > 0
+              ? wageInputs
+              : (employee.contract?.contractData || {}),
+          // 2. 수정 중인 스케줄이 있으면 쓰고, 없으면 DB에서 로드된 workSchedule 사용
+          workSchedule: contractDataTemp?.workSchedule || employee.workSchedule
+        }"
         :employee-type="employee.type"
         :site-options="siteOptions"
         :position-options="positionOptions"
@@ -1297,5 +1417,19 @@ onMounted(async () => {
   .profile-details { flex-direction: column; gap: 12px; }
   .integrated-content { padding: 20px 16px; }
   .info-sections { gap: 32px; }
+}
+
+.ssn-input {
+  flex: 1;
+  text-align: center;
+  letter-spacing: 2px;
+  min-width: 0;
+}
+
+.ssn-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
 }
 </style>

@@ -285,7 +285,13 @@ const getDisabilityStyle = (grade) => {
   };
 };
 
-const goToRegister = () => router.push('/member/register');
+const goToRegister = () => {
+  // 현재 페이지의 모든 쿼리(?site=...&search=...)를 들고 이동합니다.
+  router.push({
+    path: '/member/register',
+    query: route.query
+  });
+};
 const goToDetail   = (id) => router.push(`/member/${id}`);
 
 onMounted(async () => {

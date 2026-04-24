@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onActivated, ref, watch, computed } from 'vue';
-import { useRouter } from 'nuxt/app';
+import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
 import ContractModal from "~/components/contractModal.vue";
@@ -8,6 +8,7 @@ import auth from "~/middleware/auth.js";
 
 const authStore = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 
 const {
   companyData,
@@ -143,7 +144,7 @@ const handleSubmit = async () => {
     ...employee.value,
     cIdx: cIdx,
     contractData: contractDataTemp.value,
-    wageInputs: wageInputs.value
+    // wageInputs: wageInputs.value,
   };
 
   try {
@@ -152,7 +153,10 @@ const handleSubmit = async () => {
     if (res.data.result) {
       alert(`${employee.value.name} 직원이 성공적으로 등록되었습니다.`);
       resetForm();
-      await router.push('/member/list');
+      await router.push({
+        path: '/member/list',
+        query: route.query
+      });
     } else {
       alert('등록 실패: ' + (res.data.message || '알 수 없는 오류'));
     }
@@ -162,71 +166,70 @@ const handleSubmit = async () => {
   }
 };
 
-const totalWage = computed(() => {
-  let sum = 0;
-  for (const key in wageInputs.value) {
-    const val = parseInt(wageInputs.value[key]) || 0;
-    sum += val;
-  }
-  return sum;
-});
-
 // 5. 취소 버튼 핸들러
 const handleCancel = () => {
   if (confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) {
     resetForm();
-    router.push('/member/list');
+    router.push({
+      path: '/member/list',
+      query: route.query
+    });
   }
 };
 
 // 지급항목
 const getWageCode = async function () {
+  const cIdx = authStore.user?.cIdx;
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     const rawData = res.data.data || [];
-    items.value = rawData.filter(item => item.groupCd === '04001');
+    const includeCodes = ['04001001', '04001002','04001003','04001004','04001005','04001006']; // 표시할 코드만 명시
+    items.value = rawData.filter(item => includeCodes.includes(item.itemCd));
   } catch (err) {
     console.error("항목 로드 실패", err);
   }
 }
 
 const getBudgetData = async function () {
-  if (!employee.value.site || !employee.value.position) return;
-
-  let params = {
-    sIdx: employee.value.site,
-    type: employee.value.type
-  }
+  const { site, type, position } = employee.value;
+  if (!site || !type || !position) return;
 
   try {
-    const res = await axios.get(`/api/v1/site/contract/budget`, {params});
-    const budgetList = res.data.data;
+    const res = await axios.get(`/api/v1/site/contract/budget`, { params: { sIdx: site, type: type } });
+    const budgetData = res.data.data[0];
+    if (!budgetData) return;
 
-    if (budgetList && budgetList.length > 0) {
-      const targetPosition = employee.value.position;
-      const jsonData = budgetList[0].jsonData;
-
-      const newWageInputs = {};
-
-      if (jsonData && jsonData.directLabor) {
-        jsonData.directLabor.forEach(item => {
-          if (item.code && item.values && item.values[targetPosition] !== undefined) {
-            newWageInputs[item.code] = item.values[targetPosition];
-          }
-        });
-      }
-
-      wageInputs.value = newWageInputs;
-
-      if (!employee.value.contract) {
-        employee.value.contract = {};
-      }
-      employee.value.contract.contractData = newWageInputs;
+    // 1. 임금 항목 세팅
+    const newWageInputs = {};
+    if (budgetData.jsonData?.directLabor) {
+      budgetData.jsonData.directLabor.forEach(item => {
+        if (item.label && item.values && item.values[position] !== undefined) {
+          newWageInputs[item.label] = item.values[position];
+        }
+      });
     }
+
+    // 2. staffDetail에서 해당 직책의 스케줄만 추출
+    let selectedSchedule = null;
+    if (budgetData.staffDetail) {
+      const targetStaff = budgetData.staffDetail.find(s => s.code === position);
+      if (targetStaff) {
+        selectedSchedule = targetStaff.schedule; // { "0": {...}, "1": {...}, ... }
+      }
+    }
+
+    wageInputs.value = newWageInputs;
+    // 부모의 임시 데이터에 스케줄 저장
+    contractDataTemp.value = {
+      ...contractDataTemp.value,
+      wageInputs: newWageInputs,
+      workSchedule: selectedSchedule // 통합된 스케줄 명칭 사용
+    };
+
   } catch (err) {
-    console.error('예산 데이터 로드 실패:', err);
+    console.error('데이터 로드 실패:', err);
   }
-}
+};
 
 watch(
     () => [employee.value.firstNumber, employee.value.lastNumber],
@@ -265,17 +268,16 @@ watch(
     }
 );
 
-watch(() => employee.value.site, (newType) => {
-  if (newType && employee.value.site) {
-    getBudgetData();
-  }
-});
-
-watch(() => employee.value.position, (newType) => {
-  if (newType && employee.value.position) {
-    getBudgetData();
-  }
-});
+// 현장 변경 시
+watch(
+    () => [employee.value.site, employee.value.type, employee.value.position],
+    ([newSite, newType, newPos]) => {
+      // 세 가지 필수 정보가 모두 있을 때만 API 호출
+      if (newSite && newType && newPos) {
+        getBudgetData();
+      }
+    }
+);
 
 const isValidDate = (dateString) => {
   const regEx = /^\d{4}-\d{2}-\d{2}$/;
@@ -927,7 +929,11 @@ onActivated(() => {
 
     <ContractModal
         :is-open="showModal"
-        :employee-data="employee"
+        :employee-data="{
+          ...employee,
+          wageInputs: wageInputs,
+          workSchedule: contractDataTemp?.workSchedule
+        }"
         :employee-type="employee.type"
         :site-options="siteOptions"
         :position-options="positionOptions"
