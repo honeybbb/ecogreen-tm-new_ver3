@@ -266,15 +266,22 @@ const openBulkModal = () => {
 };
 
 const executeBulkGenerate = async () => {
+  if (!selectedType.value) {
+    alert('직원 구분 값을 먼저 선택해주세요.');
+    return;
+  }
+
   isBulkLoading.value = true;
   modal.value.bulk    = false;
+
   try {
     const res = await axios.post('/api/v1/work/bulk', {
       sIdx:  currentSiteId.value,
       month: selectedYearMonth.value,
+      type:  selectedType.value,
     });
     if (res.data.result) {
-      alert(`${monthTitle.value} 일괄 근태 생성 완료\n등록: ${res.data.success}건 / 삭제: ${res.data.deleted}건`);
+      alert(`${monthTitle.value} [${selectedType.value === '01001' ? '경비' : '미화'}] 일괄 근태 생성 완료\n등록: ${res.data.success}건 / 휴가보존: ${res.data.skippedByLeave}건`);
       await fetchSchedules();
     } else {
       alert(res.data.message || '생성 실패');
