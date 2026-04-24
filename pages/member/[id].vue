@@ -409,7 +409,10 @@ const saveEmployee = async () => {
           : JSON.parse(employee.value.contract?.jsonData || '{}'),
 
        */
-      contractData: contractDataTemp.value,
+      contractData: contractDataTemp.value || {
+        wageInputs: employee.value.contract?.contractData || {},
+        workSchedule: employee.value.workSchedule || {}
+      },
 
       // 보정된 계약 날짜 전송
       contractStartDt: finalStartDt,
