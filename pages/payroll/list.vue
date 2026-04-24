@@ -412,6 +412,17 @@ const toggleSort = (key) => {
   currentPage.value = 1;
 };
 
+const resetFilters = () => {
+  searchTerm.value         = '';
+  selectedSite.value       = '전체';
+  selectedType.value       = '전체';
+  selectedStatus.value     = '전체';
+  currentPage.value        = 1;
+  sortKey.value            = 'id';
+  sortOrder.value          = 'asc';
+  pageSize.value           = 50;
+};
+
 // ── API: 급여 목록 조회 ───────────────────────────
 const getPayrollList = async () => {
   isLoading.value = true;
@@ -502,8 +513,12 @@ onMounted(async () => {
               <i class="mdi mdi-close"></i>
             </button>
           </div>
-          <button @click="getPayrollList" class="btn-search">
+          <!--button @click="getPayrollList" class="btn-search">
             <i class="mdi mdi-magnify"></i><span>검색</span>
+          </button-->
+          <button @click="resetFilters" class="btn-search" title="필터 초기화">
+            <i class="mdi mdi-filter-off"></i>
+            <span>초기화</span>
           </button>
         </div>
       </div>
