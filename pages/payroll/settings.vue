@@ -449,7 +449,7 @@ onMounted(() => {
                   <button
                       @click="startEdit(code)"
                       class="btn-action btn-edit"
-                      :disabled="!code.editFl"
+                      :disabled="code.editFl == 'N'"
                   >
                     <i class="mdi mdi-pencil-outline"></i>
                     <span>수정</span>
