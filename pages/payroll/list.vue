@@ -125,8 +125,8 @@ const getInsuranceWarning = (row) => {
 // 입력 시 숫자만 추출하여 저장하는 함수
 const onInputAmount = (row, item, group, event) => {
   const el = event.target;
-  const selectionStart = el.selectionStart; // [추가] 현재 커서 위치 저장
-  const oldLength = el.value.length;        // [추가] 변경 전 글자 길이
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
 
   const rawValue = el.value.replace(/[^\d]/g, '');
   const numValue = Number(rawValue) || 0;
@@ -137,17 +137,22 @@ const onInputAmount = (row, item, group, event) => {
     row.deductions[item.itemCd] = numValue;
   }
 
-  // 화면 업데이트
+  // 화면 업데이트 (콤마 포맷팅)
   const formatted = formatCurrency(numValue);
   el.value = formatted;
 
-  // [추가] 커서 위치 보정 (중간 수정 시 커서가 뒤로 안 튕기게)
+  // 커서 위치 보정
   const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 
-  markAsDraft(row);
-  calculateInsurances(row, item);
+  markAsDraft(row); // 저장 대기 상태로 변경
+
+  // 지급 항목을 바꿀 때만 '자동 계산'을 실행합니다.
+  // 사용자가 공제 항목을 직접 타이핑할 때는 자동 계산을 돌리지 않아야 값이 유지됩니다.
+  if (group === 'pay') {
+    calculateInsurances(row, item);
+  }
 };
 
 // ── 행 합계 계산 ──────────────────────────────────
@@ -986,7 +991,7 @@ tr.data-row:hover td.sticky-col {
 }
 
 /* === 툴팁 디자인 === */
-.tooltip-container { position: relative; cursor: help; width: 100%; }
+.tooltip-container { position: relative; cursor: help; }
 .tooltip-text {
   visibility: hidden; opacity: 0;
   position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
@@ -994,8 +999,8 @@ tr.data-row:hover td.sticky-col {
   padding: 8px 12px; border-radius: 6px;
   font-size: 11px; line-height: 1.4; white-space: nowrap;
   z-index: 100; box-shadow: var(--shadow-md);
-  transition: opacity 0.15s; pointer-events: none;
-  font-weight: 500;
+  transition: opacity 0.15s;
+  pointer-events: none;
 }
 .tooltip-text::after {
   content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
