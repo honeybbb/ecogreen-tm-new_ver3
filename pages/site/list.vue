@@ -3,7 +3,8 @@ import {ref, computed, onMounted, onActivated} from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from "axios";
 import Pagination from "~/components/Pagination.vue";
-
+import {useTableResize} from "~/composables/useTableResize.js";
+const { startResize } = useTableResize();
 const router = useRouter();
 
 // 1. 상태 및 검색 조건
@@ -284,41 +285,57 @@ const goToDetail = (id) => router.push(`/site/${id}`);
                 <span>ID</span>
                 <i v-if="sortKey === 'idx'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('name')" class="sortable">
               <div class="th-content">
                 <span>현장명</span>
                 <i v-if="sortKey === 'name'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('address')" class="sortable">
               <div class="th-content">
                 <span>주소</span>
                 <i v-if="sortKey === 'address'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('contract')" class="sortable" style="width: 220px;">
               <div class="th-content">
                 <span>계약 기간</span>
                 <i v-if="sortKey === 'contract'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('manager')" class="sortable" style="width: 120px;">
               <div class="th-content">
-                <span>담당자</span>
+                <span>본사 담당자</span>
                 <i v-if="sortKey === 'manager'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
+            <th> <div class="th-content"><span>본사 연락처</span></div></th>
+            <th @click="toggleSort('manager')" class="sortable" style="width: 120px;">
+              <div class="th-content">
+                <span>현장 담당자</span>
+                <i v-if="sortKey === 'director'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+              </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th><div class="th-content"><span>현장 연락처</span></div></th>
             <th @click="toggleSort('status')" class="sortable" style="width: 120px;">
               <div class="th-content">
                 <span>상태</span>
                 <i v-if="sortKey === 'status'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th class="text-center" style="width: 100px;">
               <div class="th-content justify-center">
                 <span>관리</span>
               </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
           </tr>
           </thead>
@@ -354,6 +371,11 @@ const goToDetail = (id) => router.push(`/site/${id}`);
                 <span>{{ site.manager }}</span>
               </div>
             </td>
+            <td><span>{{site.manager_phone}}</span></td>
+            <td>
+              <span>{{site.director}}</span>
+            </td>
+            <td><span>{{site.director_phone}}</span></td>
             <td>
                 <span :class="[
                   'status-badge',
