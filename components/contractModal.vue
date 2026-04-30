@@ -36,6 +36,8 @@ const dayLabels = {
   1: '월', 2: '화', 3: '수', 4: '목', 5: '금', 6: '토', 0: '일'
 };
 
+const EXCLUDED_WAGE_CODES = ['04001008']; // 근로자의날수당 등 제외 항목
+
 watch(() => props.employeeData, (newData) => {
   if (newData) {
     contractData.value = {
@@ -77,11 +79,18 @@ const totalWage = computed(() => {
 });
  */
 // contractModal.vue
+const visibleWageItems = computed(() => {
+  return (props.wageItems || []).filter(w =>
+      w.itemCd?.startsWith('04001') && !EXCLUDED_WAGE_CODES.includes(w.itemCd)
+  );
+});
+
 const totalWage = computed(() => {
-  const includeCodes = ['04001001', '04001002','04001003','04001004','04001005','04001006']; // 합산할 코드만 명시
-  return includeCodes.reduce((sum, code) => {
-    return sum + (parseInt(contractData.value.wageInputs[code]) || 0);
-  }, 0);
+  return (props.wageItems || [])
+      .filter(w => w.itemCd?.startsWith('04001') && !EXCLUDED_WAGE_CODES.includes(w.itemCd))
+      .reduce((sum, w) => {
+        return sum + (parseInt(contractData.value.wageInputs[w.itemCd]) || 0);
+      }, 0);
 });
 
 const siteName = computed(() => {
@@ -122,8 +131,12 @@ async function handleExportPdf() {
     const sched = cd.workSchedule || {};
 
     // ── 임금 테이블 헤더/행 생성 ──
-    const wageHeaders = (props.wageItems || []).map(w => `<th>${w.itemNm}</th>`).join('') + '<th>합계</th>';
-    const wageCells = (props.wageItems || []).map(w => {
+    const visibleItems = (props.wageItems || []).filter(w =>
+        w.itemCd?.startsWith('04001') && !EXCLUDED_WAGE_CODES.includes(w.itemCd)
+    );
+
+    const wageHeaders = visibleItems.map(w => `<th>${w.itemNm}</th>`).join('') + '<th>합계</th>';
+    const wageCells = visibleItems.map(w => {
       const v = parseInt(cd.wageInputs[w.itemCd]) || 0;
       return `<td>${v ? v.toLocaleString() : ''}</td>`;
     }).join('') + `<td class="total-cell">${totalWage.value.toLocaleString()}원</td>`;
@@ -239,7 +252,23 @@ async function handleExportPdf() {
 <div class="section">
   <div class="section-title">제5조 (임금)</div>
   <p>"을"의 월 임금은 다음과 같이 적용한다.</p>
-  <table class="wage-table"><thead><tr>${wageHeaders}</tr></thead><tbody><tr>${wageCells}</tr></tbody></table>
+  <!-- 제5조 임금 -->
+<table class="wage-table">
+  <thead>
+    <tr>
+      <th v-for="wage in visibleWageItems" :key="wage.itemCd">{{ wage.itemNm }}</th>
+      <th class="total-header">합계</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td v-for="wage in visibleWageItems" :key="wage.itemCd">
+        <input type="number" class="wage-input" v-model="contractData.wageInputs[wage.itemCd]" />
+      </td>
+      <td class="total-cell">{{ totalWage.toLocaleString() }}원</td>
+    </tr>
+  </tbody>
+</table>
   <div class="clauses">
     <p>① 위 임금은 상기 근로조건에 따른 기본급과 제 법정수당이 합산된 산정임금으로서 "을"은 어떠한 경우라도 노동관계법령을 근거로 이의를 제기치 않는다. (상여금은 없음) 근로자가 연차를 사용시 수당은 미지급 된다.</p>
     <p>② 임금은 ${year}년 최저시급(시간당 10,030원) 기준으로 지급된다.</p>
@@ -446,17 +475,18 @@ const handleClose = () => emit('close');
             <h4 class="section-title">제5조 (임금)</h4>
             <div class="contract-content">
               <p>"을"의 월 임금은 다음과 같이 적용한다.</p>
+              <!-- 제5조 임금 -->
               <div class="wage-table-wrapper">
                 <table class="wage-table">
                   <thead>
                   <tr>
-                    <th v-for="wage in wageItems" :key="wage.itemCd">{{ wage.itemNm }}</th>
+                    <th v-for="wage in visibleWageItems" :key="wage.itemCd">{{ wage.itemNm }}</th>
                     <th class="total-header">합계</th>
                   </tr>
                   </thead>
                   <tbody>
                   <tr>
-                    <td v-for="wage in wageItems" :key="wage.itemCd">
+                    <td v-for="wage in visibleWageItems" :key="wage.itemCd">
                       <input type="number" class="wage-input" v-model="contractData.wageInputs[wage.itemCd]" />
                     </td>
                     <td class="total-cell">{{ totalWage.toLocaleString() }}원</td>

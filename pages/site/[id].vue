@@ -491,10 +491,16 @@ const removeItem = (g, sec, idx) => g.costBreakdown[sec].splice(idx, 1);
 
 const addContractGroup = (category) => {
   contractGroups.value.push({
-    category: category.itemNm, type: category.itemCd,
-    contractStart: '', contractEnd: '',
-    totalCost: 0, workDays: '', workSchedule: '', breakTime: '',
+    category: category.itemNm,
+    type: category.itemCd,
+    contractStart: '',
+    contractEnd: '',
+    totalCost: 0,
+    workDays: '',
+    workSchedule: '',
+    breakTime: '',
     staffList: [],
+    isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
     costBreakdown: createDefaultCostBreakdown([]),
     showCostBreakdown: false,
   });
@@ -543,7 +549,7 @@ const settlementConfig = ref({
   activePayLabels: [],
   // 간접노무비(공제항목) 표시 여부 (label 배열)
   activeDeductionLabels: [],
-
+  isAutoCalcDefault: true,
   // Melt Options — 공제 계산 베이스에 포함 여부
   meltOptions: {
     annualLeave: false,
@@ -695,6 +701,7 @@ const getSiteData = async () => {
         settlementConfig.value = {
           activePayLabels:       parsed.activePayLabels       ?? [],
           activeDeductionLabels: parsed.activeDeductionLabels ?? [],
+          isAutoCalcDefault:     parsed.isAutoCalcDefault     ?? true,
           meltOptions: {
             annualLeave: parsed.meltOptions?.annualLeave ?? false,
             severance:   parsed.meltOptions?.severance   ?? false,
@@ -730,6 +737,7 @@ const getSiteData = async () => {
           workDays:          item.workDays,
           workSchedule:      item.workSchedule,
           breakTime:         item.breaktime,
+          isAutoCalc:        item.isAutoCalc === 'N' ? 'N' : 'Y',
           staffList:         staffList, // 맵핑된 리스트 대입
           costBreakdown:     item.costBreakdown || item.budget || createDefaultCostBreakdown(staffList),
           showCostBreakdown: false,
@@ -763,7 +771,7 @@ const toggleEdit = () => {
       site.value           = JSON.parse(JSON.stringify(originalData.site));
       contractGroups.value = JSON.parse(JSON.stringify(originalData.contractGroups));
       assignedStaff.value  = JSON.parse(JSON.stringify(originalData.assignedStaff));
-      settlementConfig.value = JSON.parse(JSON.stringify(originalData.settlementConfig)); // 👈 [추가] 롤백
+      settlementConfig.value = JSON.parse(JSON.stringify(originalData.settlementConfig));
       isEditing.value = false;
     }
   } else {
@@ -1183,17 +1191,24 @@ onMounted(async () => {
                 <span :class="['contract-badge', `badge-${group.category}`]">
                   <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
                 </span>
+                <div class="contract-calc-switch-wrap">
+                  <label class="switch-sm" :class="{'disabled': !isEditing}">
+                    <input type="checkbox"
+                           v-model="group.isAutoCalc"
+                           true-value="Y"
+                           false-value="N"
+                           :disabled="!isEditing" />
+                    <span class="slider-sm round"></span>
+                  </label>
+                  <span class="calc-label" :class="{'text-primary': group.isAutoCalc === 'Y'}">
+                    {{ group.isAutoCalc === 'Y' ? '법정요율 자동계산' : '산출내역 금액고정' }}
+                  </span>
+                </div>
+
                 <span v-if="getContractDuration(group)" class="contract-duration">
                   <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
                 </span>
-                <span class="assigned-count-chip">
-                  <i class="mdi mdi-account-check-outline"></i>
-                  배치 {{ getAssignedByGroup(group.type).length }}명
-                </span>
               </div>
-              <button v-if="isEditing" type="button" @click="removeContractGroup(idx)" class="btn-remove-small">
-                <i class="mdi mdi-trash-can-outline"></i>
-              </button>
             </div>
 
             <div class="contract-card-body">
@@ -1650,7 +1665,6 @@ onMounted(async () => {
       <!-- 정산정보 탭 -->
       <div v-show="activeTab === 'settlement'" class="tab-panel">
         <div class="info-sections">
-
           <div class="info-section">
             <div class="section-header">
               <i class="mdi mdi-calculator-variant"></i>
@@ -2291,6 +2305,36 @@ export default {
 .form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; color: var(--text-main); background: var(--bg-surface); resize: vertical; box-sizing: border-box; }
 .form-textarea:disabled { background: var(--bg-canvas); color: var(--text-sub); }
 
+/* 계약별 자동계산 스위치 레이아웃 */
+.contract-calc-switch-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px;
+  padding: 0 12px;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+}
+
+.calc-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+/* 작은 스위치 디자인 */
+.switch-sm { position: relative; display: inline-block; width: 32px; height: 18px; flex-shrink: 0; }
+.switch-sm input { opacity: 0; width: 0; height: 0; }
+.slider-sm { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; border-radius: 20px; }
+.slider-sm:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .slider-sm { background-color: var(--primary); }
+input:checked + .slider-sm:before { transform: translateX(14px); }
+
+/* 비활성 상태 (수정 모드 아닐 때) */
+.switch-sm.disabled { opacity: 0.6; cursor: default; }
+.switch-sm.disabled .slider-sm { cursor: default; }
+
 /* =============================================
    배치 인원
 ============================================= */
@@ -2585,9 +2629,4 @@ input:checked + .slider:before { transform: translateX(18px); }
 .config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0; }
 .config-checkbox.disabled { opacity: 0.6; cursor: not-allowed; }
 .grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
-
-/* 공통 텍스트 유틸리티 */
-.text-orange { color: #b45309; }
-.text-blue { color: #2563eb; }
-.text-red { color: #dc2626; }
 </style>

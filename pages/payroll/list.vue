@@ -74,6 +74,7 @@ const transformPayrollList = (rows) => {
       payments,
       deductions,
       deductionFlags: flags,
+      isAutoCalc: row.isAutoCalc === 'N' ? false : true,
       selected: false,
       // status: mbs.idx가 없으면(계약서데이터) 0, 있으면 1
       status: row.status ?? 0,
@@ -150,7 +151,7 @@ const onInputAmount = (row, item, group, event) => {
 
   // 지급 항목을 바꿀 때만 '자동 계산'을 실행합니다.
   // 사용자가 공제 항목을 직접 타이핑할 때는 자동 계산을 돌리지 않아야 값이 유지됩니다.
-  if (group === 'pay') {
+  if (group === 'pay' && row.isAutoCalc) {
     calculateInsurances(row, item);
   }
 };
@@ -388,6 +389,7 @@ const savePayroll = async () => {
         payItems:       JSON.stringify(row.payments       || {}),
         deductionItems: JSON.stringify(row.deductions     || {}),
         checkedItems:   JSON.stringify(row.deductionFlags || {}),
+        // isAutoCalc:     row.isAutoCalc ? 'Y' : 'N',
         total:          0,
       });
     }));
@@ -616,7 +618,15 @@ onMounted(async () => {
             <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
-            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">
+              <div class="name-with-toggle">
+                <span>{{ p.staff }}</span>
+                <label class="calc-badge" :class="p.isAutoCalc ? 'calc-auto' : 'calc-manual'">
+                  <input type="checkbox" v-model="p.isAutoCalc" @change="markAsDraft(p)" style="display:none;">
+                  {{ p.isAutoCalc ? '요율 자동' : '금액 고정' }}
+                </label>
+              </div>
+            </td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
             <td class="text-center sticky-col sticky-col-8">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
@@ -1022,4 +1032,24 @@ tr.data-row:hover td.sticky-col {
   border: 5px solid transparent; border-top-color: var(--header-bg);
 }
 .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+
+.name-with-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.calc-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.calc-badge:hover { opacity: 0.75; }
+
+.calc-auto   { background: #dbeafe; color: #2563eb; }
+.calc-manual { background: #fef3c7; color: #b45309; }
 </style>
