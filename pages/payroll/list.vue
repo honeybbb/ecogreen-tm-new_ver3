@@ -52,17 +52,11 @@ const transformPayrollList = (rows) => {
     try { deductions = typeof row.deductionItems === 'string' ? JSON.parse(row.deductionItems) : row.deductionItems || {}; } catch {}
     try { flags = typeof row.checkedItems === 'string' ? JSON.parse(row.checkedItems) : (row.checkedItems || {}); } catch {}
 
-    const originalDeductions = { ...deductions };
-
     if (Object.keys(flags).length === 0 && deductionItems.value.length) {
       deductionItems.value.forEach(item => {
         const amount = Number(deductions[item.itemCd]) || 0;
-        if (amount > 0) {
-          flags[item.itemCd] = true;
-        } else {
-          flags[item.itemCd] = false;
-          deductions[item.itemCd] = 0;
-        }
+        flags[item.itemCd] = amount > 0;
+        if (amount === 0) deductions[item.itemCd] = 0;
       });
     }
 
@@ -70,9 +64,7 @@ const transformPayrollList = (rows) => {
       ...row,
       payments,
       deductions,
-      originalDeductions,  // DB 원본값 보존
       deductionFlags: flags,
-      isAutoCalc: row.isAutoCalc === 'N' ? false : true,
       selected: false,
       status: row.status ?? 0,
     };
@@ -135,21 +127,18 @@ const onInputAmount = (row, item, group, event) => {
     row.deductions[item.itemCd] = numValue;
   }
 
-  // 화면 업데이트 (콤마 포맷팅)
   const formatted = formatCurrency(numValue);
   el.value = formatted;
 
-  // 커서 위치 보정
   const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 
-  markAsDraft(row); // 저장 대기 상태로 변경
+  markAsDraft(row);
 
-  // 지급 항목을 바꿀 때만 '자동 계산'을 실행합니다.
-  // 사용자가 공제 항목을 직접 타이핑할 때는 자동 계산을 돌리지 않아야 값이 유지됩니다.
-  if (group === 'pay' && row.isAutoCalc) {
-    calculateInsurances(row, item);
+  // ✅ 지급 항목 변경 시 항상 재계산 (sourceItem 없이 전체 재계산)
+  if (group === 'pay') {
+    calculateInsurances(row, null);
   }
 };
 
@@ -281,14 +270,24 @@ const fetchOverAgeOption = async () => {
 
 // ── 보험료 계산 ───────────────────────────────────
 const calculateInsurances = (row, sourceItem) => {
-  // 식대(04001005) 10만원까지 비과세, 초과분 과세
   let taxable = 0;
   if (row.payments) {
     Object.keys(row.payments).forEach(k => {
-      if (k === '04001005') {
-        taxable += Math.max(0, Number(row.payments[k] || 0) - 100000);
+      const amount = Number(row.payments[k] || 0);
+
+      // items(임금코드)에서 해당 지급항목의 option(비과세 한도) 조회
+      const payItem = payItems.value.find(i => i.itemCd === k);
+      console.log(payItem, 'payItem')
+      const taxFreeLimit = payItem?.tax_free ? Number(payItem.tax_free) : 0;
+
+      console.log(taxFreeLimit, 'taxFreeLimit')
+
+      if (taxFreeLimit > 0) {
+        // 비과세 한도가 설정된 항목: 한도 초과분만 과세
+        taxable += Math.max(0, amount - taxFreeLimit);
       } else {
-        taxable += Number(row.payments[k] || 0);
+        // 비과세 한도 없는 항목: 전액 과세
+        taxable += amount;
       }
     });
   }
@@ -308,9 +307,7 @@ const calculateInsurances = (row, sourceItem) => {
   const isPay = payItems.value.some(p => p.itemCd === sourceItem.itemCd);
 
   if (isPay) {
-    // 지급 항목 변경 → 금액고정이면 재계산 안 함
-    if (!row.isAutoCalc) return;
-
+    // 지급 항목 변경 → 항상 요율로 재계산
     const healthItem = deductionItems.value.find(d => d.itemCd === '04002001');
     if (healthItem && row.deductionFlags['04002001']) {
       applyDeductionLogic(row, healthItem, taxable, rates);
@@ -322,27 +319,14 @@ const calculateInsurances = (row, sourceItem) => {
 
   } else {
     // 공제 항목 체크박스 변경
-
     if (!row.deductionFlags[sourceItem.itemCd]) {
-      // ✅ 체크 해제: 화면에 0 표시 (deductions만 0, originalDeductions는 유지)
+      // 체크 해제 → 0
       row.deductions[sourceItem.itemCd] = 0;
-      if (sourceItem.itemCd === '04002001') {
-        row.deductions['04002002'] = 0;
-      }
+      if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
       return;
     }
 
-    // ✅ 체크 재활성
-    if (!row.isAutoCalc) {
-      // 금액고정: originalDeductions에서 원본값 복원
-      row.deductions[sourceItem.itemCd] = row.originalDeductions?.[sourceItem.itemCd] ?? 0;
-      if (sourceItem.itemCd === '04002001') {
-        row.deductions['04002002'] = row.originalDeductions?.['04002002'] ?? 0;
-      }
-      return;
-    }
-
-    // 요율 자동: 재계산
+    // 체크 재활성 → 항상 요율로 재계산
     if (sourceItem.itemCd === '04002001') {
       applyDeductionLogic(row, sourceItem, taxable, rates);
       const ltItem = deductionItems.value.find(d => d.itemCd === '04002002');
@@ -455,6 +439,10 @@ const getPayrollList = async () => {
   try {
     const res = await axios.get('/api/v1/member/payroll');
     payrollList.value = res.data.data?.length ? transformPayrollList(res.data.data) : [];
+
+    // 전체 행에 대해 요율 기준으로 초기 계산
+    payrollList.value.forEach(row => calculateInsurances(row, null));
+
     currentPage.value = 1;
   } catch {
     payrollList.value = [];
@@ -643,13 +631,7 @@ onMounted(async () => {
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
             <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">
-              <div class="name-with-toggle">
-                <span>{{ p.staff }}</span>
-                <label class="calc-badge" :class="p.isAutoCalc ? 'calc-auto' : 'calc-manual'">
-                  <input type="checkbox" v-model="p.isAutoCalc" @change="markAsDraft(p)" style="display:none;">
-                  {{ p.isAutoCalc ? '요율 자동' : '금액 고정' }}
-                </label>
-              </div>
+              {{ p.staff }}
             </td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
             <td class="text-center sticky-col sticky-col-8">
