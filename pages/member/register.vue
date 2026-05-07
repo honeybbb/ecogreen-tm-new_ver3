@@ -17,12 +17,14 @@ const {
   typeOptions,
   positionOptions,
   disabledOptions,
+  wagesData,
   getCompanyData,
   fetchBankOption,
   fetchSiteOptions,
   fetchTypeOptions,
   fetchPositionOptions,
   fetchDisabledOptions,
+  fetchWageCode
 } = useApi();
 
 const cIdx = authStore.user?.cIdx;
@@ -199,46 +201,52 @@ const getBudgetData = async function () {
     const budgetData = res.data.data[0];
     if (!budgetData) return;
 
+    const jsonData = typeof budgetData.jsonData === 'string'
+        ? JSON.parse(budgetData.jsonData)
+        : budgetData.jsonData;
+
+    const staffDetail = typeof budgetData.staffDetail === 'string'
+        ? JSON.parse(budgetData.staffDetail)
+        : budgetData.staffDetail;
+
     const newWageInputs = {};
+    const newItems = [];
 
-    // 1. 임금(직접노무비) 및 공제(간접노무비) 항목 통합 세팅
-    // jsonData 내의 directLabor(04001 계열)와 indirectLabor(04002 계열)를 모두 처리합니다.
-    const laborGroups = ['directLabor', 'indirectLabor'];
+    // directLabor만 지급항목(임금)으로, indirectLabor는 공제항목으로 구분
+    ['directLabor', 'indirectLabor'].forEach(groupKey => {
+      (jsonData?.[groupKey] || []).forEach(item => {
+        if (!item.label) return;
 
-    laborGroups.forEach(groupKey => {
-      if (budgetData.jsonData?.[groupKey]) {
-        budgetData.jsonData[groupKey].forEach(item => {
-          // item.label은 코드번호(itemCd), item.values[position]은 해당 직책의 산출 금액
-          if (item.label && item.values && item.values[position] !== undefined) {
-            // 근로자의 날(04001008) 제외 로직이 필요하다면 여기서 필터링 가능
-            if (item.label !== '04001008') {
-              newWageInputs[item.label] = item.values[position];
-            }
-          }
+        // wagesData에서 이름 찾기, 없으면 label 그대로
+        const itemNm = wagesData.value.find(w => w.itemCd === item.label)?.itemNm ?? item.label;
+
+        newItems.push({
+          itemCd: item.label,
+          itemNm,
+          groupKey, // 'directLabor' | 'indirectLabor'
+          groupCd: item.label.substring(0, 5),
         });
-      }
+
+        if (item.values?.[position] !== undefined) {
+          newWageInputs[item.label] = Number(item.values[position]) || 0;
+        }
+      });
     });
 
-    // 2. staffDetail에서 해당 직책의 스케줄 추출 (기존 유지)
-    let selectedSchedule = null;
-    if (budgetData.staffDetail) {
-      const targetStaff = budgetData.staffDetail.find(s => s.code === position);
-      if (targetStaff) {
-        selectedSchedule = targetStaff.schedule;
-      }
-    }
-
-    // 3. 상태 업데이트
+    items.value = newItems;
     wageInputs.value = newWageInputs;
 
-    // contractDataTemp를 갱신하여 모달과 동기화
-    contractDataTemp.value = {
-      ...contractDataTemp.value, // 기존에 입력된 데이터(날짜 등) 유지
-      wageInputs: newWageInputs,
-      workSchedule: selectedSchedule
-    };
+    let selectedSchedule = null;
+    if (staffDetail) {
+      const targetStaff = staffDetail.find(s => s.code === position);
+      if (targetStaff) selectedSchedule = targetStaff.schedule;
+    }
 
-    console.log('산출내역 기반 지급/공제 데이터 매핑 완료:', newWageInputs);
+    contractDataTemp.value = {
+      ...contractDataTemp.value,
+      wageInputs: newWageInputs,
+      workSchedule: selectedSchedule,
+    };
 
   } catch (err) {
     console.error('데이터 로드 실패:', err);
@@ -310,7 +318,7 @@ onMounted(() => {
   fetchPositionOptions();
   fetchDisabledOptions();
   fetchBankOption();
-  getWageCode();
+  fetchWageCode();
 });
 
 onActivated(() => {
@@ -345,7 +353,7 @@ onActivated(() => {
       <div class="form-container">
 
         <div class="form-section">
-          <div class="step-header">
+          <div class="section-main-header">
             <i class="mdi mdi-account-outline"></i>
             <h2>기본 정보</h2>
           </div>
@@ -507,7 +515,7 @@ onActivated(() => {
         <hr class="section-divider" />
 
         <div class="form-section">
-          <div class="step-header">
+          <div class="section-main-header">
             <i class="mdi mdi-alert-circle-outline"></i>
             <h2>특이 사항</h2>
           </div>
@@ -752,7 +760,7 @@ onActivated(() => {
         <hr class="section-divider" />
 
         <div class="form-section">
-          <div class="step-header">
+          <div class="section-main-header">
             <i class="mdi mdi-briefcase-outline"></i>
             <h2>근무 정보</h2>
           </div>
@@ -838,7 +846,7 @@ onActivated(() => {
             </div>
           </div>
 
-          <div class="step-header mt-4">
+          <div class="section-main-header">
             <i class="mdi mdi-file-document-outline"></i>
             <h2>근로 계약서 관리</h2>
           </div>
@@ -851,7 +859,7 @@ onActivated(() => {
             </div>
           </div>
 
-          <div class="step-header mt-4">
+          <div class="section-main-header">
             <i class="mdi mdi-cash-multiple"></i>
             <h2>급여 및 기타 정보</h2>
           </div>
@@ -999,12 +1007,17 @@ onActivated(() => {
   background: var(--border-color);
   margin: 0;
 }
-.mt-4 { margin-top: 32px; }
+
 .mb-4 { margin-bottom: 32px; }
 
+/*
 .step-header { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 1px dashed var(--border-color); }
 .step-header i { font-size: 24px; color: var(--primary); }
 .step-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
+ */
+.section-main-header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid var(--border-color); }
+.section-main-header i { font-size: 24px; color: var(--primary); }
+.section-main-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
 
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px; }
 .form-group { display: flex; flex-direction: column; gap: 8px; }

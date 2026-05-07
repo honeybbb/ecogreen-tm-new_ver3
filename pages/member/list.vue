@@ -6,7 +6,7 @@ import Pagination from '@/components/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
 import { useTableResize } from '@/composables/useTableResize';
 const { startResize } = useTableResize();
-import ExcelDownloadModal from '@/components/ExcelDownloadModal.vue';
+// import ExcelDownloadModal from '@/components/ExcelDownloadModal.vue';
 
 const router = useRouter();
 const route = useRoute(); // ★ URL 쿼리를 읽기 위해 추가
@@ -836,7 +836,7 @@ onActivated(async () => {
   position: absolute;
   top: 0;
   right: 0;
-  width: 6px;
+  width: 2px;
   height: 100%;
   cursor: col-resize;
   z-index: 1;

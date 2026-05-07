@@ -48,21 +48,18 @@ const transformPayrollList = (rows) => {
   return rows.map(row => {
     let payments = {}, deductions = {}, flags = {};
 
-    // 1. JSON 데이터 파싱
     try { payments = typeof row.payItems === 'string' ? JSON.parse(row.payItems) : row.payItems || {}; } catch {}
     try { deductions = typeof row.deductionItems === 'string' ? JSON.parse(row.deductionItems) : row.deductionItems || {}; } catch {}
     try { flags = typeof row.checkedItems === 'string' ? JSON.parse(row.checkedItems) : (row.checkedItems || {}); } catch {}
 
-    // 2. [핵심] 체크 정보가 없는 초기 로드 시 처리
+    const originalDeductions = { ...deductions };
+
     if (Object.keys(flags).length === 0 && deductionItems.value.length) {
       deductionItems.value.forEach(item => {
         const amount = Number(deductions[item.itemCd]) || 0;
-
         if (amount > 0) {
-          // 🌟 값이 들어있다면 체크박스를 자동으로 'true'로 설정 (데이터 유지)
           flags[item.itemCd] = true;
         } else {
-          // 값이 0이거나 없는 경우에만 false 및 0원 처리
           flags[item.itemCd] = false;
           deductions[item.itemCd] = 0;
         }
@@ -73,9 +70,10 @@ const transformPayrollList = (rows) => {
       ...row,
       payments,
       deductions,
+      originalDeductions,  // DB 원본값 보존
       deductionFlags: flags,
+      isAutoCalc: row.isAutoCalc === 'N' ? false : true,
       selected: false,
-      // status: mbs.idx가 없으면(계약서데이터) 0, 있으면 1
       status: row.status ?? 0,
     };
   });
@@ -150,7 +148,7 @@ const onInputAmount = (row, item, group, event) => {
 
   // 지급 항목을 바꿀 때만 '자동 계산'을 실행합니다.
   // 사용자가 공제 항목을 직접 타이핑할 때는 자동 계산을 돌리지 않아야 값이 유지됩니다.
-  if (group === 'pay') {
+  if (group === 'pay' && row.isAutoCalc) {
     calculateInsurances(row, item);
   }
 };
@@ -158,8 +156,15 @@ const onInputAmount = (row, item, group, event) => {
 // ── 행 합계 계산 ──────────────────────────────────
 const calculateRow = (row) => {
   let gross = 0, ded = 0;
-  if (row.payments)    payItems.value.forEach(i       => gross += Number(row.payments[i.itemCd]    || 0));
-  if (row.deductions)  deductionItems.value.forEach(i => ded   += Number(row.deductions[i.itemCd]  || 0));
+  if (row.payments)
+    payItems.value.forEach(i => gross += Number(row.payments[i.itemCd] || 0));
+  if (row.deductions)
+    deductionItems.value.forEach(i => {
+      // 체크된 항목만 공제 합계에 포함
+      if (row.deductionFlags?.[i.itemCd] !== false) {
+        ded += Number(row.deductions[i.itemCd] || 0);
+      }
+    });
   return { gross, ded, net: gross - ded };
 };
 
@@ -301,8 +306,11 @@ const calculateInsurances = (row, sourceItem) => {
   }
 
   const isPay = payItems.value.some(p => p.itemCd === sourceItem.itemCd);
+
   if (isPay) {
-    // 지급 항목 변경 → 건강보험 먼저, 나머지 순서대로
+    // 지급 항목 변경 → 금액고정이면 재계산 안 함
+    if (!row.isAutoCalc) return;
+
     const healthItem = deductionItems.value.find(d => d.itemCd === '04002001');
     if (healthItem && row.deductionFlags['04002001']) {
       applyDeductionLogic(row, healthItem, taxable, rates);
@@ -311,13 +319,30 @@ const calculateInsurances = (row, sourceItem) => {
       if (d.itemCd === '04002001') return;
       if (row.deductionFlags[d.itemCd]) applyDeductionLogic(row, d, taxable, rates);
     });
+
   } else {
     // 공제 항목 체크박스 변경
+
     if (!row.deductionFlags[sourceItem.itemCd]) {
+      // ✅ 체크 해제: 화면에 0 표시 (deductions만 0, originalDeductions는 유지)
       row.deductions[sourceItem.itemCd] = 0;
-      if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
+      if (sourceItem.itemCd === '04002001') {
+        row.deductions['04002002'] = 0;
+      }
       return;
     }
+
+    // ✅ 체크 재활성
+    if (!row.isAutoCalc) {
+      // 금액고정: originalDeductions에서 원본값 복원
+      row.deductions[sourceItem.itemCd] = row.originalDeductions?.[sourceItem.itemCd] ?? 0;
+      if (sourceItem.itemCd === '04002001') {
+        row.deductions['04002002'] = row.originalDeductions?.['04002002'] ?? 0;
+      }
+      return;
+    }
+
+    // 요율 자동: 재계산
     if (sourceItem.itemCd === '04002001') {
       applyDeductionLogic(row, sourceItem, taxable, rates);
       const ltItem = deductionItems.value.find(d => d.itemCd === '04002002');
@@ -388,6 +413,7 @@ const savePayroll = async () => {
         payItems:       JSON.stringify(row.payments       || {}),
         deductionItems: JSON.stringify(row.deductions     || {}),
         checkedItems:   JSON.stringify(row.deductionFlags || {}),
+        isAutoCalc:     row.isAutoCalc ? 'Y' : 'N',
         total:          0,
       });
     }));
@@ -616,7 +642,15 @@ onMounted(async () => {
             <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
-            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">
+              <div class="name-with-toggle">
+                <span>{{ p.staff }}</span>
+                <label class="calc-badge" :class="p.isAutoCalc ? 'calc-auto' : 'calc-manual'">
+                  <input type="checkbox" v-model="p.isAutoCalc" @change="markAsDraft(p)" style="display:none;">
+                  {{ p.isAutoCalc ? '요율 자동' : '금액 고정' }}
+                </label>
+              </div>
+            </td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
             <td class="text-center sticky-col sticky-col-8">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
@@ -1022,4 +1056,24 @@ tr.data-row:hover td.sticky-col {
   border: 5px solid transparent; border-top-color: var(--header-bg);
 }
 .tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
+
+.name-with-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.calc-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.calc-badge:hover { opacity: 0.75; }
+
+.calc-auto   { background: #dbeafe; color: #2563eb; }
+.calc-manual { background: #fef3c7; color: #b45309; }
 </style>

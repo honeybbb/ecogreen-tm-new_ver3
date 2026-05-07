@@ -1,7 +1,8 @@
 <script setup>
 import { ref, watch, onMounted, computed, reactive, nextTick } from 'vue';
 import axios from 'axios';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs'; // XLSX 대신 ExcelJS 임포트
+import { saveAs } from 'file-saver';
 import { useAuthStore } from '~/stores/auth.js';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
@@ -352,13 +353,25 @@ watch(() => currentConfig.activeDeductionCodes, () => { formData.value.payrollDa
 // 6. 총계 & 부가세 계산 (커스텀 항목 및 고정값 포함)
 // ──────────────────────────────────────────────
 const payrollTotals = computed(() => {
-  const totals = { grossPay: 0, totalDeduct: 0, netPay: 0, empInsEmployer: 0, sanjae: 0, insuranceTotal: 0, deductionItems: {} };
+  const totals = {
+    grossPay: 0,
+    totalDeduct: 0,
+    netPay: 0,
+    empInsEmployer: 0,
+    sanjae: 0,
+    insuranceTotal: 0,
+    annualLeave: 0,
+    severance: 0,
+    deductionItems: {}
+  };
   formData.value.payrollData.forEach(row => {
     totals.grossPay       += Number(row.grossPay)    || 0;
     totals.totalDeduct    += Number(row.totalDeduct) || 0;
     totals.netPay         += Number(row.netPay)      || 0;
     totals.sanjae         += Number(row.reserves?.sanjae)      || 0;
     totals.empInsEmployer += Number(row.reserves?.empInsEmployer) || 0;
+    totals.annualLeave    += Number(row.reserves?.annualLeave)    || 0;
+    totals.severance      += Number(row.reserves?.severance)      || 0;
 
     let rowInsTotal = (Number(row.reserves?.empInsEmployer) || 0) + (Number(row.reserves?.sanjae) || 0);
     visibleDeductionItems.value.forEach(item => {
@@ -440,9 +453,12 @@ const toggleSummarySign = (key) => {
 
 const totalSummary = computed(() => {
   const monthlyFee  = contractTotalCost.value || 0;
-  // ★ 테이블 합산(payrollTotals) 대신 산출내역서 고정값 사용
+  // 테이블 합산(payrollTotals) 대신 산출내역서 고정값 사용
   const severance   = contractSeveranceTotal.value || 0;
   const annualLeave = contractAnnualLeaveTotal.value || 0;
+  // 테이블 합산에서 퇴직적립금과 연차적립금은 유동적으로
+  // const severance   = payrollTotals.value.severance   || 0;
+  // const annualLeave = payrollTotals.value.annualLeave  || 0;
   const estIns      = estimatedInsuranceTotal.value || 0;
   const actIns      = actualInsuranceTotal.value || 0;
   const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
@@ -477,11 +493,11 @@ const totalSummary = computed(() => {
     { key: 'monthlyFee', label: '월간용역비', value: monthlyFee, sign: 1, toggleable: false, hiddenInBilling: false },
     { key: 'severance', label: '퇴직적립금', value: severance, sign: signs.severance, toggleable: true, hiddenInBilling: false },
     { key: 'annualLeave', label: '연차적립금', value: annualLeave, sign: signs.annualLeave, toggleable: true, hiddenInBilling: false },
-    { key: 'estimatedIns', label: '견적서 4대보험료', value: estIns, sign: 1, toggleable: false, hiddenInBilling: true },
-    { key: 'actualIns', label: '실비정산 4대보험료', value: actIns, sign: 1, toggleable: false, hiddenInBilling: true },
+    { key: 'estimatedIns', label: '4대보험료 (견적서)', value: estIns, sign: 1, toggleable: false, hiddenInBilling: true },
+    { key: 'actualIns', label: '4대보험료 (실비정산)', value: actIns, sign: 1, toggleable: false, hiddenInBilling: true },
     { key: 'insuranceDiff', label: '4대보험차액', value: insDiff, sign: signs.insuranceDiff, toggleable: true, hiddenInBilling: false },
     ...customItems,
-    { key: 'grandTotal', label: '총 청구액 (원 단위 절사)', value: grandTotal, sign: 1, toggleable: false, hiddenInBilling: true }
+    { key: 'grandTotal', label: '당월 청구금액 \n(원 단위 절사)', value: grandTotal, sign: 1, toggleable: false, hiddenInBilling: true }
   ];
 });
 
@@ -707,7 +723,10 @@ const initForm = () => {
         items: [{ period: '', category: '', detail: '', amount: 0, note: '' }],
         customSummaryItems: [],
         memo: '',
-        vatBreakdown: { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } },
+        vatBreakdown: {
+          under135: { area: '', unitPrice: '', supply: 0 },
+          over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
+        },
         insuranceDiff: 0
       },
       payrollData: []
@@ -788,11 +807,24 @@ const loadPayrollData = async () => {
     await fetchTaxRates();
     if (contractStaffList.value.length === 0 || contractIndirectLabor.value.length === 0) await fetchContractData();
 
-    const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
+    const res = await axios.get('/api/v1/member/payroll',
+        { params: { year, month } });
     const rawData = res.data?.data || [];
-    const result = rawData.filter(item => item.type == formData.value.type && item.sIdx == formData.value.sIdx);
+    const result = rawData
+        .filter(item =>
+            item.type == formData.value.type &&
+            item.sIdx == formData.value.sIdx
+        );
 
-    const safeParse = (val) => { if (!val) return {}; if (typeof val === 'object') return val; try { return JSON.parse(val); } catch { return {}; } };
+    const safeParse = (val) => {
+      if (!val) return {};
+      if (typeof val === 'object') return val;
+      try {
+        return JSON.parse(val);
+      } catch {
+        return {};
+      }
+    };
 
     formData.value.payrollData = result.map(item => {
       const parsedDeductions = safeParse(item.deductionItems);
@@ -885,104 +917,157 @@ const onDragOver  = (e, index) => {
 // ──────────────────────────────────────────────
 // 8. 내보내기 & 저장
 // ──────────────────────────────────────────────
-const exportToExcel = () => {
-  const wb         = XLSX.utils.book_new();
-  const siteName   = formData.value.siteName   || '현장미지정';
-  const targetMonth= formData.value.target_month || formData.value.billingDt || '';
-  const fileName   = `정산서_${siteName}_${targetMonth}.xlsx`;
+const exportToExcel = async () => {
+  try {
+    // 1. /public 폴더의 기본 양식 로드
+    const response = await fetch('/정산기본양식.xlsx');
+    const arrayBuffer = await response.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
 
-  const statementRows = [ ['청구 공문'], [], ['수신', formData.value.siteName ? formData.value.siteName + ' 관리사무소' : ''], ['문서번호', formData.value.docNo || ''], ['시행일자', formData.value.billingDt || ''], ['제목', formData.value.billingData.summary || ''], [], ['산정기간', '구분', '내역', '산출금액', '비고'] ];
-  (formData.value.billingData.items || []).forEach(item => { statementRows.push([item.period || '', item.category || '', item.detail || '', Number(item.amount) || 0, item.note || '']); });
-  statementRows.push([], ['', '', '합계', formData.value.subTotal, '']);
+    // ────────────────────────────────────────────────────────────
+    // [시트 1] 청구 공문 (표지) 매핑
+    // ────────────────────────────────────────────────────────────
+    const sheet1 = workbook.getWorksheet(1);
+    sheet1.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
 
-  if (formData.value.is_vat === 'Y') {
-    const vb = formData.value.billingData.vatBreakdown;
-    statementRows.push([], ['구분', '관리면적(㎡)', '단가(원)', '공급가액(원)', '부가세(원)', '합계금액(원)']);
-    statementRows.push(['135㎡ 이하 (면세)', Number(vb.under135.area)||0, Number(vb.under135.unitPrice)||0, Number(vb.under135.supply)||0, 0, Number(vb.under135.supply)||0]);
-    statementRows.push(['135㎡ 초과 (과세)', Number(vb.over135.area)||0, Number(vb.over135.unitPrice)||0, Number(vb.over135.supply)||0, Number(vb.over135.vat)||0, (Number(vb.over135.supply)||0)+(Number(vb.over135.vat)||0)]);
-    statementRows.push(['총 계', (Number(vb.under135.area)||0)+(Number(vb.over135.area)||0), '-', formData.value.subTotal, formData.value.vatAmount, formData.value.grandTotal]);
-  }
-  statementRows.push([], ['입금계좌', formData.value.billingData.bankInfo || '']);
-  const ws1 = XLSX.utils.aoa_to_sheet(statementRows);
-  ws1['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
-  XLSX.utils.book_append_sheet(wb, ws1, '청구공문');
+    // 상단 기본 정보 입력
+    sheet1.getCell('A5').value = ` 문서번호 : ${formData.value.docNo || ''}`;
+    sheet1.getCell('A6').value = ` 시행일자 : ${formData.value.billingDt || ''}`;
+    sheet1.getCell('A7').value = ` 수    신 : ${formData.value.siteName || ''} 관리사무소`;
 
-  if (formData.value.payrollData.length > 0) {
-    const cfg = currentConfig;
-    const payrollRows = [];
+    const titleCell = sheet1.getCell('A8');
+    titleCell.value = ` 제    목 : ${formData.value.billingData.summary || ''}`;
+    titleCell.alignment = { wrapText: true, vertical: 'middle' };
 
-    const header1 = ['NO', '이름', '직책', '생년월일', '입사일', '퇴사일'];
-    if (cfg.showAnnualLeave) header1.push('연차수당');
-    if (cfg.showSeverance) header1.push('퇴직충당금');
-    if (cfg.showGrossPay) header1.push('급여');
-
-    visibleDeductionItems.value.forEach(item => {
-      if (item.itemNm.includes('고용보험')) { header1.push('실업급여(0.9%)'); header1.push('고용안정(0.45%)'); }
-      else { header1.push(item.itemNm); }
-    });
-    if (cfg.showSanjae) header1.push('산재보험');
-    header1.push('총계');
-    payrollRows.push(header1);
-
-    formData.value.payrollData.forEach((row, idx) => {
-      const dataRow = [ idx + 1, row.empName || '', row.position || '', row.personalNo || '', row.inDate || '', row.outDate || '' ];
-      if (cfg.showAnnualLeave) dataRow.push(Number(row.reserves?.annualLeave) || 0);
-      if (cfg.showSeverance) dataRow.push(Number(row.reserves?.severance) || 0);
-      if (cfg.showGrossPay) dataRow.push(Number(row.grossPay) || 0);
-
-      visibleDeductionItems.value.forEach(item => {
-        if (item.itemNm.includes('고용보험')) { dataRow.push(Number(row.deductionItems?.[item.itemCd]) || 0); dataRow.push(Number(row.reserves?.empInsEmployer) || 0); }
-        else { dataRow.push(Number(row.deductionItems?.[item.itemCd]) || 0); }
+    // [청구항목 입력] 16행부터 시작
+    let itemStartRow = 16;
+    if (formData.value.billingData.items && formData.value.billingData.items.length > 0) {
+      formData.value.billingData.items.forEach((item, idx) => {
+        const row = sheet1.getRow(itemStartRow + idx);
+        row.getCell(2).value = item.period || '';               // B열: 산정기간
+        row.getCell(5).value = item.detail || '';               // E열: 내역
+        row.getCell(9).value = Number(item.amount) || 0;        // I열: 산출금액 (숫자형)
+        row.getCell(13).value = item.note || '';                // M열: 비고
+        row.getCell(9).numFmt = '#,##0';                        // 금액 콤마 서식
       });
-      if (cfg.showSanjae) dataRow.push(Number(row.reserves?.sanjae) || 0);
-      dataRow.push(getInsuranceTotal(row));
-      payrollRows.push(dataRow);
-    });
-
-    const totalRow = ['', '', '', '', '', '총 계'];
-    if (cfg.showAnnualLeave) totalRow.push(contractAnnualLeaveTotal.value);
-    if (cfg.showSeverance) totalRow.push(contractSeveranceTotal.value);
-    if (cfg.showGrossPay) totalRow.push(payrollTotals.value.grossPay);
-
-    visibleDeductionItems.value.forEach(item => {
-      if (item.itemNm.includes('고용보험')) { totalRow.push(payrollTotals.value.deductionItems[item.itemCd] || 0); totalRow.push(payrollTotals.value.empInsEmployer || 0); }
-      else { totalRow.push(payrollTotals.value.deductionItems[item.itemCd] || 0); }
-    });
-    if (cfg.showSanjae) totalRow.push(payrollTotals.value.sanjae);
-    totalRow.push(payrollTotals.value.insuranceTotal);
-    payrollRows.push(totalRow);
-    payrollRows.push([]);
-
-    totalSummary.value.forEach(summary => {
-      const row = Array(header1.length).fill('');
-      row[row.length - 3] = summary.label || '추가항목';
-      let displayValue = summary.value;
-      if (summary.sign < 0 && summary.value !== 0) displayValue = -summary.value;
-      row[row.length - 1] = displayValue;
-      payrollRows.push(row);
-    });
-
-    // 엑셀에 메모 추가
-    if (formData.value.billingData.memo) {
-      payrollRows.push([]);
-      payrollRows.push(['특이사항 및 메모:\n' + formData.value.billingData.memo]);
     }
 
-    const ws2 = XLSX.utils.aoa_to_sheet(payrollRows);
-    const colWidths = [{ wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
-    if (cfg.showAnnualLeave) colWidths.push({ wch: 14 });
-    if (cfg.showSeverance) colWidths.push({ wch: 14 });
-    if (cfg.showGrossPay) colWidths.push({ wch: 14 });
-    visibleDeductionItems.value.forEach(item => {
-      if (item.itemNm.includes('고용보험')) colWidths.push({ wch: 15 }, { wch: 15 });
-      else colWidths.push({ wch: 14 });
-    });
-    if (cfg.showSanjae) colWidths.push({ wch: 14 });
-    colWidths.push({ wch: 14 });
-    ws2['!cols'] = colWidths;
-    XLSX.utils.book_append_sheet(wb, ws2, `급여내역서`);
+    // 합계 (21행 I열)
+    const subTotalCell = sheet1.getCell('I21');
+    subTotalCell.value = Number(formData.value.subTotal) || 0;
+    subTotalCell.numFmt = '#,##0';
+
+    // 면적별 부가세 상세 (24~26행)
+    if (formData.value.is_vat === 'Y') {
+      const vb = formData.value.billingData.vatBreakdown;
+      sheet1.getCell('I24').value = Number(vb.under135.supply) || 0;
+      sheet1.getCell('M24').value = Number(vb.under135.supply) || 0;
+
+      sheet1.getCell('I25').value = Number(vb.over135.supply) || 0;
+      sheet1.getCell('K25').value = Number(vb.over135.vat) || 0;
+      sheet1.getCell('M25').value = (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0);
+
+      const grandTotalCell = sheet1.getCell('M26');
+      grandTotalCell.value = Number(formData.value.grandTotal) || 0;
+      grandTotalCell.numFmt = '#,##0';
+    }
+
+    // 입금계좌
+    sheet1.getCell('A27').value = ` 2) 입금계좌 : ${formData.value.billingData.bankInfo || ''}`;
+
+    // ────────────────────────────────────────────────────────────
+    // [시트 2] 급여 세부 내역서 매핑
+    // ────────────────────────────────────────────────────────────
+    const sheet2 = workbook.getWorksheet(2);
+    if (sheet2) {
+      sheet2.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+
+      // [컬럼 숨기기 로직] 표시설정 토글 반영
+      sheet2.getColumn(7).hidden = !currentConfig.showAnnualLeave;   // G열: 연차
+      sheet2.getColumn(8).hidden = !currentConfig.showSeverance;     // H열: 퇴직
+      sheet2.getColumn(9).hidden = !currentConfig.showGrossPay;      // I열: 급여
+
+      // 공제 항목 (J~N열) 숨기기 제어
+      const insuranceCols = [10, 11, 12, 13, 14]; // 국민, 건강, 장기, 고용0.9, 고용0.45
+      const activeCodes = currentConfig.activeDeductionCodes;
+
+      sheet2.getColumn(10).hidden = !activeCodes.includes('04002003'); // 국민
+      sheet2.getColumn(11).hidden = !activeCodes.includes('04002001'); // 건강
+      sheet2.getColumn(12).hidden = !activeCodes.includes('04002002'); // 장기
+      sheet2.getColumn(13).hidden = !activeCodes.includes('04002004'); // 고용0.9
+      sheet2.getColumn(14).hidden = !activeCodes.includes('04002004'); // 고용0.45 (사업주)
+      sheet2.getColumn(15).hidden = !currentConfig.showSanjae;          // 산재
+
+      // [직원 데이터 입력] 3행부터 시작
+      let payrollStartRow = 3;
+      if (formData.value.payrollData && formData.value.payrollData.length > 0) {
+        formData.value.payrollData.forEach((data, idx) => {
+          const row = sheet2.getRow(payrollStartRow + idx);
+
+          row.getCell(1).value = idx + 1;            // NO
+          row.getCell(2).value = data.empName || '';  // 성명
+          row.getCell(3).value = data.position || ''; // 직책
+          row.getCell(4).value = data.personalNo || '';// 생년월일
+          row.getCell(5).value = data.inDate || '';   // 입사일
+          row.getCell(6).value = data.outDate || '';  // 퇴사일
+
+          // 금액 데이터 (G ~ P열)
+          row.getCell(7).value = Number(data.reserves?.annualLeave) || 0;
+          row.getCell(8).value = Number(data.reserves?.severance) || 0;
+          row.getCell(9).value = Number(data.grossPay) || 0;
+          row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0;
+          row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0;
+          row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0;
+          row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0;
+          row.getCell(14).value = Number(data.reserves?.empInsEmployer) || 0;
+          row.getCell(15).value = Number(data.reserves?.sanjae) || 0;
+          row.getCell(16).value = Number(getInsuranceTotal(data)) || 0; // 합계(P열)
+
+          // 숫자 콤마 서식 일괄 적용
+          for (let i = 7; i <= 16; i++) { row.getCell(i).numFmt = '#,##0'; }
+        });
+      }
+
+      // [하단 요약 테이블 입력] 직원 데이터 끝난 2줄 아래부터 시작
+      const summaryStartRow = payrollStartRow + formData.value.payrollData.length + 2;
+
+      if (totalSummary.value && totalSummary.value.length > 0) {
+        totalSummary.value.forEach((summary, sIdx) => {
+          const sRow = sheet2.getRow(summaryStartRow + sIdx);
+
+          // 라벨 입력 (A열 ~ O열 병합된 상태로 가정, 1번에 입력)
+          const labelCell = sRow.getCell(1);
+          labelCell.value = summary.label;
+          labelCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+
+          // 금액 입력 (P열: 16번)
+          const signedValue = summary.sign < 0 ? -summary.value : summary.value;
+          const valCell = sRow.getCell(16);
+          valCell.value = Number(signedValue) || 0;
+          valCell.numFmt = '#,##0';
+          valCell.font = { bold: true };
+        });
+      }
+
+      // 하단 특이사항 메모
+      if (formData.value.billingData.memo) {
+        const memoRowIdx = summaryStartRow + totalSummary.value.length + 1;
+        const memoCell = sheet2.getCell(`A${memoRowIdx}`);
+        memoCell.value = `특이사항 : ${formData.value.billingData.memo}`;
+        memoCell.alignment = { wrapText: true, vertical: 'top' };
+      }
+    }
+
+    // 3. 파일 생성 및 다운로드
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `정산서_${formData.value.siteName || '현장'}_${formData.value.target_month || ''}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
+
+  } catch (error) {
+    console.error('엑셀 저장 중 오류 발생:', error);
+    alert('엑셀 파일을 생성하는 중 오류가 발생했습니다. 개발자 도구의 콘솔을 확인해 주세요.');
   }
-  XLSX.writeFile(wb, fileName);
 };
 
 const handleSave = async () => {
@@ -1176,7 +1261,12 @@ onMounted(async () => {
                   <tfoot>
                   <tr class="bg-gray-50 font-bold" style="font-size:14px;">
                     <td class="text-center">총 계</td>
-                    <td class="text-right">{{ formatCurrency(Number(formData.billingData.vatBreakdown.under135.area) + Number(formData.billingData.vatBreakdown.over135.area)) }}</td>
+                    <td class="text-right">
+                      {{ formatCurrency(
+                            Number(formData.billingData.vatBreakdown.under135.area) +
+                            Number(formData.billingData.vatBreakdown.over135.area)
+                        )
+                      }}</td>
                     <td class="text-center">-</td>
                     <td class="text-right text-blue">{{ formatCurrency(formData.subTotal) }}</td>
                     <td class="text-right text-red">{{ formatCurrency(formData.vatAmount) }}</td>
@@ -1252,9 +1342,9 @@ onMounted(async () => {
                 <th rowspan="2" style="width:80px; min-width:80px;">입사일</th>
                 <th rowspan="2" style="width:80px; min-width:80px;">퇴사일</th>
 
-                <th v-if="currentConfig.showAnnualLeave" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:120px;">연차수당</th>
-                <th v-if="currentConfig.showSeverance" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:120px;">퇴직충당금</th>
-                <th v-if="currentConfig.showGrossPay" rowspan="2" class="bg-blue-light" style="width:80px;min-width:120px;">급여</th>
+                <th v-if="currentConfig.showAnnualLeave" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:80px;">연차수당</th>
+                <th v-if="currentConfig.showSeverance" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:80px;">퇴직충당금</th>
+                <th v-if="currentConfig.showGrossPay" rowspan="2" class="bg-blue-light" style="width:80px;min-width:80px;">급여</th>
 
                 <template v-for="item in visibleDeductionItems" :key="'th1-'+item.itemCd">
                   <th v-if="item.itemNm.includes('고용보험')" colspan="2" class="bg-red-light" style="min-width:200px;">고용보험({{ insuranceRates.employmentInsurance }}%)</th>
@@ -1369,8 +1459,8 @@ onMounted(async () => {
               <tfoot v-if="formData.payrollData.length > 0">
               <tr class="bg-gray-50 font-bold" style="font-size:14px;">
                 <td colspan="6" class="text-center">총 계</td>
-                <td v-if="currentConfig.showAnnualLeave" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(contractAnnualLeaveTotal) }}</td>
-                <td v-if="currentConfig.showSeverance" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(contractSeveranceTotal) }}</td>
+                <td v-if="currentConfig.showAnnualLeave" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(payrollTotals.annualLeave) }}</td>
+                <td v-if="currentConfig.showSeverance" class="text-right bg-yellow-light" style="color:#a16207;">{{ formatCurrency(payrollTotals.severance) }}</td>
                 <td v-if="currentConfig.showGrossPay" class="text-right text-blue bg-blue-light">{{ formatCurrency(payrollTotals.grossPay) }}</td>
 
                 <template v-for="item in visibleDeductionItems" :key="'foot-'+item.itemCd">
@@ -1416,7 +1506,7 @@ onMounted(async () => {
                   <td colspan="2" class="text-center bg-gray-50 font-bold"
                       :class="{'summary-label-cell': summary.toggleable && !summary.isCustom}"
                       @click="summary.toggleable && !summary.isCustom && toggleSummarySign(summary.key)"
-                      style="font-size: 13px;"
+                      style="font-size: 13px;white-space: pre-line;"
                       :title="summary.toggleable && !summary.isCustom ? '클릭하여 양수/음수 전환' : ''">
                     <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
                       <template v-if="summary.isCustom">
@@ -1515,7 +1605,14 @@ onMounted(async () => {
 .btn-load-data { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bg-surface); color: var(--primary); border: 1px solid var(--primary); border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; transition: all .2s; white-space: nowrap; }
 .btn-load-data:hover { background: var(--primary-soft); transform: translateY(-1px); }
 .table-scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 4px; }
-.excel-table-wrapper { background: var(--bg-surface); border-radius: 8px; border: 1px solid var(--border-color); overflow-x: auto; box-shadow: var(--shadow-sm); -webkit-overflow-scrolling: touch; }
+.excel-table-wrapper {
+  background: var(--bg-surface);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm);
+  -webkit-overflow-scrolling: touch;
+}
 
 /* =========================================
    테이블 CSS
@@ -1530,7 +1627,7 @@ onMounted(async () => {
 .excel-table th, .excel-table td {
   border-bottom: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
-  padding: 6px 10px;
+  padding: 6px 6px;
   vertical-align: middle;
   background-clip: padding-box;
 }

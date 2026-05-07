@@ -280,35 +280,35 @@ const goToDetail = (id) => router.push(`/site/${id}`);
         <table class="data-table">
           <thead>
           <tr>
-            <th @click="toggleSort('idx')" class="sortable" style="width: 80px;">
+            <th @click="toggleSort('idx')" class="sortable resizable" style="width: 80px;">
               <div class="th-content">
                 <span>ID</span>
                 <i v-if="sortKey === 'idx'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('name')" class="sortable">
+            <th @click="toggleSort('name')" class="sortable resizable">
               <div class="th-content">
                 <span>현장명</span>
                 <i v-if="sortKey === 'name'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('address')" class="sortable">
+            <th @click="toggleSort('address')" class="sortable resizable">
               <div class="th-content">
                 <span>주소</span>
                 <i v-if="sortKey === 'address'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('contract')" class="sortable" style="width: 220px;">
+            <th @click="toggleSort('contract')" class="sortable resizable" style="width: 220px;">
               <div class="th-content">
                 <span>계약 기간</span>
                 <i v-if="sortKey === 'contract'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('manager')" class="sortable" style="width: 120px;">
+            <th @click="toggleSort('manager')" class="sortable resizable" style="width: 120px;">
               <div class="th-content">
                 <span>본사 담당자</span>
                 <i v-if="sortKey === 'manager'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
@@ -316,7 +316,7 @@ const goToDetail = (id) => router.push(`/site/${id}`);
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th> <div class="th-content"><span>본사 연락처</span></div></th>
-            <th @click="toggleSort('manager')" class="sortable" style="width: 120px;">
+            <th @click="toggleSort('manager')" class="sortable resizable" style="width: 120px;">
               <div class="th-content">
                 <span>현장 담당자</span>
                 <i v-if="sortKey === 'director'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
@@ -324,7 +324,7 @@ const goToDetail = (id) => router.push(`/site/${id}`);
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th><div class="th-content"><span>현장 연락처</span></div></th>
-            <th @click="toggleSort('status')" class="sortable" style="width: 120px;">
+            <th @click="toggleSort('status')" class="sortable resizable" style="width: 120px;">
               <div class="th-content">
                 <span>상태</span>
                 <i v-if="sortKey === 'status'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
@@ -499,6 +499,26 @@ const goToDetail = (id) => router.push(`/site/${id}`);
 .status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .status-preparing { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
 .status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
+
+.resizable {
+  position: relative;
+  overflow: hidden;
+}
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 1;
+  user-select: none;
+}
+.resize-handle:hover,
+.is-resizing .resize-handle {
+  background: var(--primary);
+  opacity: 0.5;
+}
 
 /* === 반응형 === */
 @media (max-width: 1024px) {

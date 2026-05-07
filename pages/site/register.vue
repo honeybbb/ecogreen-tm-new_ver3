@@ -46,7 +46,7 @@ const site = ref({
 });
 
 const contractGroups = ref([]);
-const selectedFile = ref(null);
+const selectedFiles = ref([]);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const statusOptions  = ref(['운영 중', '계약 종료']);
 const bigoHistory    = ref([]);
@@ -106,7 +106,7 @@ const settlementConfig = ref({
   activePayLabels: [],
   // 간접노무비(공제항목) 표시 여부 (label 배열)
   activeDeductionLabels: [],
-
+  isAutoCalcDefault: true,
   // Melt Options — 공제 계산 베이스에 포함 여부
   meltOptions: {
     annualLeave: false,
@@ -276,10 +276,16 @@ const addContractGroup = (category) => {
   contractGroups.value.push({
     category: category.itemNm,
     type: category.itemCd,
-    contractStart: '', contractEnd: '',
-    totalCost: 0, workDays: '', workSchedule: '', breakTime: '',
+    contractStart: '',
+    contractEnd: '',
+    totalCost: 0,
+    workDays: '',
+    workSchedule: '',
+    breakTime: '',
     staffList: [],
-    tempJobCode: '', tempCount: 1,
+    tempJobCode: '',
+    tempCount: 1,
+    isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
     costBreakdown: createDefaultCostBreakdown([]),
     showCostBreakdown: false,
   });
@@ -398,18 +404,24 @@ const removeItem = (group, section, idx) => { group.costBreakdown[section].splic
 // 폼 및 API 처리 로직
 // =============================================
 const handleFileChange = (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    if (file.type !== 'application/pdf') {
-      alert('PDF 파일만 업로드 가능합니다.');
-      event.target.value = '';
-      selectedFile.value = null;
-      return;
-    }
-    selectedFile.value = file;
-  } else {
-    selectedFile.value = null;
+  const files = Array.from(event.target.files);
+
+  // PDF 필터링
+  const pdfFiles = files.filter(file => file.type === 'application/pdf');
+
+  if (pdfFiles.length !== files.length) {
+    alert('PDF 파일만 업로드 가능합니다.');
   }
+
+  // 기존 목록에 추가 (중복 방지 로직을 넣고 싶다면 파일명 비교 추가 가능)
+  selectedFiles.value = [...selectedFiles.value, ...pdfFiles];
+
+  // 같은 파일을 다시 선택할 수 있도록 input 초기화
+  event.target.value = '';
+};
+
+const removeFile = (index) => {
+  selectedFiles.value.splice(index, 1);
 };
 
 const totalArea = computed(() => {
@@ -436,6 +448,7 @@ const handleSubmit = async () => {
       const calcFee = getTotalMonthlyFee(group);
       return {
         ...group,
+        isAutoCalc: group.isAutoCalc === 'N' ? 'N' : 'Y',
         totalCost: Number(group.totalCost) > 0 ? Number(group.totalCost) : calcFee
       };
     });
@@ -478,9 +491,13 @@ const handleSubmit = async () => {
     const savedSIdx = res.data.data || route.query.idx;
     if (!savedSIdx) throw new Error('sIdx를 찾을 수 없습니다.');
 
-    if (selectedFile.value) {
+    if (selectedFiles.value.length > 0) {
       const formData = new FormData();
-      formData.append('file', selectedFile.value);
+      // 루프를 돌며 동일한 'file' 키로 여러 개를 담거나, 백엔드 설정에 따라 'files[]' 사용
+      selectedFiles.value.forEach(file => {
+        formData.append('file', file);
+      });
+
       await axios.post(`/api/v1/upload/file/${savedSIdx}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -756,8 +773,6 @@ onMounted(() => {
           </div>
         </div>
 
-        <hr class="section-divider" />
-
         <div class="form-section">
           <div class="section-main-header">
             <i class="mdi mdi-file-document-outline"></i>
@@ -766,26 +781,42 @@ onMounted(() => {
 
           <div class="file-upload-section">
             <label class="section-label"><i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일 업로드 (PDF)</label>
-            <div class="file-upload-box" :class="{ 'has-file': selectedFile }">
-              <input type="file" id="contract-file" accept=".pdf" @change="handleFileChange" class="hidden-file-input" />
+
+            <div class="file-upload-box">
+              <input
+                  type="file"
+                  id="contract-file"
+                  accept=".pdf"
+                  multiple
+                  @change="handleFileChange"
+                  class="hidden-file-input"
+              />
               <label for="contract-file" class="file-upload-label">
-                <div v-if="!selectedFile" class="upload-placeholder">
+                <div class="upload-placeholder">
                   <i class="mdi mdi-cloud-upload-outline"></i>
-                  <p>클릭하여 PDF 파일을 선택해주세요</p>
-                  <span>(또는 파일을 여기로 드래그 앤 드롭 하세요)</span>
-                </div>
-                <div v-else class="upload-selected">
-                  <div class="selected-file-info">
-                    <i class="mdi mdi-file-pdf-box"></i>
-                    <span class="file-name">{{ selectedFile.name }}</span>
-                  </div>
-                  <span class="file-change-text">파일 변경하기</span>
+                  <p>클릭하여 PDF 파일을 선택하거나 여기로 드래그하세요</p>
+                  <span>(여러 개의 파일을 동시에 선택할 수 있습니다)</span>
                 </div>
               </label>
             </div>
-            <p v-if="selectedFile" class="file-success-msg">
-              <i class="mdi mdi-check-circle"></i> 최종 등록 완료 시 파일이 안전하게 업로드됩니다.
-            </p>
+
+            <div v-if="selectedFiles.length > 0" class="file-list-container">
+              <div v-for="(file, index) in selectedFiles" :key="index" class="file-item-card">
+                <div class="file-info">
+                  <i class="mdi mdi-file-pdf-box"></i>
+                  <div class="file-name-group">
+                    <span class="file-name">{{ file.name }}</span>
+                    <span class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
+                  </div>
+                </div>
+                <button type="button" @click="removeFile(index)" class="btn-remove-file">
+                  <i class="mdi mdi-close"></i>
+                </button>
+              </div>
+              <p class="file-success-msg">
+                <i class="mdi mdi-check-circle"></i> 총 <strong>{{ selectedFiles.length }}개</strong>의 파일이 등록 대기 중입니다.
+              </p>
+            </div>
           </div>
 
           <div class="contract-header">
@@ -810,6 +841,17 @@ onMounted(() => {
                 <span :class="['contract-badge', `badge-${group.category}`]">
                   <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
                 </span>
+                <div class="contract-calc-switch-wrap">
+                  <label class="switch-sm">
+                    <input type="checkbox"
+                           v-model="group.isAutoCalc"
+                           true-value="Y"
+                           false-value="N" />
+                    <span class="slider-sm round"></span>
+                  </label>
+                  <span class="calc-label">{{ group.isAutoCalc ? '법정요율 자동계산' : '산출내역 금액고정' }}</span>
+                </div>
+
                 <span v-if="getContractDuration(group)" class="contract-duration">
                   <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
                 </span>
@@ -1248,9 +1290,8 @@ onMounted(() => {
                 </div>
               </div>
             </div>
-          </div></div>
-
-        <hr class="section-divider" />
+          </div>
+        </div>
 
         <div class="form-section">
           <div class="section-main-header">
@@ -1342,8 +1383,6 @@ onMounted(() => {
             </div>
           </div>
         </div>
-
-        <hr class="section-divider" />
 
         <div class="form-section">
           <div class="section-main-header">
@@ -1669,8 +1708,28 @@ input:checked + .slider:before { transform: translateX(18px); }
 .config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; margin: 0; }
 .grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
 
-.font-bold { font-weight: 700; }
-.text-right { text-align: right; }
+.contract-calc-switch-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color);
+}
+
+.calc-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+/* 작은 스위치 디자인 */
+.switch-sm { position: relative; display: inline-block; width: 32px; height: 18px; }
+.switch-sm input { opacity: 0; width: 0; height: 0; }
+.slider-sm { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; border-radius: 20px; }
+.slider-sm:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .slider-sm { background-color: var(--primary); }
+input:checked + .slider-sm:before { transform: translateX(14px); }
 
 /* =========================================
    반응형
