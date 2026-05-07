@@ -919,154 +919,129 @@ const onDragOver  = (e, index) => {
 // ──────────────────────────────────────────────
 const exportToExcel = async () => {
   try {
-    // 1. /public 폴더의 기본 양식 로드
     const response = await fetch('/정산기본양식.xlsx');
     const arrayBuffer = await response.arrayBuffer();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(arrayBuffer);
 
-    // ────────────────────────────────────────────────────────────
-    // [시트 1] 청구 공문 (표지) 매핑
-    // ────────────────────────────────────────────────────────────
-    const sheet1 = workbook.getWorksheet(1);
-    sheet1.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
+    const sheet = workbook.getWorksheet(1); // 시트는 1개뿐
 
-    // 상단 기본 정보 입력
-    sheet1.getCell('A5').value = ` 문서번호 : ${formData.value.docNo || ''}`;
-    sheet1.getCell('A6').value = ` 시행일자 : ${formData.value.billingDt || ''}`;
-    sheet1.getCell('A7').value = ` 수    신 : ${formData.value.siteName || ''} 관리사무소`;
+    sheet.pageSetup = {
+      paperSize: 9,
+      orientation: 'portrait',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0, // 높이 자동 → 페이지 나누기 기준으로 2페이지
+    };
 
-    const titleCell = sheet1.getCell('A8');
-    titleCell.value = ` 제    목 : ${formData.value.billingData.summary || ''}`;
-    titleCell.alignment = { wrapText: true, vertical: 'middle' };
+    // ✅ ExcelJS가 날린 페이지 나누기 복원 (44행 뒤에서 나누기)
+    sheet.rowBreaks = [{ id: 44, min: 0, max: 16383, man: true }];
 
-    // [청구항목 입력] 16행부터 시작
-    let itemStartRow = 16;
-    if (formData.value.billingData.items && formData.value.billingData.items.length > 0) {
-      formData.value.billingData.items.forEach((item, idx) => {
-        const row = sheet1.getRow(itemStartRow + idx);
-        row.getCell(2).value = item.period || '';               // B열: 산정기간
-        row.getCell(5).value = item.detail || '';               // E열: 내역
-        row.getCell(9).value = Number(item.amount) || 0;        // I열: 산출금액 (숫자형)
-        row.getCell(13).value = item.note || '';                // M열: 비고
-        row.getCell(9).numFmt = '#,##0';                        // 금액 콤마 서식
-      });
+    // ────────────────────────────────
+    // [페이지1] 청구 공문 - 5~27행
+    // ────────────────────────────────
+    sheet.getCell('A5').value = ` 문서번호 : ${formData.value.docNo || ''}`;
+    sheet.getCell('A6').value = ` 시행일자 : ${formData.value.billingDt || ''}`;
+    sheet.getCell('A7').value = ` 수    신 : ${formData.value.siteName || ''} 관리사무소`;
+    sheet.getCell('A8').value = ` 제    목 : ${formData.value.billingData.summary || ''}`;
+    sheet.getCell('A8').alignment = { wrapText: true, vertical: 'middle' };
+
+    // 청구항목: 16~20행, J열(10번)에 금액
+    // 양식: 16=용역비, 17=연차, 18=퇴직, 19=보험차액, 20=커스텀
+    const billingItems = formData.value.billingData.items || [];
+    const fixedRows = [16, 17, 18, 19, 20];
+    fixedRows.forEach((rowNum, idx) => {
+      if (billingItems[idx] !== undefined) {
+        sheet.getCell(`J${rowNum}`).value  = Number(billingItems[idx].amount) || 0;
+        sheet.getCell(`J${rowNum}`).numFmt = '#,##0';
+      }
+    });
+
+    // 입금계좌 (27행 B열 - 양식에 이미 텍스트 있으나 덮어쓰기)
+    sheet.getCell('B27').value = `2) 입금계좌 : ${formData.value.billingData.bankInfo || ''}`;
+
+    // ────────────────────────────────
+    // [페이지2] 세부내역서
+    // 직원 데이터: 51~60행 (최대 10명)
+    // 컬럼: B=NO, C=이름, D=직책, E=생년월일, F=입사일, G=퇴사일
+    //        H=연차, I=퇴직금, J=국민연금, K=건강보험, L=장기요양
+    //        M=실업급여, N=고용안정(사업주), O=산재, P=총계
+    // ────────────────────────────────
+
+    // 컬럼 숨기기
+    sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;  // H: 연차
+    sheet.getColumn(9).hidden  = !currentConfig.showSeverance;    // I: 퇴직금
+    const activeCodes = currentConfig.activeDeductionCodes;
+    sheet.getColumn(10).hidden = !activeCodes.includes('04002003'); // J: 국민연금
+    sheet.getColumn(11).hidden = !activeCodes.includes('04002001'); // K: 건강보험
+    sheet.getColumn(12).hidden = !activeCodes.includes('04002002'); // L: 장기요양
+    sheet.getColumn(13).hidden = !activeCodes.includes('04002004'); // M: 실업급여
+    sheet.getColumn(14).hidden = !activeCodes.includes('04002004'); // N: 고용안정
+    sheet.getColumn(15).hidden = !currentConfig.showSanjae;         // O: 산재
+
+    const payrollData = formData.value.payrollData || [];
+    const maxRows = 10; // 양식 고정 10행 (51~60)
+
+    for (let idx = 0; idx < maxRows; idx++) {
+      const rowNum = 51 + idx;
+      const data   = payrollData[idx];
+
+      if (!data) continue; // 데이터 없으면 빈칸 유지
+
+      const row = sheet.getRow(rowNum);
+      row.getCell(2).value  = idx + 1;           // B: NO
+      row.getCell(3).value  = data.empName    || ''; // C: 이름
+      row.getCell(4).value  = data.position   || ''; // D: 직책
+      row.getCell(5).value  = data.personalNo || ''; // E: 생년월일
+      row.getCell(6).value  = data.inDate     || ''; // F: 입사일
+      row.getCell(7).value  = data.outDate    || ''; // G: 퇴사일
+      row.getCell(8).value  = Number(data.reserves?.annualLeave)        || 0; // H
+      row.getCell(9).value  = Number(data.reserves?.severance)          || 0; // I
+      row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0; // J: 국민
+      row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0; // K: 건강
+      row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0; // L: 장기
+      row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0; // M: 실업
+      row.getCell(14).value = Number(data.reserves?.empInsEmployer)     || 0; // N: 고용안정
+      row.getCell(15).value = Number(data.reserves?.sanjae)             || 0; // O: 산재
+      row.getCell(16).value = Number(getInsuranceTotal(data))            || 0; // P: 총계
+      for (let c = 8; c <= 16; c++) row.getCell(c).numFmt = '#,##0';
     }
 
-    // 합계 (21행 I열)
-    const subTotalCell = sheet1.getCell('I21');
-    subTotalCell.value = Number(formData.value.subTotal) || 0;
-    subTotalCell.numFmt = '#,##0';
+    // 요약 테이블: 62~69행 O열에 금액
+    // 양식 고정 순서: 62=월간용역비, 63=연차, 64=퇴직, 65=견적보험, 66=실비보험, 67=보험차액, 68=커스텀, 69=청구금액
+    const summaryRowMap = {
+      'monthlyFee':   62,
+      'annualLeave':  63,
+      'severance':    64,
+      'estimatedIns': 65,
+      'actualIns':    66,
+      'insuranceDiff':67,
+      'grandTotal':   69,
+    };
 
-    // 면적별 부가세 상세 (24~26행)
-    if (formData.value.is_vat === 'Y') {
-      const vb = formData.value.billingData.vatBreakdown;
-      sheet1.getCell('I24').value = Number(vb.under135.supply) || 0;
-      sheet1.getCell('M24').value = Number(vb.under135.supply) || 0;
+    totalSummary.value.forEach((summary) => {
+      const rowNum = summaryRowMap[summary.key];
+      if (!rowNum) return; // 커스텀 항목은 68행에 첫번째만
+      const signedValue = summary.sign < 0 ? -Math.abs(summary.value) : Math.abs(summary.value);
+      sheet.getCell(`O${rowNum}`).value  = Number(signedValue) || 0;
+      sheet.getCell(`O${rowNum}`).numFmt = '#,##0';
+    });
 
-      sheet1.getCell('I25').value = Number(vb.over135.supply) || 0;
-      sheet1.getCell('K25').value = Number(vb.over135.vat) || 0;
-      sheet1.getCell('M25').value = (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0);
-
-      const grandTotalCell = sheet1.getCell('M26');
-      grandTotalCell.value = Number(formData.value.grandTotal) || 0;
-      grandTotalCell.numFmt = '#,##0';
+    // 커스텀 항목 → 68행에 합산해서 넣기
+    const customTotal = (formData.value.billingData.customSummaryItems || [])
+        .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
+    if (customTotal !== 0) {
+      sheet.getCell('O68').value  = customTotal;
+      sheet.getCell('O68').numFmt = '#,##0';
     }
 
-    // 입금계좌
-    sheet1.getCell('A27').value = ` 2) 입금계좌 : ${formData.value.billingData.bankInfo || ''}`;
-
-    // ────────────────────────────────────────────────────────────
-    // [시트 2] 급여 세부 내역서 매핑
-    // ────────────────────────────────────────────────────────────
-    const sheet2 = workbook.getWorksheet(2);
-    if (sheet2) {
-      sheet2.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-
-      // [컬럼 숨기기 로직] 표시설정 토글 반영
-      sheet2.getColumn(7).hidden = !currentConfig.showAnnualLeave;   // G열: 연차
-      sheet2.getColumn(8).hidden = !currentConfig.showSeverance;     // H열: 퇴직
-      sheet2.getColumn(9).hidden = !currentConfig.showGrossPay;      // I열: 급여
-
-      // 공제 항목 (J~N열) 숨기기 제어
-      const insuranceCols = [10, 11, 12, 13, 14]; // 국민, 건강, 장기, 고용0.9, 고용0.45
-      const activeCodes = currentConfig.activeDeductionCodes;
-
-      sheet2.getColumn(10).hidden = !activeCodes.includes('04002003'); // 국민
-      sheet2.getColumn(11).hidden = !activeCodes.includes('04002001'); // 건강
-      sheet2.getColumn(12).hidden = !activeCodes.includes('04002002'); // 장기
-      sheet2.getColumn(13).hidden = !activeCodes.includes('04002004'); // 고용0.9
-      sheet2.getColumn(14).hidden = !activeCodes.includes('04002004'); // 고용0.45 (사업주)
-      sheet2.getColumn(15).hidden = !currentConfig.showSanjae;          // 산재
-
-      // [직원 데이터 입력] 3행부터 시작
-      let payrollStartRow = 3;
-      if (formData.value.payrollData && formData.value.payrollData.length > 0) {
-        formData.value.payrollData.forEach((data, idx) => {
-          const row = sheet2.getRow(payrollStartRow + idx);
-
-          row.getCell(1).value = idx + 1;            // NO
-          row.getCell(2).value = data.empName || '';  // 성명
-          row.getCell(3).value = data.position || ''; // 직책
-          row.getCell(4).value = data.personalNo || '';// 생년월일
-          row.getCell(5).value = data.inDate || '';   // 입사일
-          row.getCell(6).value = data.outDate || '';  // 퇴사일
-
-          // 금액 데이터 (G ~ P열)
-          row.getCell(7).value = Number(data.reserves?.annualLeave) || 0;
-          row.getCell(8).value = Number(data.reserves?.severance) || 0;
-          row.getCell(9).value = Number(data.grossPay) || 0;
-          row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0;
-          row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0;
-          row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0;
-          row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0;
-          row.getCell(14).value = Number(data.reserves?.empInsEmployer) || 0;
-          row.getCell(15).value = Number(data.reserves?.sanjae) || 0;
-          row.getCell(16).value = Number(getInsuranceTotal(data)) || 0; // 합계(P열)
-
-          // 숫자 콤마 서식 일괄 적용
-          for (let i = 7; i <= 16; i++) { row.getCell(i).numFmt = '#,##0'; }
-        });
-      }
-
-      // [하단 요약 테이블 입력] 직원 데이터 끝난 2줄 아래부터 시작
-      const summaryStartRow = payrollStartRow + formData.value.payrollData.length + 2;
-
-      if (totalSummary.value && totalSummary.value.length > 0) {
-        totalSummary.value.forEach((summary, sIdx) => {
-          const sRow = sheet2.getRow(summaryStartRow + sIdx);
-
-          // 라벨 입력 (A열 ~ O열 병합된 상태로 가정, 1번에 입력)
-          const labelCell = sRow.getCell(1);
-          labelCell.value = summary.label;
-          labelCell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
-
-          // 금액 입력 (P열: 16번)
-          const signedValue = summary.sign < 0 ? -summary.value : summary.value;
-          const valCell = sRow.getCell(16);
-          valCell.value = Number(signedValue) || 0;
-          valCell.numFmt = '#,##0';
-          valCell.font = { bold: true };
-        });
-      }
-
-      // 하단 특이사항 메모
-      if (formData.value.billingData.memo) {
-        const memoRowIdx = summaryStartRow + totalSummary.value.length + 1;
-        const memoCell = sheet2.getCell(`A${memoRowIdx}`);
-        memoCell.value = `특이사항 : ${formData.value.billingData.memo}`;
-        memoCell.alignment = { wrapText: true, vertical: 'top' };
-      }
-    }
-
-    // 3. 파일 생성 및 다운로드
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `정산서_${formData.value.siteName || '현장'}_${formData.value.target_month || ''}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
 
   } catch (error) {
     console.error('엑셀 저장 중 오류 발생:', error);
-    alert('엑셀 파일을 생성하는 중 오류가 발생했습니다. 개발자 도구의 콘솔을 확인해 주세요.');
+    alert('엑셀 파일을 생성하는 중 오류가 발생했습니다.');
   }
 };
 
