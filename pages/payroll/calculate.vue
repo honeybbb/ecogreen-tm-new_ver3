@@ -449,6 +449,147 @@ const savePayroll = async () => {
   } catch (e) { alert('저장 실패'); }
 };
 
+const exportTransferExcel = () => {
+  const rawTarget = filteredPayrollList.value.length > 0
+      ? filteredPayrollList.value
+      : payrollList.value;
+
+  if (rawTarget.length === 0) { alert('출력할 데이터가 없습니다.'); return; }
+
+  const [year, month] = selectedYearMonth.value.split('-');
+  const wb = XLSX.utils.book_new();
+
+  // [1] 데이터 정렬: 은행(1순위) -> 현장(2순위) -> 직책순서(3순위)
+  const sortedTarget = [...rawTarget].sort((a, b) => {
+    const bankA = a.bank || '기타';
+    const bankB = b.bank || '기타';
+    if (bankA !== bankB) return bankA.localeCompare(bankB, 'ko');
+
+    const siteA = a.siteName || '';
+    const siteB = b.siteName || '';
+    if (siteA !== siteB) return siteA.localeCompare(siteB, 'ko');
+
+    const sortA = a.sort != null ? Number(a.sort) : 999999;
+    const sortB = b.sort != null ? Number(b.sort) : 999999;
+    return sortA - sortB;
+  });
+
+  /**
+   * ── 시트 생성 및 셀 병합 로직 헬퍼 ──────────────────────────────
+   */
+  const generateTransferSheet = (emps, isTotalSheet = false) => {
+    const wsData = [];
+    const merges = [];
+
+    // 기본 헤더 생성
+    wsData.push([null]);
+    wsData.push([null, null, null, `${parseInt(month)}월분 급여이체`]);
+    wsData.push([null]);
+    wsData.push([null, '(주)에코그린티엠', null, null, null, null, `급여일자 : ${year}년 ${String(parseInt(month) + 1).padStart(2, '0')}월 10일`]);
+    wsData.push([null]);
+    wsData.push([null, '은행', '부서', null, '사번', null, null, '예금주', null, '생년월일', null, '계좌번호', null, null, null, '입금액']);
+
+    let currentRow = 6; // 데이터가 시작되는 엑셀 행 번호 (0부터 시작)
+
+    // 은행별 그룹핑
+    const bankGroups = {};
+    emps.forEach(emp => {
+      const b = emp.bank || '기타';
+      if (!bankGroups[b]) bankGroups[b] = {};
+      const s = emp.siteName || '소속없음';
+      if (!bankGroups[b][s]) bankGroups[b][s] = [];
+      bankGroups[b][s].push(emp);
+    });
+
+    // 데이터 채우기 및 병합 계산
+    Object.entries(bankGroups).forEach(([bankName, sites]) => {
+      const bankStartRow = currentRow;
+
+      Object.entries(sites).forEach(([siteName, siteEmps]) => {
+        const siteStartRow = currentRow;
+
+        siteEmps.forEach((emp) => {
+          const s = calculateRowSummary(emp);
+          wsData.push([
+            null,
+            bankName,
+            siteName,
+            null,
+            emp.id || '',
+            null, null,
+            emp.staff || '',
+            null,
+            emp.birthDt ? emp.birthDt.replace(/-/g, '').substring(2, 8) : '',
+            null,
+            emp.accountNumber || '',
+            null, null, null,
+            s.net,
+          ]);
+          currentRow++;
+        });
+
+        // 부서계(현장계) 추가
+        const siteTotal = siteEmps.reduce((sum, e) => sum + calculateRowSummary(e).net, 0);
+        wsData.push([null, bankName, '부서계', null, null, null, null, null, null, null, null, `${siteEmps.length}건`, null, null, null, siteTotal]);
+
+        // 부서명(현장명) 셀 병합 (부서 데이터 + 부서계 행까지)
+        merges.push({ s: { r: siteStartRow, c: 2 }, e: { r: currentRow, c: 2 } });
+        currentRow++;
+      });
+
+      // 은행계 추가
+      const bankTotalNet = Object.values(sites).flat().reduce((sum, e) => sum + calculateRowSummary(e).net, 0);
+      const bankTotalCnt = Object.values(sites).flat().length;
+      wsData.push([null, bankName, '은행계', null, null, null, null, null, null, null, null, `${bankTotalCnt}건`, null, null, null, bankTotalNet]);
+
+      // [핵심] 은행 셀 병합 (은행 데이터 시작점부터 은행계 행까지)
+      merges.push({ s: { r: bankStartRow, c: 1 }, e: { r: currentRow, c: 1 } });
+      currentRow++;
+    });
+
+    // 최종 합계
+    const grandTotal = emps.reduce((sum, e) => sum + calculateRowSummary(e).net, 0);
+    wsData.push([null]);
+    wsData.push([null, null, '총합계', null, null, null, null, null, null, null, null, `${emps.length}건`, null, null, null, grandTotal]);
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!merges'] = merges; // 병합 정보 주입
+
+    // 스타일 설정
+    ws['!cols'] = [{wch:2},{wch:12},{wch:25},{wch:2},{wch:12},{wch:2},{wch:2},{wch:12},{wch:2},{wch:12},{wch:2},{wch:20},{wch:2},{wch:2},{wch:2},{wch:14}];
+
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = 6; R <= range.e.r; R++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: R, c: 15 })];
+      if (cell && cell.t === 'n') cell.z = '#,##0';
+    }
+
+    // 셀 상하좌우 중앙 정렬 스타일 (병합된 셀 때문)
+    for (let R = 6; R <= range.e.r; R++) {
+      [1, 2].forEach(C => { // 은행, 부서 열
+        const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+        if (cell) {
+          cell.s = { alignment: { vertical: 'center', horizontal: 'center' } };
+        }
+      });
+    }
+
+    return ws;
+  };
+
+  // 1. 첫 번째 시트: 은행별로 정렬 및 병합된 전체 리스트 (10일자)
+  XLSX.utils.book_append_sheet(wb, generateTransferSheet(sortedTarget, true), "10일자");
+
+  // 2. 은행별 개별 시트
+  const banks = [...new Set(sortedTarget.map(e => e.bank || '기타'))].sort();
+  banks.forEach(bankName => {
+    const bankEmps = sortedTarget.filter(e => (e.bank || '기타') === bankName);
+    XLSX.utils.book_append_sheet(wb, generateTransferSheet(bankEmps), bankName.substring(0, 31));
+  });
+
+  XLSX.writeFile(wb, `급여이체리스트_${year}년${month.padStart(2,'0')}월.xlsx`);
+};
+
 const exportPayrollExcel = () => {
   const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value
   if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return }
@@ -927,6 +1068,12 @@ onMounted(async () => {
           <i class="mdi mdi-content-save-outline"></i>
           <span>선택 결과 저장</span>
         </button>
+
+        <button @click="exportTransferExcel" class="btn-save">
+          <i class="mdi mdi-bank-transfer"></i>
+          <span>이체 리스트 출력</span>
+        </button>
+
         <button @click="exportPayrollExcel" class="btn-export">
           <i class="mdi mdi-microsoft-excel"></i>
           <span>지급대장 출력</span>
