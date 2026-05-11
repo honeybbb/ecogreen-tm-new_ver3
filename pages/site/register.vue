@@ -841,7 +841,7 @@ onMounted(() => {
                 <span :class="['contract-badge', `badge-${group.category}`]">
                   <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
                 </span>
-                <div class="contract-calc-switch-wrap">
+                <!--div class="contract-calc-switch-wrap">
                   <label class="switch-sm">
                     <input type="checkbox"
                            v-model="group.isAutoCalc"
@@ -850,7 +850,7 @@ onMounted(() => {
                     <span class="slider-sm round"></span>
                   </label>
                   <span class="calc-label">{{ group.isAutoCalc ? '법정요율 자동계산' : '산출내역 금액고정' }}</span>
-                </div>
+                </div-->
 
                 <span v-if="getContractDuration(group)" class="contract-duration">
                   <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
