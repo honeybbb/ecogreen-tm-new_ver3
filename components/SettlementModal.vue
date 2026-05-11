@@ -297,33 +297,51 @@ const calculateRow = (row) => {
 };
 
 const recalculateInsurances = (row) => {
-  if (!meltOptions.annualLeave && !meltOptions.severance) {
-    if (row.originalDeductions) row.deductionItems = JSON.parse(JSON.stringify(row.originalDeductions));
-    if (row.originalSanjae !== undefined) row.reserves.sanjae = row.originalSanjae;
-    return;
-  }
-
+  // 1. 보험료를 계산할 기준 급여(Base) 설정
   let baseAmount = Number(row.grossPay) || 0;
-  if (meltOptions.annualLeave) baseAmount += Number(row.reserves.annualLeave) || 0;
-  if (meltOptions.severance)   baseAmount += Number(row.reserves.severance)   || 0;
+
+  // [핵심 수정] 토글이 꺼져 있어도 DB 값을 복원하는 대신,
+  // 현재 체크된 옵션에 따라 계산용 Base 금액을 실시간으로 구성합니다.
+  let calcBase = baseAmount;
+  if (meltOptions.annualLeave) calcBase += Number(row.reserves.annualLeave) || 0;
+  if (meltOptions.severance)   calcBase += Number(row.reserves.severance)   || 0;
 
   const rates = insuranceRates.value;
 
-  visibleDeductionItems.value.forEach(item => {
-    const code = item.itemCd; const name = item.itemNm;
-    if ((Number(row.originalDeductions?.[code]) || 0) === 0) { row.deductionItems[code] = 0; return; }
+  // 2. 각 공제 항목별 재계산 (visible이 아닌 전체 deductionItems 기준)
+  deductionItems.value.forEach(item => {
+    const code = item.itemCd;
+    const name = item.itemNm;
+
+    // 해당 직원이 원래 해당 보험료를 납부하고 있었는지 확인 (0원이면 비가입자로 판단하여 계산 제외)
+    // 단, originalDeductions가 없을 경우를 대비해 안전장치 추가
+    const originalAmt = Number(row.originalDeductions?.[code] ?? row.deductionItems?.[code] ?? 0);
+    if (originalAmt === 0) {
+      row.deductionItems[code] = 0;
+      return;
+    }
 
     let amt = 0;
-    if (name.includes('국민연금')) amt = Math.floor((baseAmount * (rates.nationalPension / 100)) / 10) * 10;
-    else if (name.includes('건강보험')) amt = Math.floor((baseAmount * (rates.healthInsurance / 100)) / 10) * 10;
-    else if (name.includes('장기요양')) amt = Math.floor((Math.floor((baseAmount * (rates.healthInsurance / 100)) / 10) * 10 * (rates.longTermCare / 100)) / 10) * 10;
-    else if (name.includes('고용보험')) amt = Math.floor((baseAmount * (rates.employmentInsurance / 100)) / 10) * 10;
-    else amt = Number(row.originalDeductions?.[code]) || 0;
+    // 4대 보험 항목들만 현재 calcBase 기준으로 재계산
+    if (name.includes('국민연금')) {
+      amt = Math.floor((calcBase * (rates.nationalPension / 100)) / 10) * 10;
+    } else if (name.includes('건강보험')) {
+      amt = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
+    } else if (name.includes('장기요양')) {
+      const health = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
+      amt = Math.floor((health * (rates.longTermCare / 100)) / 10) * 10;
+    } else if (name.includes('고용보험')) {
+      amt = Math.floor((calcBase * (rates.employmentInsurance / 100)) / 10) * 10;
+    } else {
+      // 그 외 기타 공제는 원래 금액 유지
+      amt = originalAmt;
+    }
     row.deductionItems[code] = amt;
   });
 
+  // 3. 산재보험(사업주 부담) 재계산
   if ((Number(row.originalSanjae) || 0) > 0) {
-    row.reserves.sanjae = Math.floor((baseAmount * (rates.industrialAccident / 100)) / 10) * 10;
+    row.reserves.sanjae = Math.floor((calcBase * (rates.industrialAccident / 100)) / 10) * 10;
   }
 };
 
@@ -805,53 +823,80 @@ const loadPayrollData = async () => {
     const [year, month] = targetDate.split('-');
 
     await fetchTaxRates();
-    if (contractStaffList.value.length === 0 || contractIndirectLabor.value.length === 0) await fetchContractData();
+    // 1. 계약 데이터를 먼저 최신화하여 유효한 항목 코드 리스트 확보
+    await fetchContractData();
 
-    const res = await axios.get('/api/v1/member/payroll',
-        { params: { year, month } });
+    // 2. 계약서(산출내역서)에 등록된 유효한 항목 코드 추출
+    // 직접노무비(Direct)와 간접노무비(Indirect)의 label에 담긴 코드들을 수집합니다.
+    const validItemCds = [
+      ...contractDirectLabor.value.map(d => String(d.label)),
+      ...contractIndirectLabor.value.map(i => String(i.label))
+    ];
+
+    const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
     const rawData = res.data?.data || [];
-    const result = rawData
-        .filter(item =>
-            item.type == formData.value.type &&
-            item.sIdx == formData.value.sIdx
-        );
+    const result = rawData.filter(item =>
+        item.type == formData.value.type &&
+        item.sIdx == formData.value.sIdx
+    );
 
     const safeParse = (val) => {
       if (!val) return {};
       if (typeof val === 'object') return val;
-      try {
-        return JSON.parse(val);
-      } catch {
-        return {};
-      }
+      try { return JSON.parse(val); } catch { return {}; }
     };
 
     formData.value.payrollData = result.map(item => {
+      const parsedPayItems = safeParse(item.payItems);
       const parsedDeductions = safeParse(item.deductionItems);
-      const parsedPayItems   = safeParse(item.payItems);
+
+      // ★ 추가 로직: 계약서에 없는 수당 항목 필터링 및 지급총액 재계산
+      const filteredPayItems = {};
+      let recalculatedGrossPay = 0;
+
+      Object.entries(parsedPayItems).forEach(([cd, amt]) => {
+        // 계약서의 validItemCds에 포함된 코드이거나,
+        // 기본급(04001001) 등 필수 항목인 경우만 포함 (필요시 조건 조정)
+        if (validItemCds.includes(cd)) {
+          filteredPayItems[cd] = Number(amt) || 0;
+          recalculatedGrossPay += Number(amt) || 0;
+        } else {
+          // 콘솔 로그로 제외된 항목 확인 (디버깅용)
+          console.log(`현장 산출내역에 없어 제외된 항목: ${cd} (${amt}원)`);
+        }
+      });
 
       const rowObj = {
-        idx:        item.idx, empName: item.staff, position: item.role || '', personalNo: item.birthDt,
-        inDate:     item.inDate, outDate: item.outDate ?? '', grossPay: Number(item.grossPay) || 0,
-        payItems:   parsedPayItems, deductionItems: parsedDeductions,
-        originalDeductions: {}, originalSanjae: 0,
-        totalDeduct: 0, reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 }, netPay: 0,
+        idx: item.idx,
+        empName: item.staff,
+        position: item.role || '',
+        personalNo: item.birthDt,
+        inDate: item.inDate,
+        outDate: item.outDate ?? '',
+        // ★ 필터링된 금액으로 교체
+        grossPay: recalculatedGrossPay,
+        payItems: filteredPayItems,
+        deductionItems: parsedDeductions,
+        originalDeductions: JSON.parse(JSON.stringify(parsedDeductions)), // 스냅샷 저장
+        // originalDeductions: {},
+        originalSanjae: 0,
+        totalDeduct: 0,
+        reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
+        netPay: 0,
       };
 
       applyContractReserves(rowObj);
-      rowObj.originalDeductions = JSON.parse(JSON.stringify(rowObj.deductionItems));
-
-      if (meltOptions.annualLeave || meltOptions.severance) recalculateInsurances(rowObj);
+      recalculateInsurances(rowObj);
       calculateRow(rowObj);
 
       return rowObj;
     });
 
     if (formData.value.payrollData.length === 0) alert('조건에 맞는 직원 데이터가 없습니다.');
-    else alert('직원 급여 데이터를 성공적으로 불러왔습니다.');
+    else alert('직원 급여 데이터를 성공적으로 불러왔습니다. (산출외 항목 제외 완료)');
 
   } catch (error) {
-    console.error('데이터 로드 에러 원인:', error);
+    console.error('데이터 로드 에러:', error);
     alert('데이터를 불러오는 중 오류가 발생했습니다.');
   }
 };
@@ -1282,7 +1327,10 @@ onMounted(async () => {
                 </label>
               </div>
 
-              <button class="btn-load-data" @click="loadPayrollData"><i class="mdi mdi-download-box-outline"></i> <span class="btn-text">데이터 불러오기</span></button>
+              <button class="btn-load-data" @click="loadPayrollData">
+                <i class="mdi mdi-download-box-outline"></i>
+                <span class="btn-text">데이터 불러오기</span>
+              </button>
               <button class="btn-add-row" @click="addPayrollRow"><i class="mdi mdi-plus-thick"></i> <span class="btn-text">직원 추가</span></button>
             </div>
           </div>
@@ -1488,7 +1536,7 @@ onMounted(async () => {
                         <button @click.stop="toggleCustomSign(summary.index)" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'" style="border: none; cursor: pointer; flex-shrink: 0;">
                           {{ summary.sign < 0 ? '-' : '+' }}
                         </button>
-                        <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 4px; box-sizing: border-box;" />
+                        <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 6px; box-sizing: border-box;" />
                       </template>
                       <template v-else>
                         <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
@@ -1602,7 +1650,7 @@ onMounted(async () => {
 .excel-table th, .excel-table td {
   border-bottom: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
-  padding: 6px 6px;
+  padding: 6px;
   vertical-align: middle;
   background-clip: padding-box;
 }
@@ -1617,7 +1665,7 @@ onMounted(async () => {
   font-weight: 600;
   text-align: center;
   color: var(--text-main);
-  padding: 10px 8px;
+  padding: 6px;
   white-space: nowrap;
   line-height: 1.3;
   position: sticky;
@@ -1671,8 +1719,8 @@ input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-app
   .action-btns { gap: 6px; }
   .btn-add-row, .btn-load-data { padding: 7px 10px; }
   .excel-table { font-size: 12px; }
-  .excel-table thead th { padding: 8px 6px; font-size: 11px; }
-  .excel-table td { padding: 4px; }
+  .excel-table thead th { padding: 6px; font-size: 11px; }
+  .excel-table td { padding: 6px; }
   .cell-input { font-size: 12px; padding: 3px; }
   .deduction-toggles { gap: 8px; padding: 10px; }
 }
