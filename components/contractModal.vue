@@ -113,6 +113,60 @@ const contractType = computed(() => {
 const isCleaning = computed(() => contractType.value === 'cleaning');
 const isSecurity = computed(() => contractType.value === 'security');
 
+// 1. 분 단위 변환 유틸리티
+const timeToMin = (timeStr) => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+};
+
+// 2. 실시간 계산 결과 (DB 저장 및 화면 표시용)
+const calculatedTimes = computed(() => {
+  const sched = contractData.value.workSchedule;
+  if (!sched) return { day: 0, month: 0 };
+
+  // --- 경비직 (격일제 24시간) ---
+  if (isSecurity.value) {
+    const sample = sched[1] || sched[2] || { breakTime: 600 }; // 보통 10시간(600분) 휴게 기준
+    const breakHrs = (sample.breakTime || 0) / 60;
+    const dayTime = 24 - breakHrs; // 일 소정근로시간
+    const monthTime = (dayTime * 365) / 12 / 2; // 월 소정근로시간 (격일제 공식)
+
+    return {
+      day: parseFloat(dayTime.toFixed(2)),
+      month: parseFloat(monthTime.toFixed(3))
+    };
+  }
+
+  // --- 미화직 (주 5일 또는 6일) ---
+  let weeklyMin = 0;
+  let activeDays = 0;
+  let monTime = 0;
+
+  [1, 2, 3, 4, 5, 6, 0].forEach(n => {
+    const day = sched[n];
+    if (day?.isActive) {
+      let start = timeToMin(day.startTime);
+      let end = timeToMin(day.endTime);
+      if (end < start) end += 1440; // 익일 퇴근 처리
+
+      const netMin = (end - start) - (day.breakTime || 0);
+      weeklyMin += netMin;
+      activeDays++;
+      if (n === 1) monTime = netMin / 60; // 월요일을 대표 일 근로시간으로 참조
+    }
+  });
+
+  const weeklyHrs = weeklyMin / 60;
+  const weeklyRestHrs = Math.min(8, (weeklyHrs / 40) * 8); // 주휴 시간
+  const monthTime = (weeklyHrs + weeklyRestHrs) * 4.3452; // 월 소정 (주휴 포함)
+
+  return {
+    day: parseFloat(monTime.toFixed(2)), // 월요일 기준 일 소정시간
+    month: parseFloat(monthTime.toFixed(3))
+  };
+});
+
 // ─────────────────────────────────────────────
 // PDF 저장
 // ─────────────────────────────────────────────
@@ -363,11 +417,14 @@ async function handleExportPdf() {
 }
 
 const handleSave = () => {
+  const { day, month } = calculatedTimes.value; //계산된 시간 가져옴
   const extractedContractData = {
     wageInputs: contractData.value.wageInputs,
     contractStartDt: contractData.value.contractStartDt,
     contractEndDt: contractData.value.contractEndDt,
-    workSchedule: contractData.value.workSchedule
+    workSchedule: contractData.value.workSchedule,
+    dayWorkTime: day,       // decimal(4, 2)
+    monthWorkTime: month    // decimal(7, 3)
   };
   emit('save', extractedContractData);
   emit('close');
@@ -514,6 +571,17 @@ const handleClose = () => emit('close');
                 <p>① 근로일 및 근로일별 근무시간</p>
                 <table class="schedule-table">
                   <thead>
+                  <tr class="db-save-info-row" style="background: var(--primary-soft);">
+                    <td class="label-cell" style="color: var(--primary); font-weight: bold;">근로 시간</td>
+                    <td colspan="7" style="text-align: left; padding-left: 15px; font-size: 12px;">
+                      <!--i class="mdi mdi-database-check"></i-->
+                      일 소정근로: <input type="text" class="wage-input" v-model="calculatedTimes.day"> 시간 /
+                      월 소정근로: <input type="text" class="wage-input" v-model="calculatedTimes.month"> 시간
+                      <span style="margin-left: 10px; color: #64748b; font-size: 11px;">
+                        (최저임금 및 퇴직금 산정 기준이 됩니다)
+                      </span>
+                    </td>
+                  </tr>
                   <tr>
                     <th>구분</th>
                     <th v-for="n in [1,2,3,4,5,6,0]" :key="n">{{ dayLabels[n] }}</th>

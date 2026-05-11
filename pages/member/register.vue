@@ -145,6 +145,8 @@ const handleSubmit = async () => {
   const payload = {
     ...employee.value,
     cIdx: cIdx,
+    dayWorkTime: contractDataTemp.value?.dayWorkTime || 0,
+    monthWorkTime: contractDataTemp.value?.monthWorkTime || 0,
     contractData: contractDataTemp.value,
     // wageInputs: wageInputs.value,
   };

@@ -462,6 +462,8 @@ const saveEmployee = async () => {
       endReason: employee.value.outReason,
 
       sIdx: employee.value.sIdx,
+      dayWorkTime: contractDataTemp.value?.dayWorkTime || employee.value.dayWorkTime,
+      monthWorkTime: contractDataTemp.value?.monthWorkTime || employee.value.monthWorkTime,
 
       // 임금 항목 (수정 안했을 경우를 대비해 기존 값과 병합)
       /*
