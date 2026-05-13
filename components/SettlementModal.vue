@@ -835,10 +835,25 @@ const loadPayrollData = async () => {
 
     const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
     const rawData = res.data?.data || [];
-    const result = rawData.filter(item =>
-        item.type == formData.value.type &&
-        item.sIdx == formData.value.sIdx
-    );
+
+    // ── 입/퇴사일 필터 추가 ──────────────────────────
+    const periodStart = new Date(Number(year), Number(month) - 1, 1);   // 해당월 1일
+    const periodEnd   = new Date(Number(year), Number(month), 0);        // 해당월 말일
+
+    const result = rawData.filter(item => {
+      // 기존 필터 (현장, 타입)
+      if (item.type != formData.value.type)   return false;
+      if (item.sIdx != formData.value.sIdx)   return false;
+
+      // 입사일이 해당월 말일보다 이후면 제외 (아직 입사 전)
+      const inDate  = item.inDate  ? new Date(item.inDate)  : null;
+      const outDate = item.outDate ? new Date(item.outDate) : null;
+
+      if (inDate  && inDate  > periodEnd)   return false;
+      if (outDate && outDate < periodStart) return false;
+
+      return true;
+    });
 
     const safeParse = (val) => {
       if (!val) return {};
@@ -850,7 +865,7 @@ const loadPayrollData = async () => {
       const parsedPayItems = safeParse(item.payItems);
       const parsedDeductions = safeParse(item.deductionItems);
 
-      // ★ 추가 로직: 계약서에 없는 수당 항목 필터링 및 지급총액 재계산
+      // 계약서에 없는 수당 항목 필터링 및 지급총액 재계산
       const filteredPayItems = {};
       let recalculatedGrossPay = 0;
 
@@ -873,7 +888,7 @@ const loadPayrollData = async () => {
         personalNo: item.birthDt,
         inDate: item.inDate,
         outDate: item.outDate ?? '',
-        // ★ 필터링된 금액으로 교체
+        // 필터링된 금액으로 교체
         grossPay: recalculatedGrossPay,
         payItems: filteredPayItems,
         deductionItems: parsedDeductions,
