@@ -54,9 +54,14 @@ const transformPayrollList = (rows) => {
 
     if (Object.keys(flags).length === 0 && deductionItems.value.length) {
       deductionItems.value.forEach(item => {
-        const amount = Number(deductions[item.itemCd]) || 0;
-        flags[item.itemCd] = amount > 0;
-        if (amount === 0) deductions[item.itemCd] = 0;
+        // 소득세(04002013), 지방소득세(04002014)는 기본 true
+        if (item.itemCd === '04002013' || item.itemCd === '04002014') {
+          flags[item.itemCd] = true;
+        } else {
+          const amount = Number(deductions[item.itemCd]) || 0;
+          flags[item.itemCd] = amount > 0;
+          if (amount === 0) deductions[item.itemCd] = 0;
+        }
       });
     }
 
