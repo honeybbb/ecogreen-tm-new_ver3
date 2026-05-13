@@ -1282,7 +1282,8 @@ onMounted(async () => {
                   <tr class="bg-gray-50 font-bold" style="font-size:14px;">
                     <td class="text-center">총 계</td>
                     <td class="text-right">
-                      {{ formatCurrency(
+                      {{
+                        formatCurrency(
                             Number(formData.billingData.vatBreakdown.under135.area) +
                             Number(formData.billingData.vatBreakdown.over135.area)
                         )
