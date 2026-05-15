@@ -59,6 +59,7 @@ const employee = ref({
   intern: '',
   beneficiary: '',
   bank: '',
+  accountNm: '',
   accountNumber: '',
   four_ins: 'Y',
   retire_pension: 'N',
@@ -824,22 +825,42 @@ onMounted(async () => {
                   <input type="text" v-model="employee.accountNumber" class="info-input" />
                 </div>
                 <div class="info-item">
-                  <label>4대보험</label>
-                  <select v-model="employee.four_ins" required class="info-select">
-                    <option value="Y">가입</option>
-                    <option value="N">미가입</option>
-                  </select>
+                  <label>예금주</label>
+                  <input type="text" v-model="employee.accountNm" class="info-input" />
+                </div>
+                <div class="info-item">
+                  <label>4대보험 가입</label>
+                  <div class="radio-group">
+                    <label class="radio-label">
+                      <input type="radio" value="Y" v-model="employee.four_ins" required />
+                      <span class="radio-text">가입</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" value="N" v-model="employee.four_ins" required />
+                      <span class="radio-text">미가입</span>
+                    </label>
+                  </div>
                 </div>
                 <div class="info-item">
                   <label>퇴직연금</label>
-                  <select v-model="employee.retire_pension" required class="info-select">
-                    <option value="Y">가입</option>
-                    <option value="N">미가입</option>
-                  </select>
+                  <div class="radio-group">
+                    <label class="radio-label">
+                      <input type="radio" value="Y" v-model="employee.retire_pension" required />
+                      <span class="radio-text">가입</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" value="N" v-model="employee.retire_pension" required />
+                      <span class="radio-text">미가입</span>
+                    </label>
+                  </div>
                 </div>
                 <div class="info-item full-width">
                   <label>비고</label>
-                  <textarea v-model="employee.bigo" class="info-textarea" rows="3"></textarea>
+                  <textarea
+                      v-model="employee.bigo"
+                      class="info-textarea"
+                      rows="3"
+                  ></textarea>
                 </div>
               </div>
             </div>
