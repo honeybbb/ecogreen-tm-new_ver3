@@ -118,18 +118,16 @@ const handleSearch = () => {
   console.log('현장 검색 시작:', searchTerm.value, selectedStatus.value);
 };
 
-const getSites = () => {
+const getSites = async () => {
   isLoading.value = true;
-  axios.get(`/api/v1/site/list`)
-      .then(res => {
-        sites.value = res.data.data || [];
-      })
-      .catch(err => {
-        console.error('현장 로드 실패:', err);
-      })
-      .finally(() => {
-        isLoading.value = false;
-      });
+  try {
+    const res = await axios.get(`/api/v1/site/list`); // await으로 데이터 대기
+    sites.value = res.data.data || [];
+  } catch (err) {
+    console.error('현장 로드 실패:', err);
+  } finally {
+    isLoading.value = false;
+  }
 }
 
 onActivated(async () => {
@@ -138,6 +136,16 @@ onActivated(async () => {
 
 const goToRegister = () => router.push('/site/register');
 const goToDetail = (id) => router.push(`/site/${id}`);
+const goRemove = async (id) => {
+  if (!confirm('현장을 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  try {
+    await axios.delete(`/api/v1/site/${id}`);
+    alert('삭제되었습니다.');
+    await getSites();
+  } catch {
+    alert('삭제에 실패했습니다.');
+  }
+}
 </script>
 
 <template>
@@ -394,10 +402,13 @@ const goToDetail = (id) => router.push(`/site/${id}`);
                   {{ site.status }}
                 </span>
             </td>
-            <td class="text-center">
+            <td class="text-center" style="display: flex;gap:4px;">
               <button @click="goToDetail(site.idx)" class="btn-detail">
                 <i class="mdi mdi-eye"></i>
                 <span>상세</span>
+              </button>
+              <button @click="goRemove(site.idx)" class="btn-remove-cost">
+                <i class="mdi mdi-close"></i>
               </button>
             </td>
           </tr>
@@ -536,5 +547,17 @@ const goToDetail = (id) => router.push(`/site/${id}`);
   .search-group { flex-direction: row; }
   .search-box { flex: 1; min-width: 0; }
   .btn-search { flex-shrink: 0; }
+}
+
+.btn-remove-cost {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--danger);
+  border: none; color: var(--text-inverse);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

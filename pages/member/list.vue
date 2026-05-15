@@ -293,9 +293,21 @@ const goToRegister = () => {
   });
 };
 const goToDetail   = (id) => router.push(`/member/${id}`);
+const goRemove = async (id) => {
+  if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+
+  try {
+    await axios.delete(`/api/v1/member/${id}`);
+    alert('삭제되었습니다.');
+    await fetchMembers()
+  } catch (error) {
+    console.error('삭제 실패:', error);
+    alert('삭제에 실패했습니다.');
+  }
+}
 
 onMounted(async () => {
-  // ★ API 호출보다 URL 동기화를 먼저 수행
+  // API 호출보다 URL 동기화를 먼저 수행
   syncFiltersFromURL();
 
   await Promise.all([
@@ -498,22 +510,24 @@ onActivated(async () => {
         <table class="data-table">
           <colgroup>
             <col width="3%">
-            <col width="*%">
-            <col width="2%">
-            <col width="2%">
-            <col width="5%">
+            <col width="*">
+            <col width="4%">
+            <col width="4%">
+            <col width="6%">
             <col width="3%">
-            <col width="2%">
             <col width="3%">
+            <col width="8%">
+            <col width="4%">
+            <col width="3%">
+            <col width="6%">
+            <col width="6%">
             <col width="5%">
+            <col width="2%">
+            <col width="2%">
             <col width="10%">
             <col width="10%">
             <col width="5%">
-            <col width="5%">
-            <col width="10%">
-            <col width="10%">
-            <col width="5%">
-            <col width="5%">
+            <col width="8%">
           </colgroup>
           <thead>
           <tr>
@@ -668,9 +682,12 @@ onActivated(async () => {
                   {{ member.status == 0 ? '재직': member.status == 1 ? '퇴사' : member.status == 2 ? '일용직': '대근' }}
                 </span>
             </td>
-            <td class="text-center">
+            <td class="text-center" style="display: flex;gap:4px;">
               <button @click="goToDetail(member.id)" class="btn-detail">
                 <i class="mdi mdi-eye"></i><span>상세</span>
+              </button>
+              <button @click="goRemove(member.id)" class="btn-remove-cost">
+                <i class="mdi mdi-close"></i>
               </button>
             </td>
           </tr>
@@ -858,5 +875,17 @@ onActivated(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.btn-remove-cost {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--danger);
+  border: none; color: var(--text-inverse);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>
