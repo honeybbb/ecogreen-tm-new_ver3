@@ -152,7 +152,7 @@ const addCode = async () => {
     status: 'Y',
     useFl: 'Y',
     isEditing: false,
-    tax_free: selectedGroupKey.value === '04001' ? newTaxFree.value : 0
+    option: selectedGroupKey.value === '04001' ? newTaxFree.value : 0
   });
 
   let params = {
@@ -161,7 +161,7 @@ const addCode = async () => {
     itemNm: newCodeName.value,
     sort: 0,
     useFl: 'Y',
-    tax_free: selectedGroupKey.value === '04001' ? newTaxFree.value : 0
+    option: selectedGroupKey.value === '04001' ? newTaxFree.value : 0
   }
 
   await axios.post(`/api/v1/code/${cIdx}`, params)
