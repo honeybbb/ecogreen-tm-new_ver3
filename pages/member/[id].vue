@@ -24,13 +24,8 @@ const {
   fetchDisabledOptions
 } = useApi();
 
-const isEditing = ref(false);
 const activeTab = ref(route.query.tab || 'info');
 const isLoading = ref(false);
-
-const showRRN = ref(false);
-const revealedRRN = ref('');
-const rrnLoading = ref(false);
 
 // 직원 정보
 const employee = ref({
@@ -65,8 +60,8 @@ const employee = ref({
   beneficiary: '',
   bank: '',
   accountNumber: '',
-  four_ins: '',
-  retire_pension: '',
+  four_ins: 'Y',
+  retire_pension: 'N',
   bigo: '',
   photo: null
 });
@@ -135,18 +130,6 @@ const workPeriod = computed(() => {
   return `${months}개월`;
 });
 
-// ── 주민번호 토글 함수 ──────────────────────────────
-const toggleRRN = async () => {
-  if (showRRN.value) {
-    showRRN.value = false;
-    revealedRRN.value = '';
-    return;
-  }
-  if (!confirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
-  const success = await fetchRRNData();
-  if (success) showRRN.value = true;
-};
-
 // 1. 날짜 유효성 검사 헬퍼 함수 추가
 const isValidDate = (dateString) => {
   const regEx = /^\d{4}-\d{2}-\d{2}$/;
@@ -162,7 +145,7 @@ watch(
     () => [employee.value.firstNumber, employee.value.lastNumber],
     ([front, back]) => {
       // 수정 모드일 때만 자동 계산 작동
-      if (!isEditing.value) return;
+      // if (!isEditing.value) return;
       if (!front || front.length !== 6) return;
 
       let yearPrefix = '';
@@ -201,48 +184,6 @@ watch(
     }
 );
 
-// ── 화면 출력용 Computed (깔끔하게 포맷팅 적용) ───
-const displayRRN = computed(() => {
-  // 1. 복호화 상태 (주민번호 보기 버튼을 눌렀을 때)
-  if (showRRN.value && revealedRRN.value) {
-    const clean = revealedRRN.value.replace(/[^0-9]/g, '');
-    return clean.length === 13
-        ? `${clean.substring(0, 6)}-${clean.substring(6)}`
-        : revealedRRN.value;
-  }
-
-  // 2. 기본(숨김) 상태: 암호화된 해시값이 있으므로, 기존 데이터를 조합해 마스킹 문자열 생성
-  if (employee.value.birthDt && employee.value.gender) {
-    const parts = employee.value.birthDt.split('-'); // ex) "1951-01-21"
-
-    if (parts.length === 3) {
-      const year = parseInt(parts[0], 10);
-      const yy = parts[0].substring(2, 4); // 연도 뒤 2자리 (51)
-      const mm = parts[1]; // 월 (01)
-      const dd = parts[2]; // 일 (21)
-
-      let genderDigit = '*';
-      const isForeigner = employee.value.foreigner === 'Y';
-      const isMale = employee.value.gender === 'M';
-
-      // 2000년 이전 출생자 (1, 2 / 외국인 5, 6)
-      if (year < 2000) {
-        genderDigit = isForeigner ? (isMale ? '5' : '6') : (isMale ? '1' : '2');
-      }
-      // 2000년 이후 출생자 (3, 4 / 외국인 7, 8)
-      else {
-        genderDigit = isForeigner ? (isMale ? '7' : '8') : (isMale ? '3' : '4');
-      }
-
-      // 조립된 마스킹 문자열 반환 (ex: 510121-1******)
-      return `${yy}${mm}${dd}-${genderDigit}******`;
-    }
-  }
-
-  // 생년월일이나 성별 데이터가 부족한 경우 기본 별표 처리
-  return '******-*******';
-});
-
 // 데이터 로드
 const loadEmployeeData = async () => {
   isLoading.value = true;
@@ -250,6 +191,7 @@ const loadEmployeeData = async () => {
     const memberId = route.params.id;
     const response = await axios.get(`/api/v1/member/data/${memberId}`);
     const rawData = response.data.data[0];
+    console.log(rawData, 'dd')
     const contract = rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} };
     // console.log(contract);
     // workSchedule 파싱: contract 안에 저장된 JSON 문자열이면 파싱, 아니면 그대로 사용
@@ -348,9 +290,9 @@ const getBudgetData = async function () {
 watch(
     () => [employee.value.sIdx, employee.value.typeCd, employee.value.positionCd],
     ([newSite, newType, newPos]) => {
-      // ★ 중요: 수정 모드(isEditing)가 활성화된 상태에서만 자동으로 불러와야 함
+      // 수정 모드(isEditing)가 활성화된 상태에서만 자동으로 불러와야 함
       // 그렇지 않으면 상세 페이지 진입 시 기존 저장된 데이터가 덮어씌워질 수 있음
-      if (isEditing.value && newSite && newType && newPos) {
+      if (newSite && newType && newPos) {
         getBudgetData();
       }
     }
@@ -358,7 +300,7 @@ watch(
 
 const loadSalaryHistory = async () => {
   // 이미 로드된 데이터가 있다면 다시 호출하지 않음 (선택 사항)
-  if (salaryHistory.value.length > 0 && !isEditing.value) return;
+  if (salaryHistory.value.length > 0) return;
 
   try {
     const mIdx = employee.value.idx; // loadEmployeeData에서 받아온 실제 DB PK
@@ -370,48 +312,6 @@ const loadSalaryHistory = async () => {
     }
   } catch (e) {
     console.error('급여 이력 로드 실패:', e);
-  }
-};
-
-// ── 주민번호 복호화 공통 로직 ──────────────────────
-const fetchRRNData = async () => {
-  if (revealedRRN.value) return true; // 이미 있으면 통과
-
-  rrnLoading.value = true;
-  try {
-    const res = await axios.post('/api/v1/member/rrn/batch', { mIdxList: [employee.value.idx] });
-    if (res.data.result && res.data.data[employee.value.idx]) {
-      revealedRRN.value = res.data.data[employee.value.idx];
-      return true;
-    } else {
-      alert('주민번호 조회 권한이 없거나 데이터를 불러올 수 없습니다.');
-      return false;
-    }
-  } catch (e) {
-    console.error(e);
-    alert('주민번호 복호화 중 오류가 발생했습니다.');
-    return false;
-  } finally {
-    rrnLoading.value = false;
-  }
-};
-
-// 편집 모드 토글
-const toggleEdit = async () => {
-  if (!isEditing.value) {
-    // 수정 모드 진입 시 주민번호 복호화 시도
-    const success = await fetchRRNData();
-    if (!success) return; // 권한 없으면 수정 모드 진입 막기
-
-    // 복호화된 번호 분리 (숫자만 추출)
-    const clean = revealedRRN.value.replace(/[^0-9]/g, '');
-    if (clean.length === 13) {
-      employee.value.firstNumber = clean.substring(0, 6);
-      employee.value.lastNumber = clean.substring(6);
-    }
-    isEditing.value = true;
-  } else {
-    isEditing.value = false;
   }
 };
 
@@ -485,20 +385,12 @@ const saveEmployee = async () => {
     await axios.put(`/api/v1/member/data/${memberIdx}`, payload);
 
     alert('저장되었습니다.');
-    isEditing.value = false;
     contractDataTemp.value = null; // 저장 후 임시 데이터 초기화
     await loadEmployeeData();
   } catch (error) {
     console.error('저장 실패:', error);
     alert('저장에 실패했습니다.');
   }
-};
-
-// 취소
-const cancelEdit = () => {
-  if (!confirm('수정을 취소하시겠습니까?')) return;
-  //employee.value = JSON.parse(JSON.stringify(originalEmployee.value));
-  isEditing.value = false;
 };
 
 // 삭제
@@ -558,31 +450,14 @@ onMounted(async () => {
         </div>
       </div>
       <div class="header-actions">
-        <button @click="toggleRRN" :class="['btn-rrn-toggle', { active: showRRN }]" :disabled="rrnLoading || isEditing">
-          <i class="mdi" :class="rrnLoading ? 'mdi-loading mdi-spin' : showRRN ? 'mdi-eye-off' : 'mdi-eye'"></i>
-          <span>{{ showRRN ? '주민번호 숨기기' : '주민번호 보기' }}</span>
+        <button @click="deleteEmployee" class="btn-delete">
+          <i class="mdi mdi-trash-can-outline"></i>
+          <span>삭제</span>
         </button>
-
-        <template v-if="!isEditing">
-          <button @click="toggleEdit" class="btn-edit">
-            <i class="mdi mdi-pencil-outline"></i>
-            <span>수정</span>
-          </button>
-          <button @click="deleteEmployee" class="btn-delete">
-            <i class="mdi mdi-trash-can-outline"></i>
-            <span>삭제</span>
-          </button>
-        </template>
-        <template v-else>
-          <button @click="cancelEdit" class="btn-cancel">
-            <i class="mdi mdi-close"></i>
-            <span>취소</span>
-          </button>
-          <button @click="saveEmployee" class="btn-save">
-            <i class="mdi mdi-check"></i>
-            <span>저장</span>
-          </button>
-        </template>
+        <button @click="saveEmployee" class="btn-save">
+          <i class="mdi mdi-check"></i>
+          <span>저장</span>
+        </button>
       </div>
     </div>
 
@@ -595,9 +470,9 @@ onMounted(async () => {
               <img v-if="employee.photo" :src="employee.photo" alt="프로필 사진" />
               <i v-else class="mdi mdi-account"></i>
             </div>
-            <button v-if="isEditing" class="btn-change-photo">
+            <!--button class="btn-change-photo">
               <i class="mdi mdi-camera-outline"></i>
-            </button>
+            </button-->
           </div>
 
           <div class="profile-info">
@@ -666,12 +541,11 @@ onMounted(async () => {
               <div class="info-grid">
                 <div class="info-item">
                   <label>이름</label>
-                  <input v-if="isEditing" type="text" v-model="employee.name" class="info-input" />
-                  <span v-else class="info-value">{{ employee.name }}</span>
+                  <input type="text" v-model="employee.name" class="info-input" />
                 </div>
                 <div class="info-item">
                   <label>성별</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="M" v-model="employee.gender" />
                       <span class="radio-text">남성</span>
@@ -681,11 +555,10 @@ onMounted(async () => {
                       <span class="radio-text">여성</span>
                     </label>
                   </div>
-                  <span v-else class="info-value">{{ employee.gender === 'M' ? '남성' : '여성' }}</span>
                 </div>
                 <div class="info-item">
                   <label>주민번호</label>
-                  <div v-if="isEditing" class="ssn-group">
+                  <div class="ssn-group">
                     <input
                         type="text"
                         v-model="employee.firstNumber"
@@ -702,12 +575,10 @@ onMounted(async () => {
                         placeholder="0000000"
                     />
                   </div>
-                  <span v-else class="info-value">{{ displayRRN }}</span>
                 </div>
                 <div class="info-item">
                   <label>생년월일</label>
-                  <input v-if="isEditing" type="date" v-model="employee.birthDt" class="info-input" max="9999-12-31"/>
-                  <span v-else class="info-value">{{ employee.birthDt || '-' }}</span>
+                  <input type="date" v-model="employee.birthDt" class="info-input" max="9999-12-31"/>
                 </div>
                 <div class="info-item">
                   <label>나이</label>
@@ -715,18 +586,15 @@ onMounted(async () => {
                 </div>
                 <div class="info-item full-width">
                   <label>연락처</label>
-                  <input v-if="isEditing" type="tel" v-model="employee.phone" class="info-input" />
-                  <span v-else class="info-value">{{ employee.phone || '-' }}</span>
+                  <input type="tel" v-model="employee.phone" class="info-input" />
                 </div>
                 <div class="info-item full-width">
                   <label>이메일</label>
-                  <input v-if="isEditing" type="email" v-model="employee.email" class="info-input" />
-                  <span v-else class="info-value">{{ employee.email || '-' }}</span>
+                  <input type="email" v-model="employee.email" class="info-input" />
                 </div>
                 <div class="info-item full-width">
                   <label>주소</label>
-                  <input v-if="isEditing" type="text" v-model="employee.address" class="info-input" />
-                  <span v-else class="info-value">{{ employee.address || '-' }}</span>
+                  <input type="text" v-model="employee.address" class="info-input" />
                 </div>
               </div>
             </div>
@@ -742,10 +610,9 @@ onMounted(async () => {
                 </div>
                 <div class="info-item">
                   <label>구분</label>
-                  <select v-if="isEditing" v-model="employee.typeCd" class="info-select">
+                  <select v-model="employee.typeCd" class="info-select">
                     <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">{{ type.itemNm }}</option>
                   </select>
-                  <span v-else class="info-value">{{ employee.type || '-' }}</span>
                 </div>
                 <div class="info-item">
                   <label>근무 현장</label>
@@ -753,24 +620,21 @@ onMounted(async () => {
                     <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
                   </select-->
                   <SiteSelect
-                      v-if="isEditing"
                       v-model="employee.sIdx"
                       :allow-empty="false"
                       width="100%"
                       style="background: var(--bg-canvas) !important; border-radius: 8px !important;"
                   />
-                  <span v-else class="info-value">{{ employee.siteName }}</span>
                 </div>
                 <div class="info-item">
                   <label>직위</label>
-                  <select v-if="isEditing" v-model="employee.positionCd" class="info-select">
+                  <select v-model="employee.positionCd" class="info-select">
                     <option v-for="pos in positionOptions" :key="pos.itemCd" :value="pos.itemCd">{{ pos.itemNm }}</option>
                   </select>
-                  <span v-else class="info-value">{{ employee.positionName }}</span>
                 </div>
                 <div class="info-item " style="word-break:keep-all;">
                   <label>재직 상태</label>
-                  <div v-if="isEditing" class="radio-group ">
+                  <div class="radio-group ">
                     <label class="radio-label">
                       <input type="radio" v-model="employee.status" value="0" />
                       <span>재직</span>
@@ -788,27 +652,19 @@ onMounted(async () => {
                       <span>대근</span>
                     </label>
                   </div>
-                  <span v-else :class="[
-                      'status-badge',
-                      employee.status == 0 ? 'status-active' : employee.status == 1 ? 'status-inactive' : 'status-preparing']">
-                    {{ employee.status == 0 ? '재직 중' : employee.status == 1 ? '퇴사' : employee.status == 2? '일용직':'대근' }}
-                  </span>
                 </div>
                 <div class="info-item">
                   <label>입사일</label>
-                  <input v-if="isEditing" type="date" v-model="employee.inDate" class="info-input" max="9999-12-31" />
-                  <span v-else class="info-value">{{ employee.inDate }}</span>
+                  <input type="date" v-model="employee.inDate" class="info-input" max="9999-12-31" />
                 </div>
                 <template v-if="employee.status == 1">
                   <div class="info-item">
                     <label class="text-red">퇴사일</label>
-                    <input v-if="isEditing" type="date" v-model="employee.outDate" class="info-input border-red" max="9999-12-31" />
-                    <span v-else class="info-value text-red">{{ employee.outDate || '미입력' }}</span>
+                    <input type="date" v-model="employee.outDate" class="info-input border-red" max="9999-12-31" />
                   </div>
                   <div class="info-item">
                     <label class="text-red">퇴사 사유</label>
-                    <input v-if="isEditing" type="text" v-model="employee.outReason" class="info-input border-red" placeholder="퇴사 사유를 입력하세요" />
-                    <span v-else class="info-value text-red">{{ employee.outReason || '미입력' }}</span>
+                    <input type="text" v-model="employee.outReason" class="info-input border-red" placeholder="퇴사 사유를 입력하세요" />
                   </div>
                 </template>
               </div>
@@ -821,7 +677,7 @@ onMounted(async () => {
               <div class="info-grid">
                 <div class="info-item">
                   <label>장애 여부</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="Y" v-model="employee.disability" />
                       <span class="radio-text">예</span>
@@ -831,39 +687,30 @@ onMounted(async () => {
                       <span class="radio-text">아니오</span>
                     </label>
                   </div>
-                  <template v-else>
-                    <span v-if="employee.disability === 'Y'" class="badge badge-primary">
-                      <i class="mdi mdi-wheelchair-accessibility"></i> {{ employee.disability_grade || '장애' }}
-                    </span>
-                    <span v-else class="info-value text-gray">해당없음</span>
-                  </template>
                 </div>
                 <template v-if="employee.disability === 'Y'">
                   <div class="info-item">
                     <label class="text-red">장애등록일</label>
                     <input
-                        v-if="isEditing"
                         type="date"
                         v-model="employee.disability_date"
                         class="info-input border-red"
                         max="9999-12-31"
                     />
-                    <span v-else class="info-value">{{ employee.disability_date }}</span>
                   </div>
                   <div class="info-item">
                     <label class="text-red">장애등급</label>
-                    <select v-if="isEditing" v-model="employee.disabilityCd" class="info-select border-red">
+                    <select v-model="employee.disabilityCd" class="info-select border-red">
                       <option value="">선택하세요</option>
                       <option v-for="item in disabledOptions" :key="item.itemCd" :value="item.itemCd">
                         {{ item.itemNm }}
                       </option>
                     </select>
-                    <span v-else class="info-value">{{ employee.disability_grade }}</span>
                   </div>
                 </template>
                 <div class="info-item">
                   <label >외국인 여부</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="Y" v-model="employee.foreigner" />
                       <span class="radio-text">예</span>
@@ -873,54 +720,42 @@ onMounted(async () => {
                       <span class="radio-text">아니오</span>
                     </label>
                   </div>
-                  <template v-else>
-                    <span v-if="employee.foreigner === 'Y'" class="badge badge-warning">
-                      <i class="mdi mdi-earth"></i> {{ employee.nationality || '외국인' }}
-                    </span>
-                    <span v-else class="info-value text-gray">해당없음</span>
-                  </template>
                 </div>
 
                 <template v-if="employee.foreigner === 'Y'">
                   <div class="info-item">
                     <label class="text-red">국적</label>
                     <input
-                        v-if="isEditing"
                         type="text"
                         v-model="employee.nationality"
                         class="info-input border-red"
                         placeholder="예: 베트남"
                     />
-                    <span v-else class="info-value">{{ employee.nationality }}</span>
                   </div>
                   <div class="info-item">
                       <label class="text-red">비자 코드</label>
                       <input
-                          v-if="isEditing"
                           type="text"
                           v-model="employee.visa_code"
                           class="info-input border-red"
                           placeholder="예: E-9"
                       />
-                    <span v-else class="info-value">{{ employee.visa_code }}</span>
                   </div>
 
                   <div class="info-item">
                     <label class="text-red">비자만료일</label>
                     <input
-                        v-if="isEditing"
                         type="date"
                         v-model="employee.visa_date"
                         class="info-input border-red"
                         max="9999-12-31"
                     />
-                    <span v-else class="info-value">{{ employee.visa_date }}</span>
                   </div>
                 </template>
 
                 <div class="info-item">
                   <label>새터민 여부</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="Y" v-model="employee.defector" />
                       <span class="radio-text">예</span>
@@ -930,16 +765,10 @@ onMounted(async () => {
                       <span class="radio-text">아니오</span>
                     </label>
                   </div>
-                  <template v-else>
-                    <span v-if="employee.defector === 'Y'" class="badge badge-warning">
-                      <i class="mdi mdi-earth"></i> {{ employee.defector || '새터민' }}
-                    </span>
-                    <span v-else class="info-value text-gray">해당없음</span>
-                  </template>
                 </div>
                 <div class="info-item">
                   <label>국가유공자 여부</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="Y" v-model="employee.patriot" />
                       <span class="radio-text">예</span>
@@ -949,16 +778,10 @@ onMounted(async () => {
                       <span class="radio-text">아니오</span>
                     </label>
                   </div>
-                  <template v-else>
-                    <span v-if="employee.patriot === 'Y'" class="badge badge-info">
-                      <i class="mdi mdi-medal-outline"></i> 유공자
-                    </span>
-                    <span v-else class="info-value text-gray">해당없음</span>
-                  </template>
                 </div>
                 <div class="info-item">
                   <label>청년인턴 여부</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="Y" v-model="employee.intern" />
                       <span class="radio-text">예</span>
@@ -968,16 +791,10 @@ onMounted(async () => {
                       <span class="radio-text">아니오</span>
                     </label>
                   </div>
-                  <template v-else>
-                    <span v-if="employee.intern === 'Y'" class="badge badge-info">
-                      <i class="mdi mdi-medal-outline"></i> 청년인턴
-                    </span>
-                    <span v-else class="info-value text-gray">해당없음</span>
-                  </template>
                 </div>
                 <div class="info-item">
                   <label>기초수급자 여부</label>
-                  <div v-if="isEditing" class="radio-group">
+                  <div class="radio-group">
                     <label class="radio-label">
                       <input type="radio" value="Y" v-model="employee.beneficiary" />
                       <span class="radio-text">예</span>
@@ -987,12 +804,6 @@ onMounted(async () => {
                       <span class="radio-text">아니오</span>
                     </label>
                   </div>
-                  <template v-else>
-                    <span v-if="employee.beneficiary === 'Y'" class="badge badge-success">
-                      <i class="mdi mdi-hand-heart-outline"></i> 수급자
-                    </span>
-                    <span v-else class="info-value text-gray">해당없음</span>
-                  </template>
                 </div>
               </div>
             </div>
@@ -1004,50 +815,31 @@ onMounted(async () => {
               <div class="info-grid">
                 <div class="info-item">
                   <label>은행</label>
-                  <select v-if="isEditing" v-model="employee.bank" class="info-select">
+                  <select v-model="employee.bank" class="info-select">
                     <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">{{ bank.itemNm }}</option>
                   </select>
-                  <span v-else class="info-value">{{ employee.bank || '-' }}</span>
                 </div>
                 <div class="info-item">
                   <label>계좌번호</label>
-                  <input v-if="isEditing" type="text" v-model="employee.accountNumber" class="info-input" />
-                  <span v-else class="info-value">{{ employee.accountNumber || '-' }}</span>
+                  <input type="text" v-model="employee.accountNumber" class="info-input" />
                 </div>
                 <div class="info-item">
                   <label>4대보험</label>
-                  <template v-if="isEditing">
-                    <select v-model="employee.four_ins" required class="info-select">
-                      <option value="Y">가입</option>
-                      <option value="N">미가입</option>
-                    </select>
-                  </template>
-                  <template v-else>
-                    <span :class="['badge', employee.four_ins === 'Y' ? 'badge-success' : 'badge-gray']">
-                      <i :class="['mdi', employee.four_ins === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
-                      {{ employee.four_ins === 'Y' ? '가입' : '미가입' }}
-                    </span>
-                  </template>
+                  <select v-model="employee.four_ins" required class="info-select">
+                    <option value="Y">가입</option>
+                    <option value="N">미가입</option>
+                  </select>
                 </div>
                 <div class="info-item">
                   <label>퇴직연금</label>
-                  <template v-if="isEditing">
-                    <select v-model="employee.retire_pension" required class="info-select">
-                      <option value="Y">가입</option>
-                      <option value="N">미가입</option>
-                    </select>
-                  </template>
-                  <template v-else>
-                    <span :class="['badge', employee.retire_pension === 'Y' ? 'badge-success' : 'badge-gray']">
-                      <i :class="['mdi', employee.retire_pension === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
-                      {{ employee.retire_pension === 'Y' ? '가입' : '미가입' }}
-                    </span>
-                  </template>
+                  <select v-model="employee.retire_pension" required class="info-select">
+                    <option value="Y">가입</option>
+                    <option value="N">미가입</option>
+                  </select>
                 </div>
                 <div class="info-item full-width">
                   <label>비고</label>
-                  <textarea v-if="isEditing" v-model="employee.bigo" class="info-textarea" rows="3"></textarea>
-                  <span v-else class="info-value">{{ employee.bigo || '-' }}</span>
+                  <textarea v-model="employee.bigo" class="info-textarea" rows="3"></textarea>
                 </div>
               </div>
             </div>
@@ -1119,7 +911,6 @@ onMounted(async () => {
         :site-options="siteOptions"
         :position-options="positionOptions"
         :wage-items="items"
-        :is-editing="isEditing"
         :company-data="companyData"
         @close="isContractModalOpen = false"
         @save="handleContractSave"
@@ -1427,8 +1218,6 @@ onMounted(async () => {
 .text-red { color: var(--danger) !important; font-weight: 600; }
 .border-red { border-color: rgba(239, 68, 68, 0.3) !important; }
 .border-red:focus { border-color: var(--danger) !important; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important; }
-.text-gray { color: var(--text-muted); }
-.text-primary { color: var(--primary); }
 
 /* === 근로계약 버튼 박스 === */
 .contract-box {
@@ -1443,29 +1232,6 @@ onMounted(async () => {
 }
 .btn-contract-view:hover { border-color: var(--primary); color: var(--primary); }
 .btn-contract-view i { font-size: 18px; color: var(--primary); }
-
-.btn-rrn-toggle {
-  display: flex; align-items: center; gap: 6px;
-  padding: 0 16px; height: 42px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  border: 1px solid var(--border-color); background: var(--bg-surface);
-  color: var(--text-sub); cursor: pointer; transition: all 0.2s;
-  box-shadow: var(--shadow-sm); box-sizing: border-box;
-}
-.btn-rrn-toggle:hover:not(:disabled) {
-  border-color: var(--warning);
-  color: var(--warning);
-  transform: translateY(-1px);
-}
-.btn-rrn-toggle.active {
-  background: rgba(245,158,11, 0.05);
-  border-color: var(--warning);
-  color: #b45309;
-}
-.btn-rrn-toggle:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  background: var(--bg-canvas);
-}
 
 /* === 반응형 === */
 @media (max-width: 1024px) {

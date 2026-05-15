@@ -8,7 +8,7 @@ const props = defineProps({
   positionOptions: Array,
   wageItems: Array,
   employeeType: String,
-  isEditing: Boolean,
+  // isEditing: Boolean,
   companyData: Object,
 });
 
@@ -716,7 +716,7 @@ const handleClose = () => emit('close');
           <button @click="handleClose" class="btn-modal-cancel">
             <i class="mdi mdi-close"></i> 닫기
           </button>
-          <button v-if="isEditing" @click="handleSave" class="btn-modal-save">
+          <button @click="handleSave" class="btn-modal-save">
             <i class="mdi mdi-content-save"></i> 저장
           </button>
         </div>
