@@ -22,7 +22,6 @@ const {
 // UI 상태
 // =============================================
 const activeTab     = ref(route.query.tab || 'info');
-const isEditing     = ref(false);
 const isStaffLoaded = ref(false);
 
 const tabs = [
@@ -765,20 +764,6 @@ const getSiteData = async () => {
   }
 };
 
-const toggleEdit = () => {
-  if (isEditing.value) {
-    if (confirm('수정을 취소하시겠습니까?')) {
-      site.value           = JSON.parse(JSON.stringify(originalData.site));
-      contractGroups.value = JSON.parse(JSON.stringify(originalData.contractGroups));
-      assignedStaff.value  = JSON.parse(JSON.stringify(originalData.assignedStaff));
-      settlementConfig.value = JSON.parse(JSON.stringify(originalData.settlementConfig));
-      isEditing.value = false;
-    }
-  } else {
-    isEditing.value = true;
-  }
-};
-
 const saveSiteData = async () => {
   if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
 
@@ -822,7 +807,6 @@ const saveSiteData = async () => {
 
     await axios.post('/api/v1/site/register', params);
     alert('저장되었습니다.');
-    isEditing.value = false;
     originalData = JSON.parse(JSON.stringify({
       site: site.value,
       contractGroups: contractGroups.value,
@@ -909,14 +893,8 @@ onMounted(async () => {
         </div>
       </div>
       <div class="header-actions">
-        <template v-if="!isEditing">
-          <button @click="toggleEdit"  class="btn-edit">  <i class="mdi mdi-pencil-outline"></i><span>수정</span></button>
-          <button @click="deleteSite"  class="btn-delete"><i class="mdi mdi-trash-can-outline"></i><span>삭제</span></button>
-        </template>
-        <template v-else>
-          <button @click="toggleEdit"  class="btn-cancel"><i class="mdi mdi-close"></i><span>취소</span></button>
-          <button @click="saveSiteData" class="btn-save"> <i class="mdi mdi-check"></i><span>저장</span></button>
-        </template>
+        <button @click="deleteSite"  class="btn-delete"><i class="mdi mdi-trash-can-outline"></i><span>삭제</span></button>
+        <button @click="saveSiteData" class="btn-save"> <i class="mdi mdi-check"></i><span>저장</span></button>
       </div>
     </div>
 
@@ -986,28 +964,24 @@ onMounted(async () => {
             <div class="info-grid">
               <div class="info-item">
                 <label>현장명</label>
-                <input v-if="isEditing" type="text" v-model="site.siteName" class="info-input" />
-                <span v-else class="info-value">{{ site.siteName }}</span>
+                <input type="text" v-model="site.siteName" class="info-input" />
               </div>
               <div class="info-item">
                 <label>현장 코드</label>
-                <input v-if="isEditing" type="text" v-model="site.siteId" class="info-input" />
-                <span v-else class="info-value">{{ site.siteId || '-' }}</span>
+                <input type="text" v-model="site.siteId" class="info-input" />
               </div>
               <div class="info-item">
                 <label>현장 형태</label>
-                <select v-if="isEditing" v-model="site.siteType" class="info-select">
+                <select v-model="site.siteType" class="info-select">
                   <option v-for="type in siteTypeOptions" :key="type" :value="type">{{ type }}</option>
                 </select>
-                <span v-else class="info-value">{{ site.siteType }}</span>
               </div>
               <div class="info-item">
                 <label>현장 상태</label>
-                <select v-if="isEditing" v-model="site.status" class="info-select">
+                <select v-model="site.status" class="info-select">
                   <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
                 </select>
-                <span v-else :class="['info-value', site.status === '운영 중' ? 'text-green' : site.status === '준비 중' ? 'text-orange' : 'text-gray']">{{ site.status }}</span>
-              </div>
+                </div>
               <!--div class="info-item">
                 <label>관리면적</label>
                 <div v-if="isEditing" class="area-input">
@@ -1018,20 +992,17 @@ onMounted(async () => {
               </div-->
               <div class="info-item">
                 <label>건물 수</label>
-                <input v-if="isEditing" type="number" v-model="site.building_su" class="info-input" />
-                <span v-else class="info-value">{{ site.building_su }}동</span>
+                <input type="number" v-model="site.building_su" class="info-input" />
               </div>
               <div class="info-item">
                 <label>세대 수</label>
-                <input v-if="isEditing" type="number" v-model="site.unit_su" class="info-input" />
-                <span v-else class="info-value">{{ site.unit_su }}세대</span>
+                <input type="number" v-model="site.unit_su" class="info-input" />
               </div>
               <div class="info-item">
                 <label>급여지급일</label>
-                <select v-if="isEditing" v-model="site.payment_day" class="info-select">
+                <select v-model="site.payment_day" class="info-select">
                   <option v-for="day in 31" :key="day" :value="day">{{ day }}일</option>
                 </select>
-                <span v-else class="info-value">매월 {{ site.payment_day }}일</span>
               </div>
             </div>
           </div>
@@ -1045,29 +1016,26 @@ onMounted(async () => {
 
               <div class="info-item">
                 <label>연면적</label>
-                <div v-if="isEditing" class="input-with-unit">
+                <div class="input-with-unit">
                   <input type="number" v-model="site.areaGross" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
-                <span v-else class="info-value">{{ site.areaGross || 0 }} ㎡</span>
               </div>
 
               <div class="info-item">
                 <label>135㎡ 이하 (면세)</label>
-                <div v-if="isEditing" class="input-with-unit">
+                <div class="input-with-unit">
                   <input type="number" v-model="site.areaUnder" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
-                <span v-else class="info-value">{{ site.areaUnder || 0 }} ㎡</span>
               </div>
 
               <div class="info-item">
                 <label>135㎡ 초과 (과세)</label>
-                <div v-if="isEditing" class="input-with-unit">
+                <div class="input-with-unit">
                   <input type="number" v-model="site.areaOver" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
-                <span v-else class="info-value">{{ site.areaOver || 0 }} ㎡</span>
               </div>
 
               <div class="info-item full-width">
@@ -1075,18 +1043,15 @@ onMounted(async () => {
 
                 <div class="calculated-area-box">
                   <span class="total-number">{{ totalArea || site.area || 0 }} <small>㎡</small></span>
-
                   <span :class="['vat-badge', isVatSite ? 'vat-red' : 'vat-green']">
-          <i :class="['mdi', isVatSite ? 'mdi-check-circle' : 'mdi-minus-circle']"></i>
-          {{ isVatSite ? '과세 대상 (VAT Y)' : '면세 대상 (VAT N)' }}
-        </span>
+                    <i :class="['mdi', isVatSite ? 'mdi-check-circle' : 'mdi-minus-circle']"></i>
+                    {{ isVatSite ? '과세 대상' : '면세 대상' }}
+                  </span>
                 </div>
-
-                <p v-if="isEditing" class="info-helper-text">
+                <p class="info-helper-text">
                   * 135㎡ 초과(과세) 면적을 입력하면 <strong>과세 대상</strong>으로 자동 전환되며, 정산 시 VAT가 생성됩니다.
                 </p>
               </div>
-
             </div>
           </div>
 
@@ -1095,16 +1060,14 @@ onMounted(async () => {
             <div class="info-grid">
               <div class="info-item full-width">
                 <label>우편번호</label>
-                <div v-if="isEditing" class="address-search-group">
+                <div class="address-search-group">
                   <input type="text" v-model="site.zipcode" class="info-input postal-input" readonly />
                   <button type="button" @click="searchAddress" class="btn-search-small"><i class="mdi mdi-magnify"></i> 주소 검색</button>
                 </div>
-                <span v-else class="info-value">{{ site.zipcode || '-' }}</span>
               </div>
               <div class="info-item full-width">
                 <label>현장 주소</label>
-                <input v-if="isEditing" type="text" v-model="site.address" class="info-input" readonly />
-                <span v-else class="info-value">{{ site.address }}</span>
+                <input type="text" v-model="site.address" class="info-input" readonly />
               </div>
             </div>
           </div>
@@ -1114,23 +1077,19 @@ onMounted(async () => {
             <div class="info-grid">
               <div class="info-item">
                 <label>본사 담당자</label>
-                <input v-if="isEditing" type="text" v-model="site.managerName" class="info-input" />
-                <span v-else class="info-value">{{ site.managerName || '-' }}</span>
+                <input type="text" v-model="site.managerName" class="info-input" />
               </div>
               <div class="info-item">
                 <label>본사 담당자 연락처</label>
-                <input v-if="isEditing" type="tel" v-model="site.managerContact" class="info-input" />
-                <span v-else class="info-value">{{ site.managerContact || '-' }}</span>
+                <input type="tel" v-model="site.managerContact" class="info-input" />
               </div>
               <div class="info-item">
                 <label>관리 소장</label>
-                <input v-if="isEditing" type="text" v-model="site.director" class="info-input" />
-                <span v-else class="info-value">{{ site.director }}</span>
+                <input type="text" v-model="site.director" class="info-input" />
               </div>
               <div class="info-item">
                 <label>관리 소장 연락처</label>
-                <input v-if="isEditing" type="tel" v-model="site.directorContact" class="info-input" />
-                <span v-else class="info-value">{{ site.directorContact }}</span>
+                <input type="tel" v-model="site.directorContact" class="info-input" />
               </div>
             </div>
           </div>
@@ -1143,28 +1102,23 @@ onMounted(async () => {
             <div class="info-grid">
               <div class="info-item">
                 <label>사업자등록번호</label>
-                <input v-if="isEditing" type="text" v-model="site.businessNumber" class="info-input" placeholder="예: 123-45-67890" />
-                <span v-else class="info-value">{{ site.businessNumber || '-' }}</span>
+                <input type="text" v-model="site.businessNumber" class="info-input" placeholder="예: 123-45-67890" />
               </div>
               <div class="info-item">
                 <label>대표자명</label>
-                <input v-if="isEditing" type="text" v-model="site.representative" class="info-input" />
-                <span v-else class="info-value">{{ site.representative || '-' }}</span>
+                <input type="text" v-model="site.representative" class="info-input" />
               </div>
               <div class="info-item">
                 <label>업태</label>
-                <input v-if="isEditing" type="text" v-model="site.businessType" class="info-input" />
-                <span v-else class="info-value">{{ site.businessType || '-' }}</span>
+                <input type="text" v-model="site.businessType" class="info-input" />
               </div>
               <div class="info-item">
                 <label>종목</label>
-                <input v-if="isEditing" type="text" v-model="site.businessItem" class="info-input" />
-                <span v-else class="info-value">{{ site.businessItem || '-' }}</span>
+                <input type="text" v-model="site.businessItem" class="info-input" />
               </div>
               <div class="info-item">
                 <label>이메일 (세금계산서/공문 수신용)</label>
-                <input v-if="isEditing" type="email" v-model="site.email" class="info-input" />
-                <span v-else class="info-value">{{ site.email || '-' }}</span>
+                <input type="email" v-model="site.email" class="info-input" />
               </div>
             </div>
           </div>
@@ -1173,7 +1127,7 @@ onMounted(async () => {
 
       <!-- ── 계약정보 탭 ── -->
       <div v-show="activeTab === 'contract'" class="tab-panel">
-        <div v-if="isEditing" class="contract-actions-top">
+        <div class="contract-actions-top">
           <button v-for="cat in typeOptions" :key="cat.itemCd" type="button"
                   @click="addContractGroup(cat)" class="btn-add-contract-small">
             <i class="mdi mdi-plus"></i>{{ cat.itemNm }} 추가
@@ -1215,23 +1169,19 @@ onMounted(async () => {
               <div class="contract-info-grid">
                 <div class="contract-info-item">
                   <label>계약 시작일</label>
-                  <input v-if="isEditing" type="date" v-model="group.contractStart" class="info-input" />
-                  <span v-else class="info-value">{{ group.contractStart }}</span>
+                  <input type="date" v-model="group.contractStart" class="info-input" />
                 </div>
                 <div class="contract-info-item">
                   <label>계약 종료일</label>
-                  <input v-if="isEditing" type="date" v-model="group.contractEnd" class="info-input" />
-                  <span v-else class="info-value">{{ group.contractEnd }}</span>
+                  <input type="date" v-model="group.contractEnd" class="info-input" />
                 </div>
                 <div class="contract-info-item full-width">
                   <label>근무 시간 및 형태</label>
-                  <textarea v-if="isEditing" v-model="group.workSchedule" class="info-textarea" rows="2"></textarea>
-                  <span v-else class="info-value">{{ group.workSchedule || '-' }}</span>
+                  <textarea v-model="group.workSchedule" class="info-textarea" rows="2"></textarea>
                 </div>
                 <div class="contract-info-item full-width">
                   <label>휴게 시간</label>
-                  <input v-if="isEditing" type="text" v-model="group.breakTime" class="info-input" />
-                  <span v-else class="info-value">{{ group.breakTime || '-' }}</span>
+                  <input type="text" v-model="group.breakTime" class="info-input" />
                 </div>
               </div>
 
@@ -1239,7 +1189,7 @@ onMounted(async () => {
               <div class="staff-info-grid">
                 <label class="section-label"><i class="mdi mdi-account-group-outline"></i>인원 구성 및 스케줄</label>
 
-                <div v-if="isEditing" class="staff-input-group">
+                <div class="staff-input-group">
                   <select v-model="group.tempJobCode" class="info-select staff-position-select">
                     <option value="">직책 선택</option>
                     <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
@@ -1252,7 +1202,6 @@ onMounted(async () => {
 
                 <div v-if="group.staffList?.length > 0" class="staff-list-vertical">
                   <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
-
                     <div class="staff-member-card">
                       <div class="staff-member-info">
                         <i class="mdi mdi-account-outline"></i>
@@ -1266,7 +1215,7 @@ onMounted(async () => {
                           <i class="mdi" :class="staff.showSchedule ? 'mdi-calendar-collapse-horizontal' : 'mdi-calendar-expand-horizontal'"></i>
                           근무 설정
                         </button>
-                        <button v-if="isEditing" type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff-small">
+                        <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff-small">
                           <i class="mdi mdi-close"></i>
                         </button>
                       </div>
@@ -1275,7 +1224,7 @@ onMounted(async () => {
                     <div v-show="staff.showSchedule" class="schedule-panel">
                       <div class="schedule-header">
                         <span><i class="mdi mdi-clock-outline"></i> 요일별 근무시간</span>
-                        <button v-if="isEditing" type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">
+                        <button type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">
                           <i class="mdi mdi-layers-outline"></i> 평일 일괄 적용
                         </button>
                       </div>
@@ -1293,26 +1242,34 @@ onMounted(async () => {
                           <tbody>
                           <tr v-for="day in weekDays" :key="day.val" :class="{'inactive-row': !staff.schedule[day.val].isActive}">
                             <td>
-                              <label class="day-checkbox" :class="{'disabled': !isEditing}">
-                                <input type="checkbox" v-model="staff.schedule[day.val].isActive" :disabled="!isEditing" />
+                              <label class="day-checkbox">
+                                <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
                                 <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
                               </label>
                             </td>
                             <td>
                               <div class="time-inputs" v-if="staff.schedule[day.val].isActive">
-                                <input type="time" v-model="staff.schedule[day.val].startTime" :disabled="!isEditing" class="info-input time-input" />
+                                <input type="time" v-model="staff.schedule[day.val].startTime" class="info-input time-input" />
                                 <span>~</span>
-                                <input type="time" v-model="staff.schedule[day.val].endTime" :disabled="!isEditing" class="info-input time-input" />
+                                <input type="time" v-model="staff.schedule[day.val].endTime" class="info-input time-input" />
                               </div>
                               <span v-else class="text-muted" style="font-size:12px;">휴무</span>
                             </td>
                             <td>
-                              <input v-if="staff.schedule[day.val].isActive" type="number" v-model="staff.schedule[day.val].breakTime" :disabled="!isEditing" class="info-input break-input" min="0" placeholder="0" />
+                              <input
+                                  v-if="
+                                    staff.schedule[day.val].isActive"
+                                    type="number"
+                                    v-model="staff.schedule[day.val].breakTime"
+                                    class="info-input break-input"
+                                    min="0"
+                                    placeholder="0"
+                              />
                               <span v-else class="text-muted">-</span>
                             </td>
                             <td>
-                              <label class="biweekly-checkbox" v-if="staff.schedule[day.val].isActive" :class="{'disabled': !isEditing}">
-                                <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" :disabled="!isEditing" />
+                              <label class="biweekly-checkbox" v-if="staff.schedule[day.val].isActive" >
+                                <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" />
                                 <span>격주</span>
                               </label>
                               <span v-else class="text-muted">-</span>
@@ -1356,7 +1313,7 @@ onMounted(async () => {
                       <!-- ══ 직접노무비 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-direct">A</span>직접노무비 <em>(지급내역)</em>
-                        <button v-if="isEditing" type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
+                        <button type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
                       </div>
                       <table class="cost-table">
                         <thead>
@@ -1368,19 +1325,16 @@ onMounted(async () => {
                           </th>
                           <th class="col-rowtotal-head">행합계</th>
                           <th class="col-bigo">산출내역</th>
-                          <th v-if="isEditing" class="col-action"></th>
+                          <th class="col-action"></th>
                         </tr>
                         </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
-                            <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
-                            <CodeSelect v-else v-model="item.label" :allow-empty="false"/>
+                            <CodeSelect v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing">{{ formatCurrency(item.values[staff.code]) }}</span>
                             <input
-                                v-else
                                 type="text"
                                 :value="formatCurrency(item.values[staff.code])"
                                 @focus="$event.target.select()"
@@ -1392,20 +1346,34 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
-                          <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
-                          <td v-if="isEditing"><button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
+                          <td>
+                            <input type="text" class="tbl-value-input" v-model="item.bigo" />
+                          </td>
+                          <td>
+                            <button
+                                type="button"
+                                @click="removeItem(group, 'directLabor', iIdx)"
+                                class="btn-remove-cost"
+                            >
+                              <i class="mdi mdi-close"></i>
+                            </button>
+                          </td>
                         </tr>
                         </tbody>
                         <tfoot>
                         <tr class="tfoot-subtotal">
                           <td>소계 (A)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}</td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            {{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}
+                          </td>
                           <!-- 소계 행합계 -->
                           <td class="col-rowtotal-cell subtotal-rowtotal">
                             {{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
-                          <td v-if="isEditing"></td>
+                          <td>
+                            <input type="text" class="tbl-value-input">
+                          </td>
+                          <td></td>
                         </tr>
                         </tfoot>
                       </table>
@@ -1413,7 +1381,12 @@ onMounted(async () => {
                       <!-- ══ 간접노무비 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-indirect">B</span>간접노무비 <em>(공제내역)</em>
-                        <button v-if="isEditing" type="button" @click="addItem(group, 'indirectLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
+                        <button
+                            type="button"
+                            @click="addItem(group, 'indirectLabor')"
+                            class="btn-add-cost-item">
+                          <i class="mdi mdi-plus"></i>항목 추가
+                        </button>
                       </div>
                       <table class="cost-table">
                         <thead>
@@ -1425,19 +1398,16 @@ onMounted(async () => {
                           </th>
                           <th class="col-rowtotal-head">행합계</th>
                           <th class="col-bigo">산출내역</th>
-                          <th v-if="isEditing" class="col-action"></th>
+                          <th class="col-action"></th>
                         </tr>
                         </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
-                            <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
-                            <CodeSelect v-else v-model="item.label" />
+                            <CodeSelect v-model="item.label" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing">{{ formatCurrency(item.values[staff.code]) }}</span>
                             <input
-                                v-else
                                 type="text"
                                 :value="formatCurrency(item.values[staff.code])"
                                 @focus="$event.target.select()"
@@ -1448,8 +1418,18 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell">
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
-                          <td><span v-if="!isEditing">{{ item.bigo }}</span><input v-else type="text" class="tbl-value-input" v-model="item.bigo" /></td>
-                          <td v-if="isEditing"><button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
+                          <td>
+                            <input type="text" class="tbl-value-input" v-model="item.bigo" />
+                          </td>
+                          <td>
+                            <button
+                                type="button"
+                                @click="removeItem(group, 'indirectLabor', iIdx)"
+                                class="btn-remove-cost"
+                            >
+                              <i class="mdi mdi-close"></i>
+                            </button>
+                          </td>
                         </tr>
                         </tbody>
                         <tfoot>
@@ -1459,8 +1439,8 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell subtotal-rowtotal">
                             {{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
-                          <td v-if="isEditing"></td>
+                          <td><input type="text" class="tbl-value-input"></td>
+                          <td></td>
                         </tr>
                         </tfoot>
                       </table>
@@ -1468,7 +1448,7 @@ onMounted(async () => {
                       <!-- ══ 제경비 ══ -->
                       <div class="cost-section-title">
                         <span class="cost-block-label label-expense">C</span>제경비
-                        <button v-if="isEditing" type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
+                        <button type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
                       </div>
                       <table class="cost-table">
                         <thead>
@@ -1480,19 +1460,16 @@ onMounted(async () => {
                           </th>
                           <th class="col-rowtotal-head">행합계</th>
                           <th class="col-bigo">산출내역</th>
-                          <th v-if="isEditing" class="col-action"></th>
+                          <th class="col-action"></th>
                         </tr>
                         </thead>
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
-                            <span v-if="!isEditing">{{ getItemName(item.label) }}</span>
-                            <CodeSelect v-else v-model="item.label" />
+                            <CodeSelect v-model="item.label" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing">{{ formatCurrency(item.values[staff.code]) }}</span>
                             <input
-                                v-else
                                 type="text"
                                 :value="formatCurrency(item.values[staff.code])"
                                 @focus="$event.target.select()"
@@ -1504,14 +1481,21 @@ onMounted(async () => {
                             {{ formatCurrency(getRowTotal(item, group.staffList)) }}
                           </td>
                           <td>
-                            <span v-if="!isEditing">{{ item.bigo }}</span>
                             <input
-                                v-else type="text"
+                                type="text"
                                 class="tbl-value-input"
                                 v-model="item.bigo"
                             />
                           </td>
-                          <td v-if="isEditing"><button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
+                          <td>
+                            <button
+                                type="button"
+                                @click="removeItem(group, 'expenses', eIdx)"
+                                class="btn-remove-cost"
+                            >
+                              <i class="mdi mdi-close"></i>
+                            </button>
+                          </td>
                         </tr>
                         </tbody>
                         <tfoot>
@@ -1521,8 +1505,8 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell subtotal-rowtotal">
                             {{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
-                          <td v-if="isEditing"></td>
+                          <td><input type="text" class="tbl-value-input"></td>
+                          <td></td>
                         </tr>
                         </tfoot>
                       </table>
@@ -1546,11 +1530,13 @@ onMounted(async () => {
                         <tbody>
                         <tr class="summary-row row-d">
                           <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span>
+                          </td>
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getLaborColTotal)) }}</span>
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                         </tr>
                         <tr class="summary-row row-e">
                           <td>
@@ -1561,9 +1547,7 @@ onMounted(async () => {
                             </div>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getManagementFeeCol(group, staff.code)) }}</span>
                             <input
-                                v-else
                                 type="text"
                                 :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
                                 @focus="$event.target.select()"
@@ -1574,7 +1558,9 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
+                          <td>
+                            <input type="text" class="tbl-value-input">
+                          </td>
                         </tr>
 
                         <tr class="summary-row row-f">
@@ -1586,9 +1572,7 @@ onMounted(async () => {
                             </div>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
-                            <span v-if="!isEditing" class="summary-val">{{ formatCurrency(getProfitCol(group, staff.code)) }}</span>
                             <input
-                                v-else
                                 type="text"
                                 :value="formatCurrency(group.costBreakdown.profit[staff.code])"
                                 @focus="$event.target.select()"
@@ -1599,7 +1583,7 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell">
                             <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                         </tr>
                         <tr class="summary-row row-monthly">
                           <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
@@ -1607,7 +1591,7 @@ onMounted(async () => {
                           <td class="col-rowtotal-cell">
                             <span class="summary-val highlight">{{ formatCurrency(getSubtotalRowTotal(group, getMonthlyTotalCol)) }}</span>
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                         </tr>
                         <tr class="summary-row row-total-fee">
                           <td>
@@ -1618,16 +1602,12 @@ onMounted(async () => {
                           </td>
                           <td :colspan="group.staffList.length">
                             <input
-                                v-if="isEditing"
                                 type="text"
                                 :value="formatCurrency(getDisplayMonthlyTotal(group))"
                                 @focus="$event.target.select()"
                                 @input="onInputMonthlyTotal(group, $event)"
                                 class="tbl-value-input grand-total-input"
                                 />
-                            <span v-else class="summary-val grand-total">
-                              {{ formatCurrency(getDisplayMonthlyTotal(group)) }}
-                            </span>
                           </td>
 
                           <td class="col-rowtotal-cell">
@@ -1635,7 +1615,7 @@ onMounted(async () => {
                             {{ formatCurrency(getDisplayMonthlyTotal(group)) }}
                           </span>
                           </td>
-                          <td><input v-if="isEditing" type="text" class="tbl-value-input"><span v-else></span></td>
+                          <td><input type="text" class="tbl-value-input"></td>
                         </tr>
                         <!--tr>
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 (계약기간 총 용역비)</span></td>
@@ -1651,8 +1631,15 @@ onMounted(async () => {
 
                     </div><!-- /cost-scroll-area -->
                     <div class="cost-special-note">
-                      <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i>특이사항</label>
-                      <textarea :disabled="!isEditing" v-model="group.costBreakdown.specialNote" class="form-textarea" rows="3" placeholder="예: 최저임금 기준 적용, 5대보험 전원 가입 조건 등"></textarea>
+                      <label class="form-label">
+                        <i class="mdi mdi-text-box-edit-outline"></i>특이사항
+                      </label>
+                      <textarea
+                          v-model="group.costBreakdown.specialNote"
+                          class="form-textarea"
+                          rows="3"
+                          placeholder="예: 최저임금 기준 적용, 5대보험 전원 가입 조건 등"
+                      ></textarea>
                     </div>
                   </template>
                 </div>
@@ -1676,26 +1663,26 @@ onMounted(async () => {
             </p>
 
             <div class="config-toggle-wrapper">
-              <label class="config-toggle-item" :class="{'disabled': !isEditing}">
+              <label class="config-toggle-item">
                 <span class="font-bold text-red">연차수당 포함</span>
                 <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.annualLeave" :disabled="!isEditing" />
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.annualLeave" />
                   <span class="slider round"></span>
                 </div>
               </label>
 
-              <label class="config-toggle-item" :class="{'disabled': !isEditing}">
+              <label class="config-toggle-item">
                 <span class="font-bold text-red">퇴직충당금 포함</span>
                 <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.severance" :disabled="!isEditing" />
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.severance" />
                   <span class="slider round"></span>
                 </div>
               </label>
 
-              <label class="config-toggle-item" :class="{'disabled': !isEditing}">
+              <label class="config-toggle-item">
                 <span class="font-bold text-red">근로자의날수당 포함</span>
                 <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.workersDay" :disabled="!isEditing" />
+                  <input type="checkbox" v-model="settlementConfig.meltOptions.workersDay"  />
                   <span class="slider round"></span>
                 </div>
               </label>
@@ -1728,12 +1715,16 @@ onMounted(async () => {
                   지급항목 (직접노무비 중 정산 제어 항목)
                 </div>
                 <div class="config-checkbox-group">
-                  <label v-for="label in dynamicSettlementItems.payItems"
-                         :key="'pay-'+label" class="config-checkbox" :class="{'disabled': !isEditing}">
-                    <input type="checkbox"
-                           :value="label"
-                           v-model="settlementConfig.activePayLabels"
-                           :disabled="!isEditing" />
+                  <label
+                      v-for="label in dynamicSettlementItems.payItems"
+                      :key="'pay-'+label"
+                      class="config-checkbox"
+                  >
+                    <input
+                        type="checkbox"
+                        :value="label"
+                        v-model="settlementConfig.activePayLabels"
+                    />
                     <span class="font-bold text-orange">{{ label }}</span>
                   </label>
                 </div>
@@ -1746,12 +1737,15 @@ onMounted(async () => {
                   공제항목 (간접노무비)
                 </div>
                 <div class="config-checkbox-group">
-                  <label v-for="label in dynamicSettlementItems.deductionItems"
-                         :key="'ded-'+label" class="config-checkbox" :class="{'disabled': !isEditing}">
-                    <input type="checkbox"
-                           :value="label"
-                           v-model="settlementConfig.activeDeductionLabels"
-                           :disabled="!isEditing" />
+                  <label
+                      v-for="label in dynamicSettlementItems.deductionItems"
+                      :key="'ded-'+label"
+                      class="config-checkbox">
+                    <input
+                        type="checkbox"
+                        :value="label"
+                        v-model="settlementConfig.activeDeductionLabels"
+                    />
                     <span>{{ getItemName(label) }}</span>
                   </label>
                 </div>
@@ -1935,8 +1929,10 @@ onMounted(async () => {
         <div v-else class="empty-state">
           <i class="mdi mdi-note-text-outline"></i><p>등록된 특이사항이 없습니다</p>
         </div>
-        <div v-if="isEditing" class="memo-add-section">
-          <label class="section-label"><i class="mdi mdi-pencil-outline"></i>새로운 메모 추가</label>
+        <div class="memo-add-section">
+          <label class="section-label">
+            <i class="mdi mdi-pencil-outline"></i>새로운 메모 추가
+          </label>
           <textarea v-model="site.bigo" class="info-textarea" rows="4" placeholder="특이사항을 입력하세요 (저장 시 히스토리에 추가됩니다)"></textarea>
         </div>
       </div>
