@@ -99,6 +99,16 @@ const toggleCustomSign = (index) => {
   item.sign = item.sign === 1 ? -1 : 1;
 };
 
+const onKoreanOnly = (e, row) => {
+  // 한글(자음/모음/완성형) 외 모든 문자 제거
+  const cleaned = e.target.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
+  row.empName = cleaned;
+  e.target.value = cleaned;
+};
+
+const filterKoreanOnly = (str) =>
+    (str || '').replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
+
 // ──────────────────────────────────────────────
 // 3. 계약 데이터 및 적용 요율
 // ──────────────────────────────────────────────
@@ -672,6 +682,7 @@ const initForm = () => {
     data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
 
     data.payrollData.forEach(row => {
+      row.empName = filterKoreanOnly(row.empName);
       if (!row.deductionItems) row.deductionItems = {};
       row.totalDeduct = row.totalDeduct || 0;
       if (!row.reserves) row.reserves = { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 };
@@ -883,7 +894,8 @@ const loadPayrollData = async () => {
 
       const rowObj = {
         idx: item.idx,
-        empName: item.staff,
+        //empName: item.staff,
+        empName: filterKoreanOnly(item.staff),
         position: item.role || '',
         personalNo: item.birthDt,
         inDate: item.inDate,
