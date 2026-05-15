@@ -682,13 +682,15 @@ onActivated(async () => {
                   {{ member.status == 0 ? '재직': member.status == 1 ? '퇴사' : member.status == 2 ? '일용직': '대근' }}
                 </span>
             </td>
-            <td class="text-center" style="display: flex;gap:4px;">
-              <button @click="goToDetail(member.id)" class="btn-detail">
-                <i class="mdi mdi-eye"></i><span>상세</span>
-              </button>
-              <button @click="goRemove(member.id)" class="btn-remove-cost">
-                <i class="mdi mdi-close"></i>
-              </button>
+            <td class="text-center">
+              <div style="display: flex;gap:4px;">
+                <button @click="goToDetail(member.id)" class="btn-detail">
+                  <i class="mdi mdi-eye"></i><span>상세</span>
+                </button>
+                <button @click="goRemove(member.id)" class="btn-remove-cost">
+                  <i class="mdi mdi-close"></i>
+                </button>
+              </div>
             </td>
           </tr>
 

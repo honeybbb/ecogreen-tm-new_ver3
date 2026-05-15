@@ -99,15 +99,35 @@ const toggleCustomSign = (index) => {
   item.sign = item.sign === 1 ? -1 : 1;
 };
 
+const filterKoreanOnly = (str) => {
+  if (!str) return '';
+
+  // 문자열에 한글이 하나라도 포함되어 있는지 검사
+  const hasKorean = /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(str);
+
+  if (hasKorean) {
+    // 1. 한글이 포함된 경우 (예: "홍길동B", "김옥자Q")
+    // -> 한글과 공백만 남기고 모두 제거 (영문 삭제됨)
+    return str.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
+  } else {
+    // 2. 한글이 없는 경우 (예: "John Doe", "Michael")
+    // -> 영문 이름이므로 지우지 않고 그대로 반환
+    return str;
+  }
+};
+
 const onKoreanOnly = (e, row) => {
-  // 한글(자음/모음/완성형) 외 모든 문자 제거
-  const cleaned = e.target.value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
+  const original = e.target.value;
+  const hasKorean = /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(original);
+
+  let cleaned = original;
+  if (hasKorean) {
+    cleaned = original.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
+  }
+
   row.empName = cleaned;
   e.target.value = cleaned;
 };
-
-const filterKoreanOnly = (str) =>
-    (str || '').replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
 
 // ──────────────────────────────────────────────
 // 3. 계약 데이터 및 적용 요율

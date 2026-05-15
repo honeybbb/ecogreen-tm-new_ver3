@@ -12,6 +12,7 @@ const searchTerm = ref('');
 const selectedStatus = ref('전체');
 const selectedType = ref('전체');
 const selectedVat = ref('전체');
+const selectedBilling = ref('전체');
 const statusOptions = ref(['전체', '운영 중', '준비 중', '계약 종료']);
 const typeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const vatOptions = ref([
@@ -19,6 +20,7 @@ const vatOptions = ref([
   { label: '과세', value: 'Y' },
   { label: '면세', value: 'N' }
 ]);
+const billingManager = ref([])
 
 // 2. 정렬 관련 상태
 const sortKey = ref('idx');
@@ -59,8 +61,9 @@ const filteredSites = computed(() => {
     const statusMatch = selectedStatus.value === '전체' || site.status === selectedStatus.value;
     const typeMatch   = selectedType.value === '전체' || site.sType === selectedType.value || site.type === selectedType.value;
     const vatMatch    = selectedVat.value === '전체' || site.is_vat === selectedVat.value;
+    const billingMatch = selectedBilling.value === '전체' || site.billingManager === selectedBilling.value;
     const searchMatch = site.name.toLowerCase().includes(searchTerm.value.toLowerCase());
-    return statusMatch && typeMatch && vatMatch && searchMatch;
+    return statusMatch && typeMatch && vatMatch && billingMatch && searchMatch;
   });
 
   result.sort((a, b) => {
@@ -123,6 +126,18 @@ const getSites = async () => {
   try {
     const res = await axios.get(`/api/v1/site/list`); // await으로 데이터 대기
     sites.value = res.data.data || [];
+
+    // 1. 모든 현장의 billingManager 값만 추출 (값이 비어있는 것은 제외)
+    const allBillingManagers = sites.value
+        .map(site => site.billingManager)
+        .filter(name => name && name.trim() !== '');
+
+    // 2. Set을 이용해 중복을 제거한 후 다시 배열로 변환
+    const uniqueManagers = [...new Set(allBillingManagers)];
+
+    // 3. Select(또는 커스텀 드롭다운)에서 쓰기 좋게 객체 형태로 변환하여 저장
+    billingManager.value = uniqueManagers.map(name => ({ value: name }));
+
   } catch (err) {
     console.error('현장 로드 실패:', err);
   } finally {
@@ -244,6 +259,18 @@ const goRemove = async (id) => {
           </select>
         </div>
 
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-account-cash-outline"></i> 청구 담당
+          </label>
+          <select v-model="selectedBilling" class="filter-select">
+            <option value="전체">전체</option>
+            <option v-for="b in billingManager" :key="b.value" :value="b.value">
+              {{ b.value }}
+            </option>
+          </select>
+        </div>
+
         <div class="search-group" style="flex: 1;">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
@@ -286,6 +313,19 @@ const goRemove = async (id) => {
 
       <div class="table-scroll-container">
         <table class="data-table">
+          <colgroup>
+            <col width="5%">
+            <col width="10%">
+            <col width="*%">
+            <col width="12%">
+            <col width="8%">
+            <col width="10%">
+            <col width="8%">
+            <col width="10%">
+            <col width="8%">
+            <col width="5%">
+            <col width="5%">
+          </colgroup>
           <thead>
           <tr>
             <th @click="toggleSort('idx')" class="sortable resizable" style="width: 80px;">
@@ -323,15 +363,28 @@ const goRemove = async (id) => {
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th> <div class="th-content"><span>본사 연락처</span></div></th>
-            <th @click="toggleSort('manager')" class="sortable resizable" style="width: 120px;">
+            <th class="resizable">
+              <div class="th-content"><span>본사 연락처</span></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('director')" class="sortable resizable" style="width: 120px;">
               <div class="th-content">
                 <span>현장 담당자</span>
                 <i v-if="sortKey === 'director'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th><div class="th-content"><span>현장 연락처</span></div></th>
+            <th class="resizable">
+              <div class="th-content"><span>현장 연락처</span></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('billingManager')" class="sortable resizable" style="width: 120px;">
+              <div class="th-content">
+                <span>청구 담당자</span>
+                <i v-if="sortKey === 'billingManager'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+              </div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <th @click="toggleSort('status')" class="sortable resizable" style="width: 120px;">
               <div class="th-content">
                 <span>상태</span>
@@ -339,11 +392,10 @@ const goRemove = async (id) => {
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="text-center" style="width: 100px;">
+            <th class="text-center">
               <div class="th-content justify-center">
                 <span>관리</span>
               </div>
-              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
           </tr>
           </thead>
@@ -384,6 +436,7 @@ const goRemove = async (id) => {
               <span>{{site.director}}</span>
             </td>
             <td><span>{{site.director_phone}}</span></td>
+            <td><span>{{site.billingManager}}</span></td>
             <td>
                 <span :class="[
                   'status-badge',
@@ -402,14 +455,16 @@ const goRemove = async (id) => {
                   {{ site.status }}
                 </span>
             </td>
-            <td class="text-center" style="display: flex;gap:4px;">
-              <button @click="goToDetail(site.idx)" class="btn-detail">
-                <i class="mdi mdi-eye"></i>
-                <span>상세</span>
-              </button>
-              <button @click="goRemove(site.idx)" class="btn-remove-cost">
-                <i class="mdi mdi-close"></i>
-              </button>
+            <td class="text-center">
+              <div style="display: flex; gap:4px;">
+                <button @click="goToDetail(site.idx)" class="btn-detail">
+                  <i class="mdi mdi-eye"></i>
+                  <span>상세</span>
+                </button>
+                <button @click="goRemove(site.idx)" class="btn-remove-cost">
+                  <i class="mdi mdi-close"></i>
+                </button>
+              </div>
             </td>
           </tr>
 

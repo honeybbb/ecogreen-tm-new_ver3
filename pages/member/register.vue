@@ -67,6 +67,7 @@ const getInitialEmployee = () => ({
   visa_code: '',
   visa_date: '',
   bankName: '국민',
+  accountNm: '', //예금주
   accountNumber: '',
   four_ins: 'Y',
   retire_pension: 'N',
@@ -887,6 +888,19 @@ onActivated(() => {
               <input
                   type="text"
                   v-model="employee.accountNumber"
+                  class="form-input"
+                  placeholder="숫자만 입력"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-account-cash"></i>
+                예금주
+              </label>
+              <input
+                  type="text"
+                  v-model="employee.accountNm"
                   class="form-input"
                   placeholder="숫자만 입력"
               />
