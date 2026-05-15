@@ -39,6 +39,8 @@ const site = ref({
   managerContact: '',
   director: '',
   directorContact: '',
+  billingManager: '',
+  payrollManager: '',
   memo: '',
   status: '운영 중',
   payment_day: '',
@@ -482,6 +484,8 @@ const handleSubmit = async () => {
       phone: site.value.managerContact,
       director: site.value.director,
       directorContact: site.value.directorContact,
+      billingManager: site.value.billingManager,
+      payrollManager: site.value.payrollManager,
       bigo: site.value.bigo,
       contract_details: contractsJson,
       viewConfig: viewConfigJson
@@ -1399,12 +1403,28 @@ onMounted(() => {
               <input type="tel" v-model="site.managerContact" class="form-input" placeholder="010-0000-0000" />
             </div>
             <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-account-hard-hat-outline"></i>관리 소장 이름</label>
+              <label class="form-label required">
+                <i class="mdi mdi-account-hard-hat-outline"></i>관리 소장 이름
+              </label>
               <input type="text" v-model="site.director" required class="form-input" placeholder="김관리" />
             </div>
             <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-phone-outline"></i>관리 소장 연락처</label>
-              <input type="tel" v-model="site.directorContact" required class="form-input" placeholder="010-0000-0000" />
+              <label class="form-label required">
+                <i class="mdi mdi-phone-outline"></i>관리 소장 연락처
+              </label>
+              <input type="text" v-model="site.directorContact" required class="form-input" placeholder="010-0000-0000" />
+            </div>
+            <div class="form-group" style="grid-column: 1;">
+              <label class="form-label required">
+                <i class="mdi mdi-account-cash"></i>청구 담당자
+              </label>
+              <input type="text" v-model="site.billingManager" required class="form-input" placeholder="김청구"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label required">
+                <i class="mdi mdi-account-cash"></i>급여 담당자
+              </label>
+              <input type="text" v-model="site.payrollManager" required class="form-input" placeholder="김급여"/>
             </div>
             <div class="form-group full-width">
               <label class="section-label"><i class="mdi mdi-note-text-outline"></i>특이사항 및 메모</label>

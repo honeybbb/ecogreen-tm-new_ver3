@@ -66,6 +66,8 @@ const site = ref({
   managerContact: '',
   director: '',
   directorContact: '',
+  billingManager: '',
+  payrollManager: '',
   memo: '',
   status: '준비 중',
   payment_day: '',
@@ -686,6 +688,8 @@ const getSiteData = async () => {
       managerContact: result.phone,
       director:       result.director,
       directorContact:result.director_phone,
+      billingManager: result.billingManager,
+      payrollManager: result.payrollManager,
       payment_day:    result.payment_day,
       zipcode:        result.zipcode || '',
     };
@@ -799,6 +803,8 @@ const saveSiteData = async () => {
       phone:            site.value.managerContact,
       director:         site.value.director,
       directorContact:  site.value.directorContact,
+      billingManager:   site.value.billingManager,
+      payrollManager:   site.value.payrollManager,
       bigo:             site.value.bigo,
       contract_details: JSON.stringify(contractGroups.value),
       viewConfig:       JSON.stringify(settlementConfig.value),
@@ -1090,6 +1096,14 @@ onMounted(async () => {
               <div class="info-item">
                 <label>관리 소장 연락처</label>
                 <input type="tel" v-model="site.directorContact" class="info-input" />
+              </div>
+              <div class="info-item" style="grid-column: 1;">
+                <label>청구 담당자</label>
+                <input type="text" v-model="site.billingManager" class="info-input" />
+              </div>
+              <div class="info-item">
+                <label>급여 담당자</label>
+                <input type="text" v-model="site.payrollManager" class="info-input" />
               </div>
             </div>
           </div>
