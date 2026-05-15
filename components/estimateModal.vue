@@ -197,6 +197,23 @@ const updateSummary = () => {
   if (typeNm) formData.value.summary = `연차 및 퇴직수당 정산요청의 건(${typeNm})`;
 };
 
+const updateDocNo = () => {
+  // 시행일자(billingDt)가 기준이 됩니다.
+  const targetDate = formData.value.billingDt;
+
+  if (targetDate && formData.value.sIdx) {
+    const [year, month] = targetDate.split('-');
+    if (year && month) {
+      // 예: 에코그린 2026-02-39호
+      formData.value.docNo = `에코그린 ${year}-${month.padStart(2, '0')}-${formData.value.sIdx}호`;
+    }
+  }
+};
+
+// 현장이나 시행일자가 변경될 때마다 자동으로 문서번호 업데이트
+watch(() => formData.value.sIdx, updateDocNo);
+watch(() => formData.value.billingDt, updateDocNo);
+
 // 연차 정산 기간 (입사일 ~ 청구일) 및 산출근거 로직
 const onPositionChange = (item, type) => {
   if (!item.position) return;
@@ -274,9 +291,17 @@ onMounted(async () => {
           <span class="badge">{{ formData.siteName || '현장 미지정' }}</span>
         </div>
         <div class="header-actions">
-          <button class="btn-excel" @click="exportToExcel"><i class="mdi mdi-microsoft-excel"></i><span>엑셀 저장</span></button>
-          <button class="btn-save" @click="handleSave" :disabled="isSaving"><i class="mdi mdi-content-save"></i><span>{{ isSaving ? '저장 중...' : '저장하기' }}</span></button>
-          <button class="btn-close" @click="closeModal"><i class="mdi mdi-close"></i></button>
+          <button class="btn-excel" @click="exportToExcel">
+            <i class="mdi mdi-microsoft-excel"></i>
+            <span>엑셀 저장</span>
+          </button>
+          <button class="btn-save" @click="handleSave" :disabled="isSaving">
+            <i class="mdi mdi-content-save"></i>
+            <span>{{ isSaving ? '저장 중...' : '저장하기' }}</span>
+          </button>
+          <button class="btn-close" @click="closeModal">
+            <i class="mdi mdi-close"></i>
+          </button>
         </div>
       </div>
 
@@ -297,8 +322,14 @@ onMounted(async () => {
                 <option v-for="tp in typeOptions" :key="tp.itemCd" :value="tp.itemCd">{{ tp.itemNm }}</option>
               </select>
             </div>
-            <div class="form-group"><label>문서번호</label><input type="text" v-model="formData.docNo" class="form-input" placeholder="예: 에코그린 2026-02-39호" /></div>
-            <div class="form-group"><label>시행일자</label><input type="date" v-model="formData.billingDt" class="form-input" /></div>
+            <div class="form-group">
+              <label>문서번호</label>
+              <input type="text" v-model="formData.docNo" class="form-input bg-gray" placeholder="현장과 시행일자를 선택하면 자동 생성됩니다" />
+            </div>
+            <div class="form-group">
+              <label>시행일자</label>
+              <input type="date" v-model="formData.billingDt" class="form-input" />
+            </div>
           </div>
 
           <div class="doc-message">
@@ -321,21 +352,77 @@ onMounted(async () => {
             </div>
             <div class="table-scroll-wrapper">
               <table class="excel-table statement-table">
+                <colgroup>
+                  <col width="3%">
+                  <col width="10%">
+                  <col width="10%">
+                  <col width="12%">
+                  <col width="12%">
+                  <col width="12%">
+                  <col width="12%">
+                  <col width="15%">
+                  <col width="*%">
+                  <col width="12%">
+                  <col width="4%">
+                </colgroup>
                 <thead>
-                <tr><th rowspan="2" style="width:20px;">NO</th><th colspan="8">내역</th><th rowspan="2" style="min-width:120px;">금액 (원)</th><th rowspan="2" style="min-width:140px;">비고</th><th rowspan="2" style="width:20px;"></th></tr>
-                <tr><th style="min-width:70px;">이름</th><th style="min-width:70px;">직책</th><th style="min-width:80px;">생년월일</th><th style="min-width:100px;">입사일</th><th style="min-width:100px;">퇴사일</th><th style="min-width:100px;">중간정산일</th><th style="min-width:130px;">정산기간</th><th style="min-width:180px;">산출근거</th></tr>
+                <tr>
+                  <th rowspan="2">NO</th>
+                  <th colspan="8">내역</th>
+                  <th rowspan="2">금액 (원)</th>
+                  <th rowspan="2">비고</th>
+                  <th rowspan="2"></th>
+                </tr>
+                <tr>
+                  <th>이름</th>
+                  <th>직책</th>
+                  <th>생년월일</th>
+                  <th>입사일</th>
+                  <th>퇴사일</th>
+                  <th>중간정산일</th>
+                  <th>정산기간</th>
+                  <th>산출근거</th>
+                </tr>
                 </thead>
                 <tbody>
                 <tr v-for="(item, index) in formData.annualItems" :key="'annual-' + index">
                   <td class="text-center font-bold text-gray">{{ index + 1 }}</td>
                   <td class="search-container">
-                    <input type="text" v-model="item.empName" @input="searchState={index, type:'ANNUAL'}" @focus="searchState={index, type:'ANNUAL'}" class="cell-input text-center" placeholder="이름" />
-                    <div v-if="searchState.index === index && searchState.type === 'ANNUAL' && getFilteredEmployees(item.empName).length > 0" class="search-dropdown">
-                      <ul><li v-for="emp in getFilteredEmployees(item.empName)" :key="emp.idx" @click="selectEmployee(item, emp, 'ANNUAL')"><strong>{{ emp.staff }}</strong> | {{ emp.role }} ({{ emp.inDate }})</li></ul>
+                    <input
+                        type="text"
+                        v-model="item.empName"
+                        @input="searchState={index, type:'ANNUAL'}"
+                        @focus="searchState={index, type:'ANNUAL'}"
+                        class="cell-input text-center"
+                        placeholder="이름"
+                    />
+                    <div
+                        v-if="
+                          searchState.index === index &&
+                          searchState.type === 'ANNUAL' &&
+                          getFilteredEmployees(item.empName).length > 0"
+                        class="search-dropdown"
+                    >
+                      <ul>
+                        <li
+                            v-for="emp in getFilteredEmployees(item.empName)"
+                            :key="emp.idx" @click="selectEmployee(item, emp, 'ANNUAL')"
+                        >
+                          <strong>{{ emp.staff }}</strong> | {{ emp.role }} ({{ emp.inDate }})
+                        </li>
+                      </ul>
                     </div>
                   </td>
                   <td>
-                    <select v-if="staffNames.length > 0" v-model="item.position" class="cell-input text-center" @change="onPositionChange(item, 'ANNUAL')"><option value="">선택</option><option v-for="name in staffNames" :key="name" :value="name">{{ name }}</option></select>
+                    <select
+                        v-if="staffNames.length > 0"
+                        v-model="item.position"
+                        class="cell-input text-center"
+                        @change="onPositionChange(item, 'ANNUAL')"
+                    >
+                      <option value="">선택</option>
+                      <option v-for="name in staffNames" :key="name" :value="name">{{ name }}</option>
+                    </select>
                     <input v-else type="text" v-model="item.position" class="cell-input text-center" />
                   </td>
                   <td><input type="text" v-model="item.birthDt" class="cell-input text-center" /></td>
@@ -344,12 +431,29 @@ onMounted(async () => {
                   <td><input type="text" v-model="item.middleDt" class="cell-input text-center" /></td>
                   <td><input type="text" v-model="item.period" class="cell-input text-center" /></td>
                   <td><input type="text" v-model="item.basis" class="cell-input" /></td>
-                  <td><input type="text" :value="fc(item.amount)" @input="item.amount = Number($event.target.value.replace(/,/g,'')) || 0" class="cell-input text-right font-bold text-blue" /></td>
+                  <td>
+                    <input
+                        type="text"
+                        :value="fc(item.amount)"
+                        @input="item.amount = Number($event.target.value.replace(/,/g,'')) || 0"
+                        class="cell-input text-right font-bold text-blue"
+                    />
+                  </td>
                   <td><input type="text" v-model="item.note" class="cell-input" /></td>
-                  <td class="text-center"><button class="btn-delete-row" @click="removeRow('ANNUAL', index)"><i class="mdi mdi-minus"></i></button></td>
+                  <td class="text-center">
+                    <button class="btn-delete-row" @click="removeRow('ANNUAL', index)">
+                      <i class="mdi mdi-minus"></i>
+                    </button>
+                  </td>
                 </tr>
                 </tbody>
-                <tfoot><tr class="tfoot-total"><td colspan="9" class="text-center">연차수당 소계</td><td class="text-right text-blue font-bold">{{ fc(annualTotal) }}</td><td colspan="2"></td></tr></tfoot>
+                <tfoot>
+                <tr class="tfoot-total">
+                  <td colspan="9" class="text-center">연차수당 소계</td>
+                  <td class="text-right text-blue font-bold">{{ fc(annualTotal) }}</td>
+                  <td colspan="2"></td>
+                </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -357,20 +461,48 @@ onMounted(async () => {
           <div v-if="hasRetire" class="table-section mt-5">
             <div class="table-actions">
               <h4><i class="mdi mdi-account-cash text-orange"></i> 퇴직수당 정산 내역</h4>
-              <div class="action-group"><button class="btn-add-row btn-add-retire" @click="addRow('RETIRE')"><i class="mdi mdi-plus-thick"></i> 직원 추가</button><button class="btn-delete-table" @click="toggleTable('RETIRE', 'remove')"><i class="mdi mdi-close"></i> 표 삭제</button></div>
+              <div class="action-group">
+                <button class="btn-add-row btn-add-retire" @click="addRow('RETIRE')">
+                  <i class="mdi mdi-plus-thick"></i> 직원 추가
+                </button>
+                <button class="btn-delete-table" @click="toggleTable('RETIRE', 'remove')">
+                  <i class="mdi mdi-close"></i> 표 삭제</button>
+              </div>
             </div>
             <div class="table-scroll-wrapper">
               <table class="excel-table statement-table">
+                <colgroup>
+                  <col width="3%">
+                  <col width="10%">
+                  <col width="8%">
+                  <col width="10%">
+                  <col width="10%">
+                  <col width="10%">
+                  <col width="10%">
+                  <col width="15%">
+                  <col width="*%">
+                  <col width="10%">
+                  <col width="10%">
+                  <col width="4%">
+                </colgroup>
                 <thead>
                 <tr>
-                  <th rowspan="2" style="width:20px;">NO</th>
-                  <th rowspan="2" style="width:90px;">방식</th>
+                  <th rowspan="2">NO</th>
+                  <th rowspan="2">방식</th>
                   <th colspan="7">내역</th>
-                  <th rowspan="2" style="min-width:120px;">금액 (원)</th>
-                  <th rowspan="2" style="min-width:140px;">비고</th>
-                  <th rowspan="2" style="width:20px;"></th>
+                  <th rowspan="2">금액 (원)</th>
+                  <th rowspan="2">비고</th>
+                  <th rowspan="2"></th>
                 </tr>
-                <tr><th style="min-width:70px;">이름</th><th style="min-width:70px;">직책</th><th style="min-width:80px;">생년월일</th><th style="min-width:100px;">입사일</th><th style="min-width:100px;">퇴사일</th><th style="min-width:110px;">정산기간</th><th style="min-width:180px;">산출근거</th></tr>
+                <tr>
+                  <th>이름</th>
+                  <th>직책</th>
+                  <th>생년월일</th>
+                  <th>입사일</th>
+                  <th>퇴사일</th>
+                  <th>정산기간</th>
+                  <th>산출근거</th>
+                </tr>
                 </thead>
                 <tbody>
                 <tr v-for="(item, index) in formData.retireItems" :key="'retire-' + index">
@@ -458,7 +590,7 @@ onMounted(async () => {
 .btn-outline-primary:hover { background: var(--primary-soft); }
 .btn-outline-warning { border: 1px solid #f59e0b; color: #d97706; background: transparent; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 14px; }
 .btn-outline-warning:hover { background: #fef3c7; }
-.table-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.table-actions { display: flex; justify-content: space-between; align-items: center; margin: 12px 0; }
 .table-actions h4 { margin: 0; font-size: 16px; color: var(--text-main); display: flex; align-items: center; gap: 6px; font-weight: 700; }
 .action-group { display: flex; gap: 8px; }
 .btn-add-row { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; background: var(--success); color: var(--text-inverse); border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; transition: 0.2s; }

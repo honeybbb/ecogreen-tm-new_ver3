@@ -20,7 +20,7 @@ const vatOptions = ref([
   { label: '과세', value: 'Y' },
   { label: '면세', value: 'N' }
 ]);
-const billingManager = ref([])
+const billingManager = ref([]);
 
 // 2. 정렬 관련 상태
 const sortKey = ref('idx');
