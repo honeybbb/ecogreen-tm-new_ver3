@@ -24,7 +24,8 @@ const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
-const selectedPaymentDay = ref('전체');
+const selectedPaymentDay = ref('');
+const selectedPayHistory = ref(''); // "2025-04-10" 형태
 
 const items = ref([]);
 const payrollList = ref([]);
@@ -46,8 +47,14 @@ const currentPage = ref(1);
 const pageSize    = ref(50);
 const pageSizeOptions = [50, 100, 200, 500];
 
-watch([selectedSite, selectedType, searchTerm, selectedYearMonth, selectedPaymentDay], () => {
-  currentPage.value = 1;
+watch([
+  selectedSite,
+  selectedType,
+  searchTerm,
+  selectedYearMonth,
+  selectedPaymentDay,
+  selectedPayHistory], () => {
+    currentPage.value = 1;
 });
 
 // 2. 동적 컬럼
@@ -60,7 +67,13 @@ const filteredPayrollList = computed(() => {
       (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
       (selectedType.value === '전체' || p.type === selectedType.value) &&
       (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
-      (selectedPaymentDay.value === '전체' || String(p.payment_day) === selectedPaymentDay.value) &&
+      (selectedPaymentDay.value === '' || String(p.payment_day) === String(Number(selectedPaymentDay.value.split('-')[2]))) &&
+      (selectedPayHistory.value === '' || (() => {
+        const [y, m, d] = selectedPayHistory.value.split('-');
+        return String(p.year) === y
+            && String(p.month) === String(Number(m))
+            && String(p.payment_day) === String(Number(d));
+      })()) &&
       p.staff.toLowerCase().includes(searchTerm.value.toLowerCase())
   );
 
@@ -97,6 +110,28 @@ const filteredPayrollList = computed(() => {
   });
 
   return filtered;
+});
+
+// 저장 완료된 지급내역 옵션 목록
+const payHistoryOptions = computed(() => {
+  const seen = new Set();
+  const options = [];
+  const [year, month] = selectedYearMonth.value.split('-'); // ← 여기서 가져오기
+
+  payrollList.value.forEach(p => {
+    if (p.status == 1 && p.payment_day != null) {
+      const key = `${year}-${month}-${String(p.payment_day).padStart(2,'0')}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        options.push({
+          value: key,
+          label: `${year}년 ${month}월 ${Number(p.payment_day)}일 지급분`
+        });
+      }
+    }
+  });
+
+  return options.sort((a, b) => a.value.localeCompare(b.value));
 });
 
 // ── 컬럼 리사이즈 ─────────────────────────────────
@@ -288,6 +323,7 @@ const fetchCalculatedPay = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
   if (selectedRows.length === 0) { alert('급여를 계산할 직원을 체크해주세요.'); return; }
   if (!selectedYearMonth.value)  { alert('급여 연월을 선택해주세요.'); return; }
+  if (selectedPaymentDay.value == '') { alert('지급일을 선택해주세요.'); return; }
   if (items.value.length === 0) await getWageCode();
   isLoading.value = true;
   try {
@@ -1120,15 +1156,23 @@ onMounted(async () => {
         </div>
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-cash-calendar"></i> 지급일
+            <i class="mdi mdi-account-cash"></i> 지급일
           </label>
-          <select v-model="selectedPaymentDay" class="filter-select">
-            <option value="전체">전체</option>
-            <option v-for="day in paymentDayOptions" :key="day" :value="day">
-              {{ day }}일
+          <input type="date" v-model="selectedPaymentDay" class="filter-select" />
+        </div>
+
+        <!--div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-cash-check"></i> 지급내역
+          </label>
+          <select v-model="selectedPayHistory" class="filter-select">
+            <option value="">전체</option>
+            <option v-for="opt in payHistoryOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
             </option>
           </select>
-        </div>
+        </div-->
+
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 근무 현장</label>
           <SiteSelect v-model="selectedSite" />
