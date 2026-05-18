@@ -368,6 +368,8 @@ const getDisplayMonthlyTotal = (g) => {
 };
 
 const createDefaultCostBreakdown = (staffList = []) => ({
+  dailyWorkHours: makeValuesObj(staffList, 0), //일근로시간
+  monthlyWorkHours: makeValuesObj(staffList, 0),  //월근로시간
   directLabor: [
     { label: '기본급',         values: makeValuesObj(staffList) },
     { label: '야간근로수당',    values: makeValuesObj(staffList) },
@@ -408,7 +410,7 @@ const syncCostBreakdownToStaff = (group) => {
     });
   });
 
-  ['managementFee', 'profit'].forEach(key => {
+  ['managementFee', 'profit', 'dailyWorkHours', 'monthlyWorkHours'].forEach(key => {
     if (!group.costBreakdown[key]) group.costBreakdown[key] = {};
     currentCodes.forEach(code => {
       if (!(code in group.costBreakdown[key])) group.costBreakdown[key][code] = 0;
@@ -501,7 +503,7 @@ const addContractGroup = (category) => {
     workSchedule: '',
     breakTime: '',
     staffList: [],
-    isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
+    // isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
     costBreakdown: createDefaultCostBreakdown([]),
     showCostBreakdown: false,
   });
@@ -550,7 +552,7 @@ const settlementConfig = ref({
   activePayLabels: [],
   // 간접노무비(공제항목) 표시 여부 (label 배열)
   activeDeductionLabels: [],
-  isAutoCalcDefault: true,
+  // isAutoCalcDefault: true,
   // Melt Options — 공제 계산 베이스에 포함 여부
   meltOptions: {
     annualLeave: false,
@@ -704,7 +706,7 @@ const getSiteData = async () => {
         settlementConfig.value = {
           activePayLabels:       parsed.activePayLabels       ?? [],
           activeDeductionLabels: parsed.activeDeductionLabels ?? [],
-          isAutoCalcDefault:     parsed.isAutoCalcDefault     ?? true,
+          // isAutoCalcDefault:     parsed.isAutoCalcDefault     ?? true,
           meltOptions: {
             annualLeave: parsed.meltOptions?.annualLeave ?? false,
             severance:   parsed.meltOptions?.severance   ?? false,
@@ -730,6 +732,12 @@ const getSiteData = async () => {
           showSchedule: false
         }));
 
+        // costBreakdown 조립 및 구버전 데이터 호환용 방어코드 추가
+        const costBreakdownData = item.costBreakdown || item.budget || createDefaultCostBreakdown(staffList);
+
+        if (!costBreakdownData.dailyWorkHours) costBreakdownData.dailyWorkHours = makeValuesObj(staffList, 0);
+        if (!costBreakdownData.monthlyWorkHours) costBreakdownData.monthlyWorkHours = makeValuesObj(staffList, 0);
+
         return {
           category:          item.category,
           type:              item.type,
@@ -740,9 +748,9 @@ const getSiteData = async () => {
           workDays:          item.workDays,
           workSchedule:      item.workSchedule,
           breakTime:         item.breaktime,
-          isAutoCalc:        item.isAutoCalc === 'N' ? 'N' : 'Y',
-          staffList:         staffList, // 맵핑된 리스트 대입
-          costBreakdown:     item.costBreakdown || item.budget || createDefaultCostBreakdown(staffList),
+          // isAutoCalc:        item.isAutoCalc === 'N' ? 'N' : 'Y',
+          staffList:         staffList,
+          costBreakdown:     costBreakdownData, // 방어코드 처리된 객체 주입
           showCostBreakdown: false,
         };
       });
@@ -1323,6 +1331,77 @@ onMounted(async () => {
                   </div>
                   <template v-else>
                     <div class="cost-scroll-area">
+                      <div class="cost-section-title">
+                        <span class="cost-block-label label-hours">⏱️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
+                      </div>
+
+                      <table class="cost-table hours-standalone-table">
+                        <thead>
+                        <tr>
+                          <th class="col-label">항목</th>
+                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                            <span class="staff-th-name">{{ staff.name }}</span>
+                            <span class="staff-th-count">({{ staff.count }}명)</span>
+                          </th>
+                          <th class="col-rowtotal-head">행합계</th>
+                          <th class="col-bigo">산출내역 / 근거</th>
+                          <th class="col-action"></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr>
+                          <td class="hours-label-cell">
+              <span class="summary-label">
+                <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
+              </span>
+                          </td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                v-model.number="group.costBreakdown.dailyWorkHours[staff.code]"
+                                @focus="$event.target.select()"
+                                class="tbl-value-input text-right hours-input"
+                                placeholder="0"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
+                          <td>
+                            <input type="text" class="tbl-value-input" v-model="group.costBreakdown.dailyHoursBigo" placeholder="예: 휴게 1시간 제외" />
+                          </td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td class="hours-label-cell">
+              <span class="summary-label">
+                <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
+              </span>
+                          </td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]"
+                                @focus="$event.target.select()"
+                                class="tbl-value-input text-right hours-input"
+                                placeholder="0"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
+                          <td>
+                            <input
+                                type="text"
+                                class="tbl-value-input"
+                                v-model="group.costBreakdown.monthlyHoursBigo"
+                                placeholder="예: 주 40시간 + 주휴"
+                            />
+                          </td>
+                          <td></td>
+                        </tr>
+                        </tbody>
+                      </table>
 
                       <!-- ══ 직접노무비 ══ -->
                       <div class="cost-section-title">
