@@ -24,6 +24,7 @@ const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
+const selectedBilling = ref('전체');
 const selectedPaymentDay = ref('');
 const selectedPayHistory = ref(''); // "2025-04-10" 형태
 
@@ -31,6 +32,7 @@ const items = ref([]);
 const payrollList = ref([]);
 const isLoading = ref(false);
 const dataMode = ref(''); // 'saved' | 'draft'
+const billingManager = ref([]);
 
 const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
 const ageLimits    = ref({ pension: 0, employment: 0 });
@@ -74,11 +76,12 @@ const filteredPayrollList = computed(() => {
             && String(p.month) === String(Number(m))
             && String(p.payment_day) === String(Number(d));
       })()) &&
+      (selectedBilling.value === '전체' || p.billingManager === selectedBilling.value) &&
       p.staff.toLowerCase().includes(searchTerm.value.toLowerCase())
   );
 
   filtered.sort((a, b) => {
-    // ★ 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
+    // 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
     if (sortKey.value) {
       const mod = sortOrder.value === 'asc' ? 1 : -1;
       const valA = a[sortKey.value] ?? '';
@@ -1065,6 +1068,15 @@ const getPayrollMonth = async function () {
           originalBasePay: undefined,
         }))
         : [];
+
+    const allBillingManagers = payrollList.value
+        .map(p => p.billingManager)
+        .filter(name => name && name.trim() !== ''); // 빈 값이나 null 제거
+
+    const uniqueManagers = [...new Set(allBillingManagers)]; // 중복 제거
+
+    // 드롭다운에서 사용할 수 있도록 배열 형태({ value: '이름' })로 변환
+    billingManager.value = uniqueManagers.map(name => ({ value: name }));
     currentPage.value = 1;
   } catch (e) { payrollList.value = []; }
 };
@@ -1087,9 +1099,9 @@ onMounted(async () => {
       <div class="header-left">
         <h1 class="page-title">
           <i class="mdi mdi-calculator-variant-outline"></i>
-          직원 급여 정산
+          직원 급여 계산
         </h1>
-        <p class="page-subtitle">계약 급여와 실제 근무일을 대조하여 정산을 진행합니다</p>
+        <p class="page-subtitle">계약 급여와 실제 근무일을 대조하여 계산을 진행합니다</p>
       </div>
       <div class="header-actions">
         <button @click="resetCalculatedPay" class="btn-refresh">
@@ -1159,6 +1171,18 @@ onMounted(async () => {
             <i class="mdi mdi-account-cash"></i> 지급일
           </label>
           <input type="date" v-model="selectedPaymentDay" class="filter-select" />
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-account-cash"></i> 청구 담당
+          </label>
+          <select v-model="selectedBilling" class="filter-select">
+            <option value="전체">전체</option>
+            <option v-for="b in billingManager" :key="b.value" :value="b.value">
+              {{ b.value }}
+            </option>
+          </select>
         </div>
 
         <!--div class="filter-group">
