@@ -17,6 +17,8 @@ const props = defineProps({
   initialData:  Object,
 });
 const emit = defineEmits(['close', 'save']);
+const contractDailyHours = ref({});
+const contractMonthlyHours = ref({});
 
 // ─────────────────────────────────────────────────────────────
 // [추가] 날짜 및 텍스트 포맷 유틸리티 (이미지 스타일 준수)
@@ -124,10 +126,20 @@ const fetchContractData = async () => {
     if (!siteData?.contractList) return;
     const parsed = typeof siteData.contractList === 'string' ? JSON.parse(siteData.contractList) : siteData.contractList;
     const target = parsed.find(c => c.type === type);
+
     if (target) {
       contractStaffList.value = Array.isArray(target.staffList) ? target.staffList : [];
-      contractDirectLabor.value = Array.isArray(target.budget?.directLabor) ? target.budget.directLabor : [];
-      contractIndirectLabor.value = Array.isArray(target.budget?.indirectLabor) ? target.budget.indirectLabor : [];
+
+      // budget 또는 costBreakdown 데이터 통합 추출
+      const cb = target.costBreakdown || target.budget || {};
+
+      // 일근로시간, 월근로시간 객체 바인딩 (없으면 빈 객체)
+      contractDailyHours.value = cb.dailyWorkHours || {};
+      contractMonthlyHours.value = cb.monthlyWorkHours || {};
+
+      // 기존 구조 호환 바인딩
+      contractDirectLabor.value = Array.isArray(cb.directLabor) ? cb.directLabor : (Array.isArray(target.budget?.directLabor) ? target.budget.directLabor : []);
+      contractIndirectLabor.value = Array.isArray(cb.indirectLabor) ? cb.indirectLabor : (Array.isArray(target.budget?.indirectLabor) ? target.budget.indirectLabor : []);
     }
   } catch (e) { console.error(e); } finally { isLoadingContract.value = false; }
 };
@@ -136,21 +148,47 @@ const staffNames = computed(() => contractStaffList.value.map(s => s.name));
 
 const getContractAmounts = (staffName) => {
   const staffObj = contractStaffList.value.find(s => s.name === staffName?.trim());
-  if (!staffObj) return { basePay: 0, annualLeave: 0, severance: 0 };
+  if (!staffObj) return {
+    basePay: 0,
+    annualLeave: 0,
+    severance: 0,
+    dailyHours: 8,
+    monthlyHours: 209
+  };
   const code = staffObj.code;
   const all = [...contractDirectLabor.value, ...contractIndirectLabor.value];
   const findVal = (key) => {
     const item = all.find(d => d.label === key || String(d.label).includes(key));
     return item?.values?.[code] ? Number(item.values[code]) : 0;
   };
-  return { basePay: findVal('04001001'), annualLeave: findVal('04003001'), severance: findVal('04003003') };
+
+  // 세팅된 시간 숫자로 변환 (값이 없거나 공백이면 표준 기본값 8, 209 적용)
+  const dailyHours = contractDailyHours.value[code] ? Number(contractDailyHours.value[code]) : 8;
+  const monthlyHours = contractMonthlyHours.value[code] ? Number(contractMonthlyHours.value[code]) : 209;
+
+  return {
+    basePay: findVal('04001001'),//기본급
+    annualLeave: findVal('04003001'),//연차적립금
+    severance: findVal('04003003'),//퇴직적립금
+    dailyHours,   //일 소정근로시간
+    monthlyHours  //월 소정근로시간
+  };
 };
 
 // ─────────────────────────────────────────────────────────────
 // 행 템플릿 및 초기화 - [원본 유지]
 // ─────────────────────────────────────────────────────────────
 const newItem = (type) => ({
-  itemType: type, empName: '', position: '', birthDt: '', joinDate: '', endDate: '', period: '', basis: '', amount: 0, note: '',
+  itemType: type,
+  empName: '',
+  position: '',
+  birthDt: '',
+  joinDate: '',
+  endDate: '',
+  period: '',
+  basis: '',
+  amount: 0,
+  note: '',
   calcMode: type === 'RETIRE' ? 'LEGAL' : 'NORMAL'
 });
 
@@ -158,9 +196,17 @@ const hasAnnual = ref(false);
 const hasRetire = ref(false);
 
 const formData = ref({
-  sIdx: '', siteName: '', type: '', target_month: '', docNo: '', billingDt: '',
-  summary: '연차 및 퇴직수당 정산요청의 건', bankInfo: '301-051564-01-017(기업은행, 예금주: 에코그린티엠)', attachment: '1. 전자 계산서',
-  annualItems: [newItem('ANNUAL')], retireItems: [newItem('RETIRE')],
+  sIdx: '',
+  siteName: '',
+  type: '',
+  target_month: '',
+  docNo: '',
+  billingDt: '',
+  summary: '연차 및 퇴직수당 정산요청의 건',
+  bankInfo: '301-051564-01-017(기업은행, 예금주: 에코그린티엠)',
+  attachment: '1. 전자 계산서',
+  annualItems: [newItem('ANNUAL')],
+  retireItems: [newItem('RETIRE')],
 });
 
 const initForm = () => {
@@ -175,9 +221,17 @@ const initForm = () => {
     hasAnnual.value = loadedAnnual.length > 0;
     hasRetire.value = loadedRetire.length > 0;
     formData.value = {
-      sIdx: src.sIdx || '', siteName: src.siteName || '', type: src.type || '', target_month: '', docNo: src.docNo || '', billingDt: src.billingDt || '',
-      summary: bd.summary || '연차 및 퇴직수당 정산요청의 건', bankInfo: bd.bankInfo || '301-051564-01-017(기업은행, 예금주: 에코그린티엠)', attachment: bd.attachment || '1. 전자 계산서',
-      annualItems: loadedAnnual.length > 0 ? loadedAnnual : [newItem('ANNUAL')], retireItems: loadedRetire.length > 0 ? loadedRetire : [newItem('RETIRE')],
+      sIdx: src.sIdx || '',
+      siteName: src.siteName || '',
+      type: src.type || '',
+      target_month: '',
+      docNo: src.docNo || '',
+      billingDt: src.billingDt || '',
+      summary: bd.summary || '연차 및 퇴직수당 정산요청의 건',
+      bankInfo: bd.bankInfo || '301-051564-01-017(기업은행, 예금주: 에코그린티엠)',
+      attachment: bd.attachment || '1. 전자 계산서',
+      annualItems: loadedAnnual.length > 0 ? loadedAnnual : [newItem('ANNUAL')],
+      retireItems: loadedRetire.length > 0 ? loadedRetire : [newItem('RETIRE')],
     };
     if (src.sIdx) { fetchContractData(); fetchAllEmployees(); }
   }
@@ -219,11 +273,17 @@ const onPositionChange = (item, type) => {
   if (!item.position) return;
   if (type === 'RETIRE') { onRetireCalc(item); }
   else {
-    const { basePay, annualLeave } = getContractAmounts(item.position);
-    item.amount = annualLeave;
-    // 이미지 스타일: 금액/209*8*15개
-    item.basis  = basePay > 0 ? `${fc(basePay)}/209*8*15개` : '';
-    // 기간 설정: 입사일 ~ 청구일자(billingDt)
+    const { basePay, dailyHours, monthlyHours } = getContractAmounts(item.position);
+
+    // 연차일수: item.annualDays가 있으면 사용, 없으면 기본 15개
+    const annualDays = Number(item.annualDays) || 15;
+
+    // 연차수당 = 기본급 / 월소정근로시간 * 일소정근로시간 * 연차일수
+    const rawAmount = basePay > 0 ? (basePay / monthlyHours) * dailyHours * annualDays : 0;
+    item.amount = Math.floor(rawAmount / 10) * 10;
+    item.basis  = basePay > 0 ? `${fc(basePay)}/${monthlyHours}*${dailyHours}*${annualDays}개` : '';
+
+    // 기간 설정
     if (item.joinDate && formData.value.billingDt) {
       item.period = `${toYYMMDD(item.joinDate)}~${toYYMMDD(formData.value.billingDt)}`;
     }
@@ -277,7 +337,10 @@ const fc = (v) => Number(v || 0).toLocaleString();
 const closeModal = () => emit('close');
 
 onMounted(async () => {
-  await Promise.all([fetchSiteOptions(), fetchTypeOptions()]);
+  await Promise.all([
+    fetchSiteOptions(),
+    fetchTypeOptions()
+  ]);
   window.addEventListener('click', (e) => { if (!e.target.closest('.search-container')) { searchState.value = { index: null, type: null }; } });
 });
 </script>
@@ -310,13 +373,16 @@ onMounted(async () => {
           <div class="doc-header text-center"><h1>청 구 공 문</h1></div>
 
           <div class="form-grid">
-            <div class="form-group"><label>현장 선택 <span class="text-red">*</span></label>
+            <div class="form-group">
+              <label>현장 선택 <span class="text-red">*</span>'
+              </label>
               <select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
                 <option value="" disabled>현장을 선택해주세요</option>
                 <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
               </select>
             </div>
-            <div class="form-group"><label>구분 (직종)</label>
+            <div class="form-group">
+              <label>구분 (직종)</label>
               <select v-model="formData.type" @change="handleTypeChange" class="form-select">
                 <option value="" disabled>직종 선택</option>
                 <option v-for="tp in typeOptions" :key="tp.itemCd" :value="tp.itemCd">{{ tp.itemNm }}</option>
@@ -353,17 +419,18 @@ onMounted(async () => {
             <div class="table-scroll-wrapper">
               <table class="excel-table statement-table">
                 <colgroup>
-                  <col width="3%">
-                  <col width="10%">
-                  <col width="10%">
-                  <col width="12%">
-                  <col width="12%">
-                  <col width="12%">
-                  <col width="12%">
-                  <col width="15%">
-                  <col width="*%">
-                  <col width="12%">
-                  <col width="4%">
+                  <col width="3%">   <!-- NO -->
+                  <col width="9%">   <!-- 이름 -->
+                  <col width="9%">   <!-- 직책 -->
+                  <col width="10%">  <!-- 생년월일 -->
+                  <col width="10%">  <!-- 입사일 -->
+                  <col width="10%">  <!-- 퇴사일 -->
+                  <col width="10%">  <!-- 중간정산일 -->
+                  <col width="11%">  <!-- 정산기간 -->
+                  <col width="*">    <!-- 산출근거 (나머지 공간 전부 차지) -->
+                  <col width="11%">  <!-- 금액 (원) -->
+                  <col width="10%">  <!-- 비고 -->
+                  <col width="4%">   <!-- 마이너스(삭제) 버튼 -->
                 </colgroup>
                 <thead>
                 <tr>
@@ -427,8 +494,8 @@ onMounted(async () => {
                   </td>
                   <td><input type="text" v-model="item.birthDt" class="cell-input text-center" /></td>
                   <td><input type="date" v-model="item.joinDate" @change="onPositionChange(item, 'ANNUAL')" class="cell-input text-center" /></td>
-                  <td><input type="text" v-model="item.endDate" class="cell-input text-center" /></td>
-                  <td><input type="text" v-model="item.middleDt" class="cell-input text-center" /></td>
+                  <td><input type="date" v-model="item.endDate" class="cell-input text-center" /></td>
+                  <td><input type="date" v-model="item.middleDt" class="cell-input text-center" /></td>
                   <td><input type="text" v-model="item.period" class="cell-input text-center" /></td>
                   <td><input type="text" v-model="item.basis" class="cell-input" /></td>
                   <td>
@@ -558,7 +625,7 @@ onMounted(async () => {
 <style scoped>
 /* ── [완벽 복구] 사용자님의 원본 CSS 스타일 100% 유지 ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
-.modal-container { background: var(--bg-surface); width: 100%; max-width: 1250px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
+.modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-shrink: 0; }
 .header-title { display: flex; align-items: center; gap: 10px; }
 .header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); }
