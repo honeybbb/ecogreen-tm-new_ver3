@@ -1031,7 +1031,7 @@ onMounted(async () => {
               <div class="info-item">
                 <label>연면적</label>
                 <div class="input-with-unit">
-                  <input type="number" v-model="site.areaGross" class="info-input text-right" placeholder="0" />
+                  <input type="number" step="any" v-model="site.areaGross" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
               </div>
@@ -1039,7 +1039,7 @@ onMounted(async () => {
               <div class="info-item">
                 <label>135㎡ 이하 (면세)</label>
                 <div class="input-with-unit">
-                  <input type="number" v-model="site.areaUnder" class="info-input text-right" placeholder="0" />
+                  <input type="number" step="any" v-model="site.areaUnder" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
               </div>
@@ -1047,7 +1047,7 @@ onMounted(async () => {
               <div class="info-item">
                 <label>135㎡ 초과 (과세)</label>
                 <div class="input-with-unit">
-                  <input type="number" v-model="site.areaOver" class="info-input text-right" placeholder="0" />
+                  <input type="number" step="any" v-model="site.areaOver" class="info-input text-right" placeholder="0" />
                   <span class="unit">㎡</span>
                 </div>
               </div>

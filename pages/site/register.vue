@@ -708,21 +708,21 @@ onMounted(() => {
             <div class="form-group">
               <label class="form-label"><i class="mdi mdi-domain"></i>연면적 (건축물 총면적)</label>
               <div style="position: relative;">
-                <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 이하 (면세 면적)</label>
               <div style="position: relative;">
-                <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 초과 (과세 면적)</label>
               <div style="position: relative;">
-                <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
