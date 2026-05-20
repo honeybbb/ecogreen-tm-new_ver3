@@ -268,6 +268,8 @@ watch(
 
       if (back && back.length >= 1) {
         const genderCode = back.substring(0, 1);
+        // 홀수면 M(남성), 짝수면 F(여성)
+        employee.value.gender = (genderCode % 2 !== 0) ? 'M' : 'F';
 
         if (['1', '2', '5', '6'].includes(genderCode)) {
           yearPrefix = '19';
