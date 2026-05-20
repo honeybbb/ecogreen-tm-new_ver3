@@ -26,6 +26,7 @@ const currentConfig = reactive({
   showGrossPay: true,
   showAnnualLeave: true,
   showSeverance: true,
+  showWorkersDay: true,
   showSanjae: true,
   activeDeductionCodes: [],
   summarySigns: {
@@ -39,7 +40,8 @@ const currentConfig = reactive({
 
 const meltOptions = reactive({
   annualLeave: false,
-  severance: false
+  severance: false,
+  workersDay: false,
 });
 
 const isInitializing = ref(false);
@@ -193,6 +195,7 @@ const fetchContractData = async () => {
         currentConfig.showGrossPay    = parsedConfig.showGrossPay ?? true;
         currentConfig.showAnnualLeave = parsedConfig.showAnnualLeave ?? true;
         currentConfig.showSeverance   = parsedConfig.showSeverance ?? true;
+        currentConfig.showWorkersDay   = parsedConfig.showWorkersDay ?? true;
         currentConfig.showSanjae      = parsedConfig.showSanjae ?? true;
 
         if (Array.isArray(parsedConfig.activeDeductionCodes) && parsedConfig.activeDeductionCodes.length > 0) {
@@ -202,6 +205,7 @@ const fetchContractData = async () => {
         if (parsedConfig.meltOptions) {
           meltOptions.annualLeave = parsedConfig.meltOptions.annualLeave ?? false;
           meltOptions.severance   = parsedConfig.meltOptions.severance ?? false;
+          meltOptions.workersDay   = parsedConfig.meltOptions.workersDay ?? false;
         }
       } catch (e) {
         console.error('현장 viewConfig 파싱 에러:', e);
@@ -321,6 +325,7 @@ const calculateRow = (row) => {
     let totalGross = Number(row.grossPay) || 0;
     if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
     if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
+    if (meltOptions.workersDay)   totalGross += Number(row.reserves?.workersDay)   || 0;
 
     row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
   }
@@ -335,6 +340,7 @@ const recalculateInsurances = (row) => {
   let calcBase = baseAmount;
   if (meltOptions.annualLeave) calcBase += Number(row.reserves.annualLeave) || 0;
   if (meltOptions.severance)   calcBase += Number(row.reserves.severance)   || 0;
+  if (meltOptions.workersDay)   calcBase += Number(row.reserves.workersDay)   || 0;
 
   const rates = insuranceRates.value;
 
@@ -384,7 +390,7 @@ const getInsuranceTotal = (row) => {
 };
 
 const onSalaryInput = (row) => {
-  if (meltOptions.annualLeave || meltOptions.severance) recalculateInsurances(row);
+  if (meltOptions.annualLeave || meltOptions.severance || meltOptions.workersDay) recalculateInsurances(row);
   calculateRow(row);
 };
 
@@ -640,6 +646,7 @@ const colspanForSummary = computed(() => {
   let cols = 6;
   if (currentConfig.showAnnualLeave) cols += 1;
   if (currentConfig.showSeverance) cols += 1;
+  if (currentConfig.showWorkersDay) cols += 1;
   if (currentConfig.showGrossPay) cols += 1;
   cols += visibleDeductionItems.value.length;
   if (visibleDeductionItems.value.some(item => item.itemNm.includes('고용보험'))) cols += 1;
@@ -737,6 +744,7 @@ const initForm = () => {
       currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
       meltOptions.annualLeave = false;
       meltOptions.severance = false;
+      meltOptions.workersDay = false;
     }
 
     delete data.viewConfig;
@@ -789,6 +797,7 @@ const initForm = () => {
     };
     meltOptions.annualLeave = false;
     meltOptions.severance = false;
+    meltOptions.workersDay = false;
   }
 };
 
@@ -826,9 +835,11 @@ const resetAll = () => {
 
   meltOptions.annualLeave = false;
   meltOptions.severance   = false;
+  meltOptions.workersDay   = false;
   currentConfig.showGrossPay    = true;
   currentConfig.showAnnualLeave = true;
   currentConfig.showSeverance   = true;
+  currentConfig.showWorkersDay  = true;
   currentConfig.showSanjae      = true;
   currentConfig.summarySigns    = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
   if (deductionItems.value.length > 0) {
@@ -1048,13 +1059,14 @@ const exportToExcel = async () => {
     // 컬럼 숨기기
     sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;  // H: 연차
     sheet.getColumn(9).hidden  = !currentConfig.showSeverance;    // I: 퇴직금
+    sheet.getColumn(10).hidden  = !currentConfig.showWorkersDay;    // J: 근로자의 날
     const activeCodes = currentConfig.activeDeductionCodes;
-    sheet.getColumn(10).hidden = !activeCodes.includes('04002003'); // J: 국민연금
-    sheet.getColumn(11).hidden = !activeCodes.includes('04002001'); // K: 건강보험
-    sheet.getColumn(12).hidden = !activeCodes.includes('04002002'); // L: 장기요양
-    sheet.getColumn(13).hidden = !activeCodes.includes('04002004'); // M: 실업급여
-    sheet.getColumn(14).hidden = !activeCodes.includes('04002004'); // N: 고용안정
-    sheet.getColumn(15).hidden = !currentConfig.showSanjae;         // O: 산재
+    sheet.getColumn(11).hidden = !activeCodes.includes('04002003'); // K: 국민연금
+    sheet.getColumn(12).hidden = !activeCodes.includes('04002001'); // L: 건강보험
+    sheet.getColumn(13).hidden = !activeCodes.includes('04002002'); // M: 장기요양
+    sheet.getColumn(14).hidden = !activeCodes.includes('04002004'); // N: 실업급여
+    sheet.getColumn(15).hidden = !activeCodes.includes('04002004'); // O: 고용안정
+    sheet.getColumn(16).hidden = !currentConfig.showSanjae;         // P: 산재
 
     const payrollData = formData.value.payrollData || [];
     const maxRows = 10; // 양식 고정 10행 (51~60)
@@ -1074,13 +1086,14 @@ const exportToExcel = async () => {
       row.getCell(7).value  = data.outDate    || ''; // G: 퇴사일
       row.getCell(8).value  = Number(data.reserves?.annualLeave)        || 0; // H
       row.getCell(9).value  = Number(data.reserves?.severance)          || 0; // I
-      row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0; // J: 국민
-      row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0; // K: 건강
-      row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0; // L: 장기
-      row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0; // M: 실업
-      row.getCell(14).value = Number(data.reserves?.empInsEmployer)     || 0; // N: 고용안정
-      row.getCell(15).value = Number(data.reserves?.sanjae)             || 0; // O: 산재
-      row.getCell(16).value = Number(getInsuranceTotal(data))            || 0; // P: 총계
+      row.getCell(9).value  = Number(data.reserves?.workersDay)          || 0; // J
+      row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0; // K: 국민
+      row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0; // L: 건강
+      row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0; // M: 장기
+      row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0; // N: 실업
+      row.getCell(14).value = Number(data.reserves?.empInsEmployer)     || 0; // O: 고용안정
+      row.getCell(15).value = Number(data.reserves?.sanjae)             || 0; // P: 산재
+      row.getCell(16).value = Number(getInsuranceTotal(data))            || 0; // Q: 총계
       for (let c = 8; c <= 16; c++) row.getCell(c).numFmt = '#,##0';
     }
 
@@ -1358,6 +1371,13 @@ onMounted(async () => {
                     <span class="slider round"></span>
                   </div>
                 </label>
+                <label class="melt-toggle">
+                  <span class="melt-label">근로자의날 수당</span>
+                  <div class="switch">
+                    <input type="checkbox" v-model="meltOptions.workersDay">
+                    <span class="slider round"></span>
+                  </div>
+                </label>
               </div>
 
               <button class="btn-load-data" @click="loadPayrollData">
@@ -1371,19 +1391,28 @@ onMounted(async () => {
           <div class="deduction-toggles">
             <span class="toggle-label"><i class="mdi mdi-filter-variant"></i> 표시 설정 :</span>
             <label class="toggle-checkbox main-toggle">
-              <input type="checkbox" v-model="currentConfig.showGrossPay" /> <span class="font-bold text-blue">급여(지급총액)</span>
+              <input type="checkbox" v-model="currentConfig.showGrossPay" />
+              <span class="font-bold text-blue">급여(지급총액)</span>
             </label>
             <label class="toggle-checkbox main-toggle">
-              <input type="checkbox" v-model="currentConfig.showAnnualLeave" /> <span class="font-bold" style="color: #b45309;">연차수당</span>
+              <input type="checkbox" v-model="currentConfig.showAnnualLeave" />
+              <span class="font-bold" style="color: #b45309;">연차수당</span>
             </label>
             <label class="toggle-checkbox main-toggle">
-              <input type="checkbox" v-model="currentConfig.showSeverance" /> <span class="font-bold" style="color: #b45309;">퇴직충당금</span>
+              <input type="checkbox" v-model="currentConfig.showSeverance" />
+              <span class="font-bold" style="color: #b45309;">퇴직충당금</span>
             </label>
             <label class="toggle-checkbox main-toggle">
-              <input type="checkbox" v-model="currentConfig.showSanjae" /> <span class="font-bold" style="color: #b45309;">산재보험</span>
+              <input type="checkbox" v-model="currentConfig.showSeverance" />
+              <span class="font-bold" style="color: #b45309;">근로자의 날 수당</span>
+            </label>
+            <label class="toggle-checkbox main-toggle">
+              <input type="checkbox" v-model="currentConfig.showSanjae" />
+              <span class="font-bold" style="color: #b45309;">산재보험</span>
             </label>
             <label v-for="item in deductionItems" :key="item.itemCd" class="toggle-checkbox">
-              <input type="checkbox" :value="item.itemCd" v-model="currentConfig.activeDeductionCodes" /> <span>{{ item.itemNm }}</span>
+              <input type="checkbox" :value="item.itemCd" v-model="currentConfig.activeDeductionCodes" />
+              <span>{{ item.itemNm }}</span>
             </label>
           </div>
 
@@ -1400,6 +1429,7 @@ onMounted(async () => {
 
                 <th v-if="currentConfig.showAnnualLeave" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:80px;">연차수당</th>
                 <th v-if="currentConfig.showSeverance" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:80px;">퇴직충당금</th>
+                <th v-if="currentConfig.showWorkersDay" rowspan="2" class="bg-yellow-light" style="width:80px;min-width:80px;">근로자의날수당</th>
                 <th v-if="currentConfig.showGrossPay" rowspan="2" class="bg-blue-light" style="width:80px;min-width:80px;">급여</th>
 
                 <template v-for="item in visibleDeductionItems" :key="'th1-'+item.itemCd">
@@ -1451,6 +1481,15 @@ onMounted(async () => {
                       :value="formatCurrency(row.reserves.severance)"
                       @focus="$event.target.select()"
                       @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')"
+                      class="cell-input text-right"
+                  />
+                </td>
+                <td v-if="currentConfig.showWorkersDay">
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.reserves.workersDay)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')"
                       class="cell-input text-right"
                   />
                 </td>

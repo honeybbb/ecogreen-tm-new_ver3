@@ -504,6 +504,11 @@ const addContractGroup = (category) => {
     isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
     costBreakdown: createDefaultCostBreakdown([]),
     showCostBreakdown: false,
+    meltOptions: {
+      annualLeave: false,
+      severance: false,
+      workersDay: false
+    }
   });
 };
 
@@ -520,20 +525,16 @@ const PAY_CONTROL_KEYWORDS = ['연차', '퇴직', '근로자의날'];
 
 // 산출내역서에서 동적으로 수집된 항목들 (제경비 제외)
 const dynamicSettlementItems = computed(() => {
-  const paySet = new Map();       // label → true (직접노무비 중 특수항목)
-  const deductionSet = new Map(); // label → true (간접노무비)
+  const paySet = new Map();
+  const deductionSet = new Map();
 
   contractGroups.value.forEach(group => {
     if (!group.costBreakdown) return;
-
-    // 직접노무비 중 특수 지급항목 추출
     (group.costBreakdown.directLabor || []).forEach(item => {
       if (!item.label) return;
       const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label.includes(kw));
       if (isSpecial) paySet.set(item.label, true);
     });
-
-    // 간접노무비 전체
     (group.costBreakdown.indirectLabor || []).forEach(item => {
       if (item.label) deductionSet.set(item.label, true);
     });
@@ -551,34 +552,97 @@ const settlementConfig = ref({
   // 간접노무비(공제항목) 표시 여부 (label 배열)
   activeDeductionLabels: [],
   isAutoCalcDefault: true,
-  // Melt Options — 공제 계산 베이스에 포함 여부
-  meltOptions: {
-    annualLeave: false,
-    severance: false,
-    workersDay: false // ★ 근로자의 날 수당 포함 옵션
-  }
 });
 
 // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
 watch(dynamicSettlementItems, (newItems) => {
-  // 지급항목 자동 체크
   newItems.payItems.forEach(label => {
     if (!settlementConfig.value.activePayLabels.includes(label)) {
       settlementConfig.value.activePayLabels.push(label);
     }
   });
-  settlementConfig.value.activePayLabels =
-      settlementConfig.value.activePayLabels.filter(l => newItems.payItems.includes(l));
-
-  // 공제항목 자동 체크
   newItems.deductionItems.forEach(label => {
     if (!settlementConfig.value.activeDeductionLabels.includes(label)) {
       settlementConfig.value.activeDeductionLabels.push(label);
     }
   });
-  settlementConfig.value.activeDeductionLabels =
-      settlementConfig.value.activeDeductionLabels.filter(l => newItems.deductionItems.includes(l));
 }, { deep: true });
+
+// =============================================
+// 양식 설정 로직
+// =============================================
+const searchAvailable = ref('');
+const searchSelected  = ref('');
+const selectedAvailItems = ref([]);
+const selectedRightItems = ref([]);
+
+// 사용 가능한 전체 항목 (산출내역서에 있는 항목 + DB 표준 임금 항목 전체)
+const allAvailableItems = computed(() => {
+  const dynamic = [...dynamicSettlementItems.value.payItems, ...dynamicSettlementItems.value.deductionItems];
+  const standard = (wagesData.value || []).map(w => w.itemNm); // 표준 공통 항목
+  return Array.from(new Set([...dynamic, ...standard]));       // 중복 제거
+});
+
+// 현재 선택 설정된 항목
+const unifiedSelectedItems = computed(() => {
+  return [...settlementConfig.value.activePayLabels, ...settlementConfig.value.activeDeductionLabels];
+});
+
+// 리스트 필터링 (검색어 + 이미 선택된 항목 제외)
+const filteredAvailable = computed(() => {
+  return allAvailableItems.value
+      .filter(item => !unifiedSelectedItems.value.includes(item))
+      .filter(item => item.includes(searchAvailable.value));
+});
+
+const filteredSelected = computed(() => {
+  return unifiedSelectedItems.value.filter(item => {
+    console.log(item, unifiedSelectedItems.value)
+    return item.includes(searchSelected.value)
+  });
+});
+
+// 클릭 시 다중 선택 토글
+const toggleAvail = (item) => {
+  const idx = selectedAvailItems.value.indexOf(item);
+  if (idx > -1) selectedAvailItems.value.splice(idx, 1);
+  else selectedAvailItems.value.push(item);
+};
+
+const toggleRight = (item) => {
+  const idx = selectedRightItems.value.indexOf(item);
+  if (idx > -1) selectedRightItems.value.splice(idx, 1);
+  else selectedRightItems.value.push(item);
+};
+
+// 항목 속성 판별 (지급인지 공제인지)
+const isPayItem = (label) => {
+  if (dynamicSettlementItems.value.payItems.includes(label)) return true;
+  return PAY_CONTROL_KEYWORDS.some(kw => label.includes(kw));
+};
+
+// 이동 버튼 로직
+const moveToRight = () => {
+  selectedAvailItems.value.forEach(item => {
+    if (isPayItem(item)) {
+      if (!settlementConfig.value.activePayLabels.includes(item)) settlementConfig.value.activePayLabels.push(item);
+    } else {
+      if (!settlementConfig.value.activeDeductionLabels.includes(item)) settlementConfig.value.activeDeductionLabels.push(item);
+    }
+  });
+  selectedAvailItems.value = [];
+};
+
+const moveToLeft = () => {
+  selectedRightItems.value.forEach(item => {
+    const pIdx = settlementConfig.value.activePayLabels.indexOf(item);
+    if (pIdx > -1) settlementConfig.value.activePayLabels.splice(pIdx, 1);
+
+    const dIdx = settlementConfig.value.activeDeductionLabels.indexOf(item);
+    if (dIdx > -1) settlementConfig.value.activeDeductionLabels.splice(dIdx, 1);
+  });
+  selectedRightItems.value = [];
+};
 
 // =============================================
 // 데이터 로드 / 저장 / 삭제
@@ -601,7 +665,11 @@ const fetchAssignedStaff = async () => {
 const totalArea = computed(() => {
   const under = Number(site.value.areaUnder) || 0;
   const over = Number(site.value.areaOver) || 0;
-  return Math.round((under + over) * 100) / 100;
+  const sum = under + over;
+
+  // 1. 소수점 4자리까지 반올림하여 오차 제거
+  // 2. 결과는 Number 타입이므로, 10.2200 대신 10.22가 됨
+  return Math.round(sum * 10000) / 10000;
 });
 
 const isVatSite = computed(() => Number(site.value.areaOver) > 0);
@@ -694,6 +762,8 @@ const getSiteData = async () => {
       zipcode:        result.zipcode || '',
     };
 
+    let fallbackMeltOptions = { annualLeave: false, severance: false, workersDay: false };
+
     // viewConfig 불러오기 (getSiteData 내부)
     if (result.viewConfig) {
       try {
@@ -705,12 +775,9 @@ const getSiteData = async () => {
           activePayLabels:       parsed.activePayLabels       ?? [],
           activeDeductionLabels: parsed.activeDeductionLabels ?? [],
           isAutoCalcDefault:     parsed.isAutoCalcDefault     ?? true,
-          meltOptions: {
-            annualLeave: parsed.meltOptions?.annualLeave ?? false,
-            severance:   parsed.meltOptions?.severance   ?? false,
-            workersDay:  parsed.meltOptions?.workersDay  ?? false
-          }
         };
+
+        if (parsed.meltOptions) fallbackMeltOptions = parsed.meltOptions;
       } catch(e) { console.error('viewConfig 파싱 에러:', e); }
     }
 
@@ -744,6 +811,7 @@ const getSiteData = async () => {
           staffList:         staffList, // 맵핑된 리스트 대입
           costBreakdown:     item.costBreakdown || item.budget || createDefaultCostBreakdown(staffList),
           showCostBreakdown: false,
+          meltOptions: item.meltOptions || { ...fallbackMeltOptions }
         };
       });
     }
@@ -1159,23 +1227,33 @@ onMounted(async () => {
                 <span :class="['contract-badge', `badge-${group.category}`]">
                   <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
                 </span>
-                <!--div class="contract-calc-switch-wrap">
-                  <label class="switch-sm" :class="{'disabled': !isEditing}">
-                    <input type="checkbox"
-                           v-model="group.isAutoCalc"
-                           true-value="Y"
-                           false-value="N"
-                           :disabled="!isEditing" />
-                    <span class="slider-sm round"></span>
-                  </label>
-                  <span class="calc-label" :class="{'text-primary': group.isAutoCalc === 'Y'}">
-                    {{ group.isAutoCalc === 'Y' ? '법정요율 자동계산' : '산출내역 금액고정' }}
-                  </span>
-                </div-->
-
                 <span v-if="getContractDuration(group)" class="contract-duration">
                   <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
                 </span>
+              </div>
+
+              <div class="contract-header-options">
+                <div class="header-melt-option">
+                  <span>연차 수당 포함</span>
+                  <label class="switch-xs">
+                    <input type="checkbox" v-model="group.meltOptions.annualLeave" />
+                    <span class="slider-xs round"></span>
+                  </label>
+                </div>
+                <div class="header-melt-option">
+                  <span>퇴직 수당 포함</span>
+                  <label class="switch-xs">
+                    <input type="checkbox" v-model="group.meltOptions.severance" />
+                    <span class="slider-xs round"></span>
+                  </label>
+                </div>
+                <div class="header-melt-option">
+                  <span>근로자의날 수당 포함</span>
+                  <label class="switch-xs">
+                    <input type="checkbox" v-model="group.meltOptions.workersDay" />
+                    <span class="slider-xs round"></span>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -1201,7 +1279,9 @@ onMounted(async () => {
 
               <!-- 인원 구성 -->
               <div class="staff-info-grid">
-                <label class="section-label"><i class="mdi mdi-account-group-outline"></i>인원 구성 및 스케줄</label>
+                <label class="section-label">
+                  <i class="mdi mdi-account-group-outline"></i>인원 구성 및 스케줄
+                </label>
 
                 <div class="staff-input-group">
                   <select v-model="group.tempJobCode" class="info-select staff-position-select">
@@ -1666,108 +1746,77 @@ onMounted(async () => {
       <!-- 정산정보 탭 -->
       <div v-show="activeTab === 'settlement'" class="tab-panel">
         <div class="info-sections">
-          <div class="info-section">
-            <div class="section-header">
-              <i class="mdi mdi-calculator-variant"></i>
-              <h3>공제 계산 시 포함 (Melt Options)</h3>
-            </div>
-            <p class="info-helper-text" style="margin-bottom:20px;">
-              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금 등을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
-              * 정산서 모달을 열 때마다 여기서 설정한 값이 기본으로 적용됩니다.
-            </p>
-
-            <div class="config-toggle-wrapper">
-              <label class="config-toggle-item">
-                <span class="font-bold text-red">연차수당 포함</span>
-                <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.annualLeave" />
-                  <span class="slider round"></span>
-                </div>
-              </label>
-
-              <label class="config-toggle-item">
-                <span class="font-bold text-red">퇴직충당금 포함</span>
-                <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.severance" />
-                  <span class="slider round"></span>
-                </div>
-              </label>
-
-              <label class="config-toggle-item">
-                <span class="font-bold text-red">근로자의날수당 포함</span>
-                <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.workersDay"  />
-                  <span class="slider round"></span>
-                </div>
-              </label>
-            </div>
-          </div>
 
           <div class="info-section">
             <div class="section-header">
-              <i class="mdi mdi-filter-variant"></i>
-              <h3>정산 세부내역서 표시 항목 설정</h3>
+              <i class="mdi mdi-table-arrow-down"></i>
+              <h3>정산서 양식 관리</h3>
             </div>
             <p class="info-helper-text" style="margin-bottom:20px;">
-              * <strong>산출내역서</strong>에 입력한 항목들이 자동으로 표시됩니다.<br>
-              * 체크된 항목은 정산 세부내역서 엑셀 테이블에 기본으로 노출됩니다.
+              * 정산 세부내역서 작성 시 포함할 항목을 직접 커스텀할 수 있습니다.<br>
+              * <strong>[사용 가능 항목]</strong>에서 원하는 코드를 선택 후 <strong>[추가]</strong> 버튼을 눌러주세요.
             </p>
 
-            <div v-if="
-              dynamicSettlementItems.payItems.length === 0 &&
-              dynamicSettlementItems.deductionItems.length === 0
-            " class="settlement-empty-notice">
-              <i class="mdi mdi-information-outline"></i>
-              <span>계약 그룹의 산출내역서에 항목을 입력하면 여기에 자동으로 표시됩니다.</span>
-            </div>
-
-            <div v-else class="deduction-toggles-grid">
-
-              <template v-if="dynamicSettlementItems.payItems.length > 0">
-                <div class="grid-group-label">
-                  <span class="cost-block-label label-direct" style="font-size:12px; margin-right:6px;">A</span>
-                  지급항목 (직접노무비 중 정산 제어 항목)
+            <div class="excel-transfer-ui">
+              <div class="transfer-pane">
+                <div class="pane-header">
+                  <span>사용 가능 항목</span>
+                  <span class="count">{{ filteredAvailable.length }}</span>
                 </div>
-                <div class="config-checkbox-group">
-                  <label
-                      v-for="label in dynamicSettlementItems.payItems"
-                      :key="'pay-'+label"
-                      class="config-checkbox"
+                <div class="pane-search">
+                  <i class="mdi mdi-magnify"></i>
+                  <input type="text" v-model="searchAvailable" placeholder="항목명 검색" class="transfer-input" />
+                </div>
+                <div class="pane-list">
+                  <div
+                      v-for="item in filteredAvailable"
+                      :key="'avail-'+item"
+                      class="list-item"
+                      :class="{ active: selectedAvailItems.includes(item) }"
+                      @click="toggleAvail(item)"
                   >
-                    <input
-                        type="checkbox"
-                        :value="label"
-                        v-model="settlementConfig.activePayLabels"
-                    />
-                    <span class="font-bold text-orange">{{ label }}</span>
-                  </label>
+                    {{ item }}
+                  </div>
+                  <div v-if="filteredAvailable.length === 0" class="empty-list">항목이 없습니다</div>
                 </div>
-                <div v-if="dynamicSettlementItems.deductionItems.length > 0" class="grid-divider"></div>
-              </template>
+              </div>
 
-              <template v-if="dynamicSettlementItems.deductionItems.length > 0">
-                <div class="grid-group-label">
-                  <span class="cost-block-label label-indirect" style="font-size:12px; margin-right:6px;">B</span>
-                  공제항목 (간접노무비)
-                </div>
-                <div class="config-checkbox-group">
-                  <label
-                      v-for="label in dynamicSettlementItems.deductionItems"
-                      :key="'ded-'+label"
-                      class="config-checkbox">
-                    <input
-                        type="checkbox"
-                        :value="label"
-                        v-model="settlementConfig.activeDeductionLabels"
-                    />
-                    <span>{{ getItemName(label) }}</span>
-                  </label>
-                </div>
-              </template>
+              <div class="transfer-actions">
+                <button type="button" class="btn-transfer" @click="moveToRight" :disabled="!selectedAvailItems.length">
+                  추가 <i class="mdi mdi-chevron-right"></i>
+                </button>
+                <button type="button" class="btn-transfer btn-transfer-remove" @click="moveToLeft" :disabled="!selectedRightItems.length">
+                  <i class="mdi mdi-chevron-left"></i> 제외
+                </button>
+              </div>
 
+              <div class="transfer-pane">
+                <div class="pane-header">
+                  <span>정산서 표시 항목</span>
+                  <span class="count">{{ filteredSelected.length }}</span>
+                </div>
+                <div class="pane-search">
+                  <i class="mdi mdi-magnify"></i>
+                  <input type="text" v-model="searchSelected" placeholder="항목명 검색" class="transfer-input" />
+                </div>
+                <div class="pane-list">
+                  <div
+                      v-for="item in filteredSelected"
+                      :key="'sel-'+item"
+                      class="list-item"
+                      :class="{ active: selectedRightItems.includes(item) }"
+                      @click="toggleRight(item)"
+                  >
+                    <span class="item-badge" :class="isPayItem(item) ? 'badge-pay' : 'badge-ded'">
+                      {{ isPayItem(item) ? '지급' : '공제' }}
+                    </span>
+                    {{ item }}
+                  </div>
+                  <div v-if="filteredSelected.length === 0" class="empty-list">선택된 항목이 없습니다</div>
+                </div>
+              </div>
             </div>
           </div>
-
         </div>
       </div>
 
@@ -2197,11 +2246,47 @@ export default {
 .contract-card-detail { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
 .contract-card-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--bg-hover); border-bottom: 1px solid var(--border-color); }
 .contract-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.contract-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-inverse); }
-.badge-경비 { background: #3b82f6; } .badge-미화 { background: #ec4899; } .badge-시설 { background: var(--success); }
-.contract-duration { font-size: 12px; color: var(--text-sub); display: flex; align-items: center; gap: 4px; font-weight: 500; }
-.assigned-count-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: rgba(99,102,241,.08); color: var(--primary); border: 1px solid var(--border-focus); }
-.btn-remove-small { width: 28px; height: 28px; border-radius: 6px; background: rgba(239,68,68,.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+/* =============================================
+   계약 타이틀 배지 (미화, 경비 등 눈에 띄게 강조)
+============================================= */
+.contract-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;          /* 여백을 늘려 면적 확대 */
+  border-radius: 8px;         /* 둥글기 살짝 추가 */
+  font-size: 14px;            /* 글씨 크기 키움 (기존 12px -> 14px) */
+  font-weight: 800;           /* 글씨 아주 굵게 */
+  color: #ffffff;
+  letter-spacing: 0.5px;      /* 자간을 살짝 넓혀 가독성 증가 */
+}
+
+/* 아이콘도 텍스트에 맞춰 약간 키워줍니다 */
+.contract-badge i {
+  font-size: 18px;
+}
+
+/* 각 직군별 배경색 + 은은한 그림자 효과(Glow) 추가 */
+.badge-경비 {
+  background: #3b82f6;
+}
+.badge-미화 {
+  background: #ec4899;
+}
+
+/* 배지 옆에 붙는 계약 기간 텍스트도 비율에 맞게 살짝 다듬기 */
+.contract-duration {
+  font-size: 13px;
+  color: var(--text-sub);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.contract-duration i {
+  font-size: 15px;
+}
 .contract-card-body { padding: 20px; }
 
 /* 인원 구성 */
@@ -2352,7 +2437,9 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
 .overview-card { display: flex; gap: 14px; align-items: center; padding: 16px 18px; background: var(--bg-canvas); border-radius: 12px; border: 1px solid var(--border-color); }
 .overview-icon-wrap { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 20px; }
 .oc-blue { background: var(--primary-soft); color: var(--primary); }
-.oc-badge-경비 { background: rgba(59,130,246,.1); color: #3b82f6; } .oc-badge-미화 { background: rgba(236,72,153,.1); color: #ec4899; } .oc-badge-시설 { background: rgba(16,185,129,.1); color: var(--success); }
+.oc-badge-경비 { background: rgba(59,130,246,.1); color: #3b82f6; }
+.oc-badge-미화 { background: rgba(236,72,153,.1); color: #ec4899; }
+.oc-badge-시설 { background: rgba(16,185,129,.1); color: var(--success); }
 .overview-content { display: flex; flex-direction: column; gap: 2px; }
 .overview-label { font-size: 12px; color: var(--text-sub); font-weight: 500; }
 .overview-value { font-size: 18px; font-weight: 700; color: var(--text-main); }
@@ -2639,4 +2726,266 @@ input:checked + .slider:before { transform: translateX(18px); }
 .config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; margin: 0; }
 .config-checkbox.disabled { opacity: 0.6; cursor: not-allowed; }
 .grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+
+.contract-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.contract-header-options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-melt-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+/* 초소형 스위치 디자인 (헤더용) */
+.switch-xs {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.switch-xs input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider-xs {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1;
+  transition: .3s;
+  border-radius: 20px;
+}
+.slider-xs:before {
+  position: absolute;
+  content: "";
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+.switch-xs input:checked + .slider-xs {
+  background-color: var(--danger); /* 활성화 시 포인트 컬러 */
+}
+.switch-xs input:checked + .slider-xs:before {
+  transform: translateX(12px);
+}
+
+/* =============================================
+   정산서 다운로드 양식 설정 (Dual Listbox)
+============================================= */
+.excel-transfer-ui {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: var(--bg-canvas);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  padding: 24px 20px;
+}
+
+.transfer-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-focus);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  height: 380px; /* 높이 여유있게 */
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.pane-header small {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.pane-header .count {
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+}
+
+.pane-search {
+  position: relative;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pane-search i {
+  position: absolute;
+  left: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.transfer-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+  outline: none;
+  background: var(--bg-canvas);
+  transition: all 0.2s;
+}
+
+.transfer-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+  background: var(--bg-surface);
+}
+
+.pane-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-main);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s;
+}
+
+.list-item:hover {
+  background: var(--bg-hover);
+}
+
+.list-item.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.item-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.badge-pay { background: rgba(59,130,246,0.1); color: #3b82f6; }
+.badge-ded { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+
+.empty-list {
+  padding: 40px 10px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.transfer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-transfer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 90px;
+  padding: 12px 0;
+  background: var(--primary);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);
+}
+
+.btn-transfer:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.btn-transfer-remove {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-transfer-remove:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--danger);
+  border-color: var(--border-focus);
+}
+
+.btn-transfer:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .excel-transfer-ui {
+    flex-direction: column;
+  }
+  .transfer-pane {
+    width: 100%;
+    height: 280px;
+  }
+  .transfer-actions {
+    flex-direction: row;
+  }
+  .btn-transfer {
+    width: 140px;
+  }
+}
 </style>
