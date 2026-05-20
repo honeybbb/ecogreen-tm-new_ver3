@@ -1281,6 +1281,7 @@ onMounted(async () => {
             <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" data-col-key="age" @click="toggleSort('birthDt')">
               <div class="th-content">나이(만)<i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-9">입사일</th>
             <th rowspan="2" class="text-center sticky-col sticky-col-9">근무/기준</th>
 
             <th colspan="3" class="text-center group-header-summary group-divider sticky-col sticky-col-group">합계</th>
@@ -1319,7 +1320,6 @@ onMounted(async () => {
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
             <td class="text-center sticky-col sticky-col-8" style="overflow: visible !important;">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-
                 <span :class="[
                   'font-bold',
                   getInsuranceWarning(p).type === 'danger' ? 'text-red' :
@@ -1345,6 +1345,7 @@ onMounted(async () => {
 
               </div>
             </td>
+            <td class="text-center sticky-col sticky-col-9">{{p.inDate}}</td>
 
             <td class="text-center sticky-col sticky-col-9">
               <div class="days-input-group">
@@ -1381,7 +1382,7 @@ onMounted(async () => {
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="9" class="text-center sticky-col sticky-col-span9"><span class="font-bold text-dark">전체 합계</span></td>
+            <td colspan="10" class="text-center sticky-col sticky-col-span9"><span class="font-bold text-dark">전체 합계</span></td>
             <td class="text-right font-bold group-divider sticky-col sticky-col-10">{{ formatCurrency(statsInfo.gross) }}</td>
             <td class="text-right font-bold text-red sticky-col sticky-col-11">{{ formatCurrency(statsInfo.ded) }}</td>
             <td class="text-right font-bold text-blue sticky-col sticky-col-12 sticky-divider">{{ formatCurrency(statsInfo.net) }}</td>
