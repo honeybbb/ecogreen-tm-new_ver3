@@ -148,6 +148,10 @@ const makeValuesObj = (staffList, defaultVal = '') => {
 };
 
 const createDefaultCostBreakdown = (staffList = []) => ({
+  dailyWorkHours: makeValuesObj(staffList, ''),
+  monthlyWorkHours: makeValuesObj(staffList, ''),
+  // dailyHoursBigo: '',
+  // monthlyHoursBigo: '',
   directLabor: [
     { label: '기본급',        values: makeValuesObj(staffList) },
     { label: '야간근로수당',   values: makeValuesObj(staffList) },
@@ -189,8 +193,9 @@ const syncCostBreakdownToStaff = (group) => {
     });
   });
 
-  const manualItems = ['managementFee', 'profit'];
+  const manualItems = ['managementFee', 'profit', 'dailyWorkHours', 'monthlyWorkHours'];
   manualItems.forEach(key => {
+    if (!group.costBreakdown[key]) group.costBreakdown[key] = {};
     currentCodes.forEach(code => {
       if (!(code in group.costBreakdown[key])) group.costBreakdown[key][code] = '';
     });
@@ -519,9 +524,12 @@ const handleSubmit = async () => {
 const getSiteData = async () => {
   const sIdx = route.query.idx;
   if (!sIdx) return;
+
   axios.get(`/api/v1/site/data/${sIdx}`).then(res => {
     const result = res.data.data[0];
     if (!result) return;
+
+    // 1. 현장 기본 정보 세팅
     site.value.siteName       = result.name;
     site.value.siteId         = result.site_id;
     site.value.siteType       = result.sType;
@@ -540,29 +548,45 @@ const getSiteData = async () => {
     site.value.directorContact= result.director_phone;
     site.value.payment_day    = result.payment_day;
 
-    if(result.contractList){
+    // 2. 계약 그룹 및 직책별 근로시간 세팅 (방어 코드 포함)
+    if (result.contractList) {
       const contract = JSON.parse(result.contractList);
-      contractGroups.value = contract.map(item => ({
-        category: item.category,
-        type: item.type,
-        contractStart: item.startDt,
-        contractEnd: item.endDt,
-        totalCost: 0,
-        workDays: item.workDays,
-        workSchedule: item.workSchedule,
-        breakTime: item.breaktime,
-        staffList: (item.staffList || []).map(staff => ({
+      contractGroups.value = contract.map(item => {
+        // 직책 및 스케줄 먼저 빌드
+        const staffListMapped = (item.staffList || []).map(staff => ({
           ...staff,
           schedule: staff.schedule || createDefaultSchedule(),
           showSchedule: false
-        })),
-        tempJobCode: '',
-        tempCount: 1,
-        costBreakdown: item.costBreakdown || createDefaultCostBreakdown(item.staffList || []),
-        showCostBreakdown: false,
-      }));
+        }));
+
+        // ✨ 근로시간 데이터가 없는 구버전 마스터 대응용 방어 코드
+        const costBreakdownData = item.costBreakdown || createDefaultCostBreakdown(staffListMapped);
+        if (!costBreakdownData.dailyWorkHours) {
+          costBreakdownData.dailyWorkHours = makeValuesObj(staffListMapped, '');
+        }
+        if (!costBreakdownData.monthlyWorkHours) {
+          costBreakdownData.monthlyWorkHours = makeValuesObj(staffListMapped, '');
+        }
+
+        return {
+          category: item.category,
+          type: item.type,
+          contractStart: item.startDt,
+          contractEnd: item.endDt,
+          totalCost: 0,
+          workDays: item.workDays,
+          workSchedule: item.workSchedule,
+          breakTime: item.breaktime,
+          staffList: staffListMapped,
+          tempJobCode: '',
+          tempCount: 1,
+          costBreakdown: costBreakdownData, // 보완된 객체 주입
+          showCostBreakdown: false,
+        };
+      });
     }
 
+    // 3. 특이사항 히스토리 세팅
     if (result.bigoList) {
       try {
         bigoHistory.value = JSON.parse(result.bigoList);
@@ -570,12 +594,10 @@ const getSiteData = async () => {
       } catch { bigoHistory.value = []; }
     }
 
+    // 4. 정산 세부 노출 설정 세팅
     if (result.viewConfig) {
       try {
-        const parsed = typeof result.viewConfig === 'string'
-            ? JSON.parse(result.viewConfig)
-            : result.viewConfig;
-
+        const parsed = typeof result.viewConfig === 'string' ? JSON.parse(result.viewConfig) : result.viewConfig;
         settlementConfig.value = {
           activePayLabels:       parsed.activePayLabels       ?? [],
           activeDeductionLabels: parsed.activeDeductionLabels ?? [],
@@ -686,21 +708,21 @@ onMounted(() => {
             <div class="form-group">
               <label class="form-label"><i class="mdi mdi-domain"></i>연면적 (건축물 총면적)</label>
               <div style="position: relative;">
-                <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 이하 (면세 면적)</label>
               <div style="position: relative;">
-                <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 초과 (과세 면적)</label>
               <div style="position: relative;">
-                <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="0.01" style="padding-right: 32px;" />
+                <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
                 <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
               </div>
             </div>
@@ -1010,6 +1032,74 @@ onMounted(() => {
 
                   <template v-else>
                     <div class="cost-scroll-area">
+                      <div class="cost-section-title">
+                        <span class="cost-block-label label-hours">⏱️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
+                      </div>
+                      <table class="cost-table hours-standalone-table">
+                        <thead>
+                        <tr>
+                          <th class="col-label">항목</th>
+                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                            <span class="staff-th-name">{{ staff.name }}</span>
+                            <span class="staff-th-count">({{ staff.count }}명)</span>
+                          </th>
+                          <th class="col-rowtotal-head">행합계</th>
+                          <th class="col-rowtotal">산출내역 / 근거</th>
+                          <th class="col-action"></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <tr>
+                          <td class="hours-label-cell">
+                            <span class="summary-label">
+                              <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
+                            </span>
+                          </td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                v-model.number="group.costBreakdown.dailyWorkHours[staff.code]"
+                                @focus="$event.target.select()"
+                                class="tbl-value-input text-right hours-input"
+                                placeholder="0"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
+                          <td>
+                            <input
+                                type="text"
+                                class="tbl-value-input"
+                                v-model="group.costBreakdown.dailyHoursBigo"
+                                placeholder="예: 휴게 1시간 제외"
+                            />
+                          </td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td class="hours-label-cell">
+                            <span class="summary-label">
+                              <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
+                            </span>
+                          </td>
+                          <td v-for="staff in group.staffList" :key="staff.code">
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]"
+                                @focus="$event.target.select()"
+                                class="tbl-value-input text-right hours-input"
+                                placeholder="0"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
+                          <td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.monthlyHoursBigo" placeholder="예: 주 40시간 + 주휴"></td>
+                          <td></td>
+                        </tr>
+                        </tbody>
+                      </table>
 
                       <div class="cost-section-title">
                         <span class="cost-block-label label-direct">A</span>
