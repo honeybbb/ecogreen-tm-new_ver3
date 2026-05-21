@@ -54,7 +54,7 @@ watch([
   selectedType,
   searchTerm,
   selectedYearMonth,
-  selectedPaymentDay,
+  // selectedPaymentDay,
   selectedPayHistory], () => {
     currentPage.value = 1;
 });
@@ -69,7 +69,7 @@ const filteredPayrollList = computed(() => {
       (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
       (selectedType.value === '전체' || p.type === selectedType.value) &&
       (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
-      (selectedPaymentDay.value === '' || String(p.payment_day) === String(Number(selectedPaymentDay.value.split('-')[2]))) &&
+      // (selectedPaymentDay.value === '' || String(p.payment_day) === String(Number(selectedPaymentDay.value.split('-')[2]))) &&
       (selectedPayHistory.value === '' || (() => {
         const [y, m, d] = selectedPayHistory.value.split('-');
         return String(p.year) === y
@@ -467,15 +467,24 @@ const calculateInsurances = async (row) => {
 const savePayroll = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
   if (selectedRows.length === 0) { alert('저장할 직원을 체크해주세요.'); return; }
+  if (!selectedPaymentDay.value) { alert('적용할 실제 급여 지급일을 선택해주세요.'); return; }
+
   if (!confirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
   try {
     const [saveYear, saveMonth] = selectedYearMonth.value.split('-');
     await Promise.all(selectedRows.map(row => {
       const c = calculateRowSummary(row);
       return axios.post(`/api/v1/member/payroll/month/${row.idx}`, {
-        mIdx: row.idx, sIdx: row.sIdx, year: saveYear, month: saveMonth,
-        grossPay: c.gross, deductions: c.ded, netPay: c.net,
-        workedDays: row.workedDays, scheduledDays: row.scheduledDays,
+        mIdx: row.idx,
+        sIdx: row.sIdx,
+        year: saveYear,
+        month: saveMonth,
+        payDt: selectedPaymentDay.value,
+        grossPay: c.gross,
+        deductions: c.ded,
+        netPay: c.net,
+        workedDays: row.workedDays,
+        scheduledDays: row.scheduledDays,
         payItems: JSON.stringify(row.payItems || {}),
         deductionItems: JSON.stringify(row.deductionItems || {}),
         checkedItems: JSON.stringify(row.deductionFlags || {}),
@@ -1081,6 +1090,36 @@ const getPayrollMonth = async function () {
   } catch (e) { payrollList.value = []; }
 };
 
+// ── 현장 또는 귀속월 변경 시 지급일 자동 세팅 ──────────────────────────────
+watch([selectedSite, selectedYearMonth], () => {
+  // 1. 현장이 '전체'이거나, 사이트 옵션 데이터가 없으면 자동 세팅 생략
+  if (selectedSite.value === '전체' || !siteOptions.value?.length) {
+    return;
+  }
+
+  // 2. 선택한 현장의 정보 찾기
+  // 주의: 'idx'와 'paymentDay'는 실제 API(siteOptions)의 키값에 맞게 수정해 주세요.
+  const site = siteOptions.value.find(s => s.idx == selectedSite.value);
+
+  // 3. 현장 정보에 급여일(dd)이 설정되어 있다면 다음 달 날짜로 계산
+  if (site && site.payment_day) {
+    const [y, m] = selectedYearMonth.value.split('-');
+    const targetDay = Number(site.payment_day);
+
+    // JS Date는 month가 0부터 시작하므로,
+    // m(귀속월)을 그대로 넣으면 자동으로 +1달(다음 달)로 계산됩니다!
+    // 예: 귀속월 2026-12 -> m은 12 -> new Date(2026, 12, 10) -> 2027-01-10 으로 자동 변환됨.
+    const nextMonthDate = new Date(Number(y), Number(m), targetDay);
+
+    const nextY = nextMonthDate.getFullYear();
+    const nextM = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
+    const nextD = String(nextMonthDate.getDate()).padStart(2, '0');
+
+    // 계산된 날짜를 입력 폼에 덮어쓰기
+    selectedPaymentDay.value = `${nextY}-${nextM}-${nextD}`;
+  }
+});
+
 onMounted(async () => {
   await Promise.all([
     fetchSiteOptions(),
@@ -1117,7 +1156,7 @@ onMounted(async () => {
           <span>선택 결과 저장</span>
         </button>
 
-        <button @click="exportTransferExcel" class="btn-save">
+        <!--button @click="exportTransferExcel" class="btn-save">
           <i class="mdi mdi-bank-transfer"></i>
           <span>이체 리스트 출력</span>
         </button>
@@ -1125,7 +1164,7 @@ onMounted(async () => {
         <button @click="exportPayrollExcel" class="btn-export">
           <i class="mdi mdi-microsoft-excel"></i>
           <span>지급대장 출력</span>
-        </button>
+        </button-->
       </div>
     </div>
 
@@ -1163,8 +1202,16 @@ onMounted(async () => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-calendar-month-outline"></i> 급여연월</label>
+          <label class="filter-label">
+            <i class="mdi mdi-calendar-month-outline"></i> 급여연월
+          </label>
           <input type="month" v-model="selectedYearMonth" class="filter-select" @change="getPayrollMonth"/>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-office-building-outline"></i> 근무 현장
+          </label>
+          <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
           <label class="filter-label">
@@ -1197,10 +1244,6 @@ onMounted(async () => {
           </select>
         </div-->
 
-        <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 근무 현장</label>
-          <SiteSelect v-model="selectedSite" />
-        </div>
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-account-box-outline"></i> 구분</label>
           <select v-model="selectedType" class="filter-select">
