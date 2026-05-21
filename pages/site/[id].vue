@@ -510,7 +510,8 @@ const addContractGroup = (category) => {
       annualLeave: false,
       severance: false,
       workersDay: false
-    }
+    },
+    salarySource: 'contract',
   });
 };
 
@@ -841,7 +842,8 @@ const getSiteData = async () => {
           staffList:         staffList,
           costBreakdown:     costBreakdownData, // 방어코드 처리된 객체 주입
           showCostBreakdown: false,
-          meltOptions: item.meltOptions || { annualLeave: false, severance: false, workersDay: false }
+          meltOptions: item.meltOptions || { annualLeave: false, severance: false, workersDay: false },
+          salarySource: item.salarySource || 'contract'
         };
       });
     }
@@ -1850,6 +1852,57 @@ onMounted(async () => {
       <!-- 정산정보 탭 -->
       <div v-show="activeTab === 'settlement'" class="tab-panel">
         <div class="info-sections">
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-cash-sync"></i>
+              <h3>급여 데이터 기준 설정</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom:20px;">
+              * 각 계약 분류별로 정산서 데이터 불러오기 시 적용할 급여 정보의 출처를 선택해주세요.
+            </p>
+
+            <!-- 계약이 없을 경우 안내 -->
+            <div v-if="contractGroups.length === 0" class="empty-list" style="border: 1px dashed var(--border-color); border-radius: 8px;">
+              등록된 계약 정보가 없습니다. [계약정보] 탭에서 계약을 먼저 추가해주세요.
+            </div>
+
+            <!-- 계약 타입별 개별 설정 리스트 -->
+            <div v-else class="salary-source-list">
+              <div v-for="(group, idx) in contractGroups" :key="idx" class="source-selection-row">
+
+                <!-- 좌측: 계약 분류 배지 -->
+                <div class="source-group-title">
+        <span :class="['contract-badge', `badge-${group.category}`]" style="padding: 6px 12px; font-size: 13px;">
+          <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
+        </span>
+                </div>
+
+                <!-- 우측: 라디오 버튼 옵션 -->
+                <div class="source-selection-options">
+                  <label class="radio-label">
+                    <input
+                        type="radio"
+                        v-model="group.salarySource"
+                        value="employee"
+                        :name="'salarySource_' + idx"
+                    />
+                    <strong>직원 급여 정보</strong> <span class="text-hint">(저장된 기본 급여 기준)</span>
+                  </label>
+
+                  <label class="radio-label">
+                    <input
+                        type="radio"
+                        v-model="group.salarySource"
+                        value="contract"
+                        :name="'salarySource_' + idx"
+                    />
+                    <strong>계약 산출 정보</strong> <span class="text-hint">(계약 정보 산출 기준)</span>
+                  </label>
+                </div>
+
+              </div>
+            </div>
+          </div>
 
           <div class="info-section">
             <div class="section-header">
@@ -2314,7 +2367,7 @@ export default {
    공통 폼 스타일
 ============================================= */
 .info-sections { display: flex; flex-direction: column; gap: 32px; }
-.info-section:not(:last-child) { padding-bottom: 32px; border-bottom: 1px dashed var(--border-color); }
+.info-section:not(:last-child) { /*padding-bottom: 32px;*/ border-bottom: 1px dashed var(--border-color); }
 .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
 .section-header i { font-size: 20px; color: var(--primary); }
 .section-header h3 { font-size: 16px; font-weight: 700; color: var(--text-main); margin: 0; }
@@ -3090,6 +3143,112 @@ input:checked + .slider:before { transform: translateX(18px); }
   }
   .btn-transfer {
     width: 140px;
+  }
+}
+
+/* =============================================
+   급여 데이터 기준 설정 (타입별 리스트 UI)
+============================================= */
+.salary-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.source-selection-row {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.source-selection-row:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+}
+
+.source-group-title {
+  width: 120px; /* 배지 영역 너비 고정으로 라디오 버튼 열을 맞춤 */
+  flex-shrink: 0;
+}
+
+.source-selection-options {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex: 1;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-sub);
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.radio-label strong {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+.text-hint {
+  color: var(--text-muted);
+}
+
+/* 커스텀 라디오 버튼 */
+.radio-label input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-focus);
+  border-radius: 50%;
+  margin: 0;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+  background-color: var(--bg-surface);
+  transition: all 0.2s;
+}
+
+.radio-label input[type="radio"]:checked {
+  border-color: var(--primary);
+}
+
+.radio-label input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--primary);
+}
+
+/* 모바일 반응형 처리 */
+@media (max-width: 768px) {
+  .source-selection-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .source-selection-options {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .text-hint {
+    display: none; /* 모바일에서는 부가설명을 숨겨 깔끔하게 유지 */
   }
 }
 </style>
