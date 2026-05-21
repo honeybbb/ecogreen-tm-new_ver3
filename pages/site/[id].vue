@@ -553,26 +553,21 @@ const settlementConfig = ref({
   activePayLabels: [],
   // 간접노무비(공제항목) 표시 여부 (label 배열)
   activeDeductionLabels: [],
-  // isAutoCalcDefault: true,
-  // Melt Options — 공제 계산 베이스에 포함 여부
-  meltOptions: {
-    annualLeave: false,
-    severance: false,
-    workersDay: false // ★ 근로자의 날 수당 포함 옵션
-  }
 });
 
 // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
 watch(dynamicSettlementItems, (newItems) => {
   newItems.payItems.forEach(label => {
-    if (!settlementConfig.value.activePayLabels.includes(label)) {
-      settlementConfig.value.activePayLabels.push(label);
-    }
+    const found = wagesData.value.find(w => w.itemNm === label);
+    const cd = found ? found.itemCd : label;
+    if (!settlementConfig.value.activePayLabels.includes(cd))
+      settlementConfig.value.activePayLabels.push(cd);
   });
   newItems.deductionItems.forEach(label => {
-    if (!settlementConfig.value.activeDeductionLabels.includes(label)) {
-      settlementConfig.value.activeDeductionLabels.push(label);
-    }
+    const found = wagesData.value.find(w => w.itemNm === label);
+    const cd = found ? found.itemCd : label;
+    if (!settlementConfig.value.activeDeductionLabels.includes(cd))
+      settlementConfig.value.activeDeductionLabels.push(cd);
   });
 }, { deep: true });
 
@@ -586,67 +581,92 @@ const selectedRightItems = ref([]);
 
 // 사용 가능한 전체 항목 (산출내역서에 있는 항목 + DB 표준 임금 항목 전체)
 const allAvailableItems = computed(() => {
-  const dynamic = [...dynamicSettlementItems.value.payItems, ...dynamicSettlementItems.value.deductionItems];
-  const standard = (wagesData.value || []).map(w => w.itemNm); // 표준 공통 항목
-  return Array.from(new Set([...dynamic, ...standard]));       // 중복 제거
+  const map = new Map(); // cd → nm
+
+  // 1) 산출내역서에서 수집된 동적 항목 (label이 itemNm 기준)
+  dynamicSettlementItems.value.payItems.forEach(label => {
+    const found = wagesData.value.find(w => w.itemNm === label);
+    if (found) map.set(found.itemCd, found.itemNm);
+    // wagesData에 없으면 label 자체를 cd/nm 둘 다 사용 (fallback)
+    else map.set(label, label);
+  });
+  dynamicSettlementItems.value.deductionItems.forEach(label => {
+    const found = wagesData.value.find(w => w.itemNm === label);
+    if (found) map.set(found.itemCd, found.itemNm);
+    else map.set(label, label);
+  });
+
+  // 2) DB 표준 임금 항목 전체
+  (wagesData.value || []).forEach(w => {
+    map.set(w.itemCd, w.itemNm);
+  });
+
+  return Array.from(map.entries()).map(([cd, nm]) => ({ cd, nm }));
 });
 
 // 현재 선택 설정된 항목
-const unifiedSelectedItems = computed(() => {
-  return [...settlementConfig.value.activePayLabels, ...settlementConfig.value.activeDeductionLabels];
-});
+const unifiedSelectedCds = computed(() => [
+  ...settlementConfig.value.activePayLabels,
+  ...settlementConfig.value.activeDeductionLabels,
+]);
 
 // 리스트 필터링 (검색어 + 이미 선택된 항목 제외)
-const filteredAvailable = computed(() => {
-  return allAvailableItems.value
-      .filter(item => !unifiedSelectedItems.value.includes(item))
-      .filter(item => item.includes(searchAvailable.value));
-});
+const filteredAvailable = computed(() =>
+    allAvailableItems.value
+        .filter(item => !unifiedSelectedCds.value.includes(item.cd))
+        .filter(item => item.nm.includes(searchAvailable.value))
+);
 
 const filteredSelected = computed(() => {
-  return unifiedSelectedItems.value.filter(item => {
-    console.log(item, unifiedSelectedItems.value)
-    return item.includes(searchSelected.value)
-  });
+  const cdToNm = Object.fromEntries(
+      allAvailableItems.value.map(i => [i.cd, i.nm])
+  );
+  return unifiedSelectedCds.value
+      .filter(cd => (cdToNm[cd] || cd).includes(searchSelected.value))
+      .map(cd => ({ cd, nm: cdToNm[cd] || cd }));
 });
 
 // 클릭 시 다중 선택 토글
-const toggleAvail = (item) => {
-  const idx = selectedAvailItems.value.indexOf(item);
+const toggleAvail = (item) => { // item = { cd, nm }
+  const idx = selectedAvailItems.value.indexOf(item.cd);
   if (idx > -1) selectedAvailItems.value.splice(idx, 1);
-  else selectedAvailItems.value.push(item);
+  else selectedAvailItems.value.push(item.cd);
 };
 
-const toggleRight = (item) => {
-  const idx = selectedRightItems.value.indexOf(item);
+const toggleRight = (item) => { // item = { cd, nm }
+  const idx = selectedRightItems.value.indexOf(item.cd);
   if (idx > -1) selectedRightItems.value.splice(idx, 1);
-  else selectedRightItems.value.push(item);
+  else selectedRightItems.value.push(item.cd);
 };
 
 // 항목 속성 판별 (지급인지 공제인지)
-const isPayItem = (label) => {
-  if (dynamicSettlementItems.value.payItems.includes(label)) return true;
-  return PAY_CONTROL_KEYWORDS.some(kw => label.includes(kw));
+const isPayItem = (cd) => {
+  const found = wagesData.value.find(w => w.itemCd === cd);
+  const nm = found ? found.itemNm : cd;
+  if (dynamicSettlementItems.value.payItems.includes(nm)) return true;
+  return PAY_CONTROL_KEYWORDS.some(kw => nm.includes(kw));
 };
 
 // 이동 버튼 로직
 const moveToRight = () => {
-  selectedAvailItems.value.forEach(item => {
-    if (isPayItem(item)) {
-      if (!settlementConfig.value.activePayLabels.includes(item)) settlementConfig.value.activePayLabels.push(item);
+  selectedAvailItems.value.forEach(cd => {
+    if (isPayItem(cd)) {
+      if (!settlementConfig.value.activePayLabels.includes(cd))
+        settlementConfig.value.activePayLabels.push(cd);
     } else {
-      if (!settlementConfig.value.activeDeductionLabels.includes(item)) settlementConfig.value.activeDeductionLabels.push(item);
+      if (!settlementConfig.value.activeDeductionLabels.includes(cd))
+        settlementConfig.value.activeDeductionLabels.push(cd);
     }
   });
   selectedAvailItems.value = [];
 };
 
+// 왼쪽으로 이동 — cd 기준 제거
 const moveToLeft = () => {
-  selectedRightItems.value.forEach(item => {
-    const pIdx = settlementConfig.value.activePayLabels.indexOf(item);
+  selectedRightItems.value.forEach(cd => {
+    const pIdx = settlementConfig.value.activePayLabels.indexOf(cd);
     if (pIdx > -1) settlementConfig.value.activePayLabels.splice(pIdx, 1);
-
-    const dIdx = settlementConfig.value.activeDeductionLabels.indexOf(item);
+    const dIdx = settlementConfig.value.activeDeductionLabels.indexOf(cd);
     if (dIdx > -1) settlementConfig.value.activeDeductionLabels.splice(dIdx, 1);
   });
   selectedRightItems.value = [];
@@ -770,8 +790,6 @@ const getSiteData = async () => {
       zipcode:        result.zipcode || '',
     };
 
-    let fallbackMeltOptions = { annualLeave: false, severance: false, workersDay: false };
-
     // viewConfig 불러오기 (getSiteData 내부)
     if (result.viewConfig) {
       try {
@@ -782,15 +800,8 @@ const getSiteData = async () => {
         settlementConfig.value = {
           activePayLabels:       parsed.activePayLabels       ?? [],
           activeDeductionLabels: parsed.activeDeductionLabels ?? [],
-          // isAutoCalcDefault:     parsed.isAutoCalcDefault     ?? true,
-          meltOptions: {
-            annualLeave: parsed.meltOptions?.annualLeave ?? false,
-            severance:   parsed.meltOptions?.severance   ?? false,
-            workersDay:  parsed.meltOptions?.workersDay  ?? false
-          }
         };
 
-        if (parsed.meltOptions) fallbackMeltOptions = parsed.meltOptions;
       } catch(e) { console.error('viewConfig 파싱 에러:', e); }
     }
 
@@ -830,7 +841,7 @@ const getSiteData = async () => {
           staffList:         staffList,
           costBreakdown:     costBreakdownData, // 방어코드 처리된 객체 주입
           showCostBreakdown: false,
-          meltOptions: item.meltOptions || { ...fallbackMeltOptions }
+          meltOptions: item.meltOptions || { annualLeave: false, severance: false, workersDay: false }
         };
       });
     }
@@ -894,7 +905,10 @@ const saveSiteData = async () => {
       payrollManager:   site.value.payrollManager,
       bigo:             site.value.bigo,
       contract_details: JSON.stringify(contractGroups.value),
-      viewConfig:       JSON.stringify(settlementConfig.value),
+      viewConfig: JSON.stringify({
+        activePayLabels:       settlementConfig.value.activePayLabels,
+        activeDeductionLabels: settlementConfig.value.activeDeductionLabels,
+      }),
     };
     if (isStaffLoaded.value) params.assigned_staff = JSON.stringify(assignedStaff.value);
 
@@ -1860,12 +1874,12 @@ onMounted(async () => {
                 <div class="pane-list">
                   <div
                       v-for="item in filteredAvailable"
-                      :key="'avail-'+item"
+                      :key="'avail-'+item.cd"
                       class="list-item"
-                      :class="{ active: selectedAvailItems.includes(item) }"
+                      :class="{ active: selectedAvailItems.includes(item.cd) }"
                       @click="toggleAvail(item)"
                   >
-                    {{ item }}
+                    {{ item.nm }}
                   </div>
                   <div v-if="filteredAvailable.length === 0" class="empty-list">항목이 없습니다</div>
                 </div>
@@ -1892,15 +1906,15 @@ onMounted(async () => {
                 <div class="pane-list">
                   <div
                       v-for="item in filteredSelected"
-                      :key="'sel-'+item"
+                      :key="'sel-'+item.cd"
                       class="list-item"
-                      :class="{ active: selectedRightItems.includes(item) }"
+                      :class="{ active: selectedRightItems.includes(item.cd) }"
                       @click="toggleRight(item)"
                   >
-                    <span class="item-badge" :class="isPayItem(item) ? 'badge-pay' : 'badge-ded'">
-                      {{ isPayItem(item) ? '지급' : '공제' }}
+                    <span class="item-badge" :class="isPayItem(item.cd) ? 'badge-pay' : 'badge-ded'">
+                      {{ isPayItem(item.cd) ? '지급' : '공제' }}
                     </span>
-                    {{ item }}
+                    {{ item.nm }}
                   </div>
                   <div v-if="filteredSelected.length === 0" class="empty-list">선택된 항목이 없습니다</div>
                 </div>
