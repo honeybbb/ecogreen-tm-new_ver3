@@ -1439,7 +1439,9 @@ onMounted(async () => {
                   <template v-else>
                     <div class="cost-scroll-area">
                       <div class="cost-section-title">
-                        <span class="cost-block-label label-hours">⏱️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
+                        <span class="cost-block-label label-hours">
+                          <i class="mdi mdi-clock-check"></i>
+                          ️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
                       </div>
 
                       <table class="cost-table hours-standalone-table">
@@ -1458,9 +1460,9 @@ onMounted(async () => {
                         <tbody>
                         <tr>
                           <td class="hours-label-cell">
-              <span class="summary-label">
-                <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
-              </span>
+                            <span class="summary-label">
+                              <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
+                            </span>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2512,12 +2514,29 @@ export default {
 .cost-breakdown-section { margin-top: 8px; border: 1px solid var(--border-focus); border-radius: 10px; overflow: hidden; background: var(--bg-surface); }
 .cost-no-staff { padding: 32px 20px; text-align: center; color: var(--text-sub); }
 .cost-no-staff i { font-size: 36px; margin-bottom: 10px; opacity: .5; display: block; }
-.cost-section-title { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--bg-canvas); border-top: 1px solid var(--border-color); font-size: 13px; font-weight: 700; color: var(--text-main); }
+.cost-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-canvas);
+  border-top: 1px solid var(--border-color);
+  font-weight: 700;
+  color: var(--text-main);
+}
 .cost-section-title:first-child { border-top: none; }
 .cost-section-title em { font-style: normal; font-weight: 400; font-size: 12px; color: var(--text-sub); }
 .btn-add-cost-item { display: flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; background: var(--bg-surface); border: 1px dashed var(--primary); border-radius: 6px; color: var(--primary); cursor: pointer; margin-left: auto; }
 .cost-block-label { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text-inverse); flex-shrink: 0; }
-.label-direct { background: #3b82f6; } .label-indirect { background: #8b5cf6; } .label-expense { background: #f59e0b; } .label-total { background: #10b981; } .label-mgmt { background: #6b7280; } .label-profit { background: #ec4899; } .label-monthly { background: #0ea5e9; } .label-total-fee { background: #f97316; }
+.label-hours { background: #6b7280;}
+.label-direct { background: #3b82f6; }
+.label-indirect { background: #8b5cf6; }
+.label-expense { background: #f59e0b; }
+.label-total { background: #10b981; }
+.label-mgmt { background: #6b7280; }
+.label-profit { background: #ec4899; }
+.label-monthly { background: #0ea5e9; }
+.label-total-fee { background: #f97316; }
 .cost-scroll-area {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch; /* iOS 부드러운 스크롤 */
