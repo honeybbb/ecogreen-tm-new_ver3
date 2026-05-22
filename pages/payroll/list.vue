@@ -9,8 +9,10 @@ import { useTableResize } from '~/composables/useTableResize.js';
 const {
   siteOptions,
   typeOptions,
+  disabledOptions,
   fetchSiteOptions,
   fetchTypeOptions,
+  fetchDisabledOptions,
 } = useApi();
 
 // ── 상태 ──────────────────────────────────────────
@@ -21,6 +23,7 @@ const searchTerm = ref('');
 const selectedSite = ref('전체');
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
+const selectedDisability = ref('전체');
 
 const items = ref([]);
 const isLoading = ref(false);
@@ -74,6 +77,15 @@ const transformPayrollList = (rows) => {
       status: row.status ?? 0,
     };
   });
+};
+
+const getDisabilityStyle = (grade) => {
+  const opt = disabledOptions.value.find(o => o.itemCd == grade);
+  return {
+    backgroundColor: opt?.option || 'var(--bg-hover)',
+    color: 'var(--bg-surface)',
+    border: 'none',
+  };
 };
 
 // ── 값 변경 시 '저장 대기'로 상태 변경 ─────────────
@@ -141,7 +153,7 @@ const onInputAmount = (row, item, group, event) => {
 
   markAsDraft(row);
 
-  // ✅ 지급 항목 변경 시 항상 재계산 (sourceItem 없이 전체 재계산)
+  // 지급 항목 변경 시 항상 재계산 (sourceItem 없이 전체 재계산)
   if (group === 'pay') {
     calculateInsurances(row, null);
   }
@@ -171,7 +183,8 @@ const filteredPayrollList = computed(() => {
       (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
       p.staff.toLowerCase().includes(searchTerm.value.toLowerCase()) &&
       (selectedType.value === '전체' || p.type === selectedType.value) &&
-      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value)
+      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
+      (selectedDisability.value === '전체' || p.disability == selectedDisability.value)
   );
 
   filtered.sort((a, b) => {
@@ -210,12 +223,33 @@ const filteredPayrollList = computed(() => {
 });
 
 // ── 전체 합계 (필터된 전체 목록 기준) ─────────────
+// ── 전체 합계 (필터된 전체 목록 기준) ─────────────
 const totalSummary = computed(() => {
-  const s = { gross: 0, ded: 0, net: 0 };
+  const s = { gross: 0, ded: 0, net: 0, pay: {}, deduct: {} };
+
   filteredPayrollList.value.forEach(p => {
     const c = calculateRow(p);
-    s.gross += c.gross; s.ded += c.ded; s.net += c.net;
+    s.gross += c.gross;
+    s.ded += c.ded;
+    s.net += c.net;
+
+    // 각 지급 항목별 합계 누적
+    if (p.payments) {
+      payItems.value.forEach(i => {
+        s.pay[i.itemCd] = (s.pay[i.itemCd] || 0) + (Number(p.payments[i.itemCd]) || 0);
+      });
+    }
+
+    // 각 공제 항목별 합계 누적 (체크가 안 된 항목은 제외)
+    if (p.deductions) {
+      deductionItems.value.forEach(i => {
+        if (p.deductionFlags?.[i.itemCd] !== false) {
+          s.deduct[i.itemCd] = (s.deduct[i.itemCd] || 0) + (Number(p.deductions[i.itemCd]) || 0);
+        }
+      });
+    }
   });
+
   return s;
 });
 
@@ -282,10 +316,7 @@ const calculateInsurances = (row, sourceItem) => {
 
       // items(임금코드)에서 해당 지급항목의 option(비과세 한도) 조회
       const payItem = payItems.value.find(i => i.itemCd === k);
-      console.log(payItem, 'payItem')
       const taxFreeLimit = payItem?.tax_free ? Number(payItem.tax_free) : 0;
-
-      console.log(taxFreeLimit, 'taxFreeLimit')
 
       if (taxFreeLimit > 0) {
         // 비과세 한도가 설정된 항목: 한도 초과분만 과세
@@ -464,6 +495,7 @@ onMounted(async () => {
     fetchOverAgeOption(),
     fetchSiteOptions(),
     fetchTypeOptions(),
+    fetchDisabledOptions()
   ]);
   await getPayrollList();
 });
@@ -515,6 +547,16 @@ onMounted(async () => {
             <option value="1">퇴사</option>
             <option value="2">일용직</option>
             <option value="3">대근</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-account-check"></i> 장여 여부
+          </label>
+          <select v-model="selectedDisability" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option value="Y">장애</option>
+            <option value="N">비장애</option>
           </select>
         </div>
         <div class="search-group">
@@ -607,6 +649,8 @@ onMounted(async () => {
               <div class="th-content">나이(만)<i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
 
+            <th rowspan="2" class="text-center sticky-col sticky-col-9" style="min-width:80px; max-width:80px;">장애여부</th>
+
             <th colspan="2" class="text-center group-header-summary group-divider sticky-col sticky-col-group">합계</th>
 
             <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
@@ -614,8 +658,8 @@ onMounted(async () => {
           </tr>
 
           <tr>
-            <th class="text-right sub-header group-divider sticky-col sticky-col-9" style="min-width:80px; max-width:80px;" data-col-key="gross">지급합계</th>
-            <th class="text-right sub-header sticky-col sticky-col-10 sticky-divider" style="min-width:80px; max-width:80px;" data-col-key="ded">공제합계</th>
+            <th class="text-right sub-header group-divider sticky-col sticky-col-10" style="min-width:80px; max-width:80px;" data-col-key="gross">지급합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-11 sticky-divider" style="min-width:80px; max-width:80px;" data-col-key="ded">공제합계</th>
 
             <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-pay-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'pay-' + item.itemCd">
               {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
@@ -635,38 +679,27 @@ onMounted(async () => {
             <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
-            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">
-              {{ p.staff }}
-            </td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
             <td class="text-center sticky-col sticky-col-8">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                <span :class="[
-                  'font-bold',
-                  getInsuranceWarning(p).type === 'danger' ? 'text-red' :
-                  getInsuranceWarning(p).type === 'warning' ? 'text-orange' :
-                  getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray'
-                ]">
+                <span :class="['font-bold', getInsuranceWarning(p).type === 'danger' ? 'text-red' : getInsuranceWarning(p).type === 'warning' ? 'text-orange' : getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray']">
                   {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
                 </span>
-                <i v-if="getInsuranceWarning(p).type !== 'normal'"
-                   :class="[
-                     'mdi',
-                     getInsuranceWarning(p).type === 'danger' ? 'mdi-alert-circle text-red' :
-                     getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
-                     'mdi-information text-blue'
-                   ]"
-                   style="font-size: 14px;">
-                </i>
-
-                <span v-if="getInsuranceWarning(p).type !== 'normal'" class="tooltip-text">
-                  {{ getInsuranceWarning(p).message }}
-                </span>
-
               </div>
             </td>
-            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-9">{{ formatCurrency(calculateRow(p).gross) }}</td>
-            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-10 sticky-divider">{{ formatCurrency(calculateRow(p).ded) }}</td>
+
+            <td class="text-center sticky-col sticky-col-9">
+              <span v-if="p.disability === 'Y' || p.disability === true"
+                class="badge tooltip-container"
+                :style="getDisabilityStyle(p.disability_grade)">
+                <i class="mdi mdi-wheelchair-accessibility"></i> 장애
+              </span>
+              <span v-else class="text-gray">-</span>
+            </td>
+
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-10">{{ formatCurrency(calculateRow(p).gross) }}</td>
+            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11 sticky-divider">{{ formatCurrency(calculateRow(p).ded) }}</td>
 
             <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
               <input v-if="p.payments" @focus="$event.target.select()" type="text" :value="formatCurrency(p.payments[item.itemCd])" @input="onInputAmount(p, item, 'pay', $event)" class="inline-input" />
@@ -679,25 +712,39 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="filteredPayrollList.length === 0">
-            <td :colspan="10 + payItems.length + deductionItems.length" class="empty-state">
-              <i class="mdi mdi-text-box-search-outline"></i>
-              <p>조건에 맞는 급여 데이터가 없습니다.</p>
+            <td :colspan="12 + payItems.length + deductionItems.length" class="empty-state">
+              <i class="mdi mdi-calculator-variant-outline"></i>
+              <p>조건에 맞는 급여 대상자가 없습니다.</p>
             </td>
           </tr>
           </tbody>
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="8" class="text-center sticky-col" style="left:0; z-index: 35;"><span class="font-bold text-dark">전체 합계</span></td>
-            <td class="text-right font-bold group-divider sticky-col sticky-col-9">{{ formatCurrency(totalSummary.gross) }}</td>
-            <td class="text-right font-bold text-red sticky-col sticky-col-10 sticky-divider">{{ formatCurrency(totalSummary.ded) }}</td>
-            <td :colspan="payItems.length" class="bg-light-gray border-none theme-pay-sub group-divider"></td>
-            <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none theme-deduct-sub group-divider">
-              <div class="net-pay-box">
-                <span class="net-pay-label">실 지급액 합계</span>
-                <span class="net-pay-value">{{ formatCurrency(totalSummary.net) }} 원</span>
+
+            <td colspan="9" class="sticky-col" style="left:0; min-width: 670px; z-index: 35;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
+                <span class="font-bold text-dark">전체 합계</span>
+                <div class="net-pay-box" style="padding: 4px 16px; background-color: var(--primary-soft); border-radius: 6px;">
+                  <span class="net-pay-label" style="font-size: 12px; margin-right: 8px;">실 지급액 합계</span>
+                  <span class="net-pay-value" style="font-size: 16px;">{{ formatCurrency(totalSummary.net) }} 원</span>
+                </div>
               </div>
             </td>
+
+            <td class="text-right font-bold group-divider sticky-col sticky-col-10">{{ formatCurrency(totalSummary.gross) }}</td>
+            <td class="text-right font-bold text-red sticky-col sticky-col-11 sticky-divider">{{ formatCurrency(totalSummary.ded) }}</td>
+
+            <td v-for="(item, index) in payItems" :key="'foot-pay-' + item.itemCd"
+                :class="['text-right font-bold text-blue bg-light-gray theme-pay-sub', { 'group-divider': index === 0 }]">
+              {{ formatCurrency(totalSummary.pay[item.itemCd] || 0) }}
+            </td>
+
+            <td v-for="(item, index) in deductionItems" :key="'foot-ded-' + item.itemCd"
+                :class="['text-right font-bold text-red bg-light-gray theme-deduct-sub', { 'group-divider': index === 0 }]">
+              {{ formatCurrency(totalSummary.deduct[item.itemCd] || 0) }}
+            </td>
+
           </tr>
           </tfoot>
         </table>
@@ -937,7 +984,6 @@ body.is-resizing * {
   overflow: visible; /* 리사이즈 핸들용 */
 }
 
-/* 테이블 헤더 Z-index 및 불투명 배경 처리 (rgba 금지) */
 thead .sticky-col {
   z-index: 50 !important;
   background-color: #f8fafc !important; /* 불투명 연회색 */
@@ -961,6 +1007,7 @@ tfoot .sticky-col {
 .sticky-col-6  { left: 340px; min-width: 80px;  max-width: 80px;  width: 80px; }
 .sticky-col-7  { left: 420px; min-width: 100px; max-width: 100px; width: 100px; }
 .sticky-col-8  { left: 520px; min-width: 70px;  max-width: 70px;  width: 70px; }
+.sticky-col-9  { left: 590px; min-width: 80px;  max-width: 80px;  width: 80px; }
 
 /* tfoot의 "전체 합계" colspan=8 셀: 너비 580px(1~8 합산)으로 고정 */
 tfoot .sticky-col-span8 {
@@ -974,11 +1021,11 @@ tfoot .sticky-col-span8 {
 }
 
 /* 합계 그룹 (상단 병합 헤더) -> 이전 너비 총합 590px */
-.sticky-col-group { left: 590px; z-index: 41 !important; border-right: 2px solid var(--border-focus) !important; }
+.sticky-col-group { left: 670px; z-index: 41 !important; border-right: 2px solid var(--border-focus) !important; }
 
 /* 9: 지급합계, 10: 공제합계 (+10px) */
-.sticky-col-9  { left: 590px; min-width: 80px;  max-width: 80px;  width: 80px; }
 .sticky-col-10 { left: 670px; min-width: 80px;  max-width: 80px;  width: 80px; }
+.sticky-col-11 { left: 750px; min-width: 80px;  max-width: 80px;  width: 80px; }
 
 /* 마지막 고정 컬럼(공제합계) 우측에 그림자 효과 */
 .sticky-divider {
