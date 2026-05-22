@@ -227,15 +227,36 @@ const selectAll = computed({
   set: (val) => { pagedPayrollList.value.forEach(p => p.selected = val); }
 });
 
+// ── 전체 통계 & 합계 계산 ──────────────────────────────
 const statsInfo = computed(() => {
   const total = filteredPayrollList.value.length;
   let gross = 0, ded = 0;
+
+  // 개별 항목 합계를 담을 객체 추가
+  let pay = {};
+  let deduct = {};
+
   filteredPayrollList.value.forEach(p => {
     const c = calculateRowSummary(p);
     gross += c.gross;
     ded += c.ded;
+
+    // 각 지급 항목별 합계 누적
+    if (p.payItems) {
+      payItems.value.forEach(i => {
+        pay[i.itemCd] = (pay[i.itemCd] || 0) + (Number(p.payItems[i.itemCd]) || 0);
+      });
+    }
+
+    // 각 공제 항목별 합계 누적
+    if (p.deductionItems) {
+      deductionItems.value.forEach(i => {
+        deduct[i.itemCd] = (deduct[i.itemCd] || 0) + (Number(p.deductionItems[i.itemCd]) || 0);
+      });
+    }
   });
-  return { total, gross, ded, net: gross - ded };
+
+  return { total, gross, ded, net: gross - ded, pay, deduct };
 });
 
 const rowSummaryMap = computed(() => {
@@ -1425,18 +1446,31 @@ onMounted(async () => {
 
           <tfoot>
           <tr class="table-footer sticky-footer">
-            <td colspan="10" class="text-center sticky-col sticky-col-span9"><span class="font-bold text-dark">전체 합계</span></td>
+
+            <td colspan="10" class="sticky-col sticky-col-span9" style="left:0; min-width: 700px; z-index: 35;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
+                <span class="font-bold text-dark">전체 합계</span>
+                <div class="net-pay-box" style="padding: 4px 16px; background-color: var(--primary-soft); border-radius: 6px;">
+                  <span class="net-pay-label" style="font-size: 12px; margin-right: 8px;">실 지급액 합계</span>
+                  <span class="net-pay-value" style="font-size: 16px;">{{ formatCurrency(statsInfo.net) }} 원</span>
+                </div>
+              </div>
+            </td>
+
             <td class="text-right font-bold group-divider sticky-col sticky-col-10">{{ formatCurrency(statsInfo.gross) }}</td>
             <td class="text-right font-bold text-red sticky-col sticky-col-11">{{ formatCurrency(statsInfo.ded) }}</td>
             <td class="text-right font-bold text-blue sticky-col sticky-col-12 sticky-divider">{{ formatCurrency(statsInfo.net) }}</td>
 
-            <td :colspan="payItems.length" class="bg-light-gray border-none group-divider"></td>
-            <td :colspan="deductionItems.length" class="bg-light-gray text-center border-none group-divider">
-              <div class="net-pay-box">
-                <span class="net-pay-label">실 지급액 합계</span>
-                <span class="net-pay-value">{{ formatCurrency(statsInfo.net) }} 원</span>
-              </div>
+            <td v-for="(item, index) in payItems" :key="'foot-pay-' + item.itemCd"
+                :class="['text-right font-bold text-blue bg-light-gray theme-pay-sub amount-cell', { 'group-divider': index === 0 }]">
+              {{ formatCurrency(statsInfo.pay[item.itemCd] || 0) }}
             </td>
+
+            <td v-for="(item, index) in deductionItems" :key="'foot-ded-' + item.itemCd"
+                :class="['text-right font-bold text-red bg-light-gray theme-deduct-sub amount-cell', { 'group-divider': index === 0 }]">
+              {{ formatCurrency(statsInfo.deduct[item.itemCd] || 0) }}
+            </td>
+
           </tr>
           </tfoot>
         </table>
