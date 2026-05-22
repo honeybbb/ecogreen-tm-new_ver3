@@ -54,6 +54,94 @@ const statusOptions  = ref(['운영 중', '계약 종료']);
 const bigoHistory    = ref([]);
 const detailInput    = ref(null);
 
+const searchAvailable = ref('');
+const searchSelected  = ref('');
+const selectedAvailItems = ref([]);
+const selectedRightItems = ref([]);
+
+const allAvailableItems = computed(() => {
+  const map = new Map();
+
+  dynamicSettlementItems.value.payItems.forEach(label => {
+    const found = wagesData.value.find(w => w.itemNm === label);
+    if (found) map.set(found.itemCd, found.itemNm);
+    else map.set(label, label);
+  });
+  dynamicSettlementItems.value.deductionItems.forEach(label => {
+    const found = wagesData.value.find(w => w.itemNm === label);
+    if (found) map.set(found.itemCd, found.itemNm);
+    else map.set(label, label);
+  });
+
+  (wagesData.value || []).forEach(w => {
+    map.set(w.itemCd, w.itemNm);
+  });
+
+  return Array.from(map.entries()).map(([cd, nm]) => ({ cd, nm }));
+});
+
+const unifiedSelectedCds = computed(() => [
+  ...settlementConfig.value.activePayLabels,
+  ...settlementConfig.value.activeDeductionLabels,
+]);
+
+const filteredAvailable = computed(() =>
+    allAvailableItems.value
+        .filter(item => !unifiedSelectedCds.value.includes(item.cd))
+        .filter(item => item.nm.includes(searchAvailable.value))
+);
+
+const filteredSelected = computed(() => {
+  const cdToNm = Object.fromEntries(
+      allAvailableItems.value.map(i => [i.cd, i.nm])
+  );
+  return unifiedSelectedCds.value
+      .filter(cd => (cdToNm[cd] || cd).includes(searchSelected.value))
+      .map(cd => ({ cd, nm: cdToNm[cd] || cd }));
+});
+
+const toggleAvail = (item) => {
+  const idx = selectedAvailItems.value.indexOf(item.cd);
+  if (idx > -1) selectedAvailItems.value.splice(idx, 1);
+  else selectedAvailItems.value.push(item.cd);
+};
+
+const toggleRight = (item) => {
+  const idx = selectedRightItems.value.indexOf(item.cd);
+  if (idx > -1) selectedRightItems.value.splice(idx, 1);
+  else selectedRightItems.value.push(item.cd);
+};
+
+const isPayItem = (cd) => {
+  const found = wagesData.value.find(w => w.itemCd === cd);
+  const nm = found ? found.itemNm : cd;
+  if (dynamicSettlementItems.value.payItems.includes(nm)) return true;
+  return PAY_CONTROL_KEYWORDS.some(kw => nm.includes(kw));
+};
+
+const moveToRight = () => {
+  selectedAvailItems.value.forEach(cd => {
+    if (isPayItem(cd)) {
+      if (!settlementConfig.value.activePayLabels.includes(cd))
+        settlementConfig.value.activePayLabels.push(cd);
+    } else {
+      if (!settlementConfig.value.activeDeductionLabels.includes(cd))
+        settlementConfig.value.activeDeductionLabels.push(cd);
+    }
+  });
+  selectedAvailItems.value = [];
+};
+
+const moveToLeft = () => {
+  selectedRightItems.value.forEach(cd => {
+    const pIdx = settlementConfig.value.activePayLabels.indexOf(cd);
+    if (pIdx > -1) settlementConfig.value.activePayLabels.splice(pIdx, 1);
+    const dIdx = settlementConfig.value.activeDeductionLabels.indexOf(cd);
+    if (dIdx > -1) settlementConfig.value.activeDeductionLabels.splice(dIdx, 1);
+  });
+  selectedRightItems.value = [];
+};
+
 const getItemName = (code) => {
   if (!code) return '-';
   const found = wagesData.value.find(w => w.itemCd === code);
@@ -295,6 +383,7 @@ const addContractGroup = (category) => {
     isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
     costBreakdown: createDefaultCostBreakdown([]),
     showCostBreakdown: false,
+    salarySource: 'contract',
   });
 };
 
@@ -461,7 +550,10 @@ const handleSubmit = async () => {
     });
 
     const contractsJson = JSON.stringify(finalContractGroups);
-    const viewConfigJson = JSON.stringify(settlementConfig.value);
+    const viewConfigJson = JSON.stringify({
+      activePayLabels:       settlementConfig.value.activePayLabels,
+      activeDeductionLabels: settlementConfig.value.activeDeductionLabels,
+    });
 
     const params = {
       cIdx: authStore.user?.cIdx,
@@ -597,7 +689,10 @@ const getSiteData = async () => {
     // 4. 정산 세부 노출 설정 세팅
     if (result.viewConfig) {
       try {
-        const parsed = typeof result.viewConfig === 'string' ? JSON.parse(result.viewConfig) : result.viewConfig;
+        const parsed = typeof result.viewConfig === 'string'
+            ? JSON.parse(result.viewConfig)
+            : result.viewConfig;
+
         settlementConfig.value = {
           activePayLabels:       parsed.activePayLabels       ?? [],
           activeDeductionLabels: parsed.activeDeductionLabels ?? [],
@@ -1387,93 +1482,164 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- 정산 기본 설정 섹션 전체를 아래로 교체 -->
         <div class="form-section">
           <div class="section-main-header">
             <i class="mdi mdi-calculator-variant"></i>
             <h2>정산 기본 설정</h2>
           </div>
 
-          <div class="form-group full-width" style="margin-bottom: 32px;">
-            <label class="section-label"><i class="mdi mdi-calculator"></i>공제 계산 시 포함 (Melt Options)</label>
-            <p class="info-helper-text" style="margin-bottom: 16px;">
-              * 4대보험 등 공제액 계산 시 기본급 외에 연차수당, 퇴직충당금 등을 베이스 금액에 포함할지 기본값을 설정합니다.<br>
-              * 정산서 모달을 열 때마다 여기서 설정한 값이 기본으로 적용됩니다.
+          <!-- ① 급여 데이터 기준 설정 -->
+          <div class="settlement-sub-section">
+            <div class="sub-header">
+              <i class="mdi mdi-cash-sync"></i>
+              <h3>급여 데이터 기준 설정</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom: 20px;">
+              * 각 계약 분류별로 정산서 데이터 불러오기 시 적용할 급여 정보의 출처를 선택해주세요.
             </p>
-            <div class="config-toggle-wrapper">
-              <label class="config-toggle-item">
-                <span class="font-bold text-red">연차수당 포함</span>
-                <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.annualLeave" />
-                  <span class="slider round"></span>
+
+            <div v-if="contractGroups.length === 0"
+                 class="settlement-empty-notice">
+              <i class="mdi mdi-information-outline"></i>
+              <span>등록된 계약 정보가 없습니다. [계약 및 인원 정보] 섹션에서 계약을 먼저 추가해주세요.</span>
+            </div>
+
+            <div v-else class="salary-source-list">
+              <div v-for="(group, idx) in contractGroups"
+                   :key="idx"
+                   class="source-selection-row">
+                <div class="source-group-title">
+          <span :class="['contract-badge', `badge-${group.category}`]"
+                style="padding: 6px 12px; font-size: 13px;">
+            <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
+          </span>
                 </div>
-              </label>
-              <label class="config-toggle-item">
-                <span class="font-bold text-red">퇴직충당금 포함</span>
-                <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.severance" />
-                  <span class="slider round"></span>
+                <div class="source-selection-options">
+                  <label class="source-radio-label">
+                    <input
+                        type="radio"
+                        v-model="group.salarySource"
+                        value="employee"
+                        :name="'salarySource_' + idx"
+                    />
+                    <strong>직원 급여 정보</strong>
+                    <span class="text-hint">(저장된 기본 급여 기준)</span>
+                  </label>
+                  <label class="source-radio-label">
+                    <input
+                        type="radio"
+                        v-model="group.salarySource"
+                        value="contract"
+                        :name="'salarySource_' + idx"
+                    />
+                    <strong>계약 산출 정보</strong>
+                    <span class="text-hint">(계약 정보 산출 기준)</span>
+                  </label>
                 </div>
-              </label>
-              <label class="config-toggle-item">
-                <span class="font-bold text-red">근로자의날수당 포함</span>
-                <div class="switch">
-                  <input type="checkbox" v-model="settlementConfig.meltOptions.workersDay" />
-                  <span class="slider round"></span>
-                </div>
-              </label>
+              </div>
             </div>
           </div>
 
-          <div class="form-group full-width">
-            <label class="section-label"><i class="mdi mdi-filter-variant"></i>정산 세부내역서 표시 항목 설정</label>
-            <p class="info-helper-text" style="margin-bottom: 16px;">
-              * 계약 및 인원 정보의 <strong>산출내역서</strong>에 입력한 항목들이 자동으로 표시됩니다.<br>
-              * 체크된 항목은 정산 세부내역서 엑셀 테이블에 기본으로 노출됩니다.
+          <!-- 정산서 양식 관리 -->
+          <div class="settlement-sub-section">
+            <div class="sub-header">
+              <i class="mdi mdi-table-arrow-down"></i>
+              <h3>정산서 양식 관리</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom: 20px;">
+              * 정산 세부내역서 작성 시 포함할 항목을 직접 커스텀할 수 있습니다.<br>
+              * <strong>[사용 가능 항목]</strong>에서 원하는 코드를 선택 후 <strong>[추가]</strong> 버튼을 눌러주세요.
             </p>
 
-            <div v-if="
-              dynamicSettlementItems.payItems.length === 0 &&
-              dynamicSettlementItems.deductionItems.length === 0
-            " class="settlement-empty-notice">
-              <i class="mdi mdi-information-outline"></i>
-              <span>계약 그룹을 추가하고 산출내역서 항목을 입력하면 여기에 자동으로 표시됩니다.</span>
-            </div>
-
-            <div v-else class="deduction-toggles-grid">
-
-              <template v-if="dynamicSettlementItems.payItems.length > 0">
-                <div class="grid-group-label">
-                  <span class="cost-block-label label-direct" style="font-size:12px; margin-right:6px;">A</span>
-                  지급항목 (직접노무비 중 정산 제어 항목)
+            <div class="excel-transfer-ui">
+              <!-- 왼쪽: 사용 가능 항목 -->
+              <div class="transfer-pane">
+                <div class="pane-header">
+                  <span>사용 가능 항목</span>
+                  <span class="count">{{ filteredAvailable.length }}</span>
                 </div>
-                <div class="config-checkbox-group">
-                  <label v-for="label in dynamicSettlementItems.payItems"
-                         :key="'pay-'+label" class="config-checkbox">
-                    <input type="checkbox"
-                           :value="label"
-                           v-model="settlementConfig.activePayLabels" />
-                    <span class="font-bold text-orange">{{ getItemName(label) }}</span>
-                  </label>
+                <div class="pane-search">
+                  <i class="mdi mdi-magnify"></i>
+                  <input
+                      type="text"
+                      v-model="searchAvailable"
+                      placeholder="항목명 검색"
+                      class="transfer-input"
+                  />
                 </div>
-                <div v-if="dynamicSettlementItems.deductionItems.length > 0" class="grid-divider"></div>
-              </template>
+                <div class="pane-list">
+                  <div
+                      v-for="item in filteredAvailable"
+                      :key="'avail-' + item.cd"
+                      class="list-item"
+                      :class="{ active: selectedAvailItems.includes(item.cd) }"
+                      @click="toggleAvail(item)"
+                  >
+                    {{ item.nm }}
+                  </div>
+                  <div v-if="filteredAvailable.length === 0" class="empty-list">
+                    항목이 없습니다
+                  </div>
+                </div>
+              </div>
 
-              <template v-if="dynamicSettlementItems.deductionItems.length > 0">
-                <div class="grid-group-label">
-                  <span class="cost-block-label label-indirect" style="font-size:12px; margin-right:6px;">B</span>
-                  공제항목 (간접노무비)
-                </div>
-                <div class="config-checkbox-group">
-                  <label v-for="label in dynamicSettlementItems.deductionItems"
-                         :key="'ded-'+label" class="config-checkbox">
-                    <input type="checkbox"
-                           :value="label"
-                           v-model="settlementConfig.activeDeductionLabels" />
-                    <span>{{ getItemName(label) }}</span>
-                  </label>
-                </div>
-              </template>
+              <!-- 중앙: 이동 버튼 -->
+              <div class="transfer-actions">
+                <button
+                    type="button"
+                    class="btn-transfer"
+                    @click="moveToRight"
+                    :disabled="!selectedAvailItems.length"
+                >
+                  추가 <i class="mdi mdi-chevron-right"></i>
+                </button>
+                <button
+                    type="button"
+                    class="btn-transfer btn-transfer-remove"
+                    @click="moveToLeft"
+                    :disabled="!selectedRightItems.length"
+                >
+                  <i class="mdi mdi-chevron-left"></i> 제외
+                </button>
+              </div>
 
+              <!-- 오른쪽: 정산서 표시 항목 -->
+              <div class="transfer-pane">
+                <div class="pane-header">
+                  <span>정산서 표시 항목</span>
+                  <span class="count">{{ filteredSelected.length }}</span>
+                </div>
+                <div class="pane-search">
+                  <i class="mdi mdi-magnify"></i>
+                  <input
+                      type="text"
+                      v-model="searchSelected"
+                      placeholder="항목명 검색"
+                      class="transfer-input"
+                  />
+                </div>
+                <div class="pane-list">
+                  <div
+                      v-for="item in filteredSelected"
+                      :key="'sel-' + item.cd"
+                      class="list-item"
+                      :class="{ active: selectedRightItems.includes(item.cd) }"
+                      @click="toggleRight(item)"
+                  >
+            <span
+                class="item-badge"
+                :class="isPayItem(item.cd) ? 'badge-pay' : 'badge-ded'"
+            >
+              {{ isPayItem(item.cd) ? '지급' : '공제' }}
+            </span>
+                    {{ item.nm }}
+                  </div>
+                  <div v-if="filteredSelected.length === 0" class="empty-list">
+                    선택된 항목이 없습니다
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1858,5 +2024,314 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
   .btn-prev, .btn-submit { width: 100%; justify-content: center; }
   .config-toggle-wrapper { flex-direction: column; }
   .schedule-table-wrap { overflow-x: auto; }
+}
+
+/* =============================================
+   정산 기본 설정 — 서브 섹션 구분
+============================================= */
+.settlement-sub-section {
+  margin-bottom: 36px;
+  padding-bottom: 36px;
+  border-bottom: 1px dashed var(--border-color);
+}
+.settlement-sub-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* =============================================
+   급여 데이터 기준 설정
+============================================= */
+.salary-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.source-selection-row {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.source-selection-row:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+}
+
+.source-group-title {
+  width: 130px;
+  flex-shrink: 0;
+}
+
+.source-selection-options {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex: 1;
+}
+
+.source-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+
+.source-radio-label strong {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+.text-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.source-radio-label input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-focus);
+  border-radius: 50%;
+  margin: 0;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+  background-color: var(--bg-surface);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.source-radio-label input[type="radio"]:checked {
+  border-color: var(--primary);
+}
+
+.source-radio-label input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: var(--primary);
+}
+
+/* =============================================
+   정산서 양식 관리 — Dual Listbox
+============================================= */
+.excel-transfer-ui {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: var(--bg-canvas);
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  padding: 24px 20px;
+}
+
+.transfer-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-focus);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  height: 380px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.pane-header .count {
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pane-search {
+  position: relative;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pane-search i {
+  position: absolute;
+  left: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.transfer-input {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+  outline: none;
+  background: var(--bg-canvas);
+  transition: all 0.2s;
+}
+
+.transfer-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+  background: var(--bg-surface);
+}
+
+.pane-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-main);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s;
+}
+
+.list-item:hover { background: var(--bg-hover); }
+
+.list-item.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.item-badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.badge-pay { background: rgba(59,130,246,0.1); color: #3b82f6; }
+.badge-ded { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+
+.empty-list {
+  padding: 40px 10px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.transfer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.btn-transfer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 90px;
+  padding: 12px 0;
+  background: var(--primary);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(99,102,241,0.2);
+}
+
+.btn-transfer:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.btn-transfer-remove {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-transfer-remove:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--danger);
+  border-color: var(--border-focus);
+}
+
+.btn-transfer:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* 모바일 반응형 */
+@media (max-width: 768px) {
+  .excel-transfer-ui {
+    flex-direction: column;
+  }
+  .transfer-pane {
+    width: 100%;
+    height: 280px;
+  }
+  .transfer-actions {
+    flex-direction: row;
+    width: 100%;
+    justify-content: center;
+  }
+  .btn-transfer {
+    width: 140px;
+  }
+  .source-selection-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .source-selection-options {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .text-hint { display: none; }
 }
 </style>
