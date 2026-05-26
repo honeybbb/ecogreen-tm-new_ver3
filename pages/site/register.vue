@@ -201,7 +201,7 @@ const settlementConfig = ref({
   meltOptions: {
     annualLeave: false,
     severance: false,
-    workersDay: false // ★ 근로자의 날 수당 포함 옵션
+    workersDay: false // 근로자의 날 수당 포함 옵션
   }
 });
 

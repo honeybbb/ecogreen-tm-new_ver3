@@ -4,6 +4,7 @@ import axios from 'axios';
 import ExcelJS from 'exceljs'; // XLSX 대신 ExcelJS 임포트
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '~/stores/auth.js';
+import RichTextEditor from '@/components/RichTextEditor.vue';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
 const authStore = useAuthStore();
@@ -1633,10 +1634,25 @@ onMounted(async () => {
                 <td class="text-right text-red bg-red-light">{{ formatCurrency(payrollTotals.insuranceTotal) }}</td>
                 <td></td>
               </tr>
+              </tfoot>
+            </table>
+          </div> <div v-if="formData.payrollData.length > 0" class="bottom-flex-layout">
+          <div class="memo-area">
+            <div class="memo-wrapper">
+              <div class="memo-header">
+                <i class="mdi mdi-note-edit-outline"></i>
+                <span>정산 특이사항 및 메모</span>
+              </div>
+              <RichTextEditor v-model="formData.billingData.memo" />
+            </div>
+          </div>
 
+          <div class="summary-area">
+            <table class="excel-table" style="background: var(--bg-surface)">
+              <tbody>
               <template v-for="(summary, sIdx) in totalSummary" :key="'summary-'+summary.key">
                 <tr v-if="summary.key === 'grandTotal'">
-                  <td colspan="4" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
+                  <td colspan="2" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
                     <button @click="addCustomSummaryItem" class="btn-add-row" style="font-size: 12px; padding: 4px 10px; display: inline-flex; float: right;">
                       <i class="mdi mdi-plus-thick"></i> 정산 항목 추가
                     </button>
@@ -1644,23 +1660,7 @@ onMounted(async () => {
                 </tr>
 
                 <tr>
-                  <td v-if="sIdx === 0"
-                      :rowspan="totalSummary.length + 1"
-                      :colspan="colspanForSummary"
-                      class="memo-container-cell">
-                    <div class="memo-wrapper">
-                      <div class="memo-header">
-                        <i class="mdi mdi-note-edit-outline"></i>
-                        <span>정산 특이사항 및 메모</span>
-                      </div>
-                      <textarea
-                          v-model="formData.billingData.memo"
-                          class="memo-textarea"
-                          placeholder="급여 및 정산에 관련된 특이사항을 입력하세요.&#13;&#10;(줄바꿈이 지원되며, 엑셀 출력 시 하단에 함께 표기됩니다.)"
-                      ></textarea>
-                    </div>
-                  </td>
-                  <td colspan="2" class="text-center bg-gray-50 font-bold"
+                  <td class="text-center bg-gray-50 font-bold"
                       :class="{'summary-label-cell': summary.toggleable && !summary.isCustom}"
                       @click="summary.toggleable && !summary.isCustom && toggleSummarySign(summary.key)"
                       style="font-size: 13px;white-space: pre-line;"
@@ -1673,15 +1673,15 @@ onMounted(async () => {
                         <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 6px; box-sizing: border-box;" />
                       </template>
                       <template v-else>
-              <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
-                {{ summary.sign < 0 ? '-' : '+' }}
-              </span>
+                            <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
+                              {{ summary.sign < 0 ? '-' : '+' }}
+                            </span>
                         {{ summary.label }}
                       </template>
                     </div>
                   </td>
 
-                  <td colspan="2" class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color); position: relative;">
+                  <td class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color); position: relative;">
                     <button v-if="summary.isCustom" @click="removeCustomSummaryItem(summary.index)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
                       <i class="mdi mdi-minus"></i>
                     </button>
@@ -1706,9 +1706,11 @@ onMounted(async () => {
                   </td>
                 </tr>
               </template>
-              </tfoot>
+              </tbody>
             </table>
           </div>
+        </div>
+
         </div>
 
       </div>
@@ -1980,6 +1982,38 @@ input:checked + .slider:before { transform: translateX(14px); }
   }
   .memo-textarea {
     font-size: 12px;
+  }
+}
+
+/* =========================================
+   하단 메모/요약 2단 분리 레이아웃 (추가된 부분)
+========================================= */
+.bottom-flex-layout {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+  align-items: stretch; /* 좌우 높이를 동일하게 맞춤 */
+}
+
+/* 좌측 메모 영역: 남은 공간 꽉 채우기 */
+.memo-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 우측 요약표 영역: 가로 사이즈 고정 */
+.summary-area {
+  flex: 0 0 380px;
+}
+
+@media (max-width: 768px) {
+  .bottom-flex-layout {
+    flex-direction: column;
+  }
+  .summary-area {
+    flex: auto;
+    width: 100%;
   }
 }
 </style>
