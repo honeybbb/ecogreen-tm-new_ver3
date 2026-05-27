@@ -196,6 +196,8 @@ const fetchContractData = async () => {
             ? JSON.parse(siteData.viewConfig)
             : siteData.viewConfig;
 
+        console.log(parsedConfig, 'parsedConfig')
+
         currentConfig.showGrossPay    = parsedConfig.showGrossPay ?? true;
         currentConfig.showAnnualLeave = parsedConfig.showAnnualLeave ?? true;
         currentConfig.showSeverance   = parsedConfig.showSeverance ?? true;
@@ -213,6 +215,8 @@ const fetchContractData = async () => {
         : siteData.contractList;
 
     const targetContract = parsedContractList.find(c => c.type === type);
+
+    console.log(targetContract, 'targetContract')
 
     if (targetContract) {
       const iLabor = (targetContract.budget && Array.isArray(targetContract.budget.indirectLabor)) ? targetContract.budget.indirectLabor : [];
@@ -256,6 +260,8 @@ const fetchContractData = async () => {
             console.error('계약 meltOptions 파싱 에러:', e);
           }
         }
+
+        console.log(contractMeltOptions, 'contractMeltOptions')
 
         // 반응형 객체에 값 할당 (UI 토글 스위치 및 보험료 재계산 자동 트리거 됨)
         Object.assign(meltOptions, {
