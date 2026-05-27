@@ -174,15 +174,12 @@ const updateManager = async () => {
   }
 
   try {
-    // 백엔드 구현에 따라 전송 방식이 다를 수 있습니다.
-    // 예: targetField에 'manager', 'billingManager' 등의 키를 보내서 백엔드에서 분기 처리
     const payload = {
       siteIds: selectedSiteIds.value,
       targetField: selectedManagerType.value, // 어떤 담당자를 바꿀 것인지
       managerName: newManagerName.value       // 새로운 담당자 이름
     };
 
-    // ★ 백엔드 API 주소는 실제 규격에 맞게 수정해 주세요.
     await axios.put('/api/v1/site/manager/batch', payload);
 
     alert(`선택한 ${selectedSiteIds.value.length}개 현장의 담당자가 변경되었습니다.`);
