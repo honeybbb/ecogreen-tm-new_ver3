@@ -36,6 +36,25 @@ const currentPage = ref(1);
 const pageSize    = ref(50); // 한 페이지당 행 수
 const pageSizeOptions = [50, 100, 200, 500];
 
+const selectedSiteIds = ref([]);
+
+const selectAll = computed({
+  get: () => {
+    if (pagedSiteList.value.length === 0) return false;
+    return pagedSiteList.value.every(site => selectedSiteIds.value.includes(site.idx));
+  },
+  set: (val) => {
+    if (val) {
+      pagedSiteList.value.forEach(site => {
+        if (!selectedSiteIds.value.includes(site.idx)) selectedSiteIds.value.push(site.idx);
+      });
+    } else {
+      const currentIds = pagedSiteList.value.map(s => s.idx);
+      selectedSiteIds.value = selectedSiteIds.value.filter(id => !currentIds.includes(id));
+    }
+  }
+});
+
 // 4. 정렬 토글
 const toggleSort = (key) => {
   if (sortKey.value === key) {
@@ -121,6 +140,61 @@ const handleSearch = () => {
   console.log('현장 검색 시작:', searchTerm.value, selectedStatus.value);
 };
 
+// ★ 담당자 일괄 변경 모달 관련 로직
+const isManagerModalOpen = ref(false);
+const selectedManagerType = ref('billingManager'); // 기본값: 청구담당자
+const newManagerName = ref('');
+
+// 담당자 종류 옵션
+const managerTypeOptions = [
+  { label: '본사 담당자', value: 'manager' },
+  { label: '청구 담당자', value: 'billingManager' },
+  { label: '급여 담당자', value: 'payrollManager' }
+];
+
+const openManagerModal = () => {
+  if (selectedSiteIds.value.length === 0) {
+    alert('담당자를 변경할 현장을 먼저 선택해주세요.');
+    return;
+  }
+  selectedManagerType.value = 'billingManager'; // 모달 열 때 기본값 세팅
+  newManagerName.value = '';
+  isManagerModalOpen.value = true;
+};
+
+const closeManagerModal = () => {
+  isManagerModalOpen.value = false;
+  newManagerName.value = '';
+};
+
+const updateManager = async () => {
+  if (!newManagerName.value.trim()) {
+    alert('새로운 담당자 이름을 입력해주세요.');
+    return;
+  }
+
+  try {
+    // 백엔드 구현에 따라 전송 방식이 다를 수 있습니다.
+    // 예: targetField에 'manager', 'billingManager' 등의 키를 보내서 백엔드에서 분기 처리
+    const payload = {
+      siteIds: selectedSiteIds.value,
+      targetField: selectedManagerType.value, // 어떤 담당자를 바꿀 것인지
+      managerName: newManagerName.value       // 새로운 담당자 이름
+    };
+
+    // ★ 백엔드 API 주소는 실제 규격에 맞게 수정해 주세요.
+    await axios.put('/api/v1/site/manager/batch', payload);
+
+    alert(`선택한 ${selectedSiteIds.value.length}개 현장의 담당자가 변경되었습니다.`);
+    selectedSiteIds.value = []; // 체크박스 선택 초기화
+    closeManagerModal();
+    await getSites(); // 테이블 데이터 재로드
+  } catch (err) {
+    console.error('담당자 일괄 변경 실패:', err);
+    alert('변경 중 오류가 발생했습니다.');
+  }
+};
+
 const getSites = async () => {
   isLoading.value = true;
   try {
@@ -173,11 +247,54 @@ const goRemove = async (id) => {
         </h1>
         <p class="page-subtitle">전체 현장 정보를 조회하고 관리합니다</p>
       </div>
-      <div class="header-actions">
+      <div class="header-actions" style="display: flex; gap: 8px;">
+        <button @click="openManagerModal" class="btn-update">
+          <i class="mdi mdi-account-edit-outline"></i>
+          <span>담당자 일괄 변경</span>
+        </button>
         <button @click="goToRegister" class="btn-add">
           <i class="mdi mdi-plus"></i>
           <span>현장 등록</span>
         </button>
+      </div>
+
+      <div v-if="isManagerModalOpen" class="modal-overlay" @mousedown.self="closeManagerModal">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h3>담당자 일괄 변경</h3>
+            <button @click="closeManagerModal" class="btn-close"><i class="mdi mdi-close"></i></button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">선택한 <strong>{{ selectedSiteIds.length }}개</strong> 현장의 담당자를 변경합니다.</p>
+
+            <div class="form-group mt-3">
+              <label>변경할 담당자 종류</label>
+              <select v-model="selectedManagerType" class="form-select" style="width: 100%; padding: 10px 12px;">
+                <option v-for="opt in managerTypeOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group mt-3">
+              <label>새로운 담당자 이름</label>
+              <input
+                  type="text"
+                  v-model="newManagerName"
+                  class="form-input"
+                  placeholder="담당자 이름 직접 입력"
+                  list="managers-list"
+              />
+              <datalist id="managers-list">
+                <option v-for="b in billingManager" :key="b.value" :value="b.value"></option>
+              </datalist>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="closeManagerModal" class="btn-cancel">취소</button>
+            <button @click="updateManager" class="btn-submit">변경 저장</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -314,6 +431,7 @@ const goRemove = async (id) => {
       <div class="table-scroll-container">
         <table class="data-table">
           <colgroup>
+            <col width="3%">
             <col width="5%">
             <col width="10%">
             <col width="*%">
@@ -328,6 +446,9 @@ const goRemove = async (id) => {
           </colgroup>
           <thead>
           <tr>
+            <th class="text-center" style="width: 40px;">
+              <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
+            </th>
             <th @click="toggleSort('idx')" class="sortable resizable" style="width: 80px;">
               <div class="th-content">
                 <span>ID</span>
@@ -401,6 +522,9 @@ const goRemove = async (id) => {
           </thead>
           <tbody>
           <tr v-for="site in pagedSiteList" :key="site.idx" class="data-row">
+            <td class="text-center">
+              <input type="checkbox" :value="site.idx" v-model="selectedSiteIds" class="custom-checkbox" />
+            </td>
             <td>
               <span class="site-id">{{ site.idx }}</span>
             </td>
@@ -469,7 +593,7 @@ const goRemove = async (id) => {
           </tr>
 
           <tr v-if="filteredSites.length === 0" class="empty-row">
-            <td colspan="7">
+            <td colspan="12">
               <div class="empty-state">
                 <i class="mdi mdi-office-building-outline"></i>
                 <p>검색된 현장이 없습니다</p>
@@ -615,4 +739,69 @@ const goRemove = async (id) => {
   align-items: center;
   justify-content: center;
 }
+
+/* =========================================
+   추가된 체크박스 및 모달 디자인
+========================================= */
+
+/* 일괄 변경 버튼 */
+.btn-update {
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  background: var(--bg-surface); color: var(--primary); border: 1px solid var(--primary);
+  border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s;
+}
+.btn-update:hover { background: var(--primary-soft); }
+
+/* 커스텀 체크박스 */
+.custom-checkbox {
+  width: 16px; height: 16px; cursor: pointer;
+  accent-color: var(--primary);
+}
+
+/* 모달 관련 스타일 */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; z-index: 9999;
+}
+.modal-container {
+  background: var(--bg-surface); width: 400px; max-width: 90%;
+  border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid var(--border-color);
+}
+.modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-main); }
+.btn-close { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; }
+.modal-body { padding: 20px; }
+.modal-desc { font-size: 14px; color: var(--text-sub); margin-bottom: 16px; }
+
+.form-group { display: flex; flex-direction: column; gap: 8px; }
+.form-group label { font-size: 13px; font-weight: 600; color: var(--text-main); }
+
+/* Input, Select 공통 */
+.form-input, .form-select {
+  padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px;
+  font-size: 14px; outline: none; background: var(--bg-canvas); color: var(--text-main);
+}
+.form-input:focus, .form-select:focus {
+  border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 16px 20px; border-top: 1px solid var(--border-color); background: var(--bg-hover);
+}
+.btn-cancel {
+  padding: 8px 16px; background: white; border: 1px solid var(--border-color);
+  border-radius: 6px; color: var(--text-sub); font-weight: 600; cursor: pointer;
+}
+.btn-submit {
+  padding: 8px 16px; background: var(--primary); border: none;
+  border-radius: 6px; color: white; font-weight: 600; cursor: pointer;
+}
+.btn-submit:hover { background: var(--primary-hover); }
+.mt-3 { margin-top: 12px; }
 </style>
