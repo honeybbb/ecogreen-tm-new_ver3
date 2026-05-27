@@ -88,6 +88,30 @@ const getDisabilityStyle = (grade) => {
   };
 };
 
+// ── 공제 항목 일괄 선택/해제 컨트롤 ────────────────────
+const isAllDeductionChecked = (itemCd) => {
+  // 현재 페이지 목록이 비어있으면 false 반환
+  if (pagedPayrollList.value.length === 0) return false;
+  // 현재 페이지의 모든 직원이 해당 공제 항목에 체크되어 있는지 확인
+  return pagedPayrollList.value.every(p => p.deductionFlags?.[itemCd]);
+};
+
+const toggleAllDeduction = (itemCd, event) => {
+  const isChecked = event.target.checked;
+  const targetItem = deductionItems.value.find(d => d.itemCd === itemCd);
+
+  pagedPayrollList.value.forEach(p => {
+    if (!p.deductionFlags) p.deductionFlags = {};
+
+    // 상태가 다를 때만 변경하고 계산 로직 트리거
+    if (p.deductionFlags[itemCd] !== isChecked) {
+      p.deductionFlags[itemCd] = isChecked;
+      markAsDraft(p); // 상태를 '저장 대기'로 변경 및 선택 체크
+      calculateInsurances(p, targetItem); // 개별 행 요율 재계산
+    }
+  });
+};
+
 // ── 값 변경 시 '저장 대기'로 상태 변경 ─────────────
 const markAsDraft = (row) => {
   row.status   = 2;
@@ -664,8 +688,20 @@ onMounted(async () => {
             <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-pay-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'pay-' + item.itemCd">
               {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
+            <!--th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
               {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+            </th-->
+            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
+              <div style="display: flex;gap: 6px;">
+                <label class="checkbox-wrapper-sm" style="margin: 0; padding: 0;">
+                  <input type="checkbox"
+                         :checked="isAllDeductionChecked(item.itemCd)"
+                         @change="toggleAllDeduction(item.itemCd, $event)"
+                         class="custom-checkbox custom-checkbox-sm" />
+                </label>
+                <span>{{ item.itemNm }}</span>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
           </tr>
           </thead>
