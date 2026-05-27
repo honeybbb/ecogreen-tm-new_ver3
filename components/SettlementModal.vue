@@ -1218,6 +1218,37 @@ const exportToExcel = async () => {
     sheet.rowBreaks = [{ id: 44, min: 0, max: 16383, man: true }];
 
     // ────────────────────────────────
+    // ★ 0. 날짜 및 카테고리 정보 사전 계산
+    // ────────────────────────────────
+    const targetDateStr = formData.value.target_month || formData.value.billingDt;
+    let periodStr = '';
+    let yearStrFull = new Date().getFullYear().toString();
+    let monthNum = new Date().getMonth() + 1;
+
+    if (targetDateStr) {
+      const parts = targetDateStr.split('-');
+      if (parts.length >= 2) {
+        const yyyy = parseInt(parts[0], 10);
+        const mm = parseInt(parts[1], 10);
+        yearStrFull = String(yyyy);
+        monthNum = mm;
+
+        const yearStr = String(yyyy).slice(2);
+        const monthStr = String(mm).padStart(2, '0');
+        const lastDay = new Date(yyyy, mm, 0).getDate();
+        // 예: 26.03.01~03.31
+        periodStr = `${yearStr}.${monthStr}.01~${monthStr}.${lastDay}`;
+      }
+    }
+
+    // 용역 구분명 (미화, 경비 등) 추출
+    let categoryName = '용역';
+    if (typeOptions && typeOptions.value) {
+      const matched = typeOptions.value.find(t => t.itemCd === formData.value.type);
+      if (matched) categoryName = matched.itemNm;
+    }
+
+    // ────────────────────────────────
     // [페이지1] 청구 공문 - 5~27행
     // ────────────────────────────────
     sheet.getCell('A5').value = ` 문서번호 : ${formData.value.docNo || ''}`;
@@ -1226,11 +1257,17 @@ const exportToExcel = async () => {
     sheet.getCell('A8').value = ` 제    목 : ${formData.value.billingData.summary || ''}`;
     sheet.getCell('A8').alignment = { wrapText: true, vertical: 'middle' };
 
-    // 청구항목: 16~20행, J열(10번)에 금액
+    // 청구항목: 16~20행, B열에 기간, J열에 금액
     // 양식: 16=용역비, 17=연차, 18=퇴직, 19=보험차액, 20=커스텀
     const billingItems = formData.value.billingData.items || [];
     const fixedRows = [16, 17, 18, 19, 20];
+
     fixedRows.forEach((rowNum, idx) => {
+      // ★ 추가 1: 16~19행 B열(병합셀)에 산정기간 자동 입력
+      if (rowNum <= 19 && periodStr) {
+        sheet.getCell(`B${rowNum}`).value = periodStr;
+      }
+
       if (billingItems[idx] !== undefined) {
         sheet.getCell(`J${rowNum}`).value  = Number(billingItems[idx].amount) || 0;
         sheet.getCell(`J${rowNum}`).numFmt = '#,##0';
@@ -1243,10 +1280,16 @@ const exportToExcel = async () => {
     // ────────────────────────────────
     // [페이지2] 세부내역서
     // 직원 데이터: 51~60행 (최대 10명)
-    // 컬럼: B=NO, C=이름, D=직책, E=생년월일, F=입사일, G=퇴사일
-    //        H=연차, I=퇴직금, J=국민연금, K=건강보험, L=장기요양
-    //        M=실업급여, N=고용안정(사업주), O=산재, P=총계
     // ────────────────────────────────
+
+    const payrollData = formData.value.payrollData || [];
+
+    // ★ 추가 2: A47 귀속연도 및 타입으로 제목 완성 (예: ■ 2026년 3월 미화 정산내역서)
+    sheet.getCell('A47').value = `■ ${yearStrFull}년 ${monthNum}월 ${categoryName} 정산내역서`;
+
+    // ★ 추가 3: N49 현장명과 인원수 자동 입력 (예: 에코그린아파트 - 5명)
+    const workerCount = payrollData.length;
+    sheet.getCell('N49').value = `${formData.value.siteName || '현장 미지정'} - ${workerCount}명`;
 
     // 컬럼 숨기기
     sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;  // H: 연차
@@ -1260,7 +1303,6 @@ const exportToExcel = async () => {
     sheet.getColumn(15).hidden = !activeCodes.includes('04002004'); // O: 고용안정
     sheet.getColumn(16).hidden = !currentConfig.showSanjae;         // P: 산재
 
-    const payrollData = formData.value.payrollData || [];
     const maxRows = 10; // 양식 고정 10행 (51~60)
 
     for (let idx = 0; idx < maxRows; idx++) {
