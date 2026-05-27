@@ -357,43 +357,65 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
 const applyContractReserves = (row) => {
   const finalize = () => { calculateRow(row); };
 
-  // 1. 산출내역서의 직급 코드(staffCode) 찾기
+  // 산출내역서에서 특정 항목의 staffCode별 금액을 추출하는 내부 함수
+  const findContractValue = (keyword, cd, staffCode) => {
+    // directLabor + indirectLabor 전체를 합쳐서 검색
+    const allLabor = [
+      ...contractDirectLabor.value,
+      ...contractIndirectLabor.value
+    ];
+
+    const target = allLabor.find(d => {
+      const label = String(d.label ?? '');
+      return (
+          label === cd ||
+          label === keyword ||
+          label.includes(keyword) ||
+          label.includes(cd) ||
+          cd.includes(label)   // ← label이 cd의 일부인 경우도 커버
+      );
+    });
+
+    if (!target?.values) return 0;
+
+    // staffCode 직접 매칭
+    if (staffCode != null && target.values[staffCode] != null) {
+      return Number(target.values[staffCode]) || 0;
+    }
+
+    // staffCode 매칭 실패 → staffList 순서대로 첫 번째 유효한 값 사용
+    for (const staff of contractStaffList.value) {
+      const val = Number(target.values[staff.code]);
+      if (val > 0) return val;
+    }
+
+    // staffList도 없으면 values의 첫 번째 값
+    const firstVal = Object.values(target.values)[0];
+    return Number(firstVal) || 0;
+  };
+
+  // 1. position으로 staffCode 찾기
   let staffCode = null;
   if (row.position && contractStaffList.value.length) {
-    const staffObj = contractStaffList.value.find(s => s.name === row.position.trim());
-    if (staffObj) {
-      staffCode = staffObj.code;
-    }
+    const staffObj = contractStaffList.value.find(
+        s => s.name.trim() === row.position.trim()
+    );
+    if (staffObj) staffCode = staffObj.code;
   }
 
-  // ★ 예외 처리: 직급 이름이 약간 달라서 매칭이 안 되었을 때,
-  // 현장에 등록된 직급이 1개밖에 없다면 그 직급의 코드를 기본으로 사용합니다.
+  // 2. staffList가 1개면 무조건 그 코드 사용
   if (!staffCode && contractStaffList.value.length === 1) {
     staffCode = contractStaffList.value[0].code;
   }
 
-  if (!staffCode) {
-    console.warn('[applyContractReserves] 산출내역서와 일치하는 직급을 찾지 못해 적립금을 불러올 수 없습니다:', row.position);
-    return finalize();
-  }
+  // 3. ★ 연차·퇴직·근로자의날·산재는 salarySource와 무관하게 항상 산출내역서 기준
+  row.reserves.annualLeave = findContractValue('연차', '04003001', staffCode);
+  row.reserves.severance   = findContractValue('퇴직', '04003003', staffCode);
+  row.reserves.workersDay  = findContractValue('근로자', '04003002', staffCode);
 
-  // 2. 산출내역서에서 금액 추출 함수
-  const findContractValue = (keyword, cd) => {
-    let target = contractDirectLabor.value.find(d => d.label === cd || String(d.label).includes(keyword));
-    if (!target) {
-      target = contractIndirectLabor.value.find(d => d.label === cd || String(d.label).includes(keyword));
-    }
-    return target?.values?.[staffCode] ? Number(target.values[staffCode]) : 0;
-  };
-
-  // 3. 적립금 항목 강제 주입 (급여정보DB 무시하고 계약데이터로 덮어쓰기)
-  row.reserves.annualLeave = findContractValue('연차', '04003001'); // 연차적립금
-  row.reserves.severance = findContractValue('퇴직', '04003003');   // 퇴직적립금
-  row.reserves.workersDay = findContractValue('근로자', '04003002'); // 근로자의 날
-
-  const sanjaeAmt = findContractValue('산재', '04003010');
-  row.reserves.sanjae = sanjaeAmt;
-  row.originalSanjae = sanjaeAmt;
+  const sanjaeAmt = findContractValue('산재', '04003010', staffCode);
+  row.reserves.sanjae  = sanjaeAmt;
+  row.originalSanjae   = sanjaeAmt;
 
   finalize();
 };
@@ -1005,11 +1027,16 @@ const loadPayrollData = async () => {
     const [year, month] = targetDate.split('-');
 
     await fetchTaxRates();
-    // 1. 계약 데이터를 먼저 최신화하여 유효한 항목 코드 리스트 확보
-    await fetchContractData();
 
-    // 2. 계약서(산출내역서)에 등록된 유효한 항목 코드 추출
-    // 직접노무비(Direct)와 간접노무비(Indirect)의 label에 담긴 코드들을 수집합니다.
+    // ★ isInitializing 없이 그냥 fetchContractData 호출
+    //   (meltOptions watch는 payrollData가 아직 없으니 재계산해도 무해)
+    await fetchContractData();
+    await nextTick();
+
+    console.log('staffList:', JSON.parse(JSON.stringify(contractStaffList.value)));
+    console.log('directLabor:', JSON.parse(JSON.stringify(contractDirectLabor.value)));
+    console.log('indirectLabor:', JSON.parse(JSON.stringify(contractIndirectLabor.value)));
+
     const validItemCds = [
       ...contractDirectLabor.value.map(d => String(d.label)),
       ...contractIndirectLabor.value.map(i => String(i.label))
@@ -1018,22 +1045,16 @@ const loadPayrollData = async () => {
     const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
     const rawData = res.data?.data || [];
 
-    // ── 입/퇴사일 필터 추가 ──────────────────────────
-    const periodStart = new Date(Number(year), Number(month) - 1, 1);   // 해당월 1일
-    const periodEnd   = new Date(Number(year), Number(month), 0);        // 해당월 말일
+    const periodStart = new Date(Number(year), Number(month) - 1, 1);
+    const periodEnd   = new Date(Number(year), Number(month), 0);
 
     const result = rawData.filter(item => {
-      // 기존 필터 (현장, 타입)
-      if (item.type != formData.value.type)   return false;
-      if (item.sIdx != formData.value.sIdx)   return false;
-
-      // 입사일이 해당월 말일보다 이후면 제외 (아직 입사 전)
+      if (item.type != formData.value.type) return false;
+      if (item.sIdx != formData.value.sIdx) return false;
       const inDate  = item.inDate  ? new Date(item.inDate)  : null;
       const outDate = item.outDate ? new Date(item.outDate) : null;
-
       if (inDate  && inDate  > periodEnd)   return false;
       if (outDate && outDate < periodStart) return false;
-
       return true;
     });
 
@@ -1043,44 +1064,34 @@ const loadPayrollData = async () => {
       try { return JSON.parse(val); } catch { return {}; }
     };
 
+    const reserveCodes = ['04003001', '04003003', '04003002', '04003010'];
+
     formData.value.payrollData = result.map(item => {
-      const parsedPayItems = safeParse(item.payItems);
+      const parsedPayItems   = safeParse(item.payItems);
       const parsedDeductions = safeParse(item.deductionItems);
 
-      // 계약서에 없는 수당 항목 필터링 및 지급총액 재계산
       const filteredPayItems = {};
       let recalculatedGrossPay = 0;
 
-      const reserveCodes = ['04003001', '04003003', '04003002', '04003010'];
-
       Object.entries(parsedPayItems).forEach(([cd, amt]) => {
-        // 적립금 코드는 급여정보(DB)에 0원으로 있든 금액이 있든 무시합니다. (산출내역서 값을 쓸 것이기 때문)
-        if (reserveCodes.includes(cd)) {
-          return;
-        }
-
+        if (reserveCodes.includes(cd)) return;
         if (validItemCds.includes(cd)) {
           filteredPayItems[cd] = Number(amt) || 0;
           recalculatedGrossPay += Number(amt) || 0;
-        } else {
-          console.log(`현장 산출내역에 없어 제외된 항목: ${cd} (${amt}원)`);
         }
       });
 
       const rowObj = {
         idx: item.idx,
-        //empName: item.staff,
         empName: filterKoreanOnly(item.staff),
         position: item.role || '',
         personalNo: item.birthDt,
         inDate: item.inDate,
         outDate: item.outDate ?? '',
-        // 필터링된 금액으로 교체
         grossPay: recalculatedGrossPay,
         payItems: filteredPayItems,
         deductionItems: parsedDeductions,
-        originalDeductions: JSON.parse(JSON.stringify(parsedDeductions)), // 스냅샷 저장
-        // originalDeductions: {},
+        originalDeductions: JSON.parse(JSON.stringify(parsedDeductions)),
         originalSanjae: 0,
         totalDeduct: 0,
         reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
@@ -1088,6 +1099,8 @@ const loadPayrollData = async () => {
       };
 
       applyContractReserves(rowObj);
+      console.log(`[${rowObj.empName}] reserves:`, JSON.parse(JSON.stringify(rowObj.reserves)));
+
       recalculateInsurances(rowObj);
       calculateRow(rowObj);
 
@@ -1095,7 +1108,7 @@ const loadPayrollData = async () => {
     });
 
     if (formData.value.payrollData.length === 0) alert('조건에 맞는 직원 데이터가 없습니다.');
-    else alert('직원 급여 데이터를 성공적으로 불러왔습니다. (산출외 항목 제외 완료)');
+    else alert('직원 급여 데이터를 성공적으로 불러왔습니다.');
 
   } catch (error) {
     console.error('데이터 로드 에러:', error);
@@ -1123,7 +1136,21 @@ const updateDocNo = () => {
 watch(() => formData.value.sIdx, updateDocNo);
 watch(() => formData.value.target_month, updateDocNo);
 watch(() => formData.value.billingDt, updateDocNo);
-watch(() => formData.value.type, (newType) => { if (newType && formData.value.sIdx) fetchContractData(); });
+watch(() => formData.value.type, (newType) => {
+  if (newType && formData.value.sIdx) {
+    fetchContractData().then(() => {
+      // ★ 이미 payrollData가 있으면 적립금 재적용
+      if (formData.value.payrollData.length > 0) {
+        nextTick(() => {
+          formData.value.payrollData.forEach(row => {
+            applyContractReserves(row);
+            recalculateInsurances(row);
+          });
+        });
+      }
+    });
+  }
+});
 
 const handleSiteChange = () => {
   const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
