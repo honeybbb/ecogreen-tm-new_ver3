@@ -356,12 +356,28 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
 // ──────────────────────────────────────────────
 const applyContractReserves = (row) => {
   const finalize = () => { calculateRow(row); };
-  if (!row.position || !contractStaffList.value.length) return finalize();
 
-  const staffObj = contractStaffList.value.find(s => s.name === row.position.trim());
-  if (!staffObj) return finalize();
-  const staffCode = staffObj.code;
+  // 1. 산출내역서의 직급 코드(staffCode) 찾기
+  let staffCode = null;
+  if (row.position && contractStaffList.value.length) {
+    const staffObj = contractStaffList.value.find(s => s.name === row.position.trim());
+    if (staffObj) {
+      staffCode = staffObj.code;
+    }
+  }
 
+  // ★ 예외 처리: 직급 이름이 약간 달라서 매칭이 안 되었을 때,
+  // 현장에 등록된 직급이 1개밖에 없다면 그 직급의 코드를 기본으로 사용합니다.
+  if (!staffCode && contractStaffList.value.length === 1) {
+    staffCode = contractStaffList.value[0].code;
+  }
+
+  if (!staffCode) {
+    console.warn('[applyContractReserves] 산출내역서와 일치하는 직급을 찾지 못해 적립금을 불러올 수 없습니다:', row.position);
+    return finalize();
+  }
+
+  // 2. 산출내역서에서 금액 추출 함수
   const findContractValue = (keyword, cd) => {
     let target = contractDirectLabor.value.find(d => d.label === cd || String(d.label).includes(keyword));
     if (!target) {
@@ -370,15 +386,13 @@ const applyContractReserves = (row) => {
     return target?.values?.[staffCode] ? Number(target.values[staffCode]) : 0;
   };
 
-  const annualAmt = findContractValue('연차', '04003001');
-  if (annualAmt > 0) row.reserves.annualLeave = annualAmt;
-
-  const severanceAmt = findContractValue('퇴직', '04003003');
-  if (severanceAmt > 0) row.reserves.severance = severanceAmt;
+  // 3. 적립금 항목 강제 주입 (급여정보DB 무시하고 계약데이터로 덮어쓰기)
+  row.reserves.annualLeave = findContractValue('연차', '04003001'); // 연차적립금
+  row.reserves.severance = findContractValue('퇴직', '04003003');   // 퇴직적립금
+  row.reserves.workersDay = findContractValue('근로자', '04003002'); // 근로자의 날
 
   const sanjaeAmt = findContractValue('산재', '04003010');
-  if (sanjaeAmt > 0) row.reserves.sanjae = sanjaeAmt;
-
+  row.reserves.sanjae = sanjaeAmt;
   row.originalSanjae = sanjaeAmt;
 
   finalize();
@@ -982,7 +996,9 @@ const resetAll = () => {
 
 const loadPayrollData = async () => {
   if (!formData.value.sIdx) { alert('현장을 먼저 선택해주세요.'); return; }
-  if (formData.value.payrollData.length > 0 && !confirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) return;
+  if (
+      formData.value.payrollData.length > 0
+      && !confirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) return;
 
   try {
     const targetDate = formData.value.target_month || formData.value.billingDt || '';
@@ -1035,14 +1051,18 @@ const loadPayrollData = async () => {
       const filteredPayItems = {};
       let recalculatedGrossPay = 0;
 
+      const reserveCodes = ['04003001', '04003003', '04003002', '04003010'];
+
       Object.entries(parsedPayItems).forEach(([cd, amt]) => {
-        // 계약서의 validItemCds에 포함된 코드이거나,
-        // 기본급(04001001) 등 필수 항목인 경우만 포함 (필요시 조건 조정)
+        // 적립금 코드는 급여정보(DB)에 0원으로 있든 금액이 있든 무시합니다. (산출내역서 값을 쓸 것이기 때문)
+        if (reserveCodes.includes(cd)) {
+          return;
+        }
+
         if (validItemCds.includes(cd)) {
           filteredPayItems[cd] = Number(amt) || 0;
           recalculatedGrossPay += Number(amt) || 0;
         } else {
-          // 콘솔 로그로 제외된 항목 확인 (디버깅용)
           console.log(`현장 산출내역에 없어 제외된 항목: ${cd} (${amt}원)`);
         }
       });
