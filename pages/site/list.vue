@@ -131,10 +131,15 @@ const getContractPeriods = (site) => {
   }
 
   return site.contracts
-      .map(contract => contract?.contract_period)
-      .filter(period => period)
+      .filter(contract => contract?.contract_period) // 기간이 있는 데이터만 필터링
+      .map(contract => {
+        // type 값이 있으면 CSS 클래스가 적용된 태그로 감싸서 추가
+        const typeBadge = contract.type ? `<span class="contract-type-badge">[${contract.typeNm}]</span>` : '';
+        return `${typeBadge} ${contract.contract_period}`;
+      })
       .join('<br>');
 }
+
 // 6. 이벤트 핸들러
 const handleSearch = () => {
   console.log('현장 검색 시작:', searchTerm.value, selectedStatus.value);
@@ -432,12 +437,12 @@ const goRemove = async (id) => {
             <col width="5%">
             <col width="10%">
             <col width="*%">
-            <col width="12%">
-            <col width="8%">
+            <col width="15%">
+            <col width="4%">
             <col width="10%">
-            <col width="8%">
+            <col width="4%">
             <col width="10%">
-            <col width="8%">
+            <col width="4%">
             <col width="5%">
             <col width="5%">
           </colgroup>
