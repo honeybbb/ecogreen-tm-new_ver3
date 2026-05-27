@@ -42,15 +42,25 @@ const handleFileUpload = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
 
-  // 서버로 이미지 업로드 (API 구현 필요)
   const formData = new FormData();
   formData.append('image', file);
 
   try {
     const response = await axios.post('/api/v1/upload/image', formData);
-    const imageUrl = response.data.url; // 서버에서 반환하는 이미지 URL
+
+    // 1. 서버에서 온 상대 경로 (/uploads/12345_abc.png)
+    const rawUrl = response.data.url;
+
+    const backendHost = '/api';
+    const imageUrl = rawUrl.startsWith('http') ? rawUrl : `${backendHost}${rawUrl}`;
+
+    // 3. 에디터에 적용 (원인 2 수정한 코드로 반영)
     editor.value.chain().focus().setImage({ src: imageUrl }).run();
+
+    // 파일 input 초기화 (같은 파일을 연속으로 올릴 때 대비)
+    event.target.value = '';
   } catch (error) {
+    console.error(error);
     alert('이미지 업로드 실패');
   }
 };
