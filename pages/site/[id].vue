@@ -496,6 +496,7 @@ const addContractGroup = (category) => {
   contractGroups.value.push({
     category: category.itemNm,
     type: category.itemCd,
+    firstContractDt: '',
     contractStart: '',
     contractEnd: '',
     totalCost: 0,
@@ -848,6 +849,7 @@ const getSiteData = async () => {
         return {
           category:          item.category,
           type:              item.type,
+          firstContractDt:     item.firstContractDt || item.contractStart || item.startDt || '',
           contractStart:     item.contractStart || item.startDt || '',
           contractEnd:       item.contractEnd || item.endDt || '',
           totalCost:         item.totalCost || item.total_cost || 0,
@@ -1312,12 +1314,16 @@ onMounted(async () => {
             <div class="contract-card-body">
               <div class="contract-info-grid">
                 <div class="contract-info-item">
+                  <label>최초 계약일</label>
+                  <input type="date" v-model="group.firstContractDt" class="info-input" max="9999-12-31" />
+                </div>
+                <div class="contract-info-item">
                   <label>계약 시작일</label>
-                  <input type="date" v-model="group.contractStart" class="info-input" />
+                  <input type="date" v-model="group.contractStart" class="info-input" max="9999-12-31"/>
                 </div>
                 <div class="contract-info-item">
                   <label>계약 종료일</label>
-                  <input type="date" v-model="group.contractEnd" class="info-input" />
+                  <input type="date" v-model="group.contractEnd" class="info-input" max="9999-12-31" />
                 </div>
                 <div class="contract-info-item full-width">
                   <label>근무 시간 및 형태</label>

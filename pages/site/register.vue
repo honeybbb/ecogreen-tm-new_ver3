@@ -298,6 +298,13 @@ const syncCostBreakdownToStaff = (group) => {
   });
 };
 
+// 계약 시작일 입력 시, 최초 계약일이 비어있으면 자동 채움
+const syncFirstContractDate = (group) => {
+  if (!group.firstContractDt && group.contractStart) {
+    group.firstContractDt = group.contractStart;
+  }
+};
+
 const onInputCost = (item, code, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart; // 현재 커서 위치 저장
@@ -404,8 +411,9 @@ const addContractGroup = (category) => {
   contractGroups.value.push({
     category: category.itemNm,
     type: category.itemCd,
-    contractStart: '',
-    contractEnd: '',
+    firstContractDt: '', // 최초 계약일
+    contractStart: '', //계약 시작일
+    contractEnd: '',  //계약 종료일
     totalCost: 0,
     workDays: '',
     workSchedule: '',
@@ -684,7 +692,7 @@ const getSiteData = async () => {
           showSchedule: false
         }));
 
-        // ✨ 근로시간 데이터가 없는 구버전 마스터 대응용 방어 코드
+        // 근로시간 데이터가 없는 구버전 마스터 대응용 방어 코드
         const costBreakdownData = item.costBreakdown || createDefaultCostBreakdown(staffListMapped);
         if (!costBreakdownData.dailyWorkHours) {
           costBreakdownData.dailyWorkHours = makeValuesObj(staffListMapped, '');
@@ -696,6 +704,7 @@ const getSiteData = async () => {
         return {
           category: item.category,
           type: item.type,
+          firstContractDt: item.firstContractDt || item.startDt,
           contractStart: item.startDt,
           contractEnd: item.endDt,
           totalCost: 0,
@@ -1018,12 +1027,22 @@ onMounted(() => {
             <div class="contract-card-body">
               <div class="form-grid">
                 <div class="form-group">
+                  <label class="form-label"><i class="mdi mdi-calendar-check-outline"></i>최초 계약일</label>
+                  <input type="date" v-model="group.firstContractDt" class="form-input" max="9999-12-31" />
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
                   <label class="form-label required"><i class="mdi mdi-calendar-start-outline"></i>계약 시작일</label>
-                  <input type="date" v-model="group.contractStart" required class="form-input" />
+                  <input type="date"
+                         v-model="group.contractStart"
+                         @change="syncFirstContractDate(group)"
+                         required
+                         class="form-input" max="9999-12-31" />
                 </div>
                 <div class="form-group">
                   <label class="form-label required"><i class="mdi mdi-calendar-end-outline"></i>계약 종료일</label>
-                  <input type="date" v-model="group.contractEnd" required class="form-input" />
+                  <input type="date" v-model="group.contractEnd" required class="form-input" max="9999-12-31" />
                 </div>
                 <div class="form-group full-width">
                   <label class="form-label required"><i class="mdi mdi-clock-outline"></i>근무 시간 및 형태</label>
