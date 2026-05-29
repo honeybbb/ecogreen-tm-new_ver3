@@ -26,6 +26,7 @@ const selectedType   = ref('전체');
 const selectedStatus = ref('전체');
 const selectedGender = ref('전체');
 
+const filterContractDate = ref(false);
 const filterStartDate    = ref('');
 const filterEndDate      = ref('');
 const filterNoPension    = ref(false);
@@ -141,6 +142,7 @@ const resetFilters = () => {
   selectedType.value       = '전체';
   selectedStatus.value     = '전체';
   selectedGender.value     = '전체';
+  filterContractDate.value = false;
   filterStartDate.value    = '';
   filterEndDate.value      = '';
   filterNoPension.value    = false;
@@ -164,6 +166,7 @@ const syncFiltersFromURL = () => {
   if (q.type)         selectedType.value = q.type;
   if (q.status)       selectedStatus.value = q.status;
   if (q.gender)       selectedGender.value = q.gender;
+  if (q.contract)     filterContractDate.value = q.contract === 'true';
   if (q.startDate)    filterStartDate.value = q.startDate;
   if (q.endDate)      filterEndDate.value = q.endDate;
   if (q.noPension)    filterNoPension.value = q.noPension === 'true';
@@ -180,29 +183,28 @@ const syncFiltersFromURL = () => {
 watch(
     [
       searchTerm, selectedSite, selectedType, selectedStatus, selectedGender,
-      filterStartDate, filterEndDate, filterNoPension, filterNoEmployment,
+      filterContractDate, filterStartDate, filterEndDate, filterNoPension, filterNoEmployment,
       filterDisability, filterForeigner, currentPage, pageSize, sortKey, sortOrder
     ],
     () => {
-      // 쿼리 파라미터 구성 (불필요한 기본값은 URL에 안 넣어서 깔끔하게 유지)
       const query = {};
-      if (searchTerm.value)         query.search = searchTerm.value;
-      if (selectedSite.value !== '전체') query.site = selectedSite.value;
-      if (selectedType.value !== '전체') query.type = selectedType.value;
+      if (searchTerm.value)              query.search = searchTerm.value;
+      if (selectedSite.value !== '전체')  query.site = selectedSite.value;
+      if (selectedType.value !== '전체')  query.type = selectedType.value;
       if (selectedStatus.value !== '전체') query.status = selectedStatus.value;
       if (selectedGender.value !== '전체') query.gender = selectedGender.value;
-      if (filterStartDate.value)    query.startDate = filterStartDate.value;
-      if (filterEndDate.value)      query.endDate = filterEndDate.value;
-      if (filterNoPension.value)    query.noPension = 'true';
-      if (filterNoEmployment.value) query.noEmployment = 'true';
-      if (filterDisability.value)   query.disability = 'true';
-      if (filterForeigner.value)    query.foreigner = 'true';
-      if (currentPage.value !== 1)  query.page = currentPage.value;
-      if (pageSize.value !== 50)    query.size = pageSize.value;
-      if (sortKey.value !== 'id')   query.sort = sortKey.value;
-      if (sortOrder.value !== 'asc') query.order = sortOrder.value;
+      if (filterContractDate.value)      query.contract = 'true';  // ← 수정
+      if (filterStartDate.value)         query.startDate = filterStartDate.value;
+      if (filterEndDate.value)           query.endDate = filterEndDate.value;
+      if (filterNoPension.value)         query.noPension = 'true';
+      if (filterNoEmployment.value)      query.noEmployment = 'true';
+      if (filterDisability.value)        query.disability = 'true';
+      if (filterForeigner.value)         query.foreigner = 'true';
+      if (currentPage.value !== 1)       query.page = currentPage.value;
+      if (pageSize.value !== 50)         query.size = pageSize.value;
+      if (sortKey.value !== 'id')        query.sort = sortKey.value;
+      if (sortOrder.value !== 'asc')     query.order = sortOrder.value;
 
-      // URL을 새로운 쿼리로 덮어쓰기 (히스토리에 남기지 않으려면 replace 사용 권장)
       router.replace({ query });
     },
     { deep: true }
@@ -226,9 +228,11 @@ const filteredMembers = computed(() => {
     const activeMatch = selectedStatus.value === '전체' || member.status == selectedStatus.value;
     const genderMatch = selectedGender.value === '전체' || member.gender == selectedGender.value;
 
+    const contractMatch = !filterContractDate.value || !member.contract || member.contract === '';
+
     return siteMatch && searchMatch && typeMatch &&
         dateMatch && pensionMatch && employmentMatch &&
-        disaMatch && foreMatch && activeMatch && genderMatch;
+        disaMatch && foreMatch && activeMatch && genderMatch && contractMatch;
   });
 
   result.sort((a, b) => {
@@ -283,6 +287,15 @@ const getDisabilityStyle = (grade) => {
     color: 'var(--bg-surface)',
     border: 'none',
   };
+};
+
+const getContractDaysLeft = (contractDate) => {
+  if (!contractDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(contractDate);
+  end.setHours(0, 0, 0, 0);
+  return Math.ceil((end - today) / (1000 * 60 * 60 * 24));
 };
 
 const goToRegister = () => {
@@ -479,6 +492,10 @@ onActivated(async () => {
             <input type="checkbox" v-model="filterForeigner" @change="onFilterChange">
             <i class="mdi mdi-earth"></i><span>외국인</span>
           </label>
+          <label class="toggle-chip" :class="{ active: filterContractDate }">
+            <input type="checkbox" v-model="filterContractDate" @change="onFilterChange">
+            <i class="mdi mdi-account-alert"></i><span>근로계약일 공백</span>
+          </label>
         </div>
       </div>
     </div>
@@ -547,8 +564,8 @@ onActivated(async () => {
               <div class="th-content">직책 <i v-if="sortKey==='position'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="resizable">
-              <div class="th-content">근로계약일</div>
+            <th class="sortable resizable">
+              <div class="th-content">근로계약일 <i v-if="sortKey==='contract'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('gender')" class="sortable resizable">
@@ -612,7 +629,22 @@ onActivated(async () => {
             <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
             <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
             <td>{{ member.position }}</td>
-            <td>{{member.contract}}</td>
+            <td :class="{ 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 }">
+              <span v-if="member.contract" class="tooltip-container">
+                {{ member.contract }}
+                <span
+                    v-if="
+                      getContractDaysLeft(member.contract) !== null
+                      && getContractDaysLeft(member.contract) < 60"
+                    class="tooltip-text"
+                >
+                  {{ getContractDaysLeft(member.contract) < 0
+                    ? `계약 만료 (${Math.abs(getContractDaysLeft(member.contract))}일 경과)`
+                    : `만료 ${getContractDaysLeft(member.contract)}일 전` }}
+                </span>
+              </span>
+              <span v-else class="text-gray">-</span>
+            </td>
             <td>{{ member.gender === 'M' ? '남' : '여' }}</td>
             <td
                 :class="{ 'age-warning': calculateAge(member.birthDt) >= ageLimits.employment }"
@@ -889,5 +921,17 @@ onActivated(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.contract-warning {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-weight: 600;
+}
+
+.contract-danger {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+  font-weight: 600;
 }
 </style>
