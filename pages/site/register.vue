@@ -1920,7 +1920,7 @@ onMounted(() => {
 .text-muted { color: var(--text-muted); }
 
 .time-inputs { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.time-input { padding: 4px 6px; font-size: 12px; width: 100px; text-align: center; }
+.time-input { padding: 4px 6px; font-size: 12px; width: 120px; text-align: center; }
 .break-input { padding: 4px; font-size: 12px; width: 60px; text-align: right; margin: 0 auto; }
 .biweekly-checkbox { display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; }
 
