@@ -1143,6 +1143,7 @@ onMounted(() => {
                             <td>
                               <input v-if="staff.schedule[day.val].isActive"
                                      type="number"
+                                     step="any"
                                      v-model="staff.schedule[day.val].breakTime"
                                      class="form-input break-input"
                                      min="0" placeholder="0" />

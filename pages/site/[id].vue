@@ -1331,7 +1331,7 @@ onMounted(async () => {
                 </div>
                 <div class="contract-info-item full-width">
                   <label>휴게 시간</label>
-                  <input type="text" v-model="group.breakTime" class="info-input" />
+                  <input type="number" step="any" v-model="group.breakTime" class="info-input" />
                 </div>
               </div>
 
