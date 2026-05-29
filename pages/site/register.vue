@@ -1030,8 +1030,6 @@ onMounted(() => {
                   <label class="form-label"><i class="mdi mdi-calendar-check-outline"></i>최초 계약일</label>
                   <input type="date" v-model="group.firstContractDt" class="form-input" max="9999-12-31" />
                 </div>
-              </div>
-              <div class="form-grid">
                 <div class="form-group">
                   <label class="form-label required"><i class="mdi mdi-calendar-start-outline"></i>계약 시작일</label>
                   <input type="date"
