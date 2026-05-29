@@ -84,6 +84,34 @@ const fetchMembers = async () => {
   }
 };
 
+const updateFourInsStatus = async (m, colName) => {
+  // colName은 'inYn' 또는 'outYn'이 들어옵니다.
+  // 현재 값이 'Y'면 'N'으로, 'N'이면 'Y'로 변경할 값을 계산합니다.
+  const newValue = m[colName] === 'Y' ? 'N' : 'Y';
+  const label = colName === 'inYn' ? '취득신고' : '상실신고';
+
+  if (!confirm(`${m.name} 직원의 4대보험 ${label} 여부를 변경하시겠습니까?`)) return;
+
+  let payload = {
+    colName: colName,
+    status: newValue
+  };
+
+  try {
+    const res = await axios.put(`/api/v1/member/status/four/ins/${m.idx}`, payload);
+
+    if (res.data.result) {
+      // DB 업데이트가 성공하면 화면의 데이터도 즉시 변경해줍니다. (새로고침 불필요)
+      m[colName] = newValue;
+    } else {
+      alert('상태 변경에 실패했습니다.');
+    }
+  } catch (error) {
+    console.error('API 에러:', error);
+    alert('서버 통신 중 오류가 발생했습니다.');
+  }
+}
+
 const toggleRRN = async () => {
   if (showRRN.value) {
     showRRN.value = false;
@@ -536,8 +564,8 @@ onActivated(async () => {
             <col width="8%">
             <col width="4%">
             <col width="3%">
-            <col width="6%">
-            <col width="6%">
+            <col width="8%">
+            <col width="8%">
             <col width="5%">
             <col width="2%">
             <col width="2%">
@@ -682,8 +710,14 @@ onActivated(async () => {
                 </span>
               <span v-else class="text-gray">-</span>
             </td>
-            <td>{{ formatDate(member.inDate) }}</td>
-            <td>{{ formatDate(member.outDate) }}</td>
+            <td class="cursor-pointer"
+                :class="member.inYn == 'N' ? 'contract-warning':''" @click="updateFourInsStatus(member, 'inYn')">
+              {{ formatDate(member.inDate) }}
+            </td>
+            <td class="cursor-pointer"
+                :class="member.outYn == 'N' ? 'contract-warning': ''" @click="updateFourInsStatus(member, 'outYn')">
+              {{ formatDate(member.outDate) }}
+            </td>
             <td>{{member.outReason}}</td>
             <td class="text-center">
               <i v-if="member.four_ins === 'Y' || member.four_ins === true" class="mdi mdi-check-circle check-icon"></i>
