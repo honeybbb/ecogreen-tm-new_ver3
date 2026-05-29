@@ -374,7 +374,7 @@ const createDefaultCostBreakdown = (staffList = []) => ({
     { label: '기본급',         values: makeValuesObj(staffList) },
     { label: '야간근로수당',    values: makeValuesObj(staffList) },
     { label: '직책수당',        values: makeValuesObj(staffList) },
-    { label: '근로자의날 수당', values: makeValuesObj(staffList) },
+    { label: '근로자의날수당', values: makeValuesObj(staffList) },
     { label: '연차적립금',      values: makeValuesObj(staffList) },
     { label: '퇴직적립금',      values: makeValuesObj(staffList) },
   ],
@@ -464,7 +464,7 @@ const getContractDuration = (group) => {
 const addStaffToGroup = (groupIndex) => {
   const group = contractGroups.value[groupIndex];
   if (!group.tempJobCode) { alert('직책을 선택해주세요.'); return; }
-  if (group.tempCount < 1) { alert('1명 이상 입력해주세요.'); return; }
+  if (group.tempCount < 1 || group.tempCount == '') { alert('1명 이상 입력해주세요.'); return; }
   const jobInfo  = positionOptions.value.find(p => p.itemCd === group.tempJobCode);
   const existing = group.staffList.find(s => s.code === jobInfo.itemCd);
 

@@ -82,15 +82,16 @@ const selectedRightItems = ref([]);
 const allAvailableItems = computed(() => {
   const map = new Map();
 
-  dynamicSettlementItems.value.payItems.forEach(label => {
-    const found = wagesData.value.find(w => w.itemNm === label);
+  // dynamicSettlementItems는 이제 '코드'를 가지고 있습니다.
+  dynamicSettlementItems.value.payItems.forEach(code => {
+    const found = wagesData.value.find(w => w.itemCd === code);
     if (found) map.set(found.itemCd, found.itemNm);
-    else map.set(label, label);
+    else map.set(code, code); // fallback
   });
-  dynamicSettlementItems.value.deductionItems.forEach(label => {
-    const found = wagesData.value.find(w => w.itemNm === label);
+  dynamicSettlementItems.value.deductionItems.forEach(code => {
+    const found = wagesData.value.find(w => w.itemCd === code);
     if (found) map.set(found.itemCd, found.itemNm);
-    else map.set(label, label);
+    else map.set(code, code); // fallback
   });
 
   (wagesData.value || []).forEach(w => {
@@ -133,9 +134,11 @@ const toggleRight = (item) => {
 };
 
 const isPayItem = (cd) => {
+  // 배열에 코드가 들어있으므로, 파라미터로 넘어온 코드(cd)가 있는지 바로 확인
+  if (dynamicSettlementItems.value.payItems.includes(cd)) return true;
+
   const found = wagesData.value.find(w => w.itemCd === cd);
   const nm = found ? found.itemNm : cd;
-  if (dynamicSettlementItems.value.payItems.includes(nm)) return true;
   return PAY_CONTROL_KEYWORDS.some(kw => nm.includes(kw));
 };
 
@@ -186,22 +189,20 @@ const PAY_CONTROL_KEYWORDS = ['연차', '퇴직', '근로자의날'];
 
 // 산출내역서에서 동적으로 수집된 항목들
 const dynamicSettlementItems = computed(() => {
-  const paySet = new Map();       // label → true (직접노무비 중 특수항목)
-  const deductionSet = new Map(); // label → true (간접노무비)
+  const paySet = new Map();
+  const deductionSet = new Map();
 
   contractGroups.value.forEach(group => {
     if (!group.costBreakdown) return;
 
-    // 직접노무비 중 특수 지급항목 추출
     (group.costBreakdown.directLabor || []).forEach(item => {
-      if (!item.label) return;
-      const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label.includes(kw));
-      if (isSpecial) paySet.set(item.label, true);
+      if (!item.code) return;
+      const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label?.includes(kw));
+      if (isSpecial) paySet.set(item.code, true); // ← label → code
     });
 
-    // 간접노무비 전체
     (group.costBreakdown.indirectLabor || []).forEach(item => {
-      if (item.label) deductionSet.set(item.label, true);
+      if (item.code) deductionSet.set(item.code, true); // ← label → code
     });
   });
 
@@ -226,24 +227,25 @@ const settlementConfig = ref({
 });
 
 // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
+// 산출내역서 항목이 바뀌면 새로운 항목(코드)은 자동으로 체크 추가
 watch(dynamicSettlementItems, (newItems) => {
   // 지급항목: 새로 추가된 항목 자동 체크
-  newItems.payItems.forEach(label => {
-    if (!settlementConfig.value.activePayLabels.includes(label)) {
-      settlementConfig.value.activePayLabels.push(label);
+  newItems.payItems.forEach(code => {
+    if (!settlementConfig.value.activePayLabels.includes(code)) {
+      settlementConfig.value.activePayLabels.push(code);
     }
   });
   settlementConfig.value.activePayLabels =
-      settlementConfig.value.activePayLabels.filter(l => newItems.payItems.includes(l));
+      settlementConfig.value.activePayLabels.filter(c => newItems.payItems.includes(c));
 
   // 공제항목
-  newItems.deductionItems.forEach(label => {
-    if (!settlementConfig.value.activeDeductionLabels.includes(label)) {
-      settlementConfig.value.activeDeductionLabels.push(label);
+  newItems.deductionItems.forEach(code => {
+    if (!settlementConfig.value.activeDeductionLabels.includes(code)) {
+      settlementConfig.value.activeDeductionLabels.push(code);
     }
   });
   settlementConfig.value.activeDeductionLabels =
-      settlementConfig.value.activeDeductionLabels.filter(l => newItems.deductionItems.includes(l));
+      settlementConfig.value.activeDeductionLabels.filter(c => newItems.deductionItems.includes(c));
 }, { deep: true });
 
 // =============================================
@@ -729,15 +731,23 @@ const getSiteData = async () => {
     }
 
     // 4. 정산 세부 노출 설정 세팅
+    // 4. 정산 세부 노출 설정 세팅
     if (result.viewConfig) {
       try {
         const parsed = typeof result.viewConfig === 'string'
             ? JSON.parse(result.viewConfig)
             : result.viewConfig;
 
+        // 기존 한글 데이터(연차적립금 등)를 코드로 매핑해주는 방어 코드 추가
+        const convertLabelToCode = (val) => {
+          const found = wagesData.value.find(w => w.itemNm === val || w.itemCd === val);
+          return found ? found.itemCd : val;
+        };
+
         settlementConfig.value = {
-          activePayLabels:       parsed.activePayLabels       ?? [],
-          activeDeductionLabels: parsed.activeDeductionLabels ?? [],
+          // 불러올 때 한글이면 코드로 변환하여 저장
+          activePayLabels:       (parsed.activePayLabels ?? []).map(convertLabelToCode),
+          activeDeductionLabels: (parsed.activeDeductionLabels ?? []).map(convertLabelToCode),
           meltOptions: {
             annualLeave: parsed.meltOptions?.annualLeave ?? false,
             severance:   parsed.meltOptions?.severance   ?? false,
