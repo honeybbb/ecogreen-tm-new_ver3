@@ -17,6 +17,26 @@ const {
   fetchWageCode
 } = useApi();
 
+const DEFAULT_DIRECT_LABOR_COMMON = [
+  { code: '04001001', label: '기본급' },
+  { code: '04001002', label: '직책수당' },
+  { code: '04003001', label: '연차적립금' },
+  { code: '04003003', label: '퇴직적립금' },
+];
+
+const DEFAULT_DIRECT_LABOR_GUARD = [
+  ...DEFAULT_DIRECT_LABOR_COMMON,
+  { code: '04001003', label: '야간수당' },
+];
+
+const DEFAULT_INDIRECT_LABOR = [
+  { code: '04002003', label: '국민연금' },
+  { code: '04002001', label: '건강보험' },
+  { code: '04002002', label: '요양보험' },
+  { code: '04002004', label: '고용보험' },
+  { code: '04003010', label: '산재보험' },
+];
+
 const site = ref({
   siteName: '',
   siteId: '',
@@ -238,23 +258,8 @@ const makeValuesObj = (staffList, defaultVal = '') => {
 const createDefaultCostBreakdown = (staffList = []) => ({
   dailyWorkHours: makeValuesObj(staffList, ''),
   monthlyWorkHours: makeValuesObj(staffList, ''),
-  // dailyHoursBigo: '',
-  // monthlyHoursBigo: '',
-  directLabor: [
-    { label: '기본급',        values: makeValuesObj(staffList) },
-    { label: '야간근로수당',   values: makeValuesObj(staffList) },
-    { label: '직책수당',       values: makeValuesObj(staffList) },
-    { label: '근로자의날수당', values: makeValuesObj(staffList) },
-    { label: '연차적립금',     values: makeValuesObj(staffList) },
-    { label: '퇴직적립금',     values: makeValuesObj(staffList) },
-  ],
-  indirectLabor: [
-    { label: '건강보험',     values: makeValuesObj(staffList) },
-    { label: '장기요양보험', values: makeValuesObj(staffList) },
-    { label: '국민연금',     values: makeValuesObj(staffList) },
-    { label: '고용보험',     values: makeValuesObj(staffList) },
-    { label: '산재보험',     values: makeValuesObj(staffList) },
-  ],
+  directLabor: [],   // ← 빈 배열로 변경
+  indirectLabor: [], // ← 빈 배열로 변경
   expenses: [
     { label: '피복비 및 장구비', values: makeValuesObj(staffList) },
     { label: '교육훈련비',       values: makeValuesObj(staffList) },
@@ -368,6 +373,34 @@ const onInputMonthlyTotal = (group, event) => {
 // 계약 그룹 CRUD
 // =============================================
 const addContractGroup = (category) => {
+  // 타입에 따라 직접노무비 항목 결정
+  const isGuard = category.itemNm === '경비';   // 경비
+  const isCleaning = category.itemNm === '미화'; // 미화
+
+  const directLaborTemplate = isGuard
+      ? DEFAULT_DIRECT_LABOR_GUARD
+      : (isCleaning ? DEFAULT_DIRECT_LABOR_COMMON : []);
+
+  const defaultBreakdown = createDefaultCostBreakdown([]);
+
+  // 직접노무비 기본 항목 주입
+  defaultBreakdown.directLabor = directLaborTemplate.map(item => ({
+    code:   item.code,
+    label:  item.label,
+    values: {},
+    bigo:   '',
+  }));
+
+  // 간접노무비 기본 항목 주입 (경비/미화 공통)
+  if (isGuard || isCleaning) {
+    defaultBreakdown.indirectLabor = DEFAULT_INDIRECT_LABOR.map(item => ({
+      code:   item.code,
+      label:  item.label,
+      values: {},
+      bigo:   '',
+    }));
+  }
+
   contractGroups.value.push({
     category: category.itemNm,
     type: category.itemCd,
@@ -381,7 +414,7 @@ const addContractGroup = (category) => {
     tempJobCode: '',
     tempCount: 1,
     isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
-    costBreakdown: createDefaultCostBreakdown([]),
+    costBreakdown: defaultBreakdown,
     showCostBreakdown: false,
     salarySource: 'contract',
   });
@@ -1128,7 +1161,9 @@ onMounted(() => {
                   <template v-else>
                     <div class="cost-scroll-area">
                       <div class="cost-section-title">
-                        <span class="cost-block-label label-hours">⏱️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
+                        <span class="cost-block-label label-hours">
+                          <i class="mdi mdi-clock-check"></i>
+                          ️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
                       </div>
                       <table class="cost-table hours-standalone-table">
                         <thead>
@@ -1281,7 +1316,11 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
-                            <CodeSelect v-model="item.label" :allow-empty="false" />
+                            <CodeSelect
+                                v-model="item.code"
+                                @update:label="(val) => item.label = val"
+                                :allow-empty="false"
+                            />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1339,7 +1378,11 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
-                            <CodeSelect v-model="item.label" :allow-empty="false" />
+                            <CodeSelect
+                                v-model="item.code"
+                                @update:label="(val) => item.label = val"
+                                :allow-empty="false"
+                            />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1878,6 +1921,7 @@ onMounted(() => {
 .btn-add-cost-item i { font-size: 14px; }
 
 .cost-block-label { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text-inverse); flex-shrink: 0; }
+.label-hours { background: #6b7280;}
 .label-direct    { background-color: #3b82f6; }
 .label-indirect  { background-color: #8b5cf6; }
 .label-expense   { background-color: #f59e0b; }

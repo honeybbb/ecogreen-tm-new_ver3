@@ -1340,7 +1340,13 @@ onMounted(async () => {
                     <option value="">직책 선택</option>
                     <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
                   </select>
-                  <input type="number" v-model="group.tempCount" min="1" class="info-input staff-count-input text-right" placeholder="인원 수" />
+                  <input
+                      type="number"
+                      v-model="group.tempCount"
+                      min="1"
+                      class="info-input staff-count-input text-right"
+                      placeholder="인원 수"
+                  />
                   <button type="button" @click="addStaffToGroup(idx)" class="btn-add-staff-small">
                     <i class="mdi mdi-plus"></i> 추가
                   </button>
@@ -2386,7 +2392,7 @@ export default {
    공통 폼 스타일
 ============================================= */
 .info-sections { display: flex; flex-direction: column; gap: 32px; }
-.info-section:not(:last-child) { /*padding-bottom: 32px;*/ border-bottom: 1px dashed var(--border-color); }
+.info-section:not(:last-child) { padding-bottom: 32px; border-bottom: 1px dashed var(--border-color); }
 .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
 .section-header i { font-size: 20px; color: var(--primary); }
 .section-header h3 { font-size: 16px; font-weight: 700; color: var(--text-main); margin: 0; }
@@ -3189,7 +3195,6 @@ input:checked + .slider:before { transform: translateX(18px); }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-bottom: 24px;
 }
 
 .source-selection-row {
