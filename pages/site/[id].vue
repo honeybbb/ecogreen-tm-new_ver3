@@ -533,19 +533,37 @@ const dynamicSettlementItems = computed(() => {
 
   contractGroups.value.forEach(group => {
     if (!group.costBreakdown) return;
+
+    // 직접노무비 수집
     (group.costBreakdown.directLabor || []).forEach(item => {
       if (!item.label) return;
+      // DB 표준 코드인지 찾기
+      const found = wagesData.value.find(w => w.itemNm === item.label || w.itemCd === item.label);
       const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label.includes(kw));
-      if (isSpecial) paySet.set(item.label, true);
+
+      if (found) {
+        if (isSpecial) paySet.set(found.itemCd, found.itemNm);
+      } else if (isSpecial) {
+        paySet.set(item.label, item.label); // Fallback
+      }
     });
+
+    // 간접노무비 수집
     (group.costBreakdown.indirectLabor || []).forEach(item => {
-      if (item.label) deductionSet.set(item.label, true);
+      if (!item.label) return;
+      const found = wagesData.value.find(w => w.itemNm === item.label || w.itemCd === item.label);
+
+      if (found) {
+        deductionSet.set(found.itemCd, found.itemNm);
+      } else {
+        deductionSet.set(item.label, item.label); // Fallback
+      }
     });
   });
 
   return {
-    payItems:       Array.from(paySet.keys()),
-    deductionItems: Array.from(deductionSet.keys()),
+    payCds:       Array.from(paySet.keys()),
+    deductionCds: Array.from(deductionSet.keys()),
   };
 });
 
@@ -558,17 +576,17 @@ const settlementConfig = ref({
 
 // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
 watch(dynamicSettlementItems, (newItems) => {
-  newItems.payItems.forEach(label => {
-    const found = wagesData.value.find(w => w.itemNm === label);
-    const cd = found ? found.itemCd : label;
-    if (!settlementConfig.value.activePayLabels.includes(cd))
+  // 지급 항목 처리
+  newItems.payCds.forEach(cd => {
+    if (!settlementConfig.value.activePayLabels.includes(cd)) {
       settlementConfig.value.activePayLabels.push(cd);
+    }
   });
-  newItems.deductionItems.forEach(label => {
-    const found = wagesData.value.find(w => w.itemNm === label);
-    const cd = found ? found.itemCd : label;
-    if (!settlementConfig.value.activeDeductionLabels.includes(cd))
+  // 공제 항목 처리
+  newItems.deductionCds.forEach(cd => {
+    if (!settlementConfig.value.activeDeductionLabels.includes(cd)) {
       settlementConfig.value.activeDeductionLabels.push(cd);
+    }
   });
 }, { deep: true });
 
@@ -584,26 +602,33 @@ const selectedRightItems = ref([]);
 const allAvailableItems = computed(() => {
   const map = new Map(); // cd → nm
 
-  // 1) 산출내역서에서 수집된 동적 항목 (label이 itemNm 기준)
-  dynamicSettlementItems.value.payItems.forEach(label => {
-    const found = wagesData.value.find(w => w.itemNm === label);
-    if (found) map.set(found.itemCd, found.itemNm);
-    // wagesData에 없으면 label 자체를 cd/nm 둘 다 사용 (fallback)
-    else map.set(label, label);
-  });
-  dynamicSettlementItems.value.deductionItems.forEach(label => {
-    const found = wagesData.value.find(w => w.itemNm === label);
-    if (found) map.set(found.itemCd, found.itemNm);
-    else map.set(label, label);
-  });
-
-  // 2) DB 표준 임금 항목 전체
+  // 1) DB 표준 임금 항목 전체를 먼저 기재 (기준점)
   (wagesData.value || []).forEach(w => {
     map.set(w.itemCd, w.itemNm);
   });
 
+  // 2) 산출내역서에서 동적으로 수집된 항목 추가 (표준 외 항목 방어용)
+  dynamicSettlementItems.value.payCds.forEach(cd => {
+    if (!map.has(cd)) map.set(cd, cd);
+  });
+  dynamicSettlementItems.value.deductionCds.forEach(cd => {
+    if (!map.has(cd)) map.set(cd, cd);
+  });
+
   return Array.from(map.entries()).map(([cd, nm]) => ({ cd, nm }));
 });
+
+// 지급/공제 판별기 수정 (코드로 판별하도록 고정)
+const isPayItem = (cd) => {
+  // dynamicSettlementItems의 payCds에 들어있거나, 코드매핑 데이터 확인
+  if (dynamicSettlementItems.value.payCds.includes(cd)) return true;
+
+  const found = wagesData.value.find(w => w.itemCd === cd);
+  if (found) {
+    return PAY_CONTROL_KEYWORDS.some(kw => found.itemNm.includes(kw));
+  }
+  return PAY_CONTROL_KEYWORDS.some(kw => cd.includes(kw));
+};
 
 // 현재 선택 설정된 항목
 const unifiedSelectedCds = computed(() => [
@@ -638,14 +663,6 @@ const toggleRight = (item) => { // item = { cd, nm }
   const idx = selectedRightItems.value.indexOf(item.cd);
   if (idx > -1) selectedRightItems.value.splice(idx, 1);
   else selectedRightItems.value.push(item.cd);
-};
-
-// 항목 속성 판별 (지급인지 공제인지)
-const isPayItem = (cd) => {
-  const found = wagesData.value.find(w => w.itemCd === cd);
-  const nm = found ? found.itemNm : cd;
-  if (dynamicSettlementItems.value.payItems.includes(nm)) return true;
-  return PAY_CONTROL_KEYWORDS.some(kw => nm.includes(kw));
 };
 
 // 이동 버튼 로직
