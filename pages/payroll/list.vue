@@ -717,11 +717,25 @@ onMounted(async () => {
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
             <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
             <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
-            <td class="text-center sticky-col sticky-col-8">
+            <td class="text-center sticky-col sticky-col-8" style="overflow: visible !important;">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                <span :class="['font-bold', getInsuranceWarning(p).type === 'danger' ? 'text-red' : getInsuranceWarning(p).type === 'warning' ? 'text-orange' : getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray']">
-                  {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
-                </span>
+    <span :class="['font-bold', getInsuranceWarning(p).type === 'danger' ? 'text-red' : getInsuranceWarning(p).type === 'warning' ? 'text-orange' : getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray']">
+      {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+    </span>
+
+                <i v-if="getInsuranceWarning(p).type !== 'normal'"
+                   :class="[
+         'mdi',
+         getInsuranceWarning(p).type === 'danger'  ? 'mdi-alert-circle text-red' :
+         getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
+         'mdi-information text-blue'
+       ]"
+                   style="font-size: 14px;">
+                </i>
+
+                <span v-if="getInsuranceWarning(p).type !== 'normal'" class="tooltip-text">
+      {{ getInsuranceWarning(p).message }}
+    </span>
               </div>
             </td>
 
