@@ -467,7 +467,7 @@ onActivated(async () => {
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building"></i> 근무 현장</label>
-          <SiteSelect v-model="selectedSite" />
+          <SiteSelect v-model="selectedSite" :width="'100%'" />
         </div>
 
         <div class="filter-group">
@@ -1107,5 +1107,9 @@ onActivated(async () => {
 
   .filter-toggles-row { flex-direction: column; align-items: flex-start; gap: 10px; }
   .filter-toggles { flex-wrap: wrap; }
+  .btn-rrn-toggle,.btn-excel {
+    flex: 1;
+    justify-content: center;
+  }
 }
 </style>

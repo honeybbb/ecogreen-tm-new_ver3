@@ -1037,7 +1037,13 @@ onActivated(() => {
 .section-main-header i { font-size: 24px; color: var(--primary); }
 .section-main-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
 
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px; }
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-bottom: 32px;
+  max-width: 520px;
+}
 .form-group { display: flex; flex-direction: column; gap: 8px; }
 .form-group.full-width { grid-column: 1 / -1; }
 .form-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-sub); }
