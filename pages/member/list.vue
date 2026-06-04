@@ -20,11 +20,12 @@ const {
 } = useApi();
 
 // ── 상태 ──────────────────────────────────────────
-const searchTerm     = ref('');
-const selectedSite   = ref('전체');
-const selectedType   = ref('전체');
-const selectedStatus = ref('전체');
-const selectedGender = ref('전체');
+const searchTerm       = ref('');
+const selectedSite     = ref('전체');
+const selectedType     = ref('전체');
+const selectedStatus   = ref('전체');
+const selectedGender   = ref('전체');
+const selectedPaymentDay = ref('전체'); // ★ 급여일 필터 상태 추가
 
 const filterContractDate = ref(false);
 const filterStartDate    = ref('');
@@ -53,6 +54,22 @@ const pageSize        = ref(50); // 한 페이지당 행 수
 const pageSizeOptions = [50, 100, 200, 500];
 
 const ageLimits = ref({ pension: 0, employment: 0 });
+
+// ★ 급여일 옵션 동적 생성 (존재하는 급여일만 추출 후 정렬)
+const paymentDayOptions = computed(() => {
+  const days = new Set(
+      members.value
+          .map(m => m.payment_day)
+          .filter(d => d !== null && d !== undefined && String(d).trim() !== '')
+  );
+
+  return Array.from(days).sort((a, b) => {
+    const numA = Number(a);
+    const numB = Number(b);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    return String(a).localeCompare(String(b), 'ko');
+  });
+});
 
 const fetchOverAgeOption = async () => {
   const groupCd = '02003';
@@ -170,6 +187,7 @@ const resetFilters = () => {
   selectedType.value       = '전체';
   selectedStatus.value     = '전체';
   selectedGender.value     = '전체';
+  selectedPaymentDay.value = '전체'; // ★ 급여일 초기화 추가
   filterContractDate.value = false;
   filterStartDate.value    = '';
   filterEndDate.value      = '';
@@ -194,6 +212,7 @@ const syncFiltersFromURL = () => {
   if (q.type)         selectedType.value = q.type;
   if (q.status)       selectedStatus.value = q.status;
   if (q.gender)       selectedGender.value = q.gender;
+  if (q.paymentDay)   selectedPaymentDay.value = q.paymentDay; // ★ 급여일 URL 동기화 추가
   if (q.contract)     filterContractDate.value = q.contract === 'true';
   if (q.startDate)    filterStartDate.value = q.startDate;
   if (q.endDate)      filterEndDate.value = q.endDate;
@@ -210,28 +229,29 @@ const syncFiltersFromURL = () => {
 // 2. State 변경 시 State -> URL Query 반영 (watch 활용)
 watch(
     [
-      searchTerm, selectedSite, selectedType, selectedStatus, selectedGender,
+      searchTerm, selectedSite, selectedType, selectedStatus, selectedGender, selectedPaymentDay, // ★ 추가
       filterContractDate, filterStartDate, filterEndDate, filterNoPension, filterNoEmployment,
       filterDisability, filterForeigner, currentPage, pageSize, sortKey, sortOrder
     ],
     () => {
       const query = {};
-      if (searchTerm.value)              query.search = searchTerm.value;
-      if (selectedSite.value !== '전체')  query.site = selectedSite.value;
-      if (selectedType.value !== '전체')  query.type = selectedType.value;
+      if (searchTerm.value)                query.search = searchTerm.value;
+      if (selectedSite.value !== '전체')   query.site = selectedSite.value;
+      if (selectedType.value !== '전체')   query.type = selectedType.value;
       if (selectedStatus.value !== '전체') query.status = selectedStatus.value;
       if (selectedGender.value !== '전체') query.gender = selectedGender.value;
-      if (filterContractDate.value)      query.contract = 'true';  // ← 수정
-      if (filterStartDate.value)         query.startDate = filterStartDate.value;
-      if (filterEndDate.value)           query.endDate = filterEndDate.value;
-      if (filterNoPension.value)         query.noPension = 'true';
-      if (filterNoEmployment.value)      query.noEmployment = 'true';
-      if (filterDisability.value)        query.disability = 'true';
-      if (filterForeigner.value)         query.foreigner = 'true';
-      if (currentPage.value !== 1)       query.page = currentPage.value;
-      if (pageSize.value !== 50)         query.size = pageSize.value;
-      if (sortKey.value !== 'id')        query.sort = sortKey.value;
-      if (sortOrder.value !== 'asc')     query.order = sortOrder.value;
+      if (selectedPaymentDay.value !== '전체') query.paymentDay = selectedPaymentDay.value; // ★ 추가
+      if (filterContractDate.value)        query.contract = 'true';
+      if (filterStartDate.value)           query.startDate = filterStartDate.value;
+      if (filterEndDate.value)             query.endDate = filterEndDate.value;
+      if (filterNoPension.value)           query.noPension = 'true';
+      if (filterNoEmployment.value)        query.noEmployment = 'true';
+      if (filterDisability.value)          query.disability = 'true';
+      if (filterForeigner.value)           query.foreigner = 'true';
+      if (currentPage.value !== 1)         query.page = currentPage.value;
+      if (pageSize.value !== 50)           query.size = pageSize.value;
+      if (sortKey.value !== 'id')          query.sort = sortKey.value;
+      if (sortOrder.value !== 'asc')       query.order = sortOrder.value;
 
       router.replace({ query });
     },
@@ -241,9 +261,12 @@ watch(
 
 const filteredMembers = computed(() => {
   let result = members.value.filter(member => {
-    const siteMatch  = selectedSite.value === '전체' || String(member.sIdx) === String(selectedSite.value);
+    const siteMatch   = selectedSite.value === '전체' || String(member.sIdx) === String(selectedSite.value);
     const searchMatch = member.name.toLowerCase().includes(searchTerm.value.toLowerCase());
-    const typeMatch  = selectedType.value === '전체' || member.type === selectedType.value;
+    const typeMatch   = selectedType.value === '전체' || member.type === selectedType.value;
+    // ★ 급여일 필터 매칭 추가
+    const paymentDayMatch = selectedPaymentDay.value === '전체' || String(member.payment_day) === String(selectedPaymentDay.value);
+
     const dateMatch =
         (!filterStartDate.value || member.inDate >= filterStartDate.value) &&
         (!filterEndDate.value   || member.inDate <= filterEndDate.value);
@@ -251,14 +274,14 @@ const filteredMembers = computed(() => {
     const pensionMatch    = !filterNoPension.value    || calculateAge(member.birthDt) >= ageLimits.value.pension;
     const employmentMatch = !filterNoEmployment.value || calculateAge(member.birthDt) >= ageLimits.value.employment
 
-    const disaMatch  = !filterDisability.value || member.disability === 'Y' || member.disability === true;
-    const foreMatch  = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
+    const disaMatch   = !filterDisability.value || member.disability === 'Y' || member.disability === true;
+    const foreMatch   = !filterForeigner.value  || member.foreigner  === 'Y' || member.foreigner  === true;
     const activeMatch = selectedStatus.value === '전체' || member.status == selectedStatus.value;
     const genderMatch = selectedGender.value === '전체' || member.gender == selectedGender.value;
 
     const contractMatch = !filterContractDate.value || !member.contract || member.contract === '';
 
-    return siteMatch && searchMatch && typeMatch &&
+    return siteMatch && searchMatch && typeMatch && paymentDayMatch && // ★ paymentDayMatch 추가
         dateMatch && pensionMatch && employmentMatch &&
         disaMatch && foreMatch && activeMatch && genderMatch && contractMatch;
   });
@@ -446,6 +469,17 @@ onActivated(async () => {
           <label class="filter-label"><i class="mdi mdi-office-building"></i> 근무 현장</label>
           <SiteSelect v-model="selectedSite" />
         </div>
+
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-calendar-clock"></i> 급여일</label>
+          <select v-model="selectedPaymentDay" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option v-for="day in paymentDayOptions" :key="day" :value="day">
+              {{ day }}{{ isNaN(day) ? '' : '일' }}
+            </option>
+          </select>
+        </div>
+
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-account-box"></i> 구분</label>
           <select v-model="selectedType" class="filter-select" @change="onFilterChange">
@@ -790,7 +824,9 @@ onActivated(async () => {
 </template>
 
 <style scoped>
-/* (기존 CSS와 동일하므로 생략 없이 원본 유지. 길이 제약상 생략하지 않았습니다) */
+/* =========================================
+   기본 공통 및 헤더
+========================================= */
 .page-size-select {
   display: flex;
   align-items: center;
@@ -799,6 +835,103 @@ onActivated(async () => {
   color: var(--text-sub);
 }
 
+/* === 필터 패널 (Grid 레이아웃 적용) === */
+.filter-panel {
+  background: var(--bg-surface);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 핵심 수정: 4칸(1fr) 2줄로 강제 분할 */
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px 10px; /* 위아래 간격 20px, 좌우 간격 16px */
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.filter-group {
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0; /* 그리드 안에서 영역 밖으로 삐져나가는 것 방지 */
+  width: 100%;
+}
+
+.filter-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
+}
+.filter-label i { font-size: 16px; color: var(--primary); }
+
+.filter-select {
+  width: 100%; /* 셀렉트 박스 꽉 채우기 */
+  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+  font-size: 13px; color: var(--text-main); background: var(--bg-surface); cursor: pointer;
+  transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+
+.filter-select:hover { border-color: var(--border-focus); }
+.filter-select:focus {
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* 검색 그룹 - 남은 2칸을 넓게 차지하며 오른쪽 정렬 */
+.search-group {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.search-box {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--bg-canvas);
+  border: 1px solid var(--border-color); border-radius: 8px;
+  width: 100%; max-width: 340px; /* 검색창이 너무 비대해지는 것 제한 */
+  height: 42px; box-sizing: border-box; transition: all 0.2s;
+}
+
+.search-box:focus-within {
+  background: var(--bg-surface); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.search-box i { font-size: 20px; color: var(--text-sub); }
+
+.search-input {
+  flex: 1; border: none; background: transparent; font-size: 13px; color: var(--text-main); outline: none;
+}
+.search-input::placeholder { color: var(--text-sub); opacity: 0.7; }
+.search-clear {
+  background: none; border: none; color: var(--text-sub); cursor: pointer;
+  padding: 4px; border-radius: 4px; transition: all 0.2s; display: flex; align-items: center;
+}
+.search-clear:hover { background: var(--border-color); color: var(--text-main); }
+
+
+/* 입사 기간 (Date) 인풋 최적화 */
+.date-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.date-input {
+  flex: 1; /* 날짜 인풋이 부모 너비에 맞춰 유동적으로 꽉 참 */
+  min-width: 0;
+  cursor: pointer;
+}
+.date-separator {
+  color: var(--text-sub);
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+
+/* =========================================
+   테이블 및 상태 아이콘
+========================================= */
 .table-scroll-container {
   overflow-x: auto;
   overflow-y: visible;
@@ -899,20 +1032,6 @@ onActivated(async () => {
   margin-bottom: 24px; font-weight: 600;
 }
 
-.date-range-inputs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.date-input {
-  width: 130px;
-  cursor: pointer;
-}
-.date-separator {
-  color: var(--text-sub);
-  font-weight: bold;
-}
-
 .resizable {
   position: relative;
   overflow: hidden;
@@ -958,7 +1077,7 @@ onActivated(async () => {
 }
 
 .contract-warning {
-  background-color: rgba(245, 158, 11, 0.12);
+  background-color: rgba(245, 158, 11, 0.12) !important;
   color: #b45309;
   font-weight: 600;
 }
@@ -967,5 +1086,26 @@ onActivated(async () => {
   background-color: rgba(239, 68, 68, 0.12);
   color: var(--danger);
   font-weight: 600;
+}
+
+/* =========================================
+   반응형 (Media Queries)
+========================================= */
+@media (max-width: 1200px) {
+  /* 화면이 살짝 작아지면 3칸 배치로 변경 */
+  .filter-row { grid-template-columns: repeat(3, 1fr); }
+  .search-group { grid-column: span 3; justify-content: flex-start; }
+  .search-box { max-width: 100%; }
+}
+
+@media (max-width: 768px) {
+  /* 태블릿/모바일에서는 모두 1줄로 세로 배치 */
+  .filter-row { grid-template-columns: 1fr; gap: 12px; }
+  .search-group { grid-column: span 1; flex-direction: row; }
+  .search-box { max-width: 100%; flex: 1; }
+  .btn-search { flex-shrink: 0; }
+
+  .filter-toggles-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .filter-toggles { flex-wrap: wrap; }
 }
 </style>
