@@ -6,7 +6,7 @@ import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
 import {calculateAge} from "~/utils/formatter.js";
-import {formatCurrency} from "../../utils/formatter.js";
+import {formatCurrency} from "../../../utils/formatter.js";
 
 const {
   siteOptions,
@@ -1120,9 +1120,9 @@ onMounted(async () => {
       <div class="header-left">
         <h1 class="page-title">
           <i class="mdi mdi-calculator-variant-outline"></i>
-          급여 현황 출력
+          급여 항목별 조회
         </h1>
-        <p class="page-subtitle">계약 급여와 실제 근무일을 대조하여 계산을 진행합니다</p>
+        <p class="page-subtitle">지급된 급여를 항목별로 조회합니다.</p>
       </div>
       <div class="header-actions">
         <!--button @click="resetCalculatedPay" class="btn-refresh">
