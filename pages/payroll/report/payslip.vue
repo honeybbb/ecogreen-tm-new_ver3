@@ -121,14 +121,14 @@ const handlePrint = () => {
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label text-orange">
-            <i class="mdi mdi-circle-small"></i> 지급년월
+            <!--i class="mdi mdi-circle-small"></i--> 지급년월
           </label>
           <input type="month" class="filter-select" v-model="filters.yearMonth" />
         </div>
 
         <div class="filter-group">
           <label class="filter-label text-orange">
-            <i class="mdi mdi-circle-small"></i> 지급일자
+            <!--i class="mdi mdi-circle-small"></i--> 지급일자
           </label>
           <select class="filter-select highlight-select" v-model="filters.payDate">
             <option v-for="opt in payDateOptions" :key="opt" :value="opt">{{ opt }}</option>
@@ -136,17 +136,18 @@ const handlePrint = () => {
         </div>
 
         <div class="filter-group">
-          <label class="filter-label">부서</label>
-          <select class="filter-select dept-select" v-model="filters.department">
+          <label class="filter-label">현장</label>
+          <!--select class="filter-select dept-select" v-model="filters.department">
             <option value="전체">488 | 488 답십리래미안위브-미화</option>
-          </select>
+          </select-->
+          <SiteSelect v-model="filters.department" />
         </div>
 
         <div class="filter-group">
           <label class="filter-label text-orange">
-            <i class="mdi mdi-circle-small"></i> 사번
+            <!--i class="mdi mdi-circle-small"></i--> 사번
           </label>
-          <input type="text" class="filter-select emp-input" v-model="filters.empId" placeholder="사번 입력" />
+          <input type="text" class="filter-select" v-model="filters.empId" placeholder="사번 입력" />
         </div>
       </div>
 
@@ -159,14 +160,14 @@ const handlePrint = () => {
         </div>
 
         <div class="f-options-chk">
-          <label class="check-opt"><input type="checkbox" v-model="filters.showApprovalLine" /> 결재란출력</label>
-          <label class="check-opt"><input type="checkbox" v-model="filters.printVertical" /> 세로출력</label>
+          <!--label class="check-opt"><input type="checkbox" v-model="filters.showApprovalLine" /> 결재란출력</label>
+          <label class="check-opt"><input type="checkbox" v-model="filters.printVertical" /> 세로출력</label-->
           <label class="check-opt"><input type="checkbox" v-model="filters.printPayDate" /> 지급일인쇄</label>
         </div>
 
         <!--span class="f-divider" style="margin: 0 16px;">|</span-->
 
-        <div class="f-options-radio">
+        <!--div class="f-options-radio">
           <label class="radio-opt">
             <input type="radio" value="skip" v-model="filters.groupOption" /> 부서계(스킵)
           </label>
@@ -176,7 +177,7 @@ const handlePrint = () => {
           <label class="radio-opt text-gray">
             <input type="radio" value="role-emp-dept" v-model="filters.groupOption" /> 직위>사번>부서
           </label>
-        </div>
+        </div-->
       </div>
 
     </div>

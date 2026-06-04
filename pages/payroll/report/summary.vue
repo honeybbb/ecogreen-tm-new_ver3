@@ -159,7 +159,10 @@ const grandTotal = computed(() => {
 });
 
 // ── 액션 핸들러 ──────────────────────────────────────────
-const handleSearch = () => { fetchPayrollData(); };
+const handleSearch = () => {
+  //gubun값, 지급년월값 또는 지급기간 값, 부서는 현장값
+  fetchPayrollData();
+};
 const handlePrint = () => { window.print(); };
 const handleRefresh = () => {
   filters.value.viewType = '월별';
@@ -205,7 +208,7 @@ onMounted(async () => {
 
         <div class="filter-group" v-if="filters.viewType !== '기간별'">
           <label class="filter-label text-orange">* 지급년월</label>
-          <input type="month" class="filter-select" v-model="filters.yearMonth" />
+          <input type="month" class="filter-select" v-model="filters.yearMonth" @change="fetchPayrollData"/>
         </div>
         <div class="filter-group" v-else>
           <label class="filter-label text-orange">* 지급기간</label>
@@ -217,10 +220,11 @@ onMounted(async () => {
         </div>
 
         <div class="filter-group">
-          <label class="filter-label">부서</label>
-          <select class="filter-select dept-select" v-model="filters.department" @change="handleSearch">
+          <label class="filter-label">현장</label>
+          <!--select class="filter-select dept-select" v-model="filters.department" @change="handleSearch">
             <option v-for="dept in deptOptions" :key="dept" :value="dept">{{ dept }}</option>
-          </select>
+          </select-->
+          <SiteSelect v-model="filters.department"/>
         </div>
 
         <div class="filter-group">

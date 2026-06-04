@@ -23,6 +23,7 @@ const rawData = ref([]);
 
 const fetchSummaryData = async () => {
   isLoading.value = true;
+
   let params = {
     year: filters.value.yearMonth.split('-')[0],
     month: filters.value.yearMonth.split('-')[1]

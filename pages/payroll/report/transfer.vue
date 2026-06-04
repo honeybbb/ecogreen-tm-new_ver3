@@ -139,10 +139,11 @@ const handlePrint = () => {
     <div class="filter-panel hide-on-print">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label">부서</label>
-          <select class="filter-select" v-model="filters.department">
+          <label class="filter-label">현장</label>
+          <!--select class="filter-select" v-model="filters.department">
             <option value="전체">전체</option>
-          </select>
+          </select-->
+          <SiteSelect v-model="filters.department"/>
         </div>
         <div class="filter-group">
           <label class="filter-label">이체은행</label>
@@ -162,13 +163,13 @@ const handlePrint = () => {
           </select>
         </div>
         <div class="filter-group">
-          <label class="check-opt"><input type="checkbox" v-model="filters.showApprovalLine" /> 결재란출력</label>
+          <!--label class="check-opt"><input type="checkbox" v-model="filters.showApprovalLine" /> 결재란출력</label-->
           <label class="check-opt"><input type="checkbox" v-model="filters.showBirthDate" /> 생년월일출력</label>
         </div>
       </div>
     </div>
 
-    <div v-if="filters.showApprovalLine" class="approval-line">
+    <!--div v-if="filters.showApprovalLine" class="approval-line">
       <table class="approval-table">
         <tr>
           <th rowspan="2" class="approval-title">결<br>재</th>
@@ -182,7 +183,7 @@ const handlePrint = () => {
           <td class="sign-box"></td>
         </tr>
       </table>
-    </div>
+    </div-->
 
     <div class="table-scroll-container">
       <table class="transfer-table">
