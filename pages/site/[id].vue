@@ -811,6 +811,8 @@ const getSiteData = async () => {
       payrollManager: result.payrollManager,
       payment_day:    result.payment_day,
       zipcode:        result.zipcode || '',
+      bankName:       result.bankName,
+      accountNumber:  result.accountNumber,
     };
 
     // viewConfig 불러오기 (getSiteData 내부)
