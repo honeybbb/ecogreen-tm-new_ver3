@@ -13,9 +13,11 @@ const {
   positionOptions,
   typeOptions,
   wagesData,
+  bankOptions,
   fetchPositionOptions,
   fetchTypeOptions,
-  fetchWageCode
+  fetchWageCode,
+  fetchBankOption
 } = useApi();
 
 // =============================================
@@ -72,6 +74,8 @@ const site = ref({
   status: '준비 중',
   payment_day: '',
   bigo: '',
+  bankName: '기업',
+  accountNumber: '',
 });
 
 const siteTypeOptions  = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
@@ -925,6 +929,8 @@ const saveSiteData = async () => {
       billingManager:   site.value.billingManager,
       payrollManager:   site.value.payrollManager,
       bigo:             site.value.bigo,
+      bankName:         site.value.bankName,
+      accountNumber:    site.value.accountNumber,
       contract_details: JSON.stringify(contractGroups.value),
       viewConfig: JSON.stringify({
         activePayLabels:       settlementConfig.value.activePayLabels,
@@ -1000,7 +1006,12 @@ watch(activeTab, async (newTab) => {
 });
 
 onMounted(async () => {
-  await Promise.all([fetchPositionOptions(), fetchTypeOptions(), fetchWageCode()]);
+  await Promise.all([
+    fetchPositionOptions(),
+    fetchTypeOptions(),
+    fetchWageCode(),
+    fetchBankOption()
+  ]);
   await getSiteData();
   if (activeTab.value === 'equipment') await fetchEquipmentList();
 });
@@ -1255,6 +1266,28 @@ onMounted(async () => {
               <div class="info-item">
                 <label>이메일 (세금계산서/공문 수신용)</label>
                 <input type="email" v-model="site.email" class="info-input" />
+              </div>
+            </div>
+          </div>
+
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-card-account-details-outline"></i>
+              <h3>계좌 정보</h3>
+            </div>
+
+            <div class="info-grid">
+              <div class="info-item">
+                <label>은행</label>
+                <select v-model="site.bankName" class="info-select">
+                  <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">
+                    {{ bank.itemNm }}
+                  </option>
+                </select>
+              </div>
+              <div class="info-item">
+                <label>계좌번호</label>
+                <input type="text" v-model="site.accountNumber" class="info-input" placeholder="예: 123-456-789012 (- 포함)" />
               </div>
             </div>
           </div>

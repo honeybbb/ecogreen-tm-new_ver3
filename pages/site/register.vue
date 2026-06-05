@@ -12,9 +12,11 @@ const {
   positionOptions,
   typeOptions,
   wagesData,
+  bankOptions,
   fetchPositionOptions,
   fetchTypeOptions,
-  fetchWageCode
+  fetchWageCode,
+  fetchBankOption
 } = useApi();
 
 const DEFAULT_DIRECT_LABOR_COMMON = [
@@ -64,7 +66,9 @@ const site = ref({
   memo: '',
   status: '운영 중',
   payment_day: '',
-  bigo: ''
+  bigo: '',
+  bankName: '기업',
+  accountNumber: ''
 });
 
 const contractGroups = ref([]);
@@ -627,6 +631,8 @@ const handleSubmit = async () => {
       billingManager: site.value.billingManager,
       payrollManager: site.value.payrollManager,
       bigo: site.value.bigo,
+      bankName: site.value.bankName,
+      accountNumber: site.value.accountNumber,
       contract_details: contractsJson,
       viewConfig: viewConfigJson
     };
@@ -682,6 +688,8 @@ const getSiteData = async () => {
     site.value.director       = result.director;
     site.value.directorContact= result.director_phone;
     site.value.payment_day    = result.payment_day;
+    site.value.bankName       = result.bankName || '';
+    site.value.accountNumber  = result.accountNumber || '';
 
     // 2. 계약 그룹 및 직책별 근로시간 세팅 (방어 코드 포함)
     if (result.contractList) {
@@ -796,6 +804,7 @@ onMounted(() => {
   fetchPositionOptions();
   fetchTypeOptions();
   fetchWageCode();
+  fetchBankOption();
   getSiteData();
 });
 </script>
@@ -942,6 +951,28 @@ onMounted(() => {
             <div class="form-group full-width">
               <label class="form-label"><i class="mdi mdi-email-outline"></i>이메일(세금계산서/공문 수신용)</label>
               <input type="email" v-model="site.email" class="form-input" placeholder="예: example@email.com" />
+            </div>
+          </div>
+
+          <div class="sub-header mt-4">
+            <i class="mdi mdi-bank-outline"></i><h3>계좌 정보</h3>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-bank"></i>은행명
+              </label>
+              <select v-model="site.bankName" class="form-select">
+                <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">
+                  {{ bank.itemNm }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-numeric"></i>계좌번호
+              </label>
+              <input type="text" v-model="site.accountNumber" class="form-input" placeholder="예: 123-456-789012 (- 포함)" />
             </div>
           </div>
         </div>
