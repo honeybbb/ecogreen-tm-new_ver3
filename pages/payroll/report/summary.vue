@@ -69,21 +69,22 @@ const fetchPayrollData = async () => {
   rawData.value = [];
 
   try {
-    let year, month;
-
-    // 기간별 조회의 경우 백엔드 API 지원 여부에 따라 파라미터가 달라질 수 있습니다.
-    // 현재 작성하신 getPayrollCalculate 쿼리는 특정 월(year, month) 1건 기준입니다.
     if (filters.value.viewType !== '기간별') {
-      [year, month] = filters.value.yearMonth.split('-');
+      // 단일 월
+      const [year, month] = filters.value.yearMonth.split('-');
+      const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
+      rawData.value = res.data.result ? (res.data.data || []) : [];
+
     } else {
-      [year, month] = filters.value.startMonth.split('-'); // 임시: 시작월 기준으로 호출
+      // 기간별 전용 API
+      const [startYear, startMonth] = filters.value.startMonth.split('-');
+      const [endYear, endMonth]     = filters.value.endMonth.split('-');
+      const res = await axios.get('/api/v1/member/payroll/calculate/range', {
+        params: { startYear, startMonth, endYear, endMonth }
+      });
+      rawData.value = res.data.result ? (res.data.data || []) : [];
     }
 
-    const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
-
-    if (res.data.result && res.data.data?.length > 0) {
-      rawData.value = res.data.data;
-    }
   } catch (error) {
     console.error('급여 데이터 조회 실패:', error);
     alert('데이터를 불러오는 중 오류가 발생했습니다.');
@@ -98,7 +99,7 @@ const fetchPayrollData = async () => {
 const processedList = computed(() => {
   return rawData.value
       // .filter(row => row.status > 0) // 필요 시 주석 해제 (저장된 급여만 볼지 여부)
-      .filter(row => filters.value.department === '전체' || row.siteName === filters.value.department)
+      .filter(row => filters.value.department === '전체' || row.sIdx === filters.value.department)
       .filter(row => filters.value.payDate === '전체' || String(row.payment_day) === filters.value.payDate.replace(/[^0-9말일]/g, ''))
       .filter(row => !filters.value.empIdName || row.staff.includes(filters.value.empIdName) || String(row.id).includes(filters.value.empIdName))
       .map(row => {
@@ -186,11 +187,11 @@ onMounted(async () => {
         <h1 class="page-title">
           <i class="mdi mdi-star"></i> 급여 현황 출력
         </h1>
+      </div>
+      <div class="header-actions">
         <label class="check-personal-info">
           <input type="checkbox" v-model="showPersonalInfo" class="custom-chk" /> 개인정보 표시
         </label>
-      </div>
-      <div class="header-actions">
         <button class="btn-search" @click="handleSearch">조회</button>
         <button class="btn-print" @click="handlePrint">인쇄</button>
         <button class="btn-icon" @click="handleRefresh" title="새로고침"><i class="mdi mdi-refresh"></i></button>
@@ -213,9 +214,9 @@ onMounted(async () => {
         <div class="filter-group" v-else>
           <label class="filter-label text-orange">* 지급기간</label>
           <div class="date-range">
-            <input type="month" class="filter-select" v-model="filters.startMonth" />
+            <input type="month" class="filter-select" v-model="filters.startMonth" @change="fetchPayrollData"/>
             <span style="margin: 0 4px;">~</span>
-            <input type="month" class="filter-select" v-model="filters.endMonth" />
+            <input type="month" class="filter-select" v-model="filters.endMonth" @change="fetchPayrollData" />
           </div>
         </div>
 
@@ -243,7 +244,7 @@ onMounted(async () => {
         <p>조회 중입니다...</p>
       </div>
 
-      <div v-else class="table-scroll-container">
+      <div v-else>
 
         <table v-if="filters.viewType !== '항목별'" class="statement-table">
           <thead>
@@ -258,13 +259,13 @@ onMounted(async () => {
             <th rowspan="2" class="text-center sticky-divider" style="width: 10%;">실수령액</th>
             <th rowspan="2" class="text-center" style="width: 10%;">공제합계</th>
 
-            <th :colspan="payItems.length" class="text-center border-left">지급 항목</th>
-            <th :colspan="deductionItems.length" class="text-center border-left">공제 항목</th>
+            <!--th :colspan="payItems.length" class="text-center border-left">지급 항목</th>
+            <th :colspan="deductionItems.length" class="text-center border-left">공제 항목</th-->
           </tr>
-          <tr>
+          <!--tr>
             <th v-for="item in payItems" :key="item.itemCd" class="text-right border-left font-normal">{{ item.itemNm }}</th>
             <th v-for="item in deductionItems" :key="item.itemCd" class="text-right border-left font-normal">{{ item.itemNm }}</th>
-          </tr>
+          </tr-->
           </thead>
 
           <tbody>
@@ -279,15 +280,16 @@ onMounted(async () => {
             <td class="text-right font-bold text-blue sticky-divider">{{ formatNum(row.netPay) }}</td>
             <td class="text-right text-red">{{ formatNum(row.totalDeduction) }}</td>
 
-            <td v-for="item in payItems" :key="'p'+item.itemCd" class="text-right border-left">
+            <!--td v-for="item in payItems" :key="'p'+item.itemCd" class="text-right border-left">
               {{ formatNum(row.parsedPay[item.itemCd]) }}
             </td>
             <td v-for="item in deductionItems" :key="'d'+item.itemCd" class="text-right border-left">
               {{ formatNum(row.parsedDed[item.itemCd]) }}
-            </td>
+            </td-->
           </tr>
           <tr v-if="processedList.length === 0">
-            <td :colspan="8 + payItems.length + deductionItems.length" class="text-center p-40">
+            <!--td :colspan="8 + payItems.length + deductionItems.length" class="text-center p-40"-->
+            <td colspan="8" class="text-center p-40">
               조회된 데이터가 없습니다.
             </td>
           </tr>
@@ -301,12 +303,12 @@ onMounted(async () => {
             <td class="text-right font-bold text-blue sticky-divider">{{ formatNum(grandTotal.netPay) }}</td>
             <td class="text-right font-bold text-red">{{ formatNum(grandTotal.totalDeduction) }}</td>
 
-            <td v-for="item in payItems" :key="'fp'+item.itemCd" class="text-right font-bold border-left">
+            <!--td v-for="item in payItems" :key="'fp'+item.itemCd" class="text-right font-bold border-left">
               {{ formatNum(grandTotal.parsedPay[item.itemCd]) }}
             </td>
             <td v-for="item in deductionItems" :key="'fd'+item.itemCd" class="text-right font-bold border-left">
               {{ formatNum(grandTotal.parsedDed[item.itemCd]) }}
-            </td>
+            </td-->
           </tr>
           </tfoot>
         </table>
@@ -377,203 +379,282 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* ─── 버튼 ─────────────────────────────────────────── */
 .check-personal-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  cursor: pointer;
-  padding: 4px 10px;
-  border-radius: 4px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
+  cursor: pointer; padding: 6px 12px;
+  border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-surface); transition: all 0.2s;
 }
-
-.action-area {
-  display: flex;
-  gap: 8px;
-}
+.check-personal-info:hover { border-color: var(--border-focus); color: var(--text-main); }
 
 .btn-search {
-  background-color: #1a3b5c; color: #fff; border: 1px solid #1a3b5c;
-  padding: 6px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 20px; height: 42px;
+  background-color: var(--primary); border: none; border-radius: 8px;
+  color: var(--text-inverse); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);
 }
-.btn-print {
-  background-color: #fff; color: #1a3b5c; border: 1px solid #1a3b5c;
-  padding: 6px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 4px;
-}
-.btn-icon {
-  background-color: #fff; color: #333; border: 1px solid #ccc;
-  padding: 6px 10px; font-size: 16px; cursor: pointer; border-radius: 4px; display: flex; align-items: center;
-}
-.btn-icon:hover { background-color: #f1f1f1; }
+.btn-search:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
 
-/* ─── 필터 영역 (수직선 UI) ─── */
-.filter-section {
-  padding: 12px 24px;
-  border-bottom: 1px solid #c8d4e0;
-  background-color: #f8f9fa;
-  display: flex;
-  flex-direction: column;
+.btn-print {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 20px; height: 42px;
+  background-color: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-sub);
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.btn-print:hover { background-color: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
+
+.btn-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px;
+  background-color: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-sub); font-size: 18px;
+  cursor: pointer; transition: all 0.2s;
+}
+.btn-icon:hover { background-color: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
+
+/* ─── 필터 패널 ────────────────────────────────────── */
+.filter-panel {
+  background: var(--bg-surface);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
 }
 
 .filter-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px;
 }
 
-.f-group {
-  display: flex;
-  align-items: center;
+.filter-group {
+  display: flex; flex-direction: column; gap: 8px; min-width: 160px;
 }
 
-.f-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: #333;
+.filter-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
 }
-.text-orange { color: #e65100; }
+.text-orange { color: var(--warning) !important; }
 
-.f-divider {
-  color: #1a3b5c;
-  margin: 0 10px;
-  font-weight: bold;
+.filter-select {
+  padding: 10px 14px; border: 1px solid var(--border-color);
+  border-radius: 8px; font-size: 13px; color: var(--text-main);
+  background: var(--bg-surface); cursor: pointer;
+  transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+.filter-select:hover { border-color: var(--border-focus); }
+.filter-select:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
-.f-select, .f-input {
-  border: 1px solid #ccc;
-  padding: 2px 6px;
-  font-size: 13px;
-  min-width: 120px;
-  height: 26px;
-  box-sizing: border-box;
+.date-range {
+  display: flex; align-items: center; gap: 8px;
 }
-.f-select:focus, .f-input:focus { outline: none; border-color: #1a3b5c; }
-.highlight-select { border-color: #2b4b6b; color: #111; }
-.dept-select { min-width: 200px; }
-.date-range { display: flex; align-items: center; }
+.date-range span { color: var(--text-sub); font-weight: 700; flex-shrink: 0; }
 
-/* ─── 로딩 ─── */
+/* ─── 로딩 ──────────────────────────────────────────── */
 .loading-state {
-  display: flex; flex-direction: column; align-items: center; padding: 60px;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 60px 0; color: var(--text-sub); gap: 16px;
 }
 .spinner {
-  width: 30px; height: 30px; border: 3px solid #ccc; border-top-color: #1a3b5c;
-  border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;
+  width: 32px; height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ─── 테이블 영역 ─── */
-.table-section {
-  padding: 16px 24px;
-}
-
+/* ─── 테이블 스크롤 컨테이너 ────────────────────────── */
 .table-scroll-container {
   overflow-x: auto;
+  overflow-y: auto;
   max-width: 100%;
-  max-height: calc(100vh - 250px); /* 스크롤 높이 제한 */
-  border: 1px solid #a8b8c8;
-  border-bottom: none;
+  max-height: calc(100vh - 260px);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  background: var(--bg-surface);
+  -webkit-overflow-scrolling: touch;
 }
+.table-scroll-container::-webkit-scrollbar { width: 8px; height: 8px; }
+.table-scroll-container::-webkit-scrollbar-track { background: var(--bg-hover); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+.table-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--text-sub); }
 
+/* ─── 메인 테이블 ──────────────────────────────────── */
 .statement-table {
   width: max-content;
   min-width: 100%;
-  border-collapse: separate;
+  border-collapse: separate; /* sticky 컬럼 배경 깨짐 방지를 위해 유지 */
   border-spacing: 0;
   font-size: 13px;
   table-layout: fixed;
 }
 
-.statement-table th, .statement-table td {
-  border-bottom: 1px solid #a8b8c8;
-  border-right: 1px solid #a8b8c8;
+.statement-table th,
+.statement-table td {
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
   padding: 8px 10px;
   vertical-align: middle;
   background-clip: padding-box;
 }
-
-/* 첫 번째 열 왼쪽 테두리 보정 */
+/*
 .statement-table tr td:first-child,
 .statement-table tr th:first-child {
-  border-left: 1px solid #a8b8c8;
+  border-left: 1px solid var(--border-color);
 }
+*/
+.border-left { border-left: 1px solid var(--border-color) !important; }
 
-.border-left { border-left: 1px solid #8ba6c1 !important; }
-
-/* 헤더 (다크 블루) */
+/* 헤더 */
 .statement-table thead th {
-  background-color: #2b4b6b;
-  color: #fff;
+  background-color: var(--header-bg);
+  color: var(--text-inverse);
   font-weight: 600;
   text-align: center;
-  border-top: 1px solid #2b4b6b;
+  /*border-top: 1px solid var(--header-bg);
+  border-color: rgba(255, 255, 255, 0.12);*/
   position: sticky;
   top: 0;
   z-index: 10;
+  white-space: nowrap;
 }
-/* 두 번째 헤더 줄 탑값 보정 */
 .statement-table thead tr:nth-child(2) th {
-  top: 35px; /* 첫 번째 tr의 높이에 맞게 조절 필요 */
+  /*top: 37px;*/
 }
 .font-normal { font-weight: 400 !important; }
 
 /* 데이터 행 */
-.data-row { background-color: #fff; }
-.data-row:nth-child(even) { background-color: #f8fafc; }
-.data-row:hover td { background-color: #e2e8f0; }
+.data-row { background-color: var(--bg-surface); transition: background 0.15s; }
+.data-row:nth-child(even) { background-color: var(--bg-canvas); }
+.data-row:hover td { background-color: var(--primary-soft) !important; }
 
-/* 합계 행 (연한 파란색) */
+/* 합계 행 */
 .row-total td {
-  background-color: #d0e4f0;
-  border-color: #a8b8c8;
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: var(--border-color);
+  color: var(--text-main);
+  border-top: 2px solid var(--border-focus);
 }
-.bg-total { background-color: #d0e4f0 !important; }
+.bg-total { background-color: rgba(245, 158, 11, 0.1) !important; }
 
-/* 정렬 및 유틸 */
-.text-center { text-align: center; }
-.text-left { text-align: left; }
-.text-right { text-align: right; }
-.font-bold { font-weight: 700; }
-.text-dark { color: #111; }
-.text-gray { color: #555; }
-.text-red { color: #dc2626; }
-.text-blue { color: #2563eb; }
-.p-40 { padding: 40px !important; }
-
-.cell-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ─── 틀고정 (Sticky Columns) ─── */
+/* ─── 틀고정 (Sticky Columns) ──────────────────────── */
 .sticky-col { position: sticky !important; z-index: 5; }
-/* 틀고정 시 배경색 덮어씌움 (투명화 방지) */
-.data-row .sticky-col { background-color: #fff; }
-.data-row:nth-child(even) .sticky-col { background-color: #f8fafc; }
-.data-row:hover .sticky-col { background-color: #e2e8f0; }
 
-thead .sticky-col { z-index: 15 !important; background-color: #2b4b6b !important; border-right: 1px solid #5a7b9b !important; }
-tfoot .sticky-col { z-index: 15 !important; background-color: #d0e4f0 !important; }
+.data-row .sticky-col { background-color: var(--bg-surface); }
+.data-row:nth-child(even) .sticky-col { background-color: var(--bg-canvas); }
+.data-row:hover .sticky-col { background-color: var(--primary-soft) !important; }
 
-/* 고정 픽셀이 아닌 퍼센트로 틀고정 시, 열 너비가 깨지지 않게 픽셀(px)로 고정하는 것이 안전합니다. */
-.sticky-col-1 { left: 0px; min-width: 140px; max-width: 140px; }
-.sticky-col-2 { left: 140px; min-width: 70px; max-width: 70px; }
-.sticky-col-3 { left: 210px; min-width: 80px; max-width: 80px; }
-.sticky-col-4 { left: 290px; min-width: 80px; max-width: 80px; }
-.sticky-col-span4 { left: 0px; width: 370px; z-index: 15 !important; background-color: #d0e4f0 !important; }
-.sticky-divider { border-right: 2px solid #5a7b9b !important; }
+thead .sticky-col {
+  z-index: 15 !important;
+  background-color: var(--header-bg) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+tfoot .sticky-col {
+  z-index: 15 !important;
+  background-color: rgba(245, 158, 11, 0.1) !important;
+}
 
-/* ─── 인쇄용 미디어 쿼리 ─── */
+.sticky-col-1 { left: 0px;   min-width: 140px; max-width: 140px; }
+.sticky-col-2 { left: 140px; min-width: 70px;  max-width: 70px;  }
+.sticky-col-3 { left: 210px; min-width: 80px;  max-width: 80px;  }
+.sticky-col-4 { left: 290px; min-width: 80px;  max-width: 80px;  }
+.sticky-col-span4 {
+  left: 0px; width: 370px;
+  z-index: 15 !important;
+  background-color: rgba(245, 158, 11, 0.1) !important;
+}
+
+/* sticky 오른쪽 divider (실수령액 열 강조선) */
+.sticky-divider { border-right: 2px solid var(--border-focus) !important; }
+
+/* ─── 유틸리티 ──────────────────────────────────────── */
+.text-center { text-align: center; }
+.text-left   { text-align: left; }
+.text-right  { text-align: right; }
+.font-bold   { font-weight: 700; }
+.text-dark   { color: var(--text-main); }
+.text-gray   { color: var(--text-sub); }
+.text-red    { color: var(--danger) !important; }
+.text-blue   { color: var(--primary) !important; }
+.p-40        { padding: 40px !important; color: var(--text-sub); }
+
+.cell-ellipsis {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ─── 인쇄용 미디어 쿼리 ────────────────────────────── */
 @media print {
   @page { size: A4 landscape; margin: 15mm; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  .hide-on-print { display: none !important; }
-  .payroll-status-page { padding: 0; background: #fff; }
-  .table-section { padding: 0; }
-  .table-scroll-container { border: none; overflow: visible; max-height: none; }
-  .statement-table { border: 2px solid #000; }
-  .statement-table th, .statement-table td { border: 1px solid #666; font-size: 11px; padding: 4px; }
-  .statement-table thead th { border-bottom: 2px solid #000; color: #000; background-color: #eee !important;}
-  .row-total td { background-color: #ddd !important; }
+
+  /* 전체 숨기기 */
+  :global(body *) { visibility: hidden !important; }
+
+  /* 컴포넌트만 표시 */
+  .payroll-status-page,
+  .payroll-status-page * { visibility: visible !important; }
+
+  /* 여러 페이지 흐름 허용 */
+  .payroll-status-page {
+    position: absolute !important;  /* ← 핵심 수정 */
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  /* 필터/헤더 버튼 영역 숨기기 */
+  .hide-on-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 테이블 스크롤 해제 → 높이 제한 없애기 */
+  .table-scroll-container {
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    max-height: none !important;   /*  높이 제한 해제 */
+    height: auto !important;
+    box-shadow: none !important;
+  }
+
+  /* ⑥ 테이블 스타일 */
+  .statement-table {
+    width: 100% !important;
+    border: 2px solid #000;
+    page-break-inside: auto;       /* 페이지 넘김 허용 */
+  }
+  .statement-table tr {
+    page-break-inside: avoid;      /* 행 중간 잘림 방지 */
+    page-break-after: auto;
+  }
+  .statement-table th,
+  .statement-table td { border: 1px solid #666; font-size: 11px; padding: 4px; }
+  .statement-table thead {
+    display: table-header-group;   /* 페이지마다 헤더 반복 */
+  }
+  .statement-table thead th {
+    background-color: #1e293b !important;
+    color: #fff !important;
+    border-bottom: 2px solid #000;
+    position: static !important;
+  }
+  .statement-table thead tr:nth-child(2) th { top: auto !important; }
+
+  /* ⑦ sticky 해제 */
+  .sticky-col { position: static !important; }
+
+  .row-total td { background-color: #fef3c7 !important; }
 }
 </style>
