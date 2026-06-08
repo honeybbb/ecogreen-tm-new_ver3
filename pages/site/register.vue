@@ -1517,22 +1517,31 @@ onMounted(() => {
                           <td></td>
                         </tr>
                         <tr class="summary-row row-f">
-                          <td><div class="summary-label-rate"><span class="summary-label"><span class="cost-block-label label-profit">F</span>기업이윤</span></div></td>
+                          <td>
+                            <div class="summary-label-rate">
+                            <span class="summary-label">
+                              <span class="cost-block-label label-profit">F</span>기업이윤</span>
+                            </div>
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
                                 type="text"
-                                :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
+                                :value="formatCurrency(group.costBreakdown.profit[staff.code])"
                                 @focus="$event.target.select()"
-                                @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
+                                @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)"
                                 class="tbl-value-input"
                             />
                           </td>
-                          <td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span></td>
+                          <td class="col-rowtotal-cell">
+                            <span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span>
+                          </td>
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
                         <tr class="summary-row row-monthly">
-                          <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
+                          <td><span class="summary-label">
+                            <span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span>
+                          </td>
                           <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
                           <td class="col-rowtotal-cell">-</td>
                           <td><input type="text" class="tbl-value-input"></td>
