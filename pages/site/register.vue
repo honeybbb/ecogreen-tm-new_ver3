@@ -430,6 +430,11 @@ const addContractGroup = (category) => {
     isAutoCalc: settlementConfig.value.isAutoCalcDefault ? 'Y' : 'N',
     costBreakdown: defaultBreakdown,
     showCostBreakdown: false,
+    meltOptions: {
+      annualLeave: false,
+      severance: false,
+      workersDay: false
+    },
     salarySource: 'contract',
   });
 };
@@ -726,6 +731,12 @@ const getSiteData = async () => {
           tempCount: 1,
           costBreakdown: costBreakdownData, // 보완된 객체 주입
           showCostBreakdown: false,
+          meltOptions: item.meltOptions || {
+            annualLeave: false,
+            severance: false,
+            workersDay: false
+          },
+          salarySource: item.salarySource || 'contract'
         };
       });
     }
@@ -1060,6 +1071,32 @@ onMounted(() => {
                   <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
                 </span>
               </div>
+              <div class="spacer"></div>
+
+              <div class="contract-header-options">
+                <div class="header-melt-option">
+                  <span>연차 수당 포함</span>
+                  <label class="switch-xs">
+                    <input type="checkbox" v-model="group.meltOptions.annualLeave" />
+                    <span class="slider-xs round"></span>
+                  </label>
+                </div>
+                <div class="header-melt-option">
+                  <span>퇴직 수당 포함</span>
+                  <label class="switch-xs">
+                    <input type="checkbox" v-model="group.meltOptions.severance" />
+                    <span class="slider-xs round"></span>
+                  </label>
+                </div>
+                <div class="header-melt-option">
+                  <span>근로자의날 수당 포함</span>
+                  <label class="switch-xs">
+                    <input type="checkbox" v-model="group.meltOptions.workersDay" />
+                    <span class="slider-xs round"></span>
+                  </label>
+                </div>
+              </div>
+
               <button type="button" @click="removeContractGroup(idx)" class="btn-remove-contract">
                 <i class="mdi mdi-trash-can-outline"></i>
               </button>
@@ -1900,9 +1937,87 @@ onMounted(() => {
 .empty-contracts p { font-size: 15px; font-weight: 600; color: var(--text-main); margin: 0 0 6px 0; }
 
 .contract-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
-.contract-card-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--bg-canvas); border-bottom: 1px solid var(--border-color); }
+.contract-card-header {
+  display: flex;
+  /*justify-content: space-between;*/
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
+}
+.contract-header-options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-melt-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+/* 초소형 스위치 디자인 (헤더용) */
+.switch-xs {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.switch-xs input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider-xs {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1;
+  transition: .3s;
+  border-radius: 20px;
+}
+.slider-xs:before {
+  position: absolute;
+  content: "";
+  height: 12px;
+  width: 12px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+.switch-xs input:checked + .slider-xs {
+  background-color: var(--danger); /* 활성화 시 포인트 컬러 */
+}
+.switch-xs input:checked + .slider-xs:before {
+  transform: translateX(12px);
+}
+
 .contract-title { display: flex; align-items: center; gap: 12px; }
-.contract-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-inverse); }
+.contract-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;          /* 여백을 늘려 면적 확대 */
+  border-radius: 8px;         /* 둥글기 살짝 추가 */
+  font-size: 14px;            /* 글씨 크기 키움 (기존 12px -> 14px) */
+  font-weight: 800;           /* 글씨 아주 굵게 */
+  color: #ffffff;
+  letter-spacing: 0.5px;      /* 자간을 살짝 넓혀 가독성 증가 */
+}
+
+/* 아이콘도 텍스트에 맞춰 약간 키워줍니다 */
+.contract-badge i {
+  font-size: 18px;
+}
 .badge-경비 { background-color: #3b82f6; }
 .badge-미화 { background-color: #ec4899; }
 .badge-시설 { background-color: #10b981; }
