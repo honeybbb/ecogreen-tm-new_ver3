@@ -579,22 +579,6 @@ const settlementConfig = ref({
   activeDeductionLabels: [],
 });
 
-// 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
-watch(dynamicSettlementItems, (newItems) => {
-  // 지급 항목 처리
-  newItems.payCds.forEach(cd => {
-    if (!settlementConfig.value.activePayLabels.includes(cd)) {
-      settlementConfig.value.activePayLabels.push(cd);
-    }
-  });
-  // 공제 항목 처리
-  newItems.deductionCds.forEach(cd => {
-    if (!settlementConfig.value.activeDeductionLabels.includes(cd)) {
-      settlementConfig.value.activeDeductionLabels.push(cd);
-    }
-  });
-}, { deep: true });
-
 // =============================================
 // 양식 설정 로직
 // =============================================
@@ -1015,6 +999,22 @@ onMounted(async () => {
     fetchBankOption()
   ]);
   await getSiteData();
+  // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
+  watch(dynamicSettlementItems, (newItems) => {
+    // 지급 항목 처리
+    newItems.payCds.forEach(cd => {
+      if (!settlementConfig.value.activePayLabels.includes(cd)) {
+        settlementConfig.value.activePayLabels.push(cd);
+      }
+    });
+    // 공제 항목 처리
+    newItems.deductionCds.forEach(cd => {
+      if (!settlementConfig.value.activeDeductionLabels.includes(cd)) {
+        settlementConfig.value.activeDeductionLabels.push(cd);
+      }
+    });
+  }, { deep: true });
+
   if (activeTab.value === 'equipment') await fetchEquipmentList();
 });
 </script>
