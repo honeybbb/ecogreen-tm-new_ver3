@@ -1350,11 +1350,12 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
-                            <CodeSelect
+                            <!--CodeSelect
                                 v-model="item.code"
                                 @update:label="(val) => item.label = val"
                                 :allow-empty="false"
-                            />
+                            /-->
+                            <CodeSelect v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1412,11 +1413,12 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
-                            <CodeSelect
+                            <!--CodeSelect
                                 v-model="item.code"
                                 @update:label="(val) => item.label = val"
                                 :allow-empty="false"
-                            />
+                            /-->
+                            <CodeSelect v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
