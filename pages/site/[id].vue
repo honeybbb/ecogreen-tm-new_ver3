@@ -839,7 +839,7 @@ const getSiteData = async () => {
         return {
           category:          item.category,
           type:              item.type,
-          firstContractDt:     item.firstContractDt || item.contractStart || item.startDt || '',
+          firstContractDt:     item.firstContractDt,
           contractStart:     item.contractStart || item.startDt || '',
           contractEnd:       item.contractEnd || item.endDt || '',
           totalCost:         item.totalCost || item.total_cost || 0,
