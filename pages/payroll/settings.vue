@@ -9,58 +9,14 @@ const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
 // ==========================================
-// 1. 사이드바 트리 데이터 (이미지 기준 1차-2차 고정)
+// 1. 상태 관리 변수
 // ==========================================
-// 1차 카테고리(대분류)와 2차 카테고리(중분류)를 이미지 조직도에 맞게 정확히 하드코딩합니다.
-// 이제 이 2차 카테고리의 id(예: 04001002)가 3차 세부항목의 groupCd가 됩니다.
-const categories = ref([
-  {
-    id: '04001',
-    name: '직접노무비',
-    icon: 'mdi-account-hard-hat',
-    children: [
-      { id: '04001001', name: '기본급' },
-      { id: '04001002', name: '수당' },
-      { id: '04001003', name: '연차적립금' },
-      { id: '04001004', name: '퇴직적립금' }
-    ]
-  },
-  {
-    id: '04002',
-    name: '간접노무비',
-    icon: 'mdi-account-tie',
-    children: [
-      { id: '04002001', name: '국민연금' },
-      { id: '04002002', name: '건강보험' },
-      { id: '04002003', name: '장기요양보험' },
-      { id: '04002004', name: '산재보험' },
-      { id: '04002005', name: '장애인채용부담금' },
-      { id: '04002006', name: '환급주민세' },
-      { id: '04002007', name: '지방소득세' },
-      { id: '04002008', name: '소득세' },
-      { id: '04002009', name: '법인주민세' },
-      { id: '04002010', name: '신원보증료' },
-      { id: '04002011', name: '기타공제 및 비용' }
-    ]
-  },
-  {
-    id: '04003',
-    name: '제경비',
-    icon: 'mdi-store-cog-outline',
-    children: [
-      { id: '04003001', name: '대청소비용' },
-      { id: '04003002', name: '청소용품비' },
-      { id: '04003003', name: '기타제공비' }
-    ]
-  }
-]);
+// 백엔드에서 불러온 모든 1~3차 전체 코드 원본
+const rawCodeList = ref([]);
 
-// ==========================================
-// 2. 상태 관리 변수
-// ==========================================
-const selectedCategoryId = ref('04001002'); // 기본 선택: 직접노무비 > 수당 (2차)
+// 사이드바 및 검색 상태
+const selectedCategoryId = ref(null);
 const searchQuery = ref('');
-const codeList = ref([]); // 백엔드에서 불러온 모든 3차 세부 코드 원본
 
 // 2차 카테고리(사이드바) 편집용 상태
 const addingToGroupId = ref(null);
@@ -68,14 +24,33 @@ const newCategoryName = ref('');
 const editingCategoryId = ref(null);
 const editingCategoryName = ref('');
 
-// 3차 카테고리(우측 테이블) 신규 추가 폼
+// 3차 카테고리(우측 테이블) 신규 추가 폼 상태
 const newCodeName = ref('');
 const newCodeSort = ref(0);
 const newTaxFree = ref(0);
 
 // ==========================================
-// 3. Computed (핵심 3계층 매핑)
+// 2. Computed (핵심 트리 맵핑)
 // ==========================================
+
+// 1차(대분류)는 고정 틀로 유지하고, 2차(중분류)는 DB(rawCodeList)에서 동적으로 필터링하여 매핑합니다.
+const categories = computed(() => {
+  const baseGroups = [
+    { id: '04001', name: '직접노무비', icon: 'mdi-account-hard-hat' },
+    { id: '04002', name: '간접노무비', icon: 'mdi-account-tie' },
+    { id: '04003', name: '제경비', icon: 'mdi-store-cog-outline' }
+  ];
+
+  return baseGroups.map(group => {
+    // groupCd가 1차 카테고리 id(예: 04001)인 항목들을 찾아 2차 카테고리 자식으로 구성
+    const children = rawCodeList.value
+        .filter(c => c.groupCd === group.id)
+        .sort((a, b) => a.sort - b.sort)
+        .map(c => ({ id: c.itemCd, name: c.itemNm }));
+
+    return { ...group, children };
+  });
+});
 
 // 현재 선택된 2차 카테고리 정보 찾기 (테이블 헤더용)
 const currentCategoryInfo = computed(() => {
@@ -83,7 +58,6 @@ const currentCategoryInfo = computed(() => {
 
   for (const group of categories.value) {
     const child = group.children.find(c => c.id === selectedCategoryId.value);
-
     if (child) {
       return {
         parentId: group.id,
@@ -100,8 +74,9 @@ const currentCategoryInfo = computed(() => {
 
 // 우측 테이블 렌더링 리스트 (선택된 2차 카테고리의 3차 자식들만 필터링)
 const filteredCodeList = computed(() => {
-  // DB에서 불러온 데이터 중, groupCd가 현재 선택된 2차 코드(예: 04001002)와 일치하는 것만 추출
-  let list = codeList.value.filter(code => code.groupCd === selectedCategoryId.value);
+  let list = rawCodeList.value.filter(
+      code => code.groupCd === selectedCategoryId.value
+  );
 
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
@@ -110,7 +85,8 @@ const filteredCodeList = computed(() => {
         code.itemCd.toLowerCase().includes(query)
     );
   }
-  return list;
+  // 정렬 순서대로 반환
+  return list.sort((a, b) => a.sort - b.sort);
 });
 
 // 신규 3차 코드 번호 생성 (2차 코드 뒤에 순번 3자리 부여, 예: 04001002 + 001)
@@ -118,7 +94,7 @@ const newCodeNumber = computed(() => {
   if (!selectedCategoryId.value) return '';
   const prefix = selectedCategoryId.value;
 
-  const currentCodes = codeList.value.filter(c => c.groupCd === prefix);
+  const currentCodes = rawCodeList.value.filter(c => c.groupCd === prefix);
   if (!currentCodes.length) return prefix + '001';
 
   const nums = currentCodes.map(c => parseInt(c.itemCd.slice(-3)) || 0);
@@ -126,9 +102,31 @@ const newCodeNumber = computed(() => {
   return prefix + String(next).padStart(3, '0');
 });
 
+// ==========================================
+// 3. API 호출 함수
+// ==========================================
+
+// 전체 코드 로드 (1차~3차 모두 포함)
+const fetchAllCodes = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    rawCodeList.value = (res.data.data || []).map(item => ({
+      ...item,
+      isEditing: false
+    }));
+
+    // 초기 로드 시 선택된 값이 없으면 첫 번째 자식 자동 선택
+    if (!selectedCategoryId.value && categories.value[0]?.children.length > 0) {
+      selectedCategoryId.value = categories.value[0].children[0].id;
+    }
+  } catch (err) {
+    console.error('전체 코드 로드 실패:', err);
+    rawCodeList.value = [];
+  }
+};
 
 // ==========================================
-// 4. 2차 카테고리 (사이드바) 조작 함수
+// 4. 2차 카테고리 (사이드바) CRUD
 // ==========================================
 const selectCategory = (childId) => {
   selectedCategoryId.value = childId;
@@ -141,20 +139,38 @@ const startCategoryAdd = (groupId) => {
   newCategoryName.value = '';
 };
 
-const addCategory = (group) => {
+// 2차 카테고리 추가 로직 (DB 연동)
+const addCategory = async (group) => {
   if (!newCategoryName.value.trim()) return alert('중분류명을 입력해주세요.');
 
-  // 2차 코드 채번: 상위 1차 코드 뒤에 순번 3자리 부여
-  const nums = group.children.map(c => parseInt(c.id.slice(-3)) || 0);
-  const nextNum = Math.max(...nums, 0) + 1;
-  const newId = `${group.id}${String(nextNum).padStart(3, '0')}`;
+  try {
+    // 2차 코드 채번: 상위 1차 코드 뒤에 순번 3자리 부여
+    const currentChildren = rawCodeList.value.filter(c => c.groupCd === group.id);
+    const nums = currentChildren.map(c => parseInt(c.itemCd.slice(-3)) || 0);
+    const nextNum = Math.max(...nums, 0) + 1;
+    const newId = `${group.id}${String(nextNum).padStart(3, '0')}`;
 
-  group.children.push({ id: newId, name: newCategoryName.value });
-  alert('중분류가 추가되었습니다.\n(※ 프론트 UI 상에 추가된 상태이므로, 백엔드 연동이 필요할 수 있습니다.)');
+    const payload = {
+      groupCd: group.id,
+      itemCd: newId,
+      itemNm: newCategoryName.value,
+      sort: currentChildren.length + 1,
+      useFl: 'Y',
+      tax_free: 0
+    };
 
-  addingToGroupId.value = null;
-  newCategoryName.value = '';
-  selectCategory(newId);
+    await axios.post(`/api/v1/code/${cIdx}`, payload);
+
+    addingToGroupId.value = null;
+    newCategoryName.value = '';
+
+    await fetchAllCodes();
+    selectCategory(newId);
+    alert('중분류가 추가되었습니다.');
+  } catch (err) {
+    console.error('중분류 추가 실패:', err);
+    alert('중분류 추가에 실패했습니다.');
+  }
 };
 
 const startCategoryEdit = (child) => {
@@ -162,10 +178,30 @@ const startCategoryEdit = (child) => {
   editingCategoryName.value = child.name;
 };
 
-const saveCategoryEdit = (child) => {
+// 2차 카테고리 수정 로직 (DB 연동)
+const saveCategoryEdit = async (child) => {
   if (!editingCategoryName.value.trim()) return alert('분류명을 입력해주세요.');
-  child.name = editingCategoryName.value;
-  editingCategoryId.value = null;
+
+  try {
+    const targetCode = rawCodeList.value.find(c => c.itemCd === child.id);
+    if (!targetCode) return;
+
+    const payload = {
+      groupCd: targetCode.groupCd,
+      itemCd: targetCode.itemCd,
+      itemNm: editingCategoryName.value,
+      sort: targetCode.sort,
+      useFl: targetCode.useFl,
+      tax_free: targetCode.tax_free || 0
+    };
+
+    await axios.post(`/api/v1/code/${cIdx}`, payload);
+    editingCategoryId.value = null;
+    await fetchAllCodes();
+  } catch (err) {
+    console.error('중분류 수정 실패:', err);
+    alert('수정에 실패했습니다.');
+  }
 };
 
 const cancelCategoryEdit = () => {
@@ -173,11 +209,20 @@ const cancelCategoryEdit = () => {
   editingCategoryName.value = '';
 };
 
-const deleteCategory = (group, childId) => {
-  if (!confirm('이 중분류를 삭제하시겠습니까?')) return;
-  group.children = group.children.filter(c => c.id !== childId);
-  if (selectedCategoryId.value === childId) {
-    selectedCategoryId.value = null;
+// 2차 카테고리 삭제 로직 (DB 연동)
+const deleteCategory = async (group, childId) => {
+  if (!confirm('이 중분류를 삭제하시겠습니까? 하위 항목도 모두 보이지 않게 됩니다.')) return;
+
+  try {
+    await axios.delete(`/api/v1/code/${childId}`);
+    if (selectedCategoryId.value === childId) {
+      selectedCategoryId.value = null;
+    }
+    await fetchAllCodes();
+    alert('삭제되었습니다.');
+  } catch (err) {
+    console.error('중분류 삭제 실패:', err);
+    alert('삭제에 실패했습니다.');
   }
 };
 
@@ -185,30 +230,6 @@ const deleteCategory = (group, childId) => {
 // ==========================================
 // 5. 3차 카테고리 (우측 테이블) CRUD
 // ==========================================
-
-// 3차 세부 코드 원본 데이터 전체 호출
-const fetchCodesByCategory = async () => {
-  try {
-    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-    const result = res.data.data || [];
-
-    // 원본 데이터를 그대로 맵핑
-    codeList.value = result.map((item) => ({
-      groupCd: item.groupCd, // 부모가 되는 2차 카테고리 ID
-      itemCd: item.itemCd,   // 3차 본인 ID
-      itemNm: item.itemNm,
-      sort: item.sort || 0,
-      useFl: item.useFl || 'Y',
-      tax_free: item.tax_free || 0,
-      isEditing: false,
-      deleteFl: item.deleteFl || 'N',
-      editFl: item.editFl || 'N'
-    }));
-  } catch (err) {
-    console.error('코드 로드 실패:', err);
-    codeList.value = [];
-  }
-};
 
 const startEdit = (code) => {
   code._original = { ...code };
@@ -225,7 +246,7 @@ const cancelEdit = (code) => {
 const saveCode = async (code) => {
   try {
     const payload = {
-      groupCd: selectedCategoryId.value, // 현재 선택된 2차 카테고리 ID가 부모가 됨
+      groupCd: selectedCategoryId.value,
       itemCd: code.itemCd,
       itemNm: code.itemNm,
       sort: code.sort,
@@ -236,6 +257,7 @@ const saveCode = async (code) => {
     await axios.post(`/api/v1/code/${cIdx}`, payload);
     alert('수정되었습니다.');
     code.isEditing = false;
+    await fetchAllCodes();
   } catch (err) {
     console.error('수정 실패:', err);
     alert('수정에 실패했습니다.');
@@ -247,8 +269,8 @@ const deleteCode = async (itemCd) => {
   if (!confirm('정말 삭제하시겠습니까?')) return;
   try {
     await axios.delete(`/api/v1/code/${itemCd}`);
-    codeList.value = codeList.value.filter(c => c.itemCd !== itemCd);
     alert('삭제되었습니다.');
+    await fetchAllCodes();
   } catch (err) {
     console.error('삭제 실패:', err);
     alert('삭제에 실패했습니다.');
@@ -261,8 +283,8 @@ const addCode = async () => {
 
   try {
     const payload = {
-      groupCd: selectedCategoryId.value, // 핵심! 저장할 때 2차 카테고리 코드를 부모로 지정
-      itemCd: newCodeNumber.value,       // 11자리 (예: 04001002001)
+      groupCd: selectedCategoryId.value,
+      itemCd: newCodeNumber.value,
       itemNm: newCodeName.value,
       sort: newCodeSort.value || (filteredCodeList.value.length + 1),
       useFl: 'Y',
@@ -272,13 +294,11 @@ const addCode = async () => {
     await axios.post(`/api/v1/code/${cIdx}`, payload);
     alert('추가되었습니다.');
 
-    // 다시 서버에서 최신 리스트 불러오기 (자동 필터링 반영)
-    await fetchCodesByCategory();
-
-    // 입력 폼 리셋
+    // 입력 폼 리셋 및 최신화
     newCodeName.value = '';
     newCodeSort.value = 0;
     newTaxFree.value = 0;
+    await fetchAllCodes();
   } catch (err) {
     console.error('추가 실패:', err);
     alert('추가에 실패했습니다.');
@@ -289,10 +309,10 @@ const addCode = async () => {
 // 6. 초기 구동
 // ==========================================
 onMounted(async () => {
-  // DB에서 3차 항목 리스트 로드
-  await fetchCodesByCategory();
+  await fetchAllCodes();
 });
 </script>
+
 <template>
   <div class="payroll-settings-page">
     <div class="page-header">
@@ -304,7 +324,6 @@ onMounted(async () => {
 
     <div class="layout-container">
 
-      <!-- ── 사이드바 (기존 유지) ── -->
       <aside class="sidebar-tree">
         <div v-for="group in categories" :key="group.id" class="tree-group">
           <div class="tree-group-title">
@@ -312,7 +331,6 @@ onMounted(async () => {
           </div>
           <ul class="tree-children">
             <li v-for="child in group.children" :key="child.id">
-
               <div v-if="editingCategoryId === child.id" class="tree-edit-box">
                 <input
                     type="text" v-model="editingCategoryName" class="tree-input"
@@ -330,6 +348,7 @@ onMounted(async () => {
                     @click="selectCategory(child.id)"
                 >
                   <span class="tree-item-name">{{ child.name }}</span>
+                  <span class="tree-item-id">{{ child.id }}</span>
                 </button>
                 <div class="tree-item-hover-actions">
                   <button @click.stop="startCategoryEdit(child)" class="icon-btn" title="수정"><i class="mdi mdi-pencil-outline"></i></button>
@@ -358,10 +377,8 @@ onMounted(async () => {
         </div>
       </aside>
 
-      <!-- ── 메인 콘텐츠 ── -->
       <main class="main-content">
 
-        <!-- 카테고리 미선택 -->
         <div v-if="!selectedCategoryId" class="empty-selection-box">
           <i class="mdi mdi-arrow-left-top-bold"></i>
           <p>좌측에서 관리할 카테고리를 선택해주세요.</p>
@@ -369,7 +386,6 @@ onMounted(async () => {
 
         <template v-else>
 
-          <!-- 콘텐츠 헤더 -->
           <div class="content-header">
             <div class="breadcrumb">
               <span class="breadcrumb-parent">{{ currentCategoryInfo?.parentName }}</span>
@@ -389,7 +405,6 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 테이블 카드 -->
           <div class="table-card">
             <div class="table-wrapper">
               <table class="data-table">
@@ -406,7 +421,7 @@ onMounted(async () => {
                 </thead>
                 <tbody>
 
-                <tr v-for="(code, index) in filteredCodeList" :key="code.id" class="data-row">
+                <tr v-for="(code, index) in filteredCodeList" :key="code.itemCd" class="data-row">
 
                   <td class="text-center">
                     <span class="row-number">{{ index + 1 }}</span>
@@ -468,13 +483,14 @@ onMounted(async () => {
                   </td>
                 </tr>
 
-                <!-- 빈 상태 -->
                 <tr v-if="filteredCodeList.length === 0" class="empty-row">
                   <td :colspan="currentCategoryInfo?.hasTaxFree ? 7 : 6">
                     <div class="empty-state">
-                      <i class="mdi mdi-tray-remove"></i>
-                      <p>등록된 항목이 없습니다</p>
-                      <span>아래 입력란에서 새로운 항목을 추가해주세요</span>
+                      <div class="empty-icon-wrapper">
+                        <i class="mdi mdi-text-box-plus-outline"></i>
+                      </div>
+                      <p>등록된 세부 급여 코드가 없습니다.</p>
+                      <span>하단의 추가 폼을 이용해 이 카테고리에 속할 항목을 생성해주세요.</span>
                     </div>
                   </td>
                 </tr>
@@ -483,7 +499,6 @@ onMounted(async () => {
               </table>
             </div>
 
-            <!-- ── 추가 폼 (테이블 밖 분리) ── -->
             <div class="add-form-bar">
               <div class="add-form-fields">
                 <div class="add-field">
@@ -522,6 +537,7 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
 <style scoped>
 /* ── 유틸 ── */
 .w-full    { width: 100%; box-sizing: border-box; }
@@ -555,6 +571,30 @@ onMounted(async () => {
 .tree-item-wrapper:hover .tree-item-btn { background: var(--bg-hover); color: var(--text-main); }
 .tree-item-btn.active{ background: var(--primary-soft); color: var(--primary); font-weight: 600; }
 .tree-item-name      { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 사이드바 코드 번호(ID) 뱃지 */
+.tree-item-id {
+  font-size: 11px;
+  font-family: monospace; /* 숫자가 깔끔하게 보이도록 고정폭 글꼴 사용 */
+  color: var(--text-sub);
+  background: var(--bg-canvas); /* 배경색보다 살짝 어두운 톤 */
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  transition: opacity 0.15s;
+}
+
+/* 카테고리가 선택되었을 때의 뱃지 색상 반전 */
+.tree-item-btn.active .tree-item-id {
+  background: #ffffff; /* 또는 투명도 조절: rgba(255,255,255,0.5) */
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 마우스 오버 시 수정/삭제 버튼이 나타나므로, 겹치지 않게 뱃지를 숨김 처리 */
+.tree-item-wrapper:hover .tree-item-id {
+  opacity: 0;
+}
 
 .tree-item-hover-actions {
   position: absolute; right: 4px;
@@ -658,17 +698,25 @@ onMounted(async () => {
 .icon-btn-row--save:hover   { background: var(--success); border-color: var(--success); color: #fff; }
 .icon-btn-row--cancel:hover { background: var(--text-sub);border-color: var(--text-sub);color: #fff; }
 
-/* 빈 상태 */
-.empty-row td { padding: 40px 0 !important; border-bottom: none; }
-.empty-state  { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text-sub); }
-.empty-state i{ font-size: 30px; opacity: .4; }
-.empty-state p{ font-size: 13px; font-weight: 600; margin: 0; }
-.empty-state span{ font-size: 12px; opacity: .7; }
+/* ── 빈 상태 (Empty State) 개선 ── */
+.empty-row td { padding: 30px 20px !important; border-bottom: none; }
+.empty-state  {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px; background: var(--bg-canvas); border: 1px dashed var(--border-color); border-radius: 10px;
+  gap: 10px; color: var(--text-sub);
+}
+.empty-icon-wrapper {
+  display: flex; align-items: center; justify-content: center;
+  width: 64px; height: 64px; background: var(--primary-soft); border-radius: 50%; margin-bottom: 8px;
+}
+.empty-icon-wrapper i { font-size: 32px; color: var(--primary); }
+.empty-state p { font-size: 15px; font-weight: 600; margin: 0; color: var(--text-main); }
+.empty-state span { font-size: 13px; opacity: 0.8; }
 
 /* ── 추가 폼 바 ── */
 .add-form-bar {
   display: flex; align-items: flex-end; gap: 10px;
-  padding: 14px 16px;
+  padding: 16px;
   background: var(--bg-canvas);
   border-top: 1px solid var(--border-color);
 }
