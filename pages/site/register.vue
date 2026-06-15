@@ -22,8 +22,8 @@ const {
 const DEFAULT_DIRECT_LABOR_COMMON = [
   { code: '04001001', label: '기본급' },
   { code: '04001002', label: '직책수당' },
-  { code: '04003001', label: '연차적립금' },
-  { code: '04003003', label: '퇴직적립금' },
+  { code: '04001003', label: '연차적립금' },
+  { code: '04001004', label: '퇴직적립금' },
 ];
 
 const DEFAULT_DIRECT_LABOR_GUARD = [
@@ -68,7 +68,8 @@ const site = ref({
   payment_day: '',
   bigo: '',
   bankName: '기업',
-  accountNumber: ''
+  accountNumber: '',
+  accountName: '',
 });
 
 const contractGroups = ref([]);
@@ -264,13 +265,15 @@ const makeValuesObj = (staffList, defaultVal = '') => {
 const createDefaultCostBreakdown = (staffList = []) => ({
   dailyWorkHours: makeValuesObj(staffList, ''),
   monthlyWorkHours: makeValuesObj(staffList, ''),
-  directLabor: [],   // ← 빈 배열로 변경
-  indirectLabor: [], // ← 빈 배열로 변경
+  directLabor: [],
+  indirectLabor: [],
   expenses: [
+      /*
     { label: '피복비 및 장구비', values: makeValuesObj(staffList) },
     { label: '교육훈련비',       values: makeValuesObj(staffList) },
     { label: '소모품비',         values: makeValuesObj(staffList) },
     { label: '복리후생비',       values: makeValuesObj(staffList) },
+       */
   ],
   managementFee: makeValuesObj(staffList),
   profit: makeValuesObj(staffList),
@@ -386,9 +389,10 @@ const onInputMonthlyTotal = (group, event) => {
 // 계약 그룹 CRUD
 // =============================================
 const addContractGroup = (category) => {
+  console.log(category, 'category')
   // 타입에 따라 직접노무비 항목 결정
-  const isGuard = category.itemNm === '경비';   // 경비
-  const isCleaning = category.itemNm === '미화'; // 미화
+  const isGuard = category.itemCd === '01001001';   // 경비
+  const isCleaning = category.itemCd === '01001002'; // 미화
 
   const directLaborTemplate = isGuard
       ? DEFAULT_DIRECT_LABOR_GUARD
@@ -638,6 +642,7 @@ const handleSubmit = async () => {
       bigo: site.value.bigo,
       bankName: site.value.bankName,
       accountNumber: site.value.accountNumber,
+      accountName: site.value.accountName,
       contract_details: contractsJson,
       viewConfig: viewConfigJson
     };
@@ -695,6 +700,7 @@ const getSiteData = async () => {
     site.value.payment_day    = result.payment_day;
     site.value.bankName       = result.bankName || '';
     site.value.accountNumber  = result.accountNumber || '';
+    site.value.accountName    = result.accountName || '';
 
     // 2. 계약 그룹 및 직책별 근로시간 세팅 (방어 코드 포함)
     if (result.contractList) {
@@ -749,7 +755,6 @@ const getSiteData = async () => {
       } catch { bigoHistory.value = []; }
     }
 
-    // 4. 정산 세부 노출 설정 세팅
     // 4. 정산 세부 노출 설정 세팅
     if (result.viewConfig) {
       try {
@@ -985,6 +990,13 @@ onMounted(() => {
               </label>
               <input type="text" v-model="site.accountNumber" class="form-input" placeholder="예: 123-456-789012 (- 포함)" />
             </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-numeric"></i>계좌예금주
+              </label>
+              <input type="text" v-model="site.accountName" class="form-input" />
+            </div>
           </div>
         </div>
 
@@ -1056,47 +1068,11 @@ onMounted(() => {
                 <span :class="['contract-badge', `badge-${group.category}`]">
                   <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
                 </span>
-                <!--div class="contract-calc-switch-wrap">
-                  <label class="switch-sm">
-                    <input type="checkbox"
-                           v-model="group.isAutoCalc"
-                           true-value="Y"
-                           false-value="N" />
-                    <span class="slider-sm round"></span>
-                  </label>
-                  <span class="calc-label">{{ group.isAutoCalc ? '법정요율 자동계산' : '산출내역 금액고정' }}</span>
-                </div-->
-
                 <span v-if="getContractDuration(group)" class="contract-duration">
                   <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
                 </span>
               </div>
               <div class="spacer"></div>
-
-              <div class="contract-header-options">
-                <div class="header-melt-option">
-                  <span>연차 수당 포함</span>
-                  <label class="switch-xs">
-                    <input type="checkbox" v-model="group.meltOptions.annualLeave" />
-                    <span class="slider-xs round"></span>
-                  </label>
-                </div>
-                <div class="header-melt-option">
-                  <span>퇴직 수당 포함</span>
-                  <label class="switch-xs">
-                    <input type="checkbox" v-model="group.meltOptions.severance" />
-                    <span class="slider-xs round"></span>
-                  </label>
-                </div>
-                <div class="header-melt-option">
-                  <span>근로자의날 수당 포함</span>
-                  <label class="switch-xs">
-                    <input type="checkbox" v-model="group.meltOptions.workersDay" />
-                    <span class="slider-xs round"></span>
-                  </label>
-                </div>
-              </div>
-
               <button type="button" @click="removeContractGroup(idx)" class="btn-remove-contract">
                 <i class="mdi mdi-trash-can-outline"></i>
               </button>
@@ -1259,7 +1235,7 @@ onMounted(() => {
                       <div class="cost-section-title">
                         <span class="cost-block-label label-hours">
                           <i class="mdi mdi-clock-check"></i>
-                          ️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
+                          </span>근로시간 기준 <em>(인건비 산출 근거)</em>
                       </div>
                       <table class="cost-table hours-standalone-table">
                         <thead>
@@ -1350,11 +1326,6 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
-                            <!--CodeSelect
-                                v-model="item.code"
-                                @update:label="(val) => item.label = val"
-                                :allow-empty="false"
-                            /-->
                             <CodeSelect v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
@@ -1413,11 +1384,6 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
-                            <!--CodeSelect
-                                v-model="item.code"
-                                @update:label="(val) => item.label = val"
-                                :allow-empty="false"
-                            /-->
                             <CodeSelect v-model="item.label" :allow-empty="false"/>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
@@ -1608,15 +1574,6 @@ onMounted(() => {
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
-                        <!--tr>
-                          <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 <br>(계약기간 총 용역비)</span></td>
-                          <td :colspan="group.staffList.length + 1">
-                            <input v-model.number="group.totalCost" @focus="$event.target.select()"
-                                   type="number" class="tbl-value-input" placeholder="0" min="0">
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr-->
                         </tbody>
                       </table>
 
@@ -1632,21 +1589,19 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 정산 기본 설정 섹션 전체를 아래로 교체 -->
         <div class="form-section">
           <div class="section-main-header">
             <i class="mdi mdi-calculator-variant"></i>
             <h2>정산 기본 설정</h2>
           </div>
 
-          <!-- ① 급여 데이터 기준 설정 -->
           <div class="settlement-sub-section">
             <div class="sub-header">
               <i class="mdi mdi-cash-sync"></i>
-              <h3>급여 데이터 기준 설정</h3>
+              <h3>계약별 정산 기준 및 옵션 설정</h3>
             </div>
             <p class="info-helper-text" style="margin-bottom: 20px;">
-              * 각 계약 분류별로 정산서 데이터 불러오기 시 적용할 급여 정보의 출처를 선택해주세요.
+              * 각 계약 분류별로 정산서에 적용할 급여 정보의 출처 및 수당 포함 여부를 설정해주세요.
             </p>
 
             <div v-if="contractGroups.length === 0"
@@ -1659,39 +1614,73 @@ onMounted(() => {
               <div v-for="(group, idx) in contractGroups"
                    :key="idx"
                    class="source-selection-row">
+
                 <div class="source-group-title">
-          <span :class="['contract-badge', `badge-${group.category}`]"
-                style="padding: 6px 12px; font-size: 13px;">
-            <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
-          </span>
+                  <span :class="['contract-badge', `badge-${group.category}`]"
+                        style="padding: 6px 12px; font-size: 13px;">
+                    <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
+                  </span>
                 </div>
-                <div class="source-selection-options">
-                  <label class="source-radio-label">
-                    <input
-                        type="radio"
-                        v-model="group.salarySource"
-                        value="employee"
-                        :name="'salarySource_' + idx"
-                    />
-                    <strong>직원 급여 정보</strong>
-                    <span class="text-hint">(저장된 기본 급여 기준)</span>
-                  </label>
-                  <label class="source-radio-label">
-                    <input
-                        type="radio"
-                        v-model="group.salarySource"
-                        value="contract"
-                        :name="'salarySource_' + idx"
-                    />
-                    <strong>계약 산출 정보</strong>
-                    <span class="text-hint">(계약 정보 산출 기준)</span>
-                  </label>
+
+                <div class="source-settings-content">
+                  <div class="setting-block">
+                    <span class="setting-label">급여 데이터 기준</span>
+                    <div class="source-selection-options">
+                      <label class="source-radio-label">
+                        <input
+                            type="radio"
+                            v-model="group.salarySource"
+                            value="employee"
+                            :name="'salarySource_' + idx"
+                        />
+                        <strong>직원 급여 정보</strong>
+                        <span class="text-hint">(저장된 기본 급여 기준)</span>
+                      </label>
+                      <label class="source-radio-label">
+                        <input
+                            type="radio"
+                            v-model="group.salarySource"
+                            value="contract"
+                            :name="'salarySource_' + idx"
+                        />
+                        <strong>계약 산출 정보</strong>
+                        <span class="text-hint">(계약 정보 산출 기준)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="setting-block">
+                    <span class="setting-label">수당 포함 옵션</span>
+                    <div class="source-melt-options">
+                      <div class="header-melt-option">
+                        <span>연차 수당 포함</span>
+                        <label class="switch-xs">
+                          <input type="checkbox" v-model="group.meltOptions.annualLeave" />
+                          <span class="slider-xs round"></span>
+                        </label>
+                      </div>
+                      <div class="header-melt-option">
+                        <span>퇴직 수당 포함</span>
+                        <label class="switch-xs">
+                          <input type="checkbox" v-model="group.meltOptions.severance" />
+                          <span class="slider-xs round"></span>
+                        </label>
+                      </div>
+                      <div class="header-melt-option">
+                        <span>근로자의날 수당 포함</span>
+                        <label class="switch-xs">
+                          <input type="checkbox" v-model="group.meltOptions.workersDay" />
+                          <span class="slider-xs round"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+
               </div>
             </div>
           </div>
 
-          <!-- 정산서 양식 관리 -->
           <div class="settlement-sub-section">
             <div class="sub-header">
               <i class="mdi mdi-table-arrow-down"></i>
@@ -1703,7 +1692,6 @@ onMounted(() => {
             </p>
 
             <div class="excel-transfer-ui">
-              <!-- 왼쪽: 사용 가능 항목 -->
               <div class="transfer-pane">
                 <div class="pane-header">
                   <span>사용 가능 항목</span>
@@ -1734,7 +1722,6 @@ onMounted(() => {
                 </div>
               </div>
 
-              <!-- 중앙: 이동 버튼 -->
               <div class="transfer-actions">
                 <button
                     type="button"
@@ -1754,7 +1741,6 @@ onMounted(() => {
                 </button>
               </div>
 
-              <!-- 오른쪽: 정산서 표시 항목 -->
               <div class="transfer-pane">
                 <div class="pane-header">
                   <span>정산서 표시 항목</span>
@@ -1941,7 +1927,6 @@ onMounted(() => {
 .contract-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
 .contract-card-header {
   display: flex;
-  /*justify-content: space-between;*/
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
@@ -2008,15 +1993,14 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;          /* 여백을 늘려 면적 확대 */
-  border-radius: 8px;         /* 둥글기 살짝 추가 */
-  font-size: 14px;            /* 글씨 크기 키움 (기존 12px -> 14px) */
-  font-weight: 800;           /* 글씨 아주 굵게 */
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
   color: #ffffff;
-  letter-spacing: 0.5px;      /* 자간을 살짝 넓혀 가독성 증가 */
+  letter-spacing: 0.5px;
 }
 
-/* 아이콘도 텍스트에 맞춰 약간 키워줍니다 */
 .contract-badge i {
   font-size: 18px;
 }
@@ -2039,7 +2023,7 @@ onMounted(() => {
 .staff-total { margin-top: 12px; padding: 10px 14px; background-color: var(--primary-soft); border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--primary); font-weight: 600; }
 
 /* =========================================
-   ★ 직책별 스케줄 패널 (상세 페이지와 동일)
+   ★ 직책별 스케줄 패널
 ========================================= */
 .staff-item-wrapper { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); overflow: hidden; }
 .staff-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
@@ -2256,7 +2240,7 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
 }
 
 /* =============================================
-   정산 기본 설정 — 서브 섹션 구분
+   정산 기본 설정 — 서브 섹션 구분 및 레이아웃
 ============================================= */
 .settlement-sub-section {
   margin-bottom: 36px;
@@ -2270,31 +2254,53 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
 }
 
 /* =============================================
-   급여 데이터 기준 설정
+   계약별 정산 기준 및 옵션 설정
 ============================================= */
 .salary-source-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .source-selection-row {
   display: flex;
-  align-items: center;
-  padding: 16px 20px;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 20px;
   background: var(--bg-canvas);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   transition: all 0.2s;
 }
-
 .source-selection-row:hover {
   border-color: var(--border-focus);
   background: var(--bg-hover);
 }
 
 .source-group-title {
-  width: 130px;
+  width: 100px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.source-settings-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setting-block {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.setting-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  width: 120px;
   flex-shrink: 0;
 }
 
@@ -2355,6 +2361,14 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
   height: 9px;
   border-radius: 50%;
   background-color: var(--primary);
+}
+
+/* 수당 옵션 토글 영역 */
+.source-melt-options {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
 /* =============================================
@@ -2555,6 +2569,11 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
+  }
+  .setting-block {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
   }
   .source-selection-options {
     flex-direction: column;
