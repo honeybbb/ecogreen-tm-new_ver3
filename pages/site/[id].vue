@@ -364,6 +364,25 @@ const onInputMonthlyTotal = (group, event) => {
   el.value = formatCurrency(numValue);
 };
 
+// 단일 필드 수동 입력 핸들러
+const onInputSingleRaw = (obj, key, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = rawValue === '' ? '' : Number(rawValue);
+
+  obj[key] = numValue;
+
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
 // 수동 입력값이 있으면 그것을 쓰고, 없으면 자동 계산 합계를 반환하는 computed용 함수 수정
 const getDisplayMonthlyTotal = (g) => {
   if (g.manualMonthlyTotal !== undefined && g.manualMonthlyTotal !== null) {
@@ -376,29 +395,40 @@ const createDefaultCostBreakdown = (staffList = []) => ({
   dailyWorkHours: makeValuesObj(staffList, 0), //일근로시간
   monthlyWorkHours: makeValuesObj(staffList, 0),  //월근로시간
   directLabor: [
+      /*
     { label: '기본급',         values: makeValuesObj(staffList) },
     { label: '야간근로수당',    values: makeValuesObj(staffList) },
     { label: '직책수당',        values: makeValuesObj(staffList) },
     { label: '근로자의날수당', values: makeValuesObj(staffList) },
     { label: '연차적립금',      values: makeValuesObj(staffList) },
     { label: '퇴직적립금',      values: makeValuesObj(staffList) },
+
+       */
   ],
   indirectLabor: [
+      /*
     { label: '건강보험',     values: makeValuesObj(staffList) },
     { label: '장기요양보험', values: makeValuesObj(staffList) },
     { label: '국민연금',     values: makeValuesObj(staffList) },
     { label: '고용보험',     values: makeValuesObj(staffList) },
     { label: '산재보험',     values: makeValuesObj(staffList) },
+
+       */
   ],
   expenses: [
+      /*
     { label: '피복비 및 장구비', values: makeValuesObj(staffList) },
     { label: '교육훈련비',       values: makeValuesObj(staffList) },
     { label: '소모품비',         values: makeValuesObj(staffList) },
     { label: '복리후생비',       values: makeValuesObj(staffList) },
+
+       */
   ],
   managementFee: makeValuesObj(staffList),
   profit: makeValuesObj(staffList),
   specialNote: '',
+  contractTotalFee:  '',
+  contractTotalBigo: '',
 });
 
 const syncCostBreakdownToStaff = (group) => {
@@ -837,6 +867,9 @@ const getSiteData = async () => {
 
         if (!costBreakdownData.dailyWorkHours) costBreakdownData.dailyWorkHours = makeValuesObj(staffList, 0);
         if (!costBreakdownData.monthlyWorkHours) costBreakdownData.monthlyWorkHours = makeValuesObj(staffList, 0);
+        // costBreakdown 방어코드 부분에 추가
+        if (!costBreakdownData.contractTotalFee)  costBreakdownData.contractTotalFee  = '';
+        if (!costBreakdownData.contractTotalBigo) costBreakdownData.contractTotalBigo = '';
 
         return {
           category:          item.category,
@@ -1890,6 +1923,27 @@ onMounted(async () => {
                           </td>
                           <td><input type="text" class="tbl-value-input"></td>
                         </tr>
+                        <tr class="summary-row row-contract-total">
+                          <td>
+                            <span class="summary-label">
+                              <span class="cost-block-label label-contract-total">계</span>
+                              계약기간 총액
+                            </span>
+                          </td>
+                          <td :colspan="group.staffList.length">
+                            <input
+                                type="text"
+                                :value="formatCurrency(group.costBreakdown.contractTotalFee)"
+                                @focus="$event.target.select()"
+                                @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)"
+                                class="tbl-value-input grand-total-input"
+                                placeholder="직접 입력"
+                                style="font-size: 14px; font-weight: 700; color: var(--text-main);"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell"></td>
+                          <td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비"></td>
+                        </tr>
                         <!--tr>
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 (계약기간 총 용역비)</span></td>
                           <td :colspan="group.staffList.length">
@@ -2639,6 +2693,7 @@ export default {
 .label-profit { background: #ec4899; }
 .label-monthly { background: #0ea5e9; }
 .label-total-fee { background: #f97316; }
+.label-contract-total { background: #475569; }
 .cost-scroll-area {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch; /* iOS 부드러운 스크롤 */
