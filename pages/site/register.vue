@@ -39,6 +39,42 @@ const DEFAULT_INDIRECT_LABOR = [
   { code: '04003010', label: '산재보험' },
 ];
 
+const getInitSiteData = () => ({
+  siteName: '',
+  siteId: '',
+  siteType: '',
+  businessNumber: '',
+  representative: '',
+  businessType: '',
+  businessItem: '',
+  email: '',
+  postalCode: '',
+  addressMain: '',
+  addressDetail: '',
+  areaUnder: '',
+  areaOver: '',
+  areaGross: '',
+  is_vat: false,
+  building_su: '',
+  unit_su: '',
+  managerName: '',
+  managerContact: '',
+  director: '',
+  directorContact: '',
+  billingManager: '',
+  payrollManager: '',
+  memo: '',
+  status: '운영 중',
+  payment_day: '',
+  bigo: '',
+  bankName: '기업',
+  accountNumber: '',
+  accountName: '',
+});
+
+const site = ref(getInitSiteData());
+
+/*
 const site = ref({
   siteName: '',
   siteId: '',
@@ -71,6 +107,35 @@ const site = ref({
   accountNumber: '',
   accountName: '',
 });
+
+ */
+
+//드래그상태
+const isDragging = ref(false);
+
+const onDragOver = (event) => {
+  event.preventDefault();
+  isDragging.value = true;
+};
+
+const onDragLeave = () => {
+  isDragging.value = false;
+};
+
+const onDrop = (event) => {
+  event.preventDefault();
+  isDragging.value = false;
+
+  const files = Array.from(event.dataTransfer.files);
+  const pdfFiles = files.filter(f => f.type === 'application/pdf');
+
+  if (pdfFiles.length !== files.length) {
+    alert('PDF 파일만 업로드 가능합니다.');
+  }
+  if (pdfFiles.length > 0) {
+    selectedFiles.value = [...selectedFiles.value, ...pdfFiles];
+  }
+};
 
 const contractGroups = ref([]);
 const selectedFiles = ref([]);
@@ -277,6 +342,8 @@ const createDefaultCostBreakdown = (staffList = []) => ({
   ],
   managementFee: makeValuesObj(staffList),
   profit: makeValuesObj(staffList),
+  contractTotalFee:  '',   // 계약기간 총액 (수동 입력)
+  contractTotalBigo: '',
   specialNote: '',
 });
 
@@ -382,6 +449,24 @@ const onInputMonthlyTotal = (group, event) => {
 
   // 커서 위치 보정
   const nextPos = selectionStart + (formatted.length - oldLength);
+  el.setSelectionRange(nextPos, nextPos);
+};
+
+const onInputSingleRaw = (obj, key, event) => {
+  const el = event.target;
+  const selectionStart = el.selectionStart;
+  const oldLength = el.value.length;
+
+  const rawValue = el.value.replace(/[^\d]/g, '');
+  const numValue = rawValue === '' ? '' : Number(rawValue);
+
+  obj[key] = numValue;
+
+  const formatted = formatCurrency(numValue);
+  el.value = formatted;
+
+  const newLength = formatted.length;
+  const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 };
 
@@ -674,7 +759,23 @@ const handleSubmit = async () => {
 // 수정 모드일 때 기존 데이터 불러오기
 const getSiteData = async () => {
   const sIdx = route.query.idx;
-  if (!sIdx) return;
+  if (!sIdx) {
+    site.value = getInitSiteData(); // 현장정보 초기화
+    contractGroups.value = [];      // 계약정보 초기화
+    selectedFiles.value = [];       // 첨부파일 초기화
+    bigoHistory.value = [];         // 히스토리 초기화
+    settlementConfig.value = {      // 정산설정 초기화
+      activePayLabels: [],
+      activeDeductionLabels: [],
+      isAutoCalcDefault: true,
+      meltOptions: {
+        annualLeave: false,
+        severance: false,
+        workersDay: false
+      }
+    };
+    return; // 비운 뒤 함수 종료
+  }
 
   axios.get(`/api/v1/site/data/${sIdx}`).then(res => {
     const result = res.data.data[0];
@@ -1009,7 +1110,13 @@ onMounted(() => {
           <div class="file-upload-section">
             <label class="section-label"><i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일 업로드 (PDF)</label>
 
-            <div class="file-upload-box">
+            <div
+                class="file-upload-box"
+                :class="{ 'is-dragging': isDragging }"
+                @dragover="onDragOver"
+                @dragleave="onDragLeave"
+                @drop="onDrop"
+            >
               <input
                   type="file"
                   id="contract-file"
@@ -1020,8 +1127,8 @@ onMounted(() => {
               />
               <label for="contract-file" class="file-upload-label">
                 <div class="upload-placeholder">
-                  <i class="mdi mdi-cloud-upload-outline"></i>
-                  <p>클릭하여 PDF 파일을 선택하거나 여기로 드래그하세요</p>
+                  <i :class="isDragging ? 'mdi mdi-tray-arrow-down' : 'mdi mdi-cloud-upload-outline'"></i>
+                  <p>{{ isDragging ? '여기에 놓으세요!' : '클릭하여 PDF 파일을 선택하거나 여기로 드래그하세요' }}</p>
                   <span>(여러 개의 파일을 동시에 선택할 수 있습니다)</span>
                 </div>
               </label>
@@ -1574,14 +1681,48 @@ onMounted(() => {
                           <td><input type="text" class="tbl-value-input"></td>
                           <td></td>
                         </tr>
+                        <tr class="summary-row row-contract-total">
+                          <td>
+                            <span class="summary-label">
+                              <span class="cost-block-label label-contract-total">계</span>
+                              계약기간 총액
+                            </span>
+                          </td>
+                          <td :colspan="group.staffList.length">
+                            <input
+                                type="text"
+                                :value="formatCurrency(group.costBreakdown.contractTotalFee)"
+                                @focus="$event.target.select()"
+                                @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)"
+                                class="tbl-value-input grand-total-input"
+                                placeholder="직접 입력"
+                                style="font-size: 14px; font-weight: 700; color: var(--text-main);"
+                            />
+                          </td>
+                          <td class="col-rowtotal-cell"></td>
+                          <td>
+                            <input
+                                type="text"
+                                class="tbl-value-input"
+                                v-model="group.costBreakdown.contractTotalBigo"
+                                placeholder="예: 24개월 × 월 용역비"
+                            >
+                          </td>
+                          <td></td>
+                        </tr>
                         </tbody>
                       </table>
 
-                    </div><div class="cost-special-note">
-                    <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i>특이사항</label>
-                    <textarea v-model="group.costBreakdown.specialNote" class="form-textarea" rows="3"
-                              placeholder="예: 최저임금 기준 적용, 5대보험 인원전원 가입 조건으로 산출 등"></textarea>
-                  </div>
+                    </div>
+                    <div class="cost-special-note">
+                      <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i>특이사항</label>
+                      <textarea
+                          v-model="group.costBreakdown.specialNote"
+                          class="form-textarea"
+                          rows="3"
+                          placeholder="예: 최저임금 기준 적용, 5대보험 인원전원 가입 조건으로 산출 등"
+                      ></textarea>
+                    </div>
                   </template>
                 </div>
               </div>
@@ -1905,6 +2046,188 @@ onMounted(() => {
 .upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .upload-placeholder i { font-size: 44px; color: var(--text-muted); margin-bottom: 4px; transition: color 0.2s; }
 .file-upload-box:hover .upload-placeholder i { color: var(--primary); }
+.file-upload-box.is-dragging {
+  border-color: var(--primary);
+  background-color: var(--primary-soft);
+  transform: scale(1.01);
+  transition: all 0.15s ease;
+}
+
+.file-upload-box.is-dragging .upload-placeholder i {
+  color: var(--primary);
+  animation: bounce 0.6s infinite alternate;
+}
+
+@keyframes bounce {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-6px); }
+}
+
+/* =========================================
+   파일 목록
+========================================= */
+.file-list-container {
+  margin-top: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.file-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.file-list-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.file-list-title i {
+  font-size: 16px;
+  color: var(--primary);
+}
+
+.file-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.btn-clear-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-clear-all:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: var(--danger);
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.file-list::-webkit-scrollbar { width: 6px; }
+.file-list::-webkit-scrollbar-track { background: var(--bg-canvas); }
+.file-list::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
+
+.file-item-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.15s;
+}
+
+.file-item-card:last-child { border-bottom: none; }
+.file-item-card:hover { background: var(--bg-hover); }
+
+.file-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-icon-wrap i {
+  font-size: 20px;
+  color: #ef4444;
+}
+
+.file-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-size {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btn-remove-file {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  font-size: 14px;
+}
+
+.btn-remove-file:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.file-list-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--bg-canvas);
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.file-list-footer .text-success { color: var(--success); font-size: 15px; }
+.file-list-footer strong { color: var(--text-main); }
+
 .upload-placeholder p { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-main); }
 .upload-placeholder span { font-size: 13px; color: var(--text-sub); }
 .upload-selected { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -1912,7 +2235,15 @@ onMounted(() => {
 .selected-file-info i { font-size: 24px; color: var(--danger); }
 .file-name { font-size: 14px; font-weight: 600; color: var(--text-main); }
 .file-change-text { font-size: 13px; color: var(--success); font-weight: 600; text-decoration: underline; }
-.file-success-msg { margin: 12px 0 0 0; font-size: 13px; color: var(--success); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.file-success-msg {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--success);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
 /* 계약 */
 .contract-header { margin-bottom: 20px; }
@@ -2099,6 +2430,7 @@ onMounted(() => {
 .label-profit    { background-color: #ec4899; }
 .label-monthly   { background-color: #0ea5e9; }
 .label-total-fee { background-color: #f97316; }
+.label-contract-total  { background: #475569; }
 
 .cost-scroll-area { overflow-x: auto; }
 .cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed; }

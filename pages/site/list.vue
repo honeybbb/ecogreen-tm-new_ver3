@@ -531,7 +531,7 @@ const goRemove = async (id) => {
               <span class="site-id">{{ site.idx }}</span>
             </td>
             <td>
-              <div class="site-name-cell">
+              <div class="site-name-cell cursor-pointer" @click="goToDetail(site.idx)">
                 <span class="site-name">{{ site.name }}</span>
               </div>
             </td>
