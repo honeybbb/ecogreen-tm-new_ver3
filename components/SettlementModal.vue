@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, computed, reactive, nextTick } from 'vue';
 import axios from 'axios';
-import ExcelJS from 'exceljs'; // XLSX 대신 ExcelJS 임포트
+import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '~/stores/auth.js';
 import RichTextEditor from '@/components/RichTextEditor.vue';
@@ -44,7 +44,6 @@ const meltOptions = reactive({
 });
 
 const isInitializing = ref(false);
-
 const dragIndex = ref(null);
 
 // ──────────────────────────────────────────────
@@ -72,7 +71,7 @@ const formData = ref({
       over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
     },
     insuranceDiff: 0,
-    memo: '' // ★ 신규: 정산 세부내역 하단 메모
+    memo: ''
   },
   payrollData: [],
 });
@@ -102,17 +101,10 @@ const toggleCustomSign = (index) => {
 
 const filterKoreanOnly = (str) => {
   if (!str) return '';
-
-  // 문자열에 한글이 하나라도 포함되어 있는지 검사
   const hasKorean = /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(str);
-
   if (hasKorean) {
-    // 1. 한글이 포함된 경우 (예: "홍길동B", "김옥자Q")
-    // -> 한글과 공백만 남기고 모두 제거 (영문 삭제됨)
     return str.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
   } else {
-    // 2. 한글이 없는 경우 (예: "John Doe", "Michael")
-    // -> 영문 이름이므로 지우지 않고 그대로 반환
     return str;
   }
 };
@@ -120,12 +112,10 @@ const filterKoreanOnly = (str) => {
 const onKoreanOnly = (e, row) => {
   const original = e.target.value;
   const hasKorean = /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(original);
-
   let cleaned = original;
   if (hasKorean) {
     cleaned = original.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
   }
-
   row.empName = cleaned;
   e.target.value = cleaned;
 };
@@ -133,7 +123,8 @@ const onKoreanOnly = (e, row) => {
 // ──────────────────────────────────────────────
 // 3. 계약 데이터 및 적용 요율
 // ──────────────────────────────────────────────
-const items = ref([]);
+const items = ref([]); // 최하위 leaf 노드 저장용
+const allWageCodes = ref([]); // ★ 추가: DB에서 불러온 전체 코드 원본 저장용
 
 const contractIndirectLabor = ref([]);
 const contractIndirectLabels = ref([]);
@@ -165,9 +156,50 @@ const fetchTaxRates = async () => {
 
 const getWageCode = async () => {
   try {
-    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-    items.value = res.data.data || [];
-  } catch (err) { console.error('급여 항목 로드 실패', err); }
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    const all = (res.data.data || []).filter(c => c.itemCd.startsWith('04'));
+
+    // 전체 코드를 보관해둡니다 (나중에 이름 찾기 폴백용)
+    allWageCodes.value = all;
+
+    // ── 1. itemCd → 노드 맵 ──────────────────────────
+    const map = Object.fromEntries(all.map(c => [c.itemCd, c]));
+
+    // ── 2. 부모 역할을 하는 코드 집합 ─────────────────
+    const parentCds = new Set(all.map(c => c.groupCd));
+
+    // ── 3. leaf 노드만 추출 (자식이 없는 최종 항목) ───
+    const leaves = all.filter(c => !parentCds.has(c.itemCd));
+
+    // ── 4. leaf의 04001/04002 직속 조상 탐색 ──────────
+    const getTopAncestor = (itemCd) => {
+      let cur = map[itemCd];
+      while (cur) {
+        const parent = map[cur.groupCd];
+        // parent가 루트(04)이면 cur가 대분류
+        if (!parent || parent.itemCd === parent.groupCd) return cur.itemCd;
+        cur = parent;
+      }
+      return null;
+    };
+
+    // ── 5. groupNm 부여 ────────────────────────────────
+    const GROUP_NM = {
+      '04001': '지급항목',
+      '04002': '공제항목',
+      '04003': '정산항목',
+    };
+
+    items.value = leaves.map(leaf => ({
+      ...leaf,
+      tax_free: Number(leaf.tax_free) || 0,
+      groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
+    }));
+
+  } catch (e) {
+    console.error('임금코드 로드 실패:', e);
+    items.value = [];
+  }
 };
 
 const fetchContractData = async () => {
@@ -189,14 +221,11 @@ const fetchContractData = async () => {
 
     if (!siteData) return;
 
-    // 1. 현장 전체의 viewConfig 처리 (초기화 및 기본값)
     if ((!props.settlementId || !isInitializing.value) && siteData.viewConfig) {
       try {
         const parsedConfig = typeof siteData.viewConfig === 'string'
             ? JSON.parse(siteData.viewConfig)
             : siteData.viewConfig;
-
-        console.log(parsedConfig, 'parsedConfig')
 
         currentConfig.showGrossPay    = parsedConfig.showGrossPay ?? true;
         currentConfig.showAnnualLeave = parsedConfig.showAnnualLeave ?? true;
@@ -216,8 +245,6 @@ const fetchContractData = async () => {
 
     const targetContract = parsedContractList.find(c => c.type === type);
 
-    console.log(targetContract, 'targetContract')
-
     if (targetContract) {
       const iLabor = (targetContract.budget && Array.isArray(targetContract.budget.indirectLabor)) ? targetContract.budget.indirectLabor : [];
       contractIndirectLabor.value = iLabor;
@@ -227,27 +254,24 @@ const fetchContractData = async () => {
       contractStaffList.value = Array.isArray(targetContract.staffList) ? targetContract.staffList : [];
       contractTotalCost.value = Number(targetContract.totalCost) || 0;
 
-      // 선택된 계약(구분)의 viewConfig (정산서 양식) 적용
       if (targetContract.viewConfig) {
         try {
           const contractConfig = typeof targetContract.viewConfig === 'string'
               ? JSON.parse(targetContract.viewConfig)
               : targetContract.viewConfig;
 
-          // 배열 확인 후 할당
           if (Array.isArray(contractConfig.activePayLabels)) {
             currentConfig.activePayLabels = contractConfig.activePayLabels;
           }
           if (Array.isArray(contractConfig.activeDeductionLabels)) {
             currentConfig.activeDeductionLabels = contractConfig.activeDeductionLabels;
-            currentConfig.activeDeductionCodes = contractConfig.activeDeductionLabels; // 하위 호환성용
+            currentConfig.activeDeductionCodes = contractConfig.activeDeductionLabels;
           }
         } catch (e) {
           console.error('계약 viewConfig 파싱 에러:', e);
         }
       }
 
-      // 선택된 계약(구분)의 meltOptions를 적용
       if (!props.settlementId || !isInitializing.value) {
         let contractMeltOptions = { annualLeave: false, severance: false, workersDay: false };
 
@@ -261,9 +285,6 @@ const fetchContractData = async () => {
           }
         }
 
-        console.log(contractMeltOptions, 'contractMeltOptions')
-
-        // 반응형 객체에 값 할당 (UI 토글 스위치 및 보험료 재계산 자동 트리거 됨)
         Object.assign(meltOptions, {
           annualLeave: contractMeltOptions.annualLeave ?? false,
           severance: contractMeltOptions.severance ?? false,
@@ -278,7 +299,7 @@ const fetchContractData = async () => {
 
 const deductionItems = computed(() => {
   if (!Array.isArray(items.value)) return [];
-  let result = items.value.filter(item => item.groupCd === '04002');
+  let result = items.value.filter(item => item.groupNm === '공제항목' || item.groupCd === '04002');
 
   if (contractIndirectLabels.value.length > 0) {
     result = result.filter(item => contractIndirectLabels.value.some(label => item.itemCd === label || item.itemNm.includes(label)));
@@ -300,15 +321,40 @@ const visibleDeductionItems = computed(() =>
     deductionItems.value.filter(item => currentConfig.activeDeductionCodes.includes(item.itemCd))
 );
 
+// ──────────────────────────────────────────────
+// ★ 3-1. 동적 컬럼 매핑 로직 (에러 해결 핵심 구역)
+// ──────────────────────────────────────────────
 const dynamicColumns = computed(() => {
   const cols = [];
   const payLabels = currentConfig.activePayLabels || [];
   const dedLabels = currentConfig.activeDeductionLabels || currentConfig.activeDeductionCodes || [];
 
-  // 1) 지급 항목
+  // 코드(숫자)를 한글 이름으로 변환해주는 헬퍼 함수
+  const getCodeName = (code) => {
+    // 1. 가장 최우선: 과거 2계층 데이터 호환을 위한 하드코딩 매핑 (DB 이관 이슈 방어)
+    const legacyMap = {
+      '04003001': '연차적립금',
+      '04003003': '퇴직적립금',
+      '04003010': '산재보험',
+      '04001008': '근로자의날수당'
+    };
+    if (legacyMap[code]) return legacyMap[code];
+
+    // 2. Leaf 노드 (현재 3계층 하위 항목)에서 찾기
+    const foundInLeaves = items.value.find(i => i.itemCd === code);
+    if (foundInLeaves) return foundInLeaves.itemNm;
+
+    // 3. 전체 항목 (2차 폴더 포함) 원본에서 찾기
+    const foundInAll = allWageCodes.value.find(i => i.itemCd === code);
+    if (foundInAll) return foundInAll.itemNm;
+
+    // 그래도 없으면 어쩔 수 없이 코드 번호 그대로 반환
+    return code;
+  };
+
+  // 1) 지급 항목 세팅
   payLabels.forEach(code => {
-    const found = items.value.find(i => i.itemCd === code) || { itemNm: code, itemCd: code };
-    cols.push({ type: 'pay', code: found.itemCd, name: found.itemNm });
+    cols.push({ type: 'pay', code: code, name: getCodeName(code) });
   });
 
   // 2) 급여 (지급총액)
@@ -316,14 +362,14 @@ const dynamicColumns = computed(() => {
     cols.push({ type: 'gross', code: 'grossPay', name: '급여' });
   }
 
-  // 3) 공제 항목
+  // 3) 공제 항목 세팅
   dedLabels.forEach(code => {
-    const found = items.value.find(i => i.itemCd === code) || { itemNm: code, itemCd: code };
+    const itemName = getCodeName(code);
     cols.push({
       type: 'deduct',
-      code: found.itemCd,
-      name: found.itemNm,
-      isEmployment: found.itemNm.includes('고용보험') // 고용보험은 칸 2개 차지
+      code: code,
+      name: itemName,
+      isEmployment: itemName.includes('고용보험') // 고용보험은 칸 2개 차지
     });
   });
 
@@ -331,7 +377,7 @@ const dynamicColumns = computed(() => {
 });
 
 // ──────────────────────────────────────────────
-// 4. 숫자 콤마 전용 입력 핸들러 (커서 튐 방지)
+// 4. 숫자 콤마 전용 입력 핸들러
 // ──────────────────────────────────────────────
 const handleCurrencyInput = async (e, obj, key, row, calcType) => {
   const input = e.target;
@@ -363,9 +409,7 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
 const applyContractReserves = (row) => {
   const finalize = () => { calculateRow(row); };
 
-  // 산출내역서에서 특정 항목의 staffCode별 금액을 추출하는 내부 함수
   const findContractValue = (keyword, cd, staffCode) => {
-    // directLabor + indirectLabor 전체를 합쳐서 검색
     const allLabor = [
       ...contractDirectLabor.value,
       ...contractIndirectLabor.value
@@ -378,29 +422,25 @@ const applyContractReserves = (row) => {
           label === keyword ||
           label.includes(keyword) ||
           label.includes(cd) ||
-          cd.includes(label)   // ← label이 cd의 일부인 경우도 커버
+          cd.includes(label)
       );
     });
 
     if (!target?.values) return 0;
 
-    // staffCode 직접 매칭
     if (staffCode != null && target.values[staffCode] != null) {
       return Number(target.values[staffCode]) || 0;
     }
 
-    // staffCode 매칭 실패 → staffList 순서대로 첫 번째 유효한 값 사용
     for (const staff of contractStaffList.value) {
       const val = Number(target.values[staff.code]);
       if (val > 0) return val;
     }
 
-    // staffList도 없으면 values의 첫 번째 값
     const firstVal = Object.values(target.values)[0];
     return Number(firstVal) || 0;
   };
 
-  // 1. position으로 staffCode 찾기
   let staffCode = null;
   if (row.position && contractStaffList.value.length) {
     const staffObj = contractStaffList.value.find(
@@ -409,12 +449,10 @@ const applyContractReserves = (row) => {
     if (staffObj) staffCode = staffObj.code;
   }
 
-  // 2. staffList가 1개면 무조건 그 코드 사용
   if (!staffCode && contractStaffList.value.length === 1) {
     staffCode = contractStaffList.value[0].code;
   }
 
-  // 3. ★ 연차·퇴직·근로자의날·산재는 salarySource와 무관하게 항상 산출내역서 기준
   row.reserves.annualLeave = findContractValue('연차', '04003001', staffCode);
   row.reserves.severance   = findContractValue('퇴직', '04003003', staffCode);
   row.reserves.workersDay  = findContractValue('근로자', '04003002', staffCode);
@@ -443,25 +481,18 @@ const calculateRow = (row) => {
 };
 
 const recalculateInsurances = (row) => {
-  // 1. 보험료를 계산할 기준 급여(Base) 설정
   let baseAmount = Number(row.grossPay) || 0;
-
-  // [핵심 수정] 토글이 꺼져 있어도 DB 값을 복원하는 대신,
-  // 현재 체크된 옵션에 따라 계산용 Base 금액을 실시간으로 구성합니다.
   let calcBase = baseAmount;
   if (meltOptions.annualLeave) calcBase += Number(row.reserves.annualLeave) || 0;
   if (meltOptions.severance)   calcBase += Number(row.reserves.severance)   || 0;
-  if (meltOptions.workersDay)   calcBase += Number(row.reserves.workersDay)   || 0;
+  if (meltOptions.workersDay)  calcBase += Number(row.reserves.workersDay)  || 0;
 
   const rates = insuranceRates.value;
 
-  // 2. 각 공제 항목별 재계산 (visible이 아닌 전체 deductionItems 기준)
   deductionItems.value.forEach(item => {
     const code = item.itemCd;
     const name = item.itemNm;
 
-    // 해당 직원이 원래 해당 보험료를 납부하고 있었는지 확인 (0원이면 비가입자로 판단하여 계산 제외)
-    // 단, originalDeductions가 없을 경우를 대비해 안전장치 추가
     const originalAmt = Number(row.originalDeductions?.[code] ?? row.deductionItems?.[code] ?? 0);
     if (originalAmt === 0) {
       row.deductionItems[code] = 0;
@@ -469,7 +500,6 @@ const recalculateInsurances = (row) => {
     }
 
     let amt = 0;
-    // 4대 보험 항목들만 현재 calcBase 기준으로 재계산
     if (name.includes('국민연금')) {
       amt = Math.floor((calcBase * (rates.nationalPension / 100)) / 10) * 10;
     } else if (name.includes('건강보험')) {
@@ -480,13 +510,11 @@ const recalculateInsurances = (row) => {
     } else if (name.includes('고용보험')) {
       amt = Math.floor((calcBase * (rates.employmentInsurance / 100)) / 10) * 10;
     } else {
-      // 그 외 기타 공제는 원래 금액 유지
       amt = originalAmt;
     }
     row.deductionItems[code] = amt;
   });
 
-  // 3. 산재보험(사업주 부담) 재계산
   if ((Number(row.originalSanjae) || 0) > 0) {
     row.reserves.sanjae = Math.floor((calcBase * (rates.industrialAccident / 100)) / 10) * 10;
   }
@@ -494,17 +522,13 @@ const recalculateInsurances = (row) => {
 
 const getInsuranceTotal = (row) => {
   let total = 0;
-  // 화면에 렌더링되기로 결정된 공제 항목(dynamicColumns)만 순회하며 합산
   dynamicColumns.value.forEach(col => {
     if (col.type === 'deduct') {
       if (col.isEmployment) {
-        // 고용보험일 경우 실업급여 + 고용안정(사업주)
         total += (Number(row.deductionItems?.[col.code]) || 0) + (Number(row.reserves?.empInsEmployer) || 0);
       } else if (col.code === '04003010' || col.name.includes('산재')) {
-        // 산재보험일 경우
         total += Number(row.reserves?.sanjae) || 0;
       } else {
-        // 그 외 일반 공제항목 (국민, 건강, 장기요양 등)
         total += Number(row.deductionItems?.[col.code]) || 0;
       }
     }
@@ -524,10 +548,11 @@ watch(meltOptions, () => {
     calculateRow(row);
   });
 }, { deep: true });
+
 watch(() => currentConfig.activeDeductionCodes, () => { formData.value.payrollData.forEach(row => calculateRow(row)); }, { deep: true });
 
 // ──────────────────────────────────────────────
-// 6. 총계 & 부가세 계산 (커스텀 항목 및 고정값 포함)
+// 6. 총계 & 부가세 계산
 // ──────────────────────────────────────────────
 const payrollTotals = computed(() => {
   const totals = {
@@ -551,7 +576,6 @@ const payrollTotals = computed(() => {
 
     let rowInsTotal = 0;
 
-    // 화면에 렌더링되기로 결정된 공제 항목만 합산
     dynamicColumns.value.forEach(col => {
       if (col.type === 'deduct') {
         if (col.isEmployment) {
@@ -578,7 +602,6 @@ const payrollTotals = computed(() => {
   return totals;
 });
 
-// 산출내역서(계약) 기준 고정 적립금 총액 계산
 const contractAnnualLeaveTotal = computed(() => {
   let target = contractDirectLabor.value.find(d => d.label === '04003001' || String(d.label).includes('연차'));
   if (!target && contractIndirectLabor.value) {
@@ -610,12 +633,10 @@ const contractSeveranceTotal = computed(() => {
 const estimatedInsuranceTotal = computed(() => {
   let total = 0;
   contractIndirectLabor.value.forEach(item => {
-    // 산출내역서의 항목 중, 현재 '화면에 표시된 공제 항목'인지 검사
     const isVisible = dynamicColumns.value.some(col =>
         col.type === 'deduct' && (col.code === item.label || col.name === item.label || item.label.includes(col.name))
     );
 
-    // 화면에 표시된 항목만 견적에 포함시킴
     if (isVisible && item.values) {
       Object.entries(item.values).forEach(([staffCode, val]) => {
         const staffObj = contractStaffList.value.find(s => s.code === staffCode);
@@ -629,8 +650,6 @@ const estimatedInsuranceTotal = computed(() => {
 
 const actualInsuranceTotal = computed(() => {
   let total = 0;
-
-  // 화면에 표시된 항목만 실비에 포함시킴
   dynamicColumns.value.forEach(col => {
     if (col.type === 'deduct') {
       if (['국민', '건강', '장기', '고용'].some(kw => col.name.includes(kw))) {
@@ -652,18 +671,14 @@ watch([estimatedInsuranceTotal, actualInsuranceTotal], ([est, act]) => {
 
 const toggleSummarySign = (key) => {
   if (currentConfig.summarySigns[key] !== undefined) {
-    currentConfig.summarySigns[key] *= -1; // -1 <-> 1 전환
+    currentConfig.summarySigns[key] *= -1;
   }
 };
 
 const totalSummary = computed(() => {
   const monthlyFee  = contractTotalCost.value || 0;
-  // 테이블 합산(payrollTotals) 대신 산출내역서 고정값 사용
   const severance   = contractSeveranceTotal.value || 0;
   const annualLeave = contractAnnualLeaveTotal.value || 0;
-  // 테이블 합산에서 퇴직적립금과 연차적립금은 유동적으로
-  // const severance   = payrollTotals.value.severance   || 0;
-  // const annualLeave = payrollTotals.value.annualLeave  || 0;
   const estIns      = estimatedInsuranceTotal.value || 0;
   const actIns      = actualInsuranceTotal.value || 0;
   const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
@@ -706,9 +721,6 @@ const totalSummary = computed(() => {
   ];
 });
 
-// ──────────────────────────────────────────────
-// ★ 6-1. 세부내역서 -> 청구 공문(표지) 자동 동기화 로직
-// ──────────────────────────────────────────────
 const syncBillingItems = () => {
   let periodStr = '';
   let monthNum = '';
@@ -776,7 +788,6 @@ const syncBillingItems = () => {
   });
 
   newItems = newItems.concat(currentItems);
-
   formData.value.billingData.items = newItems;
   calculateBillingTotal();
 };
@@ -798,13 +809,10 @@ const getDynamicTotal = (col) => {
 
   let sum = 0;
   formData.value.payrollData.forEach(row => {
-    // 예약된 특수 항목들
     if (col.code === '04003001') sum += Number(row.reserves?.annualLeave) || 0;
     else if (col.code === '04003003') sum += Number(row.reserves?.severance) || 0;
     else if (col.name.includes('근로자의날')) sum += Number(row.reserves?.workersDay) || 0;
     else if (col.code === '04003010') sum += Number(row.reserves?.sanjae) || 0;
-
-    // 일반 지급/공제 항목들
     else if (col.type === 'pay') sum += Number(row.payments?.[col.code]) || 0;
     else if (col.type === 'deduct') sum += Number(row.deductionItems?.[col.code]) || 0;
   });
@@ -812,12 +820,12 @@ const getDynamicTotal = (col) => {
 };
 
 const colspanForSummary = computed(() => {
-  let cols = 6; // 기본 고정 컬럼수 (NO ~ 퇴사일)
+  let cols = 6;
   dynamicColumns.value.forEach(col => {
     cols += 1;
-    if (col.isEmployment) cols += 1; // 고용보험은 2칸 차지
+    if (col.isEmployment) cols += 1;
   });
-  return cols - 2; // 마지막 총계, 관리 제외 포지셔닝
+  return cols - 2;
 });
 
 const calculateAreaSupply = () => {
@@ -1033,15 +1041,8 @@ const loadPayrollData = async () => {
     const [year, month] = targetDate.split('-');
 
     await fetchTaxRates();
-
-    // ★ isInitializing 없이 그냥 fetchContractData 호출
-    //   (meltOptions watch는 payrollData가 아직 없으니 재계산해도 무해)
     await fetchContractData();
     await nextTick();
-
-    console.log('staffList:', JSON.parse(JSON.stringify(contractStaffList.value)));
-    console.log('directLabor:', JSON.parse(JSON.stringify(contractDirectLabor.value)));
-    console.log('indirectLabor:', JSON.parse(JSON.stringify(contractIndirectLabor.value)));
 
     const validItemCds = [
       ...contractDirectLabor.value.map(d => String(d.label)),
@@ -1105,8 +1106,6 @@ const loadPayrollData = async () => {
       };
 
       applyContractReserves(rowObj);
-      console.log(`[${rowObj.empName}] reserves:`, JSON.parse(JSON.stringify(rowObj.reserves)));
-
       recalculateInsurances(rowObj);
       calculateRow(rowObj);
 
@@ -1145,7 +1144,6 @@ watch(() => formData.value.billingDt, updateDocNo);
 watch(() => formData.value.type, (newType) => {
   if (newType && formData.value.sIdx) {
     fetchContractData().then(() => {
-      // ★ 이미 payrollData가 있으면 적립금 재적용
       if (formData.value.payrollData.length > 0) {
         nextTick(() => {
           formData.value.payrollData.forEach(row => {
@@ -1195,7 +1193,7 @@ const onDragOver  = (e, index) => {
 };
 
 // ──────────────────────────────────────────────
-// 8. 내보내기 & 저장
+// 8. 엑셀 저장 및 데이터 저장
 // ──────────────────────────────────────────────
 const exportToExcel = async () => {
   try {
@@ -1204,22 +1202,18 @@ const exportToExcel = async () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(arrayBuffer);
 
-    const sheet = workbook.getWorksheet(1); // 시트는 1개뿐
+    const sheet = workbook.getWorksheet(1);
 
     sheet.pageSetup = {
       paperSize: 9,
       orientation: 'portrait',
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 0, // 높이 자동 → 페이지 나누기 기준으로 2페이지
+      fitToHeight: 0,
     };
 
-    // ✅ ExcelJS가 날린 페이지 나누기 복원 (44행 뒤에서 나누기)
     sheet.rowBreaks = [{ id: 44, min: 0, max: 16383, man: true }];
 
-    // ────────────────────────────────
-    // ★ 0. 날짜 및 카테고리 정보 사전 계산
-    // ────────────────────────────────
     const targetDateStr = formData.value.target_month || formData.value.billingDt;
     let periodStr = '';
     let yearStrFull = new Date().getFullYear().toString();
@@ -1236,103 +1230,83 @@ const exportToExcel = async () => {
         const yearStr = String(yyyy).slice(2);
         const monthStr = String(mm).padStart(2, '0');
         const lastDay = new Date(yyyy, mm, 0).getDate();
-        // 예: 26.03.01~03.31
         periodStr = `${yearStr}.${monthStr}.01~${monthStr}.${lastDay}`;
       }
     }
 
-    // 용역 구분명 (미화, 경비 등) 추출
     let categoryName = '용역';
     if (typeOptions && typeOptions.value) {
       const matched = typeOptions.value.find(t => t.itemCd === formData.value.type);
       if (matched) categoryName = matched.itemNm;
     }
 
-    // ────────────────────────────────
-    // [페이지1] 청구 공문 - 5~27행
-    // ────────────────────────────────
     sheet.getCell('A5').value = ` 문서번호 : ${formData.value.docNo || ''}`;
     sheet.getCell('A6').value = ` 시행일자 : ${formData.value.billingDt || ''}`;
     sheet.getCell('A7').value = ` 수    신 : ${formData.value.siteName || ''} 관리사무소`;
     sheet.getCell('A8').value = ` 제    목 : ${formData.value.billingData.summary || ''}`;
     sheet.getCell('A8').alignment = { wrapText: true, vertical: 'middle' };
 
-    // 청구항목: 16~20행, B열에 기간, J열에 금액
-    // 양식: 16=용역비, 17=연차, 18=퇴직, 19=보험차액, 20=커스텀
     const billingItems = formData.value.billingData.items || [];
     const fixedRows = [16, 17, 18, 19, 20];
 
     fixedRows.forEach((rowNum, idx) => {
-      // ★ 추가 1: 16~19행 B열(병합셀)에 산정기간 자동 입력
       if (rowNum <= 19 && periodStr) {
         sheet.getCell(`B${rowNum}`).value = periodStr;
       }
-
       if (billingItems[idx] !== undefined) {
         sheet.getCell(`J${rowNum}`).value  = Number(billingItems[idx].amount) || 0;
         sheet.getCell(`J${rowNum}`).numFmt = '#,##0';
       }
     });
 
-    // 입금계좌 (27행 B열 - 양식에 이미 텍스트 있으나 덮어쓰기)
     sheet.getCell('B27').value = `2) 입금계좌 : ${formData.value.billingData.bankInfo || ''}`;
-
-    // ────────────────────────────────
-    // [페이지2] 세부내역서
-    // 직원 데이터: 51~60행 (최대 10명)
-    // ────────────────────────────────
 
     const payrollData = formData.value.payrollData || [];
 
-    // ★ 추가 2: A47 귀속연도 및 타입으로 제목 완성 (예: ■ 2026년 3월 미화 정산내역서)
     sheet.getCell('A47').value = `■ ${yearStrFull}년 ${monthNum}월 ${categoryName} 정산내역서`;
 
-    // ★ 추가 3: N49 현장명과 인원수 자동 입력 (예: 에코그린아파트 - 5명)
     const workerCount = payrollData.length;
     sheet.getCell('N49').value = `${formData.value.siteName || '현장 미지정'} - ${workerCount}명`;
 
-    // 컬럼 숨기기
-    sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;  // H: 연차
-    sheet.getColumn(9).hidden  = !currentConfig.showSeverance;    // I: 퇴직금
-    sheet.getColumn(10).hidden  = !currentConfig.showWorkersDay;    // J: 근로자의 날
+    sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;
+    sheet.getColumn(9).hidden  = !currentConfig.showSeverance;
+    sheet.getColumn(10).hidden  = !currentConfig.showWorkersDay;
     const activeCodes = currentConfig.activeDeductionCodes;
-    sheet.getColumn(11).hidden = !activeCodes.includes('04002003'); // K: 국민연금
-    sheet.getColumn(12).hidden = !activeCodes.includes('04002001'); // L: 건강보험
-    sheet.getColumn(13).hidden = !activeCodes.includes('04002002'); // M: 장기요양
-    sheet.getColumn(14).hidden = !activeCodes.includes('04002004'); // N: 실업급여
-    sheet.getColumn(15).hidden = !activeCodes.includes('04002004'); // O: 고용안정
-    sheet.getColumn(16).hidden = !currentConfig.showSanjae;         // P: 산재
+    sheet.getColumn(11).hidden = !activeCodes.includes('04002003');
+    sheet.getColumn(12).hidden = !activeCodes.includes('04002001');
+    sheet.getColumn(13).hidden = !activeCodes.includes('04002002');
+    sheet.getColumn(14).hidden = !activeCodes.includes('04002004');
+    sheet.getColumn(15).hidden = !activeCodes.includes('04002004');
+    sheet.getColumn(16).hidden = !currentConfig.showSanjae;
 
-    const maxRows = 10; // 양식 고정 10행 (51~60)
+    const maxRows = 10;
 
     for (let idx = 0; idx < maxRows; idx++) {
       const rowNum = 51 + idx;
       const data   = payrollData[idx];
 
-      if (!data) continue; // 데이터 없으면 빈칸 유지
+      if (!data) continue;
 
       const row = sheet.getRow(rowNum);
-      row.getCell(2).value  = idx + 1;           // B: NO
-      row.getCell(3).value  = data.empName    || ''; // C: 이름
-      row.getCell(4).value  = data.position   || ''; // D: 직책
-      row.getCell(5).value  = data.personalNo || ''; // E: 생년월일
-      row.getCell(6).value  = data.inDate     || ''; // F: 입사일
-      row.getCell(7).value  = data.outDate    || ''; // G: 퇴사일
-      row.getCell(8).value  = Number(data.reserves?.annualLeave)        || 0; // H
-      row.getCell(9).value  = Number(data.reserves?.severance)          || 0; // I
-      row.getCell(9).value  = Number(data.reserves?.workersDay)          || 0; // J
-      row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0; // K: 국민
-      row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0; // L: 건강
-      row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0; // M: 장기
-      row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0; // N: 실업
-      row.getCell(14).value = Number(data.reserves?.empInsEmployer)     || 0; // O: 고용안정
-      row.getCell(15).value = Number(data.reserves?.sanjae)             || 0; // P: 산재
-      row.getCell(16).value = Number(getInsuranceTotal(data))            || 0; // Q: 총계
+      row.getCell(2).value  = idx + 1;
+      row.getCell(3).value  = data.empName    || '';
+      row.getCell(4).value  = data.position   || '';
+      row.getCell(5).value  = data.personalNo || '';
+      row.getCell(6).value  = data.inDate     || '';
+      row.getCell(7).value  = data.outDate    || '';
+      row.getCell(8).value  = Number(data.reserves?.annualLeave)        || 0;
+      row.getCell(9).value  = Number(data.reserves?.severance)          || 0;
+      row.getCell(9).value  = Number(data.reserves?.workersDay)          || 0;
+      row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0;
+      row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0;
+      row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0;
+      row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0;
+      row.getCell(14).value = Number(data.reserves?.empInsEmployer)     || 0;
+      row.getCell(15).value = Number(data.reserves?.sanjae)             || 0;
+      row.getCell(16).value = Number(getInsuranceTotal(data))            || 0;
       for (let c = 8; c <= 16; c++) row.getCell(c).numFmt = '#,##0';
     }
 
-    // 요약 테이블: 62~69행 O열에 금액
-    // 양식 고정 순서: 62=월간용역비, 63=연차, 64=퇴직, 65=견적보험, 66=실비보험, 67=보험차액, 68=커스텀, 69=청구금액
     const summaryRowMap = {
       'monthlyFee':   62,
       'annualLeave':  63,
@@ -1345,13 +1319,12 @@ const exportToExcel = async () => {
 
     totalSummary.value.forEach((summary) => {
       const rowNum = summaryRowMap[summary.key];
-      if (!rowNum) return; // 커스텀 항목은 68행에 첫번째만
+      if (!rowNum) return;
       const signedValue = summary.sign < 0 ? -Math.abs(summary.value) : Math.abs(summary.value);
       sheet.getCell(`O${rowNum}`).value  = Number(signedValue) || 0;
       sheet.getCell(`O${rowNum}`).numFmt = '#,##0';
     });
 
-    // 커스텀 항목 → 68행에 합산해서 넣기
     const customTotal = (formData.value.billingData.customSummaryItems || [])
         .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
     if (customTotal !== 0) {
@@ -1451,10 +1424,11 @@ onMounted(async () => {
             <div class="form-grid">
               <div class="form-group">
                 <label>현장 선택 <span class="text-red">*</span></label>
-                <select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
+                <!--select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
                   <option value="" disabled>현장을 선택해주세요</option>
                   <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-                </select>
+                </select-->
+                <SiteSelect v-model="formData.sIdx" @change="handleSiteChange" :width="'100%'"></SiteSelect>
               </div>
               <div class="form-group">
                 <label>구분 선택 <span class="text-red">*</span></label>
