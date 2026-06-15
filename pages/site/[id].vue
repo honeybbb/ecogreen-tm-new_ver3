@@ -1328,7 +1328,7 @@ onMounted(async () => {
                 </span>
               </div>
 
-              <div class="contract-header-options">
+              <!--div class="contract-header-options">
                 <div class="header-melt-option">
                   <span>연차 수당 포함</span>
                   <label class="switch-xs">
@@ -1350,7 +1350,7 @@ onMounted(async () => {
                     <span class="slider-xs round"></span>
                   </label>
                 </div>
-              </div>
+              </div-->
             </div>
 
             <div class="contract-card-body">
@@ -1925,54 +1925,85 @@ onMounted(async () => {
       <!-- 정산정보 탭 -->
       <div v-show="activeTab === 'settlement'" class="tab-panel">
         <div class="info-sections">
+          <!-- 수당 포함 옵션 섹션 -->
+          <!-- 정산설정 탭 — 기존 "급여 데이터 기준 설정" + "수당 포함 설정" 두 섹션을 아래 하나로 교체 -->
           <div class="info-section">
             <div class="section-header">
               <i class="mdi mdi-cash-sync"></i>
-              <h3>급여 데이터 기준 설정</h3>
+              <h3>계약별 정산 기준 및 옵션 설정</h3>
             </div>
-            <p class="info-helper-text" style="margin-bottom:20px;">
-              * 각 계약 분류별로 정산서 데이터 불러오기 시 적용할 급여 정보의 출처를 선택해주세요.
+            <p class="info-helper-text" style="margin-bottom: 20px;">
+              * 각 계약 분류별로 정산서에 적용할 급여 정보의 출처 및 수당 포함 여부를 설정해주세요.
             </p>
 
-            <!-- 계약이 없을 경우 안내 -->
-            <div v-if="contractGroups.length === 0" class="empty-list" style="border: 1px dashed var(--border-color); border-radius: 8px;">
+            <div v-if="contractGroups.length === 0"
+                 class="empty-list"
+                 style="border: 1px dashed var(--border-color); border-radius: 8px; padding: 20px; text-align: center; color: var(--text-muted);">
               등록된 계약 정보가 없습니다. [계약정보] 탭에서 계약을 먼저 추가해주세요.
             </div>
 
-            <!-- 계약 타입별 개별 설정 리스트 -->
             <div v-else class="salary-source-list">
               <div v-for="(group, idx) in contractGroups" :key="idx" class="source-selection-row">
 
-                <!-- 좌측: 계약 분류 배지 -->
+                <!-- 계약 분류 배지 -->
                 <div class="source-group-title">
-        <span :class="['contract-badge', `badge-${group.category}`]" style="padding: 6px 12px; font-size: 13px;">
+        <span :class="['contract-badge', `badge-${group.category}`]"
+              style="padding: 6px 12px; font-size: 13px;">
           <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
         </span>
                 </div>
 
-                <!-- 우측: 라디오 버튼 옵션 -->
-                <div class="source-selection-options">
-                  <label class="radio-label">
-                    <input
-                        type="radio"
-                        v-model="group.salarySource"
-                        value="employee"
-                        :name="'salarySource_' + idx"
-                    />
-                    <strong>직원 급여 정보</strong> <span class="text-hint">(저장된 기본 급여 기준)</span>
-                  </label>
+                <!-- 설정 블록들 -->
+                <div class="source-settings-content">
 
-                  <label class="radio-label">
-                    <input
-                        type="radio"
-                        v-model="group.salarySource"
-                        value="contract"
-                        :name="'salarySource_' + idx"
-                    />
-                    <strong>계약 산출 정보</strong> <span class="text-hint">(계약 정보 산출 기준)</span>
-                  </label>
+                  <!-- 급여 기준 -->
+                  <div class="setting-block">
+                    <span class="setting-label">급여 데이터 기준</span>
+                    <div class="source-selection-options">
+                      <label class="source-radio-label">
+                        <input type="radio" v-model="group.salarySource"
+                               value="employee" :name="'salarySource_' + idx" />
+                        <strong>직원 급여 정보</strong>
+                        <span class="text-hint">(저장된 기본 급여 기준)</span>
+                      </label>
+                      <label class="source-radio-label">
+                        <input type="radio" v-model="group.salarySource"
+                               value="contract" :name="'salarySource_' + idx" />
+                        <strong>계약 산출 정보</strong>
+                        <span class="text-hint">(계약 정보 산출 기준)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- 수당 포함 옵션 -->
+                  <div class="setting-block">
+                    <span class="setting-label">수당 포함 옵션</span>
+                    <div class="source-melt-options">
+                      <div class="header-melt-option">
+                        <span>연차 수당 포함</span>
+                        <label class="switch-xs">
+                          <input type="checkbox" v-model="group.meltOptions.annualLeave" />
+                          <span class="slider-xs round"></span>
+                        </label>
+                      </div>
+                      <div class="header-melt-option">
+                        <span>퇴직 수당 포함</span>
+                        <label class="switch-xs">
+                          <input type="checkbox" v-model="group.meltOptions.severance" />
+                          <span class="slider-xs round"></span>
+                        </label>
+                      </div>
+                      <div class="header-melt-option">
+                        <span>근로자의날 수당 포함</span>
+                        <label class="switch-xs">
+                          <input type="checkbox" v-model="group.meltOptions.workersDay" />
+                          <span class="slider-xs round"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
-
               </div>
             </div>
           </div>
@@ -3339,5 +3370,155 @@ input:checked + .slider:before { transform: translateX(18px); }
   .text-hint {
     display: none; /* 모바일에서는 부가설명을 숨겨 깔끔하게 유지 */
   }
+}
+
+/* =============================================
+   수당 포함 설정 (정산설정 탭)
+============================================= */
+.melt-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.melt-options-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 16px 20px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.melt-options-row:hover {
+  border-color: var(--border-focus);
+}
+
+.melt-group-title {
+  width: 120px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.melt-toggles {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.melt-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.melt-toggle-item:hover {
+  border-color: var(--border-focus);
+  background: var(--bg-hover);
+}
+
+.melt-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.melt-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.melt-toggle-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .melt-options-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .melt-group-title {
+    width: auto;
+  }
+}
+
+.source-settings-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.setting-block {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.setting-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.source-selection-options {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex: 1;
+}
+
+.source-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+
+.source-radio-label strong {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+.source-radio-label input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border: 2px solid var(--border-focus);
+  border-radius: 50%;
+  margin: 0; outline: none; cursor: pointer;
+  position: relative;
+  background-color: var(--bg-surface);
+  transition: all 0.2s; flex-shrink: 0;
+}
+.source-radio-label input[type="radio"]:checked { border-color: var(--primary); }
+.source-radio-label input[type="radio"]:checked::after {
+  content: ""; position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 9px; height: 9px;
+  border-radius: 50%; background-color: var(--primary);
+}
+
+.source-melt-options {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 </style>
