@@ -296,9 +296,47 @@ const selectAll = computed({
 // ── API: 임금 코드 ────────────────────────────────
 const getWageCode = async () => {
   try {
-    const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
-    items.value = res.data.data || [];
-  } catch {}
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    const all = (res.data.data || []).filter(c => c.itemCd.startsWith('04'));
+
+    // ── 1. itemCd → 노드 맵 ──────────────────────────
+    const map = Object.fromEntries(all.map(c => [c.itemCd, c]));
+
+    // ── 2. 부모 역할을 하는 코드 집합 ─────────────────
+    const parentCds = new Set(all.map(c => c.groupCd));
+
+    // ── 3. leaf 노드만 추출 (자식이 없는 최종 항목) ───
+    const leaves = all.filter(c => !parentCds.has(c.itemCd));
+
+    // ── 4. leaf의 04001/04002 직속 조상 탐색 ──────────
+    const getTopAncestor = (itemCd) => {
+      let cur = map[itemCd];
+      while (cur) {
+        const parent = map[cur.groupCd];
+        // parent가 루트(04)이면 cur가 대분류
+        if (!parent || parent.itemCd === parent.groupCd) return cur.itemCd;
+        cur = parent;
+      }
+      return null;
+    };
+
+    // ── 5. groupNm 부여 ────────────────────────────────
+    const GROUP_NM = {
+      '04001': '지급항목',
+      '04002': '공제항목',
+      '04003': '정산항목',
+    };
+
+    items.value = leaves.map(leaf => ({
+      ...leaf,
+      tax_free: Number(leaf.tax_free) || 0,
+      groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
+    }));
+
+  } catch (e) {
+    console.error('임금코드 로드 실패:', e);
+    items.value = [];
+  }
 };
 
 // ── API: 세율 ─────────────────────────────────────
