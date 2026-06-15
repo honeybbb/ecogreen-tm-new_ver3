@@ -76,6 +76,7 @@ const site = ref({
   bigo: '',
   bankName: '기업',
   accountNumber: '',
+  accountName: '',
 });
 
 const siteTypeOptions  = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
@@ -797,6 +798,7 @@ const getSiteData = async () => {
       zipcode:        result.zipcode || '',
       bankName:       result.bankName,
       accountNumber:  result.accountNumber,
+      accountName:  result.accountName,
     };
 
     // viewConfig 불러오기 (getSiteData 내부)
@@ -917,6 +919,7 @@ const saveSiteData = async () => {
       bigo:             site.value.bigo,
       bankName:         site.value.bankName,
       accountNumber:    site.value.accountNumber,
+      accountName:      site.value.accountName,
       contract_details: JSON.stringify(contractGroups.value),
       viewConfig: JSON.stringify({
         activePayLabels:       settlementConfig.value.activePayLabels,
@@ -1290,6 +1293,10 @@ onMounted(async () => {
               <div class="info-item">
                 <label>계좌번호</label>
                 <input type="text" v-model="site.accountNumber" class="info-input" placeholder="예: 123-456-789012 (- 포함)" />
+              </div>
+              <div class="info-item">
+                <label>계좌예금주</label>
+                <input type="text" v-model="site.accountName" class="info-input" placeholder="예: 123-456-789012 (- 포함)" />
               </div>
             </div>
           </div>
