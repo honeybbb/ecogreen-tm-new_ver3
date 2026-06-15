@@ -119,7 +119,7 @@ const filteredPayrollList = computed(() => {
 const payHistoryOptions = computed(() => {
   const seen = new Set();
   const options = [];
-  const [year, month] = selectedYearMonth.value.split('-'); // ← 여기서 가져오기
+  const [year, month] = selectedYearMonth.value.split('-');
 
   payrollList.value.forEach(p => {
     if (p.status == 1 && p.payment_day != null) {
@@ -308,6 +308,35 @@ const resetBasePay = (row) => {
   row.originalBasePay = row.payItems['04001001'] || 0;
   calculateInsurances(row);
 };
+
+const deleteCalculatedPay = async () => {
+  const selectedRows = payrollList.value.filter(p => p.selected);
+  const [year, month] = selectedYearMonth.value.split('-');
+
+  if (selectedRows.length === 0) {
+    alert('삭제할 급여 데이터를 체크해주세요.');
+    return;
+  }
+
+  if (!confirm('선택한 직원의 급여 계산 내역을 삭제하시겠습니까?')) {
+    return;
+  }
+
+  try {
+    await axios.delete(`/api/v1/member/payroll/calculate`, {
+      data: {
+        idxList: selectedRows.map(r => r.idx),
+        year:    year,
+        month:   month,
+      }
+    });
+    alert('삭제되었습니다.');
+    await getPayrollMonth(); // 목록 새로고침
+  } catch (err) {
+    console.error('삭제 실패:', err);
+    alert('삭제에 실패했습니다.');
+  }
+}
 
 const resetCalculatedPay = () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
@@ -1204,6 +1233,10 @@ onMounted(async () => {
         <button @click="resetCalculatedPay" class="btn-refresh">
           <i class="mdi mdi-refresh"></i>
           <span>선택 초기화</span>
+        </button>
+        <button @click="deleteCalculatedPay" class="btn-refresh">
+          <i class="mdi mdi-refresh"></i>
+          <span>선택 삭제</span>
         </button>
         <button @click="fetchCalculatedPay" class="btn-calculate">
           <i class="mdi mdi-lightning-bolt-outline"></i>
