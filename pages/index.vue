@@ -168,37 +168,34 @@ const calculateProcessed = (data) => {
   return data.map(site => {
     let progress = 0;
     let contractEnd = '';
-    let urgentType = ''; // 임박한 계약의 종류 (예: '경비')
+    let urgentType = '';
 
     if (site.contracts && site.contracts.length > 0) {
-      // 1. 계약들을 '종료일(endDate)이 빠른 순'으로 정렬합니다.
+      // 1. 최근 종료일이 가장 임박한 계약 순으로 정렬
       const sortedContracts = [...site.contracts].sort((a, b) => {
-        const endA = new Date(a.contract_period.split(' ~ ')[1]).getTime();
-        const endB = new Date(b.contract_period.split(' ~ ')[1]).getTime();
+        const endA = new Date(a.endDt).getTime();
+        const endB = new Date(b.endDt).getTime();
         return endA - endB;
       });
 
-      // 2. 가장 종료일이 빠른(임박한) 계약을 타겟으로 잡습니다.
       const targetContract = sortedContracts[0];
-
-      const [startStr, endStr] = targetContract.contract_period.split(' ~ ');
-      contractEnd = endStr;
-
-      // 만약 contract 객체 안에 계약 종류(type이나 category)가 있다면 가져옵니다.
-      // (변수명은 실제 데이터에 맞게 수정하세요. 예: targetContract.category)
+      contractEnd = targetContract.endDt || '';
       urgentType = targetContract.type || targetContract.category || '계약';
 
-      const startDate = new Date(startStr);
-      const endDate = new Date(endStr);
+      // 2. ⭐ 최근 차수 계약 시작일(startDt)과 종료일(endDt)을 기준으로 진행률 계산
+      if (targetContract.startDt && targetContract.endDt) {
+        const startDate = new Date(targetContract.startDt); // 최근 갱신일 (예: 2025년 또는 2026년)
+        const endDate = new Date(targetContract.endDt);     // 계약 종료일
 
-      const totalDuration = endDate.getTime() - startDate.getTime();
-      const elapsedDuration = today.getTime() - startDate.getTime();
+        const totalDuration = endDate.getTime() - startDate.getTime();
+        const elapsedDuration = today.getTime() - startDate.getTime();
 
-      if (totalDuration > 0) {
-        progress = (elapsedDuration / totalDuration) * 100;
+        if (totalDuration > 0) {
+          progress = (elapsedDuration / totalDuration) * 100;
+        }
       }
 
-      // 3. 진행률 0 ~ 100 사이 보정 (기존 로직 유지, 더 깔끔하게 작성)
+      // 3. 범위 보정
       progress = Math.max(0, Math.min(100, progress));
     }
 
@@ -206,8 +203,8 @@ const calculateProcessed = (data) => {
       ...site,
       progress: Math.round(progress),
       contractEnd: contractEnd,
-      urgentType: urgentType, // UI 표시용 (예: 경비)
-      contractCount: site.contracts ? site.contracts.length : 0 // UI 표시용 (총 계약 수)
+      urgentType: urgentType,
+      contractCount: site.contracts ? site.contracts.length : 0
     };
   });
 };
