@@ -1636,8 +1636,11 @@ onMounted(async () => {
                         </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                          <td>
+                          <!--td>
                             <CodeSelect v-model="item.label" :allow-empty="false"/>
+                          </td-->
+                          <td class="category-cell">
+                            <CategorySelect v-model="item.label" topCode="04001" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1710,7 +1713,8 @@ onMounted(async () => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
-                            <CodeSelect v-model="item.label" />
+                            <!--CodeSelect v-model="item.label" /-->
+                            <CategorySelect v-model="item.label" topCode="04002" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1772,7 +1776,8 @@ onMounted(async () => {
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
-                            <CodeSelect v-model="item.label" />
+                            <!--CodeSelect v-model="item.label" /-->
+                            <CategorySelect v-model="item.label" topCode="04003" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
