@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, onActivated } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import { useAuthStore } from '@/stores/auth';
 import axios from 'axios';
@@ -148,6 +148,42 @@ const searchAvailable = ref('');
 const searchSelected  = ref('');
 const selectedAvailItems = ref([]);
 const selectedRightItems = ref([]);
+
+const cleaningTaskOptions = ref([]);
+
+const addCleaningTaskToGroup = (groupIndex) => {
+  const group = contractGroups.value[groupIndex];
+  if (!group.tempCleaningCode) { alert('항목을 선택해주세요.'); return; }
+  if (group.tempCleaningCount < 1) { alert('1회 이상 입력해주세요.'); return; }
+
+  const taskInfo = cleaningTaskOptions.value.find(p => p.itemCd === group.tempCleaningCode);
+  const existing = group.cleaningTasks.find(t => t.code === taskInfo.itemCd);
+
+  if (existing) {
+    existing.count += Number(group.tempCleaningCount);
+  } else {
+    group.cleaningTasks.push({
+      code: taskInfo.itemCd,
+      name: taskInfo.itemNm,
+      count: Number(group.tempCleaningCount)
+    });
+  }
+  group.tempCleaningCode = '';
+  group.tempCleaningCount = 1;
+};
+
+const removeCleaningTaskFromGroup = (groupIndex, taskIndex) => {
+  contractGroups.value[groupIndex].cleaningTasks.splice(taskIndex, 1);
+};
+
+const updateCleaningCount = (task, delta) => {
+  const newVal = (Number(task.count) || 0) + delta;
+  if (newVal < 1) {
+    alert('최소 1회 이상이어야 합니다.');
+    return;
+  }
+  task.count = newVal;
+};
 
 const allAvailableItems = computed(() => {
   const map = new Map();
@@ -525,6 +561,9 @@ const addContractGroup = (category) => {
       workersDay: false
     },
     salarySource: 'contract',
+    cleaningTasks: [],
+    tempCleaningCode: '',
+    tempCleaningCount: 1,
   });
 };
 
@@ -785,6 +824,12 @@ const getSiteData = async () => {
         workersDay: false
       }
     };
+
+    searchAvailable.value = '';
+    searchSelected.value = '';
+    selectedAvailItems.value = [];
+    selectedRightItems.value = [];
+    isDragging.value = false;
     return; // 비운 뒤 함수 종료
   }
 
@@ -928,12 +973,64 @@ const handleCancel = () => {
   if (confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) router.push('/site/list');
 };
 
+const getWageCode = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${useAuthStore().user?.cIdx}`);
+    const all = (res.data.data || []).filter(c => c.itemCd.startsWith('04'));
+
+    const map = Object.fromEntries(all.map(c => [c.itemCd, c]));
+    const parentCds = new Set(all.map(c => c.groupCd));
+    const leaves = all.filter(c => !parentCds.has(c.itemCd));
+
+    const getTopAncestor = (itemCd) => {
+      let cur = map[itemCd];
+      while (cur) {
+        const parent = map[cur.groupCd];
+        if (!parent || parent.itemCd === parent.groupCd) return cur.itemCd;
+        cur = parent;
+      }
+      return null;
+    };
+
+    const GROUP_NM = {
+      '04001': '지급항목',
+      '04002': '공제항목',
+      '04003': '정산항목',
+    };
+
+    wagesData.value = leaves.map(leaf => ({
+      ...leaf,
+      tax_free: Number(leaf.tax_free) || 0,
+      groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
+    }));
+
+    // groupCd가 04003001인 leaf만 cleaningTaskOptions로 세팅
+    cleaningTaskOptions.value = leaves
+        .filter(leaf => leaf.groupCd === '04003001')
+        .map(leaf => ({ itemCd: leaf.itemCd, itemNm: leaf.itemNm }));
+
+  } catch (e) {
+    console.error('임금코드 로드 실패:', e);
+    wagesData.value = [];
+    cleaningTaskOptions.value = [];
+  }
+};
+
+watch(() => route.query.idx, () => {
+  getSiteData();
+});
+
+onActivated(() => {
+  getSiteData();
+});
+
 onMounted(() => {
   fetchPositionOptions();
   fetchTypeOptions();
-  fetchWageCode();
+  //fetchWageCode();
   fetchBankOption();
   getSiteData();
+  getWageCode();
 });
 </script>
 
@@ -1337,6 +1434,67 @@ onMounted(() => {
                   <i class="mdi mdi-sigma"></i>
                   <span>합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
                 </div>
+                </div>
+              </div>
+
+              <!-- 대청소 및 특수과업 -->
+              <div class="staff-section" style="margin-top: 16px;">
+                <label class="section-label">
+                  <i class="mdi mdi-spray-bottle"></i>대청소 및 특수과업
+                </label>
+
+                <div class="staff-input-group">
+                  <select v-model="group.tempCleaningCode" class="form-select staff-position">
+                    <option value="">특수과업 항목 선택</option>
+                    <option v-for="opt in cleaningTaskOptions" :key="opt.itemCd" :value="opt.itemCd">
+                      {{ opt.itemNm }}
+                    </option>
+                  </select>
+                  <span style="font-size:13px; color:var(--text-sub); white-space:nowrap;">/ 연</span>
+                  <input
+                      type="number"
+                      v-model="group.tempCleaningCount"
+                      min="1"
+                      class="form-input staff-count text-right"
+                      placeholder="횟수"
+                  />
+                  <span style="font-size:13px; color:var(--text-sub);">회</span>
+                  <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-add-staff">
+                    <i class="mdi mdi-plus"></i>추가
+                  </button>
+                </div>
+
+                <div v-if="group.cleaningTasks?.length > 0" class="staff-list">
+                  <div v-for="(task, tIdx) in group.cleaningTasks" :key="tIdx"
+                       class="staff-item-wrapper">
+                    <div class="staff-item">
+                      <div class="staff-info">
+                        <i class="mdi mdi-broom"></i>
+                        <span class="staff-position-name">{{ task.name }}</span>
+                        <div class="staff-count-stepper" style="margin-left: 8px;">
+                          <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, -1)">
+                            <i class="mdi mdi-minus"></i>
+                          </button>
+                          <span class="stepper-text">연</span>
+                          <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
+                          <span class="stepper-text">회</span>
+                          <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)">
+                            <i class="mdi mdi-plus"></i>
+                          </button>
+                        </div>
+                      </div>
+                      <div class="staff-actions">
+                        <button type="button" @click="removeCleaningTaskFromGroup(idx, tIdx)"
+                                class="btn-remove-staff">
+                          <i class="mdi mdi-close"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else style="text-align:center; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
+                  등록된 특수과업이 없습니다.
                 </div>
               </div>
 

@@ -238,6 +238,8 @@ const newAssignment = ref({
   assignDate: new Date().toISOString().substring(0, 10),
 });
 
+const cleaningTaskOptions = ref([]);
+
 const openStaffSearchModal = () => {
   staffSearchKeyword.value  = '';
   staffSearchResults.value  = [];
@@ -559,6 +561,9 @@ const addContractGroup = (category) => {
       workersDay: false
     },
     salarySource: 'contract',
+    cleaningTasks: [],       // 청소 과업 리스트
+    tempCleaningCode: '',    // 임시 선택 코드
+    tempCleaningCount: 1,    // 임시 입력 횟수
   });
 };
 
@@ -630,7 +635,7 @@ const allAvailableItems = computed(() => {
   const map = new Map(); // cd → nm
 
   // 1) DB 표준 임금 항목
-  ;(wagesData.value || []).forEach(w => {
+  (wagesData.value || []).forEach(w => {
     map.set(w.itemCd, w.itemNm);
   });
 
@@ -850,21 +855,6 @@ const getSiteData = async () => {
       accountName:  result.accountName,
     };
 
-    // viewConfig 불러오기 (getSiteData 내부)
-    if (result.viewConfig) {
-      try {
-        const parsed = typeof result.viewConfig === 'string'
-            ? JSON.parse(result.viewConfig)
-            : result.viewConfig;
-
-        settlementConfig.value = {
-          activePayLabels:       parsed.activePayLabels       ?? [],
-          activeDeductionLabels: parsed.activeDeductionLabels ?? [],
-        };
-
-      } catch(e) { console.error('viewConfig 파싱 에러:', e); }
-    }
-
     if (result.contractList) {
       contractGroups.value = JSON.parse(result.contractList).map(item => {
         //staffList 안전 파싱 (문자열일 경우 대비)
@@ -901,14 +891,35 @@ const getSiteData = async () => {
           workDays:          item.workDays,
           workSchedule:      item.workSchedule,
           breakTime:         item.breaktime,
-          // isAutoCalc:        item.isAutoCalc === 'N' ? 'N' : 'Y',
           staffList:         staffList,
           costBreakdown:     costBreakdownData, // 방어코드 처리된 객체 주입
           showCostBreakdown: false,
           meltOptions: item.meltOptions || { annualLeave: false, severance: false, workersDay: false },
-          salarySource: item.salarySource || 'contract'
+          salarySource: item.salarySource || 'contract',
+          viewConfig: item.viewConfig,
+          cleaningTasks: item.cleaningConfig || [],
+          tempCleaningCode: '',
+          tempCleaningCount: 1,
         };
       });
+    }
+
+    if (contractGroups.value.length > 0 && contractGroups.value[0].viewConfig) {
+      try {
+        const targetViewConfig = contractGroups.value[0].viewConfig;
+        const parsed = typeof targetViewConfig === 'string' ? JSON.parse(targetViewConfig) : targetViewConfig;
+
+        // 구버전 한글 데이터("연차적립금" 등)를 코드("04001003")로 변환
+        const convertLabelToCode = (val) => {
+          const found = wagesData.value.find(w => w.itemNm === val || w.itemCd === val);
+          return found ? found.itemCd : val;
+        };
+
+        settlementConfig.value.activePayLabels = (parsed.activePayLabels || []).map(convertLabelToCode);
+        settlementConfig.value.activeDeductionLabels = (parsed.activeDeductionLabels || []).map(convertLabelToCode);
+      } catch (e) {
+        console.error('viewConfig 파싱 에러:', e);
+      }
     }
 
     if (result.bigoList) {
@@ -931,33 +942,59 @@ const getSiteData = async () => {
   }
 };
 
+const addCleaningTaskToGroup = (groupIndex) => {
+  const group = contractGroups.value[groupIndex];
+  if (!group.tempCleaningCode) { alert('항목을 선택해주세요.'); return; }
+  if (group.tempCleaningCount < 1 || group.tempCleaningCount === '') { alert('1회 이상 입력해주세요.'); return; }
+
+  const taskInfo = cleaningTaskOptions.value.find(p => p.itemCd === group.tempCleaningCode);
+  const existing = group.cleaningTasks.find(t => t.code === taskInfo.itemCd);
+
+  if (existing) {
+    existing.count += Number(group.tempCleaningCount);
+  } else {
+    group.cleaningTasks.push({
+      code: taskInfo.itemCd,
+      name: taskInfo.itemNm,
+      count: Number(group.tempCleaningCount)
+    });
+  }
+  group.tempCleaningCode = '';
+  group.tempCleaningCount = 1;
+};
+
+const removeCleaningTaskFromGroup = (groupIndex, taskIndex) => {
+  contractGroups.value[groupIndex].cleaningTasks.splice(taskIndex, 1);
+};
+
+const updateCleaningCount = (task, delta) => {
+  const newVal = (Number(task.count) || 0) + delta;
+  if (newVal < 1) {
+    alert('최소 1회 이상이어야 합니다. 항목을 삭제하시려면 우측의 [X] 버튼을 이용해주세요.');
+    return;
+  }
+  task.count = newVal;
+};
+
 const getWageCode = async () => {
   try {
     const res = await axios.get(`/api/v1/config/code/wage/new/${useAuthStore().user?.cIdx}`);
     const all = (res.data.data || []).filter(c => c.itemCd.startsWith('04'));
 
-    // ── 1. itemCd → 노드 맵 ──────────────────────────
     const map = Object.fromEntries(all.map(c => [c.itemCd, c]));
-
-    // ── 2. 부모 역할을 하는 코드 집합 ─────────────────
     const parentCds = new Set(all.map(c => c.groupCd));
-
-    // ── 3. leaf 노드만 추출 (자식이 없는 최종 항목) ───
     const leaves = all.filter(c => !parentCds.has(c.itemCd));
 
-    // ── 4. leaf의 04001/04002 직속 조상 탐색 ──────────
     const getTopAncestor = (itemCd) => {
       let cur = map[itemCd];
       while (cur) {
         const parent = map[cur.groupCd];
-        // parent가 루트(04)이면 cur가 대분류
         if (!parent || parent.itemCd === parent.groupCd) return cur.itemCd;
         cur = parent;
       }
       return null;
     };
 
-    // ── 5. groupNm 부여 ────────────────────────────────
     const GROUP_NM = {
       '04001': '지급항목',
       '04002': '공제항목',
@@ -970,9 +1007,15 @@ const getWageCode = async () => {
       groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
     }));
 
+    // groupCd가 04003001인 leaf만 cleaningTaskOptions로 세팅
+    cleaningTaskOptions.value = leaves
+        .filter(leaf => leaf.groupCd === '04003001')
+        .map(leaf => ({ itemCd: leaf.itemCd, itemNm: leaf.itemNm }));
+
   } catch (e) {
     console.error('임금코드 로드 실패:', e);
     wagesData.value = [];
+    cleaningTaskOptions.value = [];
   }
 };
 
@@ -1101,24 +1144,6 @@ onMounted(async () => {
     getWageCode()
   ]);
   await getSiteData();
-  /*
-  // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
-  watch(dynamicSettlementItems, (newItems) => {
-    // 지급 항목 처리
-    newItems.payCds.forEach(cd => {
-      if (!settlementConfig.value.activePayLabels.includes(cd)) {
-        settlementConfig.value.activePayLabels.push(cd);
-      }
-    });
-    // 공제 항목 처리
-    newItems.deductionCds.forEach(cd => {
-      if (!settlementConfig.value.activeDeductionLabels.includes(cd)) {
-        settlementConfig.value.activeDeductionLabels.push(cd);
-      }
-    });
-  }, { deep: true });
-
-   */
 
   if (activeTab.value === 'equipment') await fetchEquipmentList();
 });
@@ -1594,12 +1619,76 @@ onMounted(async () => {
                   </div>
                 </div>
 
-                <div v-else class="empty-staff-text"><p>수정 모드에서 직책을 추가해주세요.</p></div>
+                <div v-else class="empty-staff-text"><p>직책을 추가해주세요.</p></div>
 
                 <div v-if="group.staffList?.length > 0" class="staff-total-bar" style="margin-top: 12px;">
                   <i class="mdi mdi-sigma"></i>
                   <span>필요 인원 합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
                 </div>
+              </div>
+
+              <!-- 대청소 및 특수과업 -->
+              <div class="staff-info-grid" style="margin-top: 16px;">
+                <label class="section-label">
+                  <i class="mdi mdi-spray-bottle"></i>대청소 및 특수과업
+                </label>
+
+                <div class="staff-input-group">
+                  <select v-model="group.tempCleaningCode" class="info-select staff-position-select">
+                    <option value="">특수과업 항목 선택</option>
+                    <option v-for="opt in cleaningTaskOptions" :key="opt.itemCd" :value="opt.itemCd">
+                      {{ opt.itemNm }}
+                    </option>
+                  </select>
+                  <label>/ 연</label>
+                  <input
+                      type="number"
+                      v-model="group.tempCleaningCount"
+                      min="1"
+                      class="info-input staff-count-input text-right"
+                      placeholder="횟수"
+                  />
+                  <label>회</label>
+                  <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-add-staff-small">
+                    <i class="mdi mdi-plus"></i> 추가
+                  </button>
+                </div>
+
+                <div v-if="group.cleaningTasks?.length > 0" class="staff-list-vertical">
+                  <div v-for="(task, tIdx) in group.cleaningTasks" :key="tIdx" class="staff-item-wrapper">
+                    <div class="staff-member-card">
+                      <div class="staff-member-info">
+                        <div class="staff-member-details">
+                          <i class="mdi mdi-broom"></i>
+                          <span class="staff-position">{{ task.name }}</span>
+                          <div class="staff-count-stepper">
+                            <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, -1)">
+                              <i class="mdi mdi-minus"></i>
+                            </button>
+                            <span class="stepper-text">연</span>
+                            <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
+                            <span class="stepper-text">회</span>
+                            <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)">
+                              <i class="mdi mdi-plus"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="staff-actions">
+                        <button type="button" @click="removeCleaningTaskFromGroup(idx, tIdx)" class="btn-remove-staff-small">
+                          <i class="mdi mdi-close"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="empty-staff-text"><p>등록된 특수과업이 없습니다.</p></div>
+
+                <!--div v-if="group.cleaningTasks?.length > 0" class="staff-total-bar" style="margin-top: 12px;">
+                  <i class="mdi mdi-sigma"></i>
+                  <span>과업 합계: <strong>{{ group.cleaningTasks.reduce((s, t) => s + t.count, 0) }}회</strong></span>
+                </div-->
               </div>
 
               <!-- 산출내역서 -->
@@ -3638,5 +3727,233 @@ input:checked + .slider:before { transform: translateX(18px); }
   color: var(--text-sub);
   font-weight: 600;
   padding-right: 6px;
+}
+
+/* =============================================
+   대청소 및 특수과업 (Cleaning Task) 전용 스타일
+============================================= */
+.task-cleaning-section {
+  margin-top: 24px;
+  padding: 24px;
+  background-color: #f8fafc; /* 은은한 푸른빛 배경 */
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+/* 헤더 영역 */
+.task-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.task-header-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+}
+.task-header-icon i {
+  font-size: 20px;
+  color: #ffffff;
+}
+.task-header-texts h4 {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.task-header-texts p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+/* 입력 폼 영역 */
+.task-input-wrapper {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+.task-input-field {
+  position: relative;
+}
+.flex-fill {
+  flex: 1;
+}
+.task-select {
+  height: 42px;
+  border-color: #cbd5e1;
+}
+.task-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.task-count-wrap {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100px;
+}
+.task-count-wrap input {
+  height: 42px;
+  padding-right: 32px;
+  border-color: #cbd5e1;
+}
+.task-unit {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-sub);
+  pointer-events: none;
+}
+.btn-task-add {
+  height: 42px;
+  padding: 0 20px;
+  background-color: var(--text-main);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-task-add:hover {
+  background-color: #334155;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* 과업 리스트 영역 */
+.task-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.task-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+.task-item-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
+}
+.task-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.task-item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: #eff6ff;
+  color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.task-item-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.task-item-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.task-stepper {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+.btn-task-delete {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background-color: #fef2f2;
+  color: #ef4444;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.btn-task-delete:hover {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+
+/* 빈 상태 */
+.task-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background-color: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  text-align: center;
+}
+.task-empty-card i {
+  font-size: 32px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+.task-empty-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* 모바일 반응형 처리 */
+@media (max-width: 600px) {
+  .task-input-wrapper {
+    flex-wrap: wrap;
+  }
+  .task-input-field.flex-fill {
+    width: 100%;
+    flex: none;
+  }
+  .task-count-wrap {
+    flex: 1;
+  }
+  .btn-task-add {
+    flex: 1;
+    justify-content: center;
+  }
+  .task-item-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .task-item-right {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 </style>
