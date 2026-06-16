@@ -597,6 +597,17 @@ const removeStaffFromGroup = (groupIndex, staffIndex) => {
   syncCostBreakdownToStaff(contractGroups.value[groupIndex]);
 };
 
+const updateStaffCount = (staff, delta) => {
+  const newVal = (Number(staff.count) || 0) + delta;
+
+  if (newVal < 1) {
+    alert('인원은 최소 1명 이상이어야 합니다. 직책을 삭제하시려면 우측의 [X] 버튼을 이용해주세요.');
+    return;
+  }
+
+  staff.count = newVal;
+};
+
 const getGroupStaffTotal = (group) => group.staffList.reduce((s, i) => s + i.count, 0);
 
 const getContractDuration = (group) => {
@@ -1236,7 +1247,16 @@ onMounted(() => {
                       <div class="staff-info">
                         <i class="mdi mdi-account-outline"></i>
                         <span class="staff-position-name">{{ staff.name }}</span>
-                        <span class="staff-count-badge">{{ staff.count }}명</span>
+                        <div class="staff-count-stepper" style="margin-left: 8px;">
+                          <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, -1)">
+                            <i class="mdi mdi-minus"></i>
+                          </button>
+                          <input type="number" v-model.number="staff.count" class="input-stepper" min="1" />
+                          <span class="stepper-text">명</span>
+                          <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, 1)">
+                            <i class="mdi mdi-plus"></i>
+                          </button>
+                        </div>
                       </div>
                       <div class="staff-actions">
                         <button type="button"
@@ -1433,7 +1453,8 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
-                            <CodeSelect v-model="item.label" :allow-empty="false"/>
+                            <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
+                            <CategorySelect v-model="item.label" topCode="04001" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1491,7 +1512,8 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
-                            <CodeSelect v-model="item.label" :allow-empty="false"/>
+                            <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
+                            <CategorySelect v-model="item.label" topCode="04002" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1549,11 +1571,12 @@ onMounted(() => {
                         <tbody>
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
-                            <CodeSelect
+                            <!--CodeSelect
                                 v-model="item.code"
                                 @update:label="(val) => item.label = val"
                                 :allow-empty="false"
-                            />
+                            /-->
+                            <CategorySelect v-model="item.label" topCode="04003" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2913,5 +2936,64 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
     gap: 14px;
   }
   .text-hint { display: none; }
+}
+
+/* =============================================
+   인원 수정 스텝퍼 (Stepper)
+============================================= */
+.staff-count-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+  width: fit-content;
+}
+
+.btn-stepper {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-sub);
+  transition: all 0.2s;
+}
+
+.btn-stepper:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.input-stepper {
+  width: 32px;
+  text-align: center;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  outline: none;
+  -moz-appearance: textfield; /* Firefox 기본 화살표 제거 */
+  padding: 0;
+}
+
+/* Chrome, Safari, Edge 기본 화살표 제거 */
+.input-stepper::-webkit-outer-spin-button,
+.input-stepper::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper-text {
+  font-size: 12px;
+  color: var(--text-sub);
+  font-weight: 600;
+  padding-right: 6px;
 }
 </style>

@@ -524,6 +524,17 @@ const removeStaffFromGroup = (groupIndex, staffIndex) => {
   syncCostBreakdownToStaff(contractGroups.value[groupIndex]);
 };
 
+const updateStaffCount = (staff, delta) => {
+  const newVal = (Number(staff.count) || 0) + delta;
+
+  if (newVal < 1) {
+    alert('인원은 최소 1명 이상이어야 합니다. 직책을 삭제하시려면 우측의 [X] 버튼을 이용해주세요.');
+    return;
+  }
+
+  staff.count = newVal;
+};
+
 const addItem    = (g, sec)      => g.costBreakdown[sec].push({ label: '', values: makeValuesObj(g.staffList) });
 const removeItem = (g, sec, idx) => g.costBreakdown[sec].splice(idx, 1);
 
@@ -570,29 +581,25 @@ const dynamicSettlementItems = computed(() => {
   contractGroups.value.forEach(group => {
     if (!group.costBreakdown) return;
 
-    // 직접노무비 수집
-    (group.costBreakdown.directLabor || []).forEach(item => {
+    // 직접노무비 → 섹션 자체가 지급항목이므로 전부 paySet
+    ;(group.costBreakdown.directLabor || []).forEach(item => {
       if (!item.label) return;
-      // DB 표준 코드인지 찾기
       const found = wagesData.value.find(w => w.itemNm === item.label || w.itemCd === item.label);
-      const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label.includes(kw));
-
       if (found) {
-        if (isSpecial) paySet.set(found.itemCd, found.itemNm);
-      } else if (isSpecial) {
-        paySet.set(item.label, item.label); // Fallback
+        paySet.set(found.itemCd, found.itemNm);
+      } else {
+        paySet.set(item.label, item.label); // fallback: 이름 그대로
       }
     });
 
-    // 간접노무비 수집
-    (group.costBreakdown.indirectLabor || []).forEach(item => {
+    // 간접노무비 → 섹션 자체가 공제항목이므로 전부 deductionSet
+    ;(group.costBreakdown.indirectLabor || []).forEach(item => {
       if (!item.label) return;
       const found = wagesData.value.find(w => w.itemNm === item.label || w.itemCd === item.label);
-
       if (found) {
         deductionSet.set(found.itemCd, found.itemNm);
       } else {
-        deductionSet.set(item.label, item.label); // Fallback
+        deductionSet.set(item.label, item.label);
       }
     });
   });
@@ -622,12 +629,31 @@ const selectedRightItems = ref([]);
 const allAvailableItems = computed(() => {
   const map = new Map(); // cd → nm
 
-  // 1) DB 표준 임금 항목 전체를 먼저 기재 (기준점)
-  (wagesData.value || []).forEach(w => {
+  // 1) DB 표준 임금 항목
+  ;(wagesData.value || []).forEach(w => {
     map.set(w.itemCd, w.itemNm);
   });
 
-  // 2) 산출내역서에서 동적으로 수집된 항목 추가 (표준 외 항목 방어용)
+  // 2) 현재 산출내역서에 실제 입력된 항목 (CategorySelect로 선택된 itemNm 기반)
+  contractGroups.value.forEach(group => {
+    if (!group.costBreakdown) return;
+    const allItems = [
+      ...(group.costBreakdown.directLabor   || []),
+      ...(group.costBreakdown.indirectLabor || []),
+    ];
+    allItems.forEach(item => {
+      if (!item.label) return;
+      // 이미 코드로 등록됐으면 skip, 이름만 있으면 이름으로 등록
+      const byName = wagesData.value.find(w => w.itemNm === item.label);
+      if (byName) {
+        map.set(byName.itemCd, byName.itemNm);
+      } else if (!map.has(item.label)) {
+        map.set(item.label, item.label);
+      }
+    });
+  });
+
+  // 3) dynamicSettlementItems에서 수집된 항목도 포함 (방어용)
   dynamicSettlementItems.value.payCds.forEach(cd => {
     if (!map.has(cd)) map.set(cd, cd);
   });
@@ -640,14 +666,7 @@ const allAvailableItems = computed(() => {
 
 // 지급/공제 판별기 수정 (코드로 판별하도록 고정)
 const isPayItem = (cd) => {
-  // dynamicSettlementItems의 payCds에 들어있거나, 코드매핑 데이터 확인
-  if (dynamicSettlementItems.value.payCds.includes(cd)) return true;
-
-  const found = wagesData.value.find(w => w.itemCd === cd);
-  if (found) {
-    return PAY_CONTROL_KEYWORDS.some(kw => found.itemNm.includes(kw));
-  }
-  return PAY_CONTROL_KEYWORDS.some(kw => cd.includes(kw));
+  return dynamicSettlementItems.value.payCds.includes(cd);
 };
 
 // 현재 선택 설정된 항목
@@ -874,7 +893,7 @@ const getSiteData = async () => {
         return {
           category:          item.category,
           type:              item.type,
-          firstContractDt:     item.firstContractDt,
+          firstContractDt:   item.firstContractDt,
           contractStart:     item.contractStart || item.startDt || '',
           contractEnd:       item.contractEnd || item.endDt || '',
           totalCost:         item.totalCost || item.total_cost || 0,
@@ -912,6 +931,51 @@ const getSiteData = async () => {
   }
 };
 
+const getWageCode = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${useAuthStore().user?.cIdx}`);
+    const all = (res.data.data || []).filter(c => c.itemCd.startsWith('04'));
+
+    // ── 1. itemCd → 노드 맵 ──────────────────────────
+    const map = Object.fromEntries(all.map(c => [c.itemCd, c]));
+
+    // ── 2. 부모 역할을 하는 코드 집합 ─────────────────
+    const parentCds = new Set(all.map(c => c.groupCd));
+
+    // ── 3. leaf 노드만 추출 (자식이 없는 최종 항목) ───
+    const leaves = all.filter(c => !parentCds.has(c.itemCd));
+
+    // ── 4. leaf의 04001/04002 직속 조상 탐색 ──────────
+    const getTopAncestor = (itemCd) => {
+      let cur = map[itemCd];
+      while (cur) {
+        const parent = map[cur.groupCd];
+        // parent가 루트(04)이면 cur가 대분류
+        if (!parent || parent.itemCd === parent.groupCd) return cur.itemCd;
+        cur = parent;
+      }
+      return null;
+    };
+
+    // ── 5. groupNm 부여 ────────────────────────────────
+    const GROUP_NM = {
+      '04001': '지급항목',
+      '04002': '공제항목',
+      '04003': '정산항목',
+    };
+
+    wagesData.value = leaves.map(leaf => ({
+      ...leaf,
+      tax_free: Number(leaf.tax_free) || 0,
+      groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
+    }));
+
+  } catch (e) {
+    console.error('임금코드 로드 실패:', e);
+    wagesData.value = [];
+  }
+};
+
 const saveSiteData = async () => {
   if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
 
@@ -942,6 +1006,7 @@ const saveSiteData = async () => {
       unit_su:          site.value.unit_su,
       address:          site.value.address,
       addressDetail:    site.value.addressDetail,
+      postalCode:       site.value.zipcode,
       payment_day:      site.value.payment_day,
       manager:          site.value.managerName,
       phone:            site.value.managerContact,
@@ -1031,10 +1096,12 @@ onMounted(async () => {
   await Promise.all([
     fetchPositionOptions(),
     fetchTypeOptions(),
-    fetchWageCode(),
-    fetchBankOption()
+    // fetchWageCode(),
+    fetchBankOption(),
+    getWageCode()
   ]);
   await getSiteData();
+  /*
   // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
   watch(dynamicSettlementItems, (newItems) => {
     // 지급 항목 처리
@@ -1050,6 +1117,8 @@ onMounted(async () => {
       }
     });
   }, { deep: true });
+
+   */
 
   if (activeTab.value === 'equipment') await fetchEquipmentList();
 });
@@ -1099,7 +1168,7 @@ onMounted(async () => {
         <div class="profile-stats">
           <div class="stat-item">
             <div class="stat-icon stat-blue"><i class="mdi mdi-ruler-square"></i></div>
-            <div class="stat-content"><span class="stat-label">관리면적</span><span class="stat-value">{{ site.area || '0' }}㎡</span></div>
+            <div class="stat-content"><span class="stat-label">관리면적</span><span class="stat-value">{{ site.areaGross || '0' }}㎡</span></div>
           </div>
           <div class="stat-item">
             <div class="stat-icon stat-green"><i class="mdi mdi-office-building-outline"></i></div>
@@ -1437,10 +1506,19 @@ onMounted(async () => {
                   <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
                     <div class="staff-member-card">
                       <div class="staff-member-info">
-                        <i class="mdi mdi-account-outline"></i>
                         <div class="staff-member-details">
+                          <i class="mdi mdi-account-outline"></i>
                           <span class="staff-position">{{ staff.name }}</span>
-                          <span class="staff-count">{{ staff.count }}명</span>
+                          <div class="staff-count-stepper">
+                            <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, -1)">
+                              <i class="mdi mdi-minus"></i>
+                            </button>
+                            <input type="number" v-model.number="staff.count" class="input-stepper" min="1" />
+                            <span class="stepper-text">명</span>
+                            <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, 1)">
+                              <i class="mdi mdi-plus"></i>
+                            </button>
+                          </div>
                         </div>
                       </div>
                       <div class="staff-actions">
@@ -1636,10 +1714,8 @@ onMounted(async () => {
                         </thead>
                         <tbody>
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                          <!--td>
-                            <CodeSelect v-model="item.label" :allow-empty="false"/>
-                          </td-->
-                          <td class="category-cell">
+                          <td>
+                            <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
                             <CategorySelect v-model="item.label" topCode="04001" />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
@@ -2618,7 +2694,7 @@ export default {
 .staff-member-card { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; }
 .staff-member-info { display: flex; align-items: center; gap: 10px; flex: 1; }
 .staff-member-info i { font-size: 20px; color: var(--primary); }
-.staff-member-details { display: flex; flex-direction: column; gap: 2px; }
+.staff-member-details { display: flex; align-items: center; gap: 10px; flex: 1; }
 .staff-position { font-size: 13px; font-weight: 600; color: var(--text-main); }
 .staff-count { font-size: 11px; color: var(--text-sub); }
 .btn-remove-staff-small { width: 24px; height: 24px; border-radius: 6px; background: rgba(239,68,68,.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -3502,5 +3578,65 @@ input:checked + .slider:before { transform: translateX(18px); }
   align-items: center;
   gap: 24px;
   flex-wrap: wrap;
+}
+
+/* =============================================
+   인원 수정 스텝퍼 (Stepper)
+============================================= */
+.staff-count-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 2px;
+  margin-top: 4px;
+  width: fit-content;
+}
+
+.btn-stepper {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-sub);
+  transition: all 0.2s;
+}
+
+.btn-stepper:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.input-stepper {
+  width: 32px;
+  text-align: center;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  outline: none;
+  -moz-appearance: textfield; /* Firefox 기본 화살표 제거 */
+  padding: 0;
+}
+
+/* Chrome, Safari, Edge 기본 화살표 제거 */
+.input-stepper::-webkit-outer-spin-button,
+.input-stepper::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper-text {
+  font-size: 12px;
+  color: var(--text-sub);
+  font-weight: 600;
+  padding-right: 6px;
 }
 </style>
