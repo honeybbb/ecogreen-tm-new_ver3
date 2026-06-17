@@ -1612,7 +1612,11 @@ onMounted(() => {
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
                             <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
-                            <CategorySelect v-model="item.label" topCode="04001" />
+                            <CategorySelect
+                                v-model="item.label"
+                                v-model:code="item.code"
+                                topCode="04001"
+                            />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1671,7 +1675,11 @@ onMounted(() => {
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
                             <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
-                            <CategorySelect v-model="item.label" topCode="04002" />
+                            <CategorySelect
+                                v-model="item.label"
+                                v-model:code="item.code"
+                                topCode="04002"
+                            />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1734,7 +1742,11 @@ onMounted(() => {
                                 @update:label="(val) => item.label = val"
                                 :allow-empty="false"
                             /-->
-                            <CategorySelect v-model="item.label" topCode="04003" />
+                            <CategorySelect
+                                v-model="item.label"
+                                v-model:code="item.code"
+                                topCode="04003"
+                            />
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input

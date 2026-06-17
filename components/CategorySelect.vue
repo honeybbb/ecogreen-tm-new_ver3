@@ -8,6 +8,7 @@ const cIdx = authStore.user?.cIdx
 
 const props = defineProps({
   modelValue:  { default: '' },
+  code:        { type: String, default: '' },
   placeholder: { type: String, default: '항목 선택' },
   disabled:    { type: Boolean, default: false },
   topCode:     { type: String, default: '' }, // '04001' | '04002' | '04003'

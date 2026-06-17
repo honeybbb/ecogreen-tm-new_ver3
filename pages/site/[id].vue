@@ -1805,7 +1805,13 @@ onMounted(async () => {
                         <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
                           <td>
                             <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
-                            <CategorySelect v-model="item.label" topCode="04001" />
+                            <CategorySelect
+                                v-model="item.label"
+                                v-model:code="item.code"
+                                topCode="04001"
+                            />
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1879,7 +1885,13 @@ onMounted(async () => {
                         <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
                           <td>
                             <!--CodeSelect v-model="item.label" /-->
-                            <CategorySelect v-model="item.label" topCode="04002" />
+                            <CategorySelect
+                                v-model="item.label"
+                                v-model:code="item.code"
+                                topCode="04002"
+                            />
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1942,7 +1954,13 @@ onMounted(async () => {
                         <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
                           <td>
                             <!--CodeSelect v-model="item.label" /-->
-                            <CategorySelect v-model="item.label" topCode="04003" />
+                            <CategorySelect
+                                v-model="item.label"
+                                v-model:code="item.code"
+                                topCode="04003"
+                            />
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
