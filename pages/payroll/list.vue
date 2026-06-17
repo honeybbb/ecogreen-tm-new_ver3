@@ -58,7 +58,7 @@ const transformPayrollList = (rows) => {
     if (Object.keys(flags).length === 0 && deductionItems.value.length) {
       deductionItems.value.forEach(item => {
         // 소득세(04002013), 지방소득세(04002014)는 기본 true
-        if (item.itemCd === '04002013' || item.itemCd === '04002014') {
+        if (item.itemCd === '04002002004' || item.itemCd === '04002002003') {
           flags[item.itemCd] = true;
         } else {
           const amount = Number(deductions[item.itemCd]) || 0;
@@ -126,7 +126,7 @@ const getInsuranceWarning = (row) => {
   const flags = row.deductionFlags || {};
 
   // 케이스 1: 국민연금 강제 해제 (위험 - 빨간색)
-  if (age < ageLimits.value.pension && flags['04002003'] === false) {
+  if (age < ageLimits.value.pension && flags['04002001001'] === false) {
     return {
       type: 'danger',
       message: '국민연금 대상자이나 임의로 해제되었습니다.'
@@ -134,7 +134,7 @@ const getInsuranceWarning = (row) => {
   }
 
   // 케이스 2: 고용보험 고용확대 (특이사항 - 파란색/보라색)
-  if (age >= ageLimits.value.employment && flags['04002004'] === true) {
+  if (age >= ageLimits.value.employment && flags['04002001004'] === true) {
     return {
       type: 'info',
       message: '고용보험 가입 연령이 지났으나 임의 가입(고용확대) 되었습니다.'
@@ -142,7 +142,7 @@ const getInsuranceWarning = (row) => {
   }
 
   // 케이스 3: 건강보험 강제 해제 (주의 - 주황색)
-  if (flags['04002001'] === false) {
+  if (flags['04002001002'] === false) {
     return {
       type: 'warning',
       message: '건강보험이 임의로 해제되었습니다.'
@@ -406,12 +406,12 @@ const calculateInsurances = (row, sourceItem) => {
 
   if (isPay) {
     // 지급 항목 변경 → 항상 요율로 재계산
-    const healthItem = deductionItems.value.find(d => d.itemCd === '04002001');
-    if (healthItem && row.deductionFlags['04002001']) {
+    const healthItem = deductionItems.value.find(d => d.itemCd === '04002001002');
+    if (healthItem && row.deductionFlags['04002001002']) {
       applyDeductionLogic(row, healthItem, taxable, rates);
     }
     deductionItems.value.forEach(d => {
-      if (d.itemCd === '04002001') return;
+      if (d.itemCd === '04002001002') return;
       if (row.deductionFlags[d.itemCd]) applyDeductionLogic(row, d, taxable, rates);
     });
 
@@ -420,15 +420,15 @@ const calculateInsurances = (row, sourceItem) => {
     if (!row.deductionFlags[sourceItem.itemCd]) {
       // 체크 해제 → 0
       row.deductions[sourceItem.itemCd] = 0;
-      if (sourceItem.itemCd === '04002001') row.deductions['04002002'] = 0;
+      if (sourceItem.itemCd === '04002001002') row.deductions['04002001003'] = 0;
       return;
     }
 
     // 체크 재활성 → 항상 요율로 재계산
-    if (sourceItem.itemCd === '04002001') {
+    if (sourceItem.itemCd === '04002001002') {
       applyDeductionLogic(row, sourceItem, taxable, rates);
-      const ltItem = deductionItems.value.find(d => d.itemCd === '04002002');
-      if (ltItem && row.deductionFlags['04002002']) applyDeductionLogic(row, ltItem, taxable, rates);
+      const ltItem = deductionItems.value.find(d => d.itemCd === '04002001003');
+      if (ltItem && row.deductionFlags['04002001003']) applyDeductionLogic(row, ltItem, taxable, rates);
     } else {
       applyDeductionLogic(row, sourceItem, taxable, rates);
     }
@@ -437,26 +437,26 @@ const calculateInsurances = (row, sourceItem) => {
 
 const applyDeductionLogic = async (row, item, base, rates) => {
   // 소득세: API 호출 후 지방소득세 동시 처리
-  if (item.itemCd === '04002013') {
+  if (item.itemCd === '04002002004') {
     const { incomeTax, localTax } = await getIncomeTax(base, row.familyCnt || 1);
-    row.deductions['04002013'] = incomeTax;
-    row.deductions['04002014'] = localTax;
+    row.deductions['04002002004'] = incomeTax;
+    row.deductions['04002002003'] = localTax;
     return;
   }
-  if (item.itemCd === '04002014') return;
+  if (item.itemCd === '04002002003') return;
 
   let amt = 0;
   // const currentAge = calculateAge(row.birthDt); // 연령 체크가 필요 없다면 이 변수도 생략 가능합니다.
 
-  if (item.itemCd === '04002003') {        // 국민연금
+  if (item.itemCd === '04002001001') {        // 국민연금
     // 기존의 연령 체크 및 deductionFlags = false 로직 삭제
     amt = base * (rates.pension / 100);
-  } else if (item.itemCd === '04002001') { // 건강보험
+  } else if (item.itemCd === '04002001002') { // 건강보험
     amt = base * (rates.health / 100);
-  } else if (item.itemCd === '04002002') { // 장기요양
-    const healthAmt = row.deductions['04002001'] || 0;
+  } else if (item.itemCd === '04002001003') { // 장기요양
+    const healthAmt = row.deductions['04002001002'] || 0;
     amt = healthAmt * (rates.longTerm / 100);
-  } else if (item.itemCd === '04002004') { // 고용보험
+  } else if (item.itemCd === '04002001004') { // 고용보험
     // 기존의 연령 체크 및 deductionFlags = false 로직 삭제
     amt = base * (rates.employment / 100);
   } else return;
