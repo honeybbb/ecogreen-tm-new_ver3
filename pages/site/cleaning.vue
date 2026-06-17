@@ -170,10 +170,13 @@ const cleaningStatusBySite = computed(() => {
       };
     });
 
+    const isAllCompleted = tasks.length > 0 && tasks.every(t => t.remain <= 0);
+
     return {
       sIdx: site.sIdx,
       siteName: site.siteName,
-      tasks: tasks
+      tasks: tasks,
+      isAllCompleted
     };
   });
 });
@@ -338,14 +341,15 @@ const deleteSchedule = () => {
           <h3>현장별 과업 잔여 현황</h3>
         </div>
         <div class="status-list">
-          <div class="status-item" v-for="site in cleaningStatusBySite" :key="site.sIdx">
+          <div :class="['status-item', { 'status-completed': site.isAllCompleted }]" v-for="site in cleaningStatusBySite" :key="site.sIdx">
             <h4>{{ site.siteName }}</h4>
-            <div class="task-info" v-for="task in site.tasks" :key="task.code">
+            <div :class="['task-info', { 'task-completed': task.remain <= 0 }]" v-for="task in site.tasks" :key="task.code">
               <div class="task-name">• {{ task.name }}</div>
               <div class="task-counts">
                 <span class="count-total">총 {{ task.total }}회</span>
                 <span class="count-used">진행 {{ task.used }}회</span>
-                <span class="count-remain">잔여 {{ task.remain }}회</span>
+                <span class="count-remain" v-if="task.remain > 0">잔여 {{ task.remain }}회</span>
+                <span class="count-remain" v-else>완료</span>
               </div>
             </div>
           </div>
@@ -590,6 +594,12 @@ const deleteSchedule = () => {
   border-radius: 8px;
   padding: 16px;
   border: 1px solid var(--border-color, #e5e7eb);
+  transition: all 0.2s;
+}
+
+.status-completed {
+  opacity: 0.6;
+  background: #f3f4f6;
 }
 
 .status-item h4 {
@@ -606,6 +616,22 @@ const deleteSchedule = () => {
   margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px dashed var(--border-color, #e5e7eb);
+  transition: all 0.2s;
+}
+
+.task-completed .task-name {
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+.task-completed .count-total,
+.task-completed .count-used {
+  color: #9ca3af;
+}
+
+.task-completed .count-remain {
+  color: #9ca3af;
+  font-weight: 600;
 }
 
 .task-info:last-child {
