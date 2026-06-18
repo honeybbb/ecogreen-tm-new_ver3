@@ -110,35 +110,7 @@ const site = ref({
 
  */
 
-//드래그상태
-const isDragging = ref(false);
-
-const onDragOver = (event) => {
-  event.preventDefault();
-  isDragging.value = true;
-};
-
-const onDragLeave = () => {
-  isDragging.value = false;
-};
-
-const onDrop = (event) => {
-  event.preventDefault();
-  isDragging.value = false;
-
-  const files = Array.from(event.dataTransfer.files);
-  const pdfFiles = files.filter(f => f.type === 'application/pdf');
-
-  if (pdfFiles.length !== files.length) {
-    alert('PDF 파일만 업로드 가능합니다.');
-  }
-  if (pdfFiles.length > 0) {
-    selectedFiles.value = [...selectedFiles.value, ...pdfFiles];
-  }
-};
-
 const contractGroups = ref([]);
-const selectedFiles = ref([]);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const statusOptions  = ref(['운영 중', '계약 종료']);
 const bigoHistory    = ref([]);
@@ -510,7 +482,6 @@ const onInputSingleRaw = (obj, key, event) => {
 // 계약 그룹 CRUD
 // =============================================
 const addContractGroup = (category) => {
-  console.log(category, 'category')
   // 타입에 따라 직접노무비 항목 결정
   const isGuard = category.itemCd === '01001001';   // 경비
   const isCleaning = category.itemCd === '01001002'; // 미화
@@ -542,6 +513,8 @@ const addContractGroup = (category) => {
   contractGroups.value.push({
     category: category.itemNm,
     type: category.itemCd,
+    files: [],
+    isDragging: false,
     firstContractDt: '', // 최초 계약일
     contractStart: '', //계약 시작일
     contractEnd: '',  //계약 종료일
@@ -687,28 +660,47 @@ const getTotalMonthlyFee = (group) => group.staffList.reduce((s, st) => s + getM
 const addItem = (group, section) => { group.costBreakdown[section].push({ label: '', values: makeValuesObj(group.staffList) }); };
 const removeItem = (group, section, idx) => { group.costBreakdown[section].splice(idx, 1); };
 
-// =============================================
-// 폼 및 API 처리 로직
-// =============================================
-const handleFileChange = (event) => {
-  const files = Array.from(event.target.files);
+const onDragOverGroup = (group, event) => {
+  event.preventDefault();
+  group.isDragging = true;
+};
 
-  // PDF 필터링
+const onDragLeaveGroup = (group) => {
+  group.isDragging = false;
+};
+
+const onDropGroup = (group, event) => {
+  event.preventDefault();
+  group.isDragging = false;
+
+  const files = Array.from(event.dataTransfer.files);
+  const pdfFiles = files.filter(f => f.type === 'application/pdf');
+
+  if (pdfFiles.length !== files.length) {
+    alert('PDF 파일만 업로드 가능합니다.');
+  }
+  if (pdfFiles.length > 0) {
+    if (!group.files) group.files = [];
+    group.files = [...group.files, ...pdfFiles];
+  }
+};
+
+const handleFileChangeGroup = (group, event) => {
+  const files = Array.from(event.target.files);
   const pdfFiles = files.filter(file => file.type === 'application/pdf');
 
   if (pdfFiles.length !== files.length) {
     alert('PDF 파일만 업로드 가능합니다.');
   }
 
-  // 기존 목록에 추가 (중복 방지 로직을 넣고 싶다면 파일명 비교 추가 가능)
-  selectedFiles.value = [...selectedFiles.value, ...pdfFiles];
+  if (!group.files) group.files = [];
+  group.files = [...group.files, ...pdfFiles];
 
-  // 같은 파일을 다시 선택할 수 있도록 input 초기화
-  event.target.value = '';
+  event.target.value = ''; // 초기화
 };
 
-const removeFile = (index) => {
-  selectedFiles.value.splice(index, 1);
+const removeFileGroup = (group, index) => {
+  group.files.splice(index, 1);
 };
 
 const totalArea = computed(() => {
@@ -786,20 +778,27 @@ const handleSubmit = async () => {
     const savedSIdx = res.data.data || route.query.idx;
     if (!savedSIdx) throw new Error('sIdx를 찾을 수 없습니다.');
 
-    if (selectedFiles.value.length > 0) {
-      const formData = new FormData();
-      // 루프를 돌며 동일한 'file' 키로 여러 개를 담거나, 백엔드 설정에 따라 'files[]' 사용
-      selectedFiles.value.forEach(file => {
-        formData.append('file', file);
-      });
+    const formData = new FormData();
+    let hasFiles = false;
 
+    contractGroups.value.forEach((group, index) => {
+      if (group.files && group.files.length > 0) {
+        hasFiles = true;
+        group.files.forEach(file => {
+          // 백엔드 API 요구사항에 맞춰 Key 값 변경 가능 (예: `files_${index}`, `contractFiles[]` 등)
+          formData.append(`file_contract_${index}`, file);
+        });
+      }
+    });
+
+    if (hasFiles) {
       await axios.post(`/api/v1/upload/file/${savedSIdx}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
     }
 
     alert(`${site.value.siteName} 현장 및 계약 정보가 등록되었습니다.`);
-    router.push('/site/list');
+    await router.push('/site/list');
   } catch (err) {
     console.error('등록 에러:', err);
     alert('저장 중 오류가 발생했습니다.');
@@ -812,7 +811,6 @@ const getSiteData = async () => {
   if (!sIdx) {
     site.value = getInitSiteData(); // 현장정보 초기화
     contractGroups.value = [];      // 계약정보 초기화
-    selectedFiles.value = [];       // 첨부파일 초기화
     bigoHistory.value = [];         // 히스토리 초기화
     settlementConfig.value = {      // 정산설정 초기화
       activePayLabels: [],
@@ -829,7 +827,6 @@ const getSiteData = async () => {
     searchSelected.value = '';
     selectedAvailItems.value = [];
     selectedRightItems.value = [];
-    isDragging.value = false;
     return; // 비운 뒤 함수 종료
   }
 
@@ -899,7 +896,9 @@ const getSiteData = async () => {
             severance: false,
             workersDay: false
           },
-          salarySource: item.salarySource || 'contract'
+          salarySource: item.salarySource || 'contract',
+          files: item.files || [],
+          isDragging: false,
         };
       });
     }
@@ -1215,52 +1214,6 @@ onMounted(() => {
             <h2>계약 및 인원 정보</h2>
           </div>
 
-          <div class="file-upload-section">
-            <label class="section-label"><i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일 업로드 (PDF)</label>
-
-            <div
-                class="file-upload-box"
-                :class="{ 'is-dragging': isDragging }"
-                @dragover="onDragOver"
-                @dragleave="onDragLeave"
-                @drop="onDrop"
-            >
-              <input
-                  type="file"
-                  id="contract-file"
-                  accept=".pdf"
-                  multiple
-                  @change="handleFileChange"
-                  class="hidden-file-input"
-              />
-              <label for="contract-file" class="file-upload-label">
-                <div class="upload-placeholder">
-                  <i :class="isDragging ? 'mdi mdi-tray-arrow-down' : 'mdi mdi-cloud-upload-outline'"></i>
-                  <p>{{ isDragging ? '여기에 놓으세요!' : '클릭하여 PDF 파일을 선택하거나 여기로 드래그하세요' }}</p>
-                  <span>(여러 개의 파일을 동시에 선택할 수 있습니다)</span>
-                </div>
-              </label>
-            </div>
-
-            <div v-if="selectedFiles.length > 0" class="file-list-container">
-              <div v-for="(file, index) in selectedFiles" :key="index" class="file-item-card">
-                <div class="file-info">
-                  <i class="mdi mdi-file-pdf-box"></i>
-                  <div class="file-name-group">
-                    <span class="file-name">{{ file.name }}</span>
-                    <span class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
-                  </div>
-                </div>
-                <button type="button" @click="removeFile(index)" class="btn-remove-file">
-                  <i class="mdi mdi-close"></i>
-                </button>
-              </div>
-              <p class="file-success-msg">
-                <i class="mdi mdi-check-circle"></i> 총 <strong>{{ selectedFiles.length }}개</strong>의 파일이 등록 대기 중입니다.
-              </p>
-            </div>
-          </div>
-
           <div class="contract-header">
             <p class="contract-description">현장의 계약 정보를 추가합니다. 경비, 미화 등 구분별로 계약을 등록할 수 있습니다.</p>
             <div class="contract-actions">
@@ -1294,6 +1247,52 @@ onMounted(() => {
             </div>
 
             <div class="contract-card-body">
+              <div class="file-upload-section" style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px dashed var(--border-color);">
+                <label class="section-label"><i class="mdi mdi-file-pdf-box"></i>{{ group.category }} 계약서 원본 파일 업로드 (PDF)</label>
+
+                <div
+                    class="file-upload-box"
+                    :class="{ 'is-dragging': group.isDragging }"
+                    @dragover="onDragOverGroup(group, $event)"
+                    @dragleave="onDragLeaveGroup(group)"
+                    @drop="onDropGroup(group, $event)"
+                >
+                  <input
+                      type="file"
+                      :id="'contract-file-' + idx"
+                      accept=".pdf"
+                      multiple
+                      @change="handleFileChangeGroup(group, $event)"
+                      class="hidden-file-input"
+                  />
+                  <label :for="'contract-file-' + idx" class="file-upload-label">
+                    <div class="upload-placeholder">
+                      <i :class="group.isDragging ? 'mdi mdi-tray-arrow-down' : 'mdi mdi-cloud-upload-outline'"></i>
+                      <p>{{ group.isDragging ? '여기에 놓으세요!' : '클릭하여 PDF 파일을 선택하거나 여기로 드래그하세요' }}</p>
+                      <span>(여러 개의 파일을 동시에 선택할 수 있습니다)</span>
+                    </div>
+                  </label>
+                </div>
+
+                <div v-if="group.files && group.files.length > 0" class="file-list-container">
+                  <div v-for="(file, fIndex) in group.files" :key="fIndex" class="file-item-card">
+                    <div class="file-info">
+                      <i class="mdi mdi-file-pdf-box"></i>
+                      <div class="file-name-group">
+                        <span class="file-name">{{ file.name }}</span>
+                        <span class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
+                      </div>
+                    </div>
+                    <button type="button" @click="removeFileGroup(group, fIndex)" class="btn-remove-file">
+                      <i class="mdi mdi-close"></i>
+                    </button>
+                  </div>
+                  <p class="file-success-msg">
+                    <i class="mdi mdi-check-circle"></i> 총 <strong>{{ group.files.length }}개</strong>의 파일이 등록 대기 중입니다.
+                  </p>
+                </div>
+              </div>
+
               <div class="form-grid">
                 <div class="form-group">
                   <label class="form-label"><i class="mdi mdi-calendar-check-outline"></i>최초 계약일</label>
