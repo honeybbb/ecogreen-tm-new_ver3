@@ -900,6 +900,9 @@ const getSiteData = async () => {
           cleaningTasks: item.cleaningConfig || [],
           tempCleaningCode: '',
           tempCleaningCount: 1,
+          files: item.files || [],
+          newFiles: [],
+          isDragging: false
         };
       });
     }
@@ -1481,6 +1484,35 @@ onMounted(async () => {
             </div>
 
             <div class="contract-card-body">
+              <div class="contract-file-section" style="margin-bottom: 24px;">
+                <label class="section-label">
+                  <i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일
+                </label>
+
+                <div v-if="group.files && group.files.length > 0" class="file-list-container">
+                  <div v-for="(file, fIdx) in group.files" :key="fIdx" class="file-item-card readonly-file-card">
+                    <div class="file-info">
+                      <div class="file-icon-wrap">
+                        <i class="mdi mdi-file-pdf-box"></i>
+                      </div>
+                      <div class="file-name-group">
+                        <span class="file-name">{{ file.name || '계약서 파일' }}</span>
+                        <span v-if="file.size" class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
+                      </div>
+                    </div>
+                    <div class="file-actions">
+                      <a :href="file.url" target="_blank" class="btn-download" title="새 탭에서 보기 / 다운로드">
+                        <i class="mdi mdi-download"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="empty-staff-text" style="background: var(--bg-canvas); border-radius: 8px; border: 1px dashed var(--border-color); padding: 16px 0;">
+                  <p style="margin: 0;">등록된 계약서 파일이 없습니다.</p>
+                </div>
+              </div>
+
               <div class="contract-info-grid">
                 <div class="contract-info-item">
                   <label>최초 계약일</label>
@@ -3973,5 +4005,97 @@ input:checked + .slider:before { transform: translateX(18px); }
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* =============================================
+   계약서 파일 뷰어 (상세 페이지 전용)
+============================================= */
+.contract-file-section {
+  padding: 20px;
+  background: var(--bg-surface);
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.file-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.file-item-card.readonly-file-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.file-item-card.readonly-file-card:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-icon-wrap i {
+  font-size: 20px;
+  color: #ef4444; /* PDF를 상징하는 붉은색 */
+}
+
+.file-name-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.file-size {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+
+.btn-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-sub);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.btn-download:hover {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  transform: translateY(-1px);
 }
 </style>
