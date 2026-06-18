@@ -1501,7 +1501,7 @@ onMounted(async () => {
                       </div>
                     </div>
                     <div class="file-actions">
-                      <a :href="file.url" target="_blank" class="btn-download" title="새 탭에서 보기 / 다운로드">
+                      <a :href="`/api${file.url}`" target="_blank" class="btn-download" title="새 탭에서 보기 / 다운로드">
                         <i class="mdi mdi-download"></i>
                       </a>
                     </div>
@@ -1842,8 +1842,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04001"
                             />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
+                            <p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1922,8 +1922,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04002"
                             />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
+                            <p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1991,8 +1991,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04003"
                             />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
+                            <p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
