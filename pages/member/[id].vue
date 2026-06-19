@@ -219,6 +219,7 @@ const loadEmployeeData = async () => {
 };
 
 //지급항목
+/*
 const getWageCode = async function () {
   const cIdx = authStore.user?.cIdx;
   try {
@@ -231,15 +232,25 @@ const getWageCode = async function () {
   }
 }
 
+ */
+const getWageCode = async () => {
+  const cIdx = authStore.user?.cIdx;
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    items.value = res.data.data || [];
+  } catch (err) {
+    console.error('항목 로드 실패', err);
+  }
+};
+
 // 1. 예산 데이터 가져오기 함수 추가
-const getBudgetData = async function () {
-  // 상세페이지 필드명: sIdx, typeCd, positionCd
+const getBudgetData = async () => {
   const { sIdx, typeCd, positionCd } = employee.value;
   if (!sIdx || !typeCd || !positionCd) return;
 
   try {
     const res = await axios.get(`/api/v1/site/contract/budget`, {
-      params: { sIdx: sIdx, type: typeCd }
+      params: { sIdx, type: typeCd }
     });
 
     const budgetData = res.data.data[0];
@@ -247,41 +258,32 @@ const getBudgetData = async function () {
 
     const newWageInputs = {};
 
-    // 1) 지급(directLabor) 및 공제(indirectLabor) 항목 통합 매핑
-    const laborKeys = ['directLabor', 'indirectLabor'];
-
-    laborKeys.forEach(key => {
-      if (budgetData.jsonData?.[key]) {
-        budgetData.jsonData[key].forEach(item => {
-          // 근로자의 날 수당(04001008) 제외 및 해당 직책(positionCd)의 값이 존재하는지 확인
-          if (item.label !== '04001008' && item.values && item.values[positionCd] !== undefined) {
-            newWageInputs[item.label] = item.values[positionCd];
-          }
-        });
-      }
+    ['directLabor', 'indirectLabor'].forEach(key => {
+      (budgetData.jsonData?.[key] || []).forEach(item => {
+        if (item.code && item.values?.[positionCd] !== undefined) {
+          newWageInputs[item.code] = item.values[positionCd];
+        }
+      });
     });
 
-    // 2) 스케줄 추출
-    let selectedSchedule = null;
-    if (budgetData.staffDetail) {
-      const targetStaff = budgetData.staffDetail.find(s => s.code === positionCd);
-      if (targetStaff) {
-        selectedSchedule = targetStaff.schedule;
-      }
-    }
+    // items 배열에서 직접 find로 매핑
+    items.value = Object.entries(newWageInputs)
+        .map(([code, amount]) => {
+          const found = items.value.find(w => w.itemCd === code);
+          if (!found) return null;
+          return { ...found, amount: Number(amount) || 0 };
+        })
+        .filter(Boolean); // null 제거
 
-    // 부모 상태 반영 (입력값 동기화)
+    const targetStaff = budgetData.staffDetail?.find(s => s.code === positionCd);
+
     wageInputs.value = newWageInputs;
-
-    // contractDataTemp를 갱신하여 모달(근로계약서)에 즉시 반영
-    // (기존에 이미 로드된 날짜 정보 등이 있다면 유지하기 위해 전개 연산자 사용)
     contractDataTemp.value = {
       ...contractDataTemp.value,
       wageInputs: newWageInputs,
-      workSchedule: selectedSchedule
+      workSchedule: targetStaff?.schedule || null
     };
 
-    console.log('산출내역(지급/공제) 및 스케줄 자동 매핑 완료');
   } catch (err) {
     console.error('예산 데이터 로드 실패:', err);
   }
@@ -921,14 +923,12 @@ onMounted(async () => {
         :is-open="isContractModalOpen"
         :employee-data="{
           ...employee,
-          // 1. 수정 중인 wageInputs가 있으면 쓰고, 없으면 DB에서 로드된 contractData 사용
           wageInputs: Object.keys(wageInputs).length > 0
               ? wageInputs
               : (employee.contract?.contractData || {}),
-          // 2. 수정 중인 스케줄이 있으면 쓰고, 없으면 DB에서 로드된 workSchedule 사용
           workSchedule: contractDataTemp?.workSchedule || employee.workSchedule
         }"
-        :employee-type="employee.type"
+        :employee-type="employee.typeCd"
         :site-options="siteOptions"
         :position-options="positionOptions"
         :wage-items="items"
@@ -936,7 +936,6 @@ onMounted(async () => {
         @close="isContractModalOpen = false"
         @save="handleContractSave"
     />
-<!--    @save="saveContract"-->
   </div>
 </template>
 
