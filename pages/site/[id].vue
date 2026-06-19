@@ -881,6 +881,7 @@ const getSiteData = async () => {
         if (!costBreakdownData.contractTotalBigo) costBreakdownData.contractTotalBigo = '';
 
         return {
+          scIdx:             item.scIdx || item.idx, //계약식별자
           category:          item.category,
           type:              item.type,
           firstContractDt:   item.firstContractDt,
@@ -979,6 +980,58 @@ const updateCleaningCount = (task, delta) => {
   task.count = newVal;
 };
 
+// 새 파일 선택 핸들러
+const onFileSelect = (group, event) => {
+  const files = Array.from(event.target.files);
+  if (!group.newFiles) group.newFiles = [];
+  group.newFiles.push(...files);
+  event.target.value = ''; // input 초기화 (같은 파일 다시 선택 가능하도록)
+};
+
+// 새 파일 삭제
+const removeNewFile = (group, index) => {
+  group.newFiles.splice(index, 1);
+};
+
+// 기존 파일 삭제 (화면에서만 지우고 저장 시 백엔드에 반영)
+const removeExistingFile = (group, index) => {
+  if (!confirm('기존 계약서 파일을 삭제하시겠습니까? (저장 시 최종 반영됩니다)')) return;
+  group.files.splice(index, 1);
+};
+
+// 현장 데이터 저장 후 파일 업로드 실행
+const uploadContractFiles = async (sIdx) => {
+  const formData = new FormData();
+  let hasChanges = false;
+
+  contractGroups.value.forEach((group) => {
+    const scIdx = group.scIdx;
+    if (!scIdx) return; // 방어 코드
+
+    // 1. 새 파일 담기 (scIdx 번호로 이름표 붙임)
+    if (group.newFiles && group.newFiles.length > 0) {
+      group.newFiles.forEach(file => formData.append(`file_contract_${scIdx}`, file));
+      hasChanges = true;
+    }
+
+    // 2. 기존 파일 담기 (삭제되어 빈 배열이어도 전송함)
+    if (group.files !== undefined) {
+      formData.append(`existing_files_${scIdx}`, JSON.stringify(group.files));
+      hasChanges = true;
+    }
+  });
+
+  if (!hasChanges) return;
+
+  try {
+    await axios.post(`/api/v1/upload/file/${sIdx}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  } catch (err) {
+    console.error('파일 업로드 에러:', err);
+  }
+};
+
 const getWageCode = async () => {
   try {
     const res = await axios.get(`/api/v1/config/code/wage/new/${useAuthStore().user?.cIdx}`);
@@ -1072,8 +1125,21 @@ const saveSiteData = async () => {
     };
     if (isStaffLoaded.value) params.assigned_staff = JSON.stringify(assignedStaff.value);
 
-    await axios.post('/api/v1/site/register', params);
+    const response = await axios.post('/api/v1/site/register', params);
+
+    //저장된 현장의 PK(sIdx) 가져오기
+    const targetSIdx = route.params.id || route.query.idx || response.data?.data;
+
+    //텍스트 저장이 끝나면 실제 파일 업로드 함수를 실행합니다.
+    if (targetSIdx) {
+      await uploadContractFiles(targetSIdx);
+    }
+
     alert('저장되었습니다.');
+
+    // 4. 새 파일 목록과 화면을 동기화하기 위해 최신 데이터를 다시 불러옵니다.
+    await getSiteData();
+
     originalData = JSON.parse(JSON.stringify({
       site: site.value,
       contractGroups: contractGroups.value,
@@ -1485,6 +1551,13 @@ onMounted(async () => {
 
             <div class="contract-card-body">
               <div class="contract-file-section" style="margin-bottom: 24px;">
+                <div class="file-upload-wrap" style="margin-bottom: 12px;">
+                  <label class="btn-edit" style="display: inline-flex; width: auto;">
+                    <i class="mdi mdi-upload"></i> 파일 추가
+                    <input type="file" multiple @change="onFileSelect(group, $event)" style="display: none;" />
+                  </label>
+                </div>
+
                 <label class="section-label">
                   <i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일
                 </label>
@@ -1500,16 +1573,36 @@ onMounted(async () => {
                         <span v-if="file.size" class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
                       </div>
                     </div>
-                    <div class="file-actions">
+                    <div class="file-actions" style="display: flex; gap:4px;">
                       <a :href="`/api${file.url}`" target="_blank" class="btn-download" title="새 탭에서 보기 / 다운로드">
                         <i class="mdi mdi-download"></i>
                       </a>
+
+                      <button type="button" class="btn-remove-cost" @click="removeExistingFile(group, fIdx)" title="기존 파일 삭제">
+                        <i class="mdi mdi-close"></i>
+                      </button>
                     </div>
                   </div>
                 </div>
 
                 <div v-else class="empty-staff-text" style="background: var(--bg-canvas); border-radius: 8px; border: 1px dashed var(--border-color); padding: 16px 0;">
                   <p style="margin: 0;">등록된 계약서 파일이 없습니다.</p>
+                </div>
+
+                <div v-if="group.newFiles && group.newFiles.length > 0" class="file-list-container" style="margin-top: 12px;">
+                  <div v-for="(file, nIdx) in group.newFiles" :key="'new-'+nIdx" class="file-item-card readonly-file-card" style="border-color: var(--primary);">
+                    <div class="file-info">
+                      <div class="file-icon-wrap" style="background: var(--primary-soft);"><i class="mdi mdi-file-plus text-primary"></i></div>
+                      <div class="file-name-group">
+                        <span class="file-name text-primary">[새 파일] {{ file.name }}</span>
+                      </div>
+                    </div>
+                    <div class="file-actions">
+                      <button type="button" class="btn-remove-cost" @click="removeNewFile(group, nIdx)">
+                        <i class="mdi mdi-close"></i>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1786,9 +1879,9 @@ onMounted(async () => {
                         </tr>
                         <tr>
                           <td class="hours-label-cell">
-              <span class="summary-label">
-                <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
-              </span>
+                            <span class="summary-label">
+                              <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
+                            </span>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1842,8 +1935,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04001"
                             />
-                            <p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p>
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1922,8 +2015,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04002"
                             />
-                            <p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p>
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -1991,8 +2084,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04003"
                             />
-                            <p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p>
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -4082,8 +4175,8 @@ input:checked + .slider:before { transform: translateX(18px); }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);

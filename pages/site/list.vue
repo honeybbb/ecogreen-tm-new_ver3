@@ -6,20 +6,27 @@ import Pagination from "~/components/Pagination.vue";
 import {useTableResize} from "~/composables/useTableResize.js";
 const { startResize } = useTableResize();
 const router = useRouter();
+const {
+  typeOptions,
+  fetchTypeOptions,
+} = useApi();
 
 // 1. 상태 및 검색 조건
 const searchTerm = ref('');
 const selectedStatus = ref('전체');
+const selectedStype = ref('전체');
 const selectedType = ref('전체');
 const selectedVat = ref('전체');
+const selectedManager = ref('전체');
 const selectedBilling = ref('전체');
 const statusOptions = ref(['전체', '운영 중', '준비 중', '계약 종료']);
-const typeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
+const sTypeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const vatOptions = ref([
   { label: '전체', value: '전체' },
   { label: '과세', value: 'Y' },
   { label: '면세', value: 'N' }
 ]);
+const manager = ref([]);
 const billingManager = ref([]);
 
 // 2. 정렬 관련 상태
@@ -69,6 +76,7 @@ const toggleSort = (key) => {
 const resetFilters = () => {
   searchTerm.value     = '';
   selectedStatus.value   = '전체';
+  selectedStype.value   = '전체';
   selectedType.value   = '전체';
   selectedVat.value = '전체';
   currentPage.value = 1;
@@ -77,12 +85,18 @@ const resetFilters = () => {
 // 5. 필터링 및 정렬된 현장 목록
 const filteredSites = computed(() => {
   let result = sites.value.filter(site => {
+    const contracts = site.contracts || [];
     const statusMatch = selectedStatus.value === '전체' || site.status === selectedStatus.value;
-    const typeMatch   = selectedType.value === '전체' || site.sType === selectedType.value || site.type === selectedType.value;
+    const typeMatch   = selectedStype.value === '전체' || site.sType === selectedStype.value || site.type === selectedStype.value;
     const vatMatch    = selectedVat.value === '전체' || site.is_vat === selectedVat.value;
+    const managerMatch = selectedManager.value === '전체' || site.manager === selectedManager.value;
     const billingMatch = selectedBilling.value === '전체' || site.billingManager === selectedBilling.value;
     const searchMatch = site.name.toLowerCase().includes(searchTerm.value.toLowerCase());
-    return statusMatch && typeMatch && vatMatch && billingMatch && searchMatch;
+
+    const contractTypeMatch = selectedType.value === '전체' ||
+        contracts.some(contract => contract.type === selectedType.value);
+
+    return statusMatch && typeMatch && vatMatch && managerMatch && billingMatch && searchMatch && contractTypeMatch;
   });
 
   result.sort((a, b) => {
@@ -209,10 +223,21 @@ const getSites = async () => {
         .filter(name => name && name.trim() !== '');
 
     // 2. Set을 이용해 중복을 제거한 후 다시 배열로 변환
-    const uniqueManagers = [...new Set(allBillingManagers)];
+    const uniqueBuillingManagers = [...new Set(allBillingManagers)];
 
     // 3. Select(또는 커스텀 드롭다운)에서 쓰기 좋게 객체 형태로 변환하여 저장
-    billingManager.value = uniqueManagers.map(name => ({ value: name }));
+    billingManager.value = uniqueBuillingManagers.map(name => ({ value: name }));
+
+    const allManagers = sites.value
+        .map(site => site.manager)
+        .filter(name => name && name.trim() !== '');
+
+    // 2. Set을 이용해 중복을 제거한 후 다시 배열로 변환
+    const uniqueManagers = [...new Set(allManagers)];
+
+    // 3. Select(또는 커스텀 드롭다운)에서 쓰기 좋게 객체 형태로 변환하여 저장
+    billingManager.value = uniqueBuillingManagers.map(name => ({ value: name }));
+    manager.value = uniqueManagers.map(name => ({ value: name }));
 
   } catch (err) {
     console.error('현장 로드 실패:', err);
@@ -237,6 +262,10 @@ const goRemove = async (id) => {
     alert('삭제에 실패했습니다.');
   }
 }
+
+onMounted(async () => {
+  await fetchTypeOptions()
+})
 </script>
 
 <template>
@@ -360,8 +389,8 @@ const goRemove = async (id) => {
           <label class="filter-label">
             <i class="mdi mdi-office-building-cog-outline"></i> 현장 형태
           </label>
-          <select v-model="selectedType" class="filter-select">
-            <option v-for="type in typeOptions" :key="type" :value="type">
+          <select v-model="selectedStype" class="filter-select">
+            <option v-for="type in sTypeOptions" :key="type" :value="type">
               {{ type }}
             </option>
           </select>
@@ -374,6 +403,30 @@ const goRemove = async (id) => {
           <select v-model="selectedVat" class="filter-select">
             <option v-for="vat in vatOptions" :key="vat.value" :value="vat.value">
               {{ vat.label }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-account-box"></i> 구분
+          </label>
+          <select v-model="selectedType" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">
+              {{ opt.itemNm }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-account-cash-outline"></i> 본사 담당
+          </label>
+          <select v-model="selectedManager" class="filter-select">
+            <option value="전체">전체</option>
+            <option v-for="b in manager" :key="b.value" :value="b.value">
+              {{ b.value }}
             </option>
           </select>
         </div>
