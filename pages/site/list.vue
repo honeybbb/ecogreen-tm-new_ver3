@@ -6,15 +6,20 @@ import Pagination from "~/components/Pagination.vue";
 import {useTableResize} from "~/composables/useTableResize.js";
 const { startResize } = useTableResize();
 const router = useRouter();
+const {
+  typeOptions,
+  fetchTypeOptions,
+} = useApi();
 
 // 1. 상태 및 검색 조건
 const searchTerm = ref('');
 const selectedStatus = ref('전체');
+const selectedStype = ref('전체');
 const selectedType = ref('전체');
 const selectedVat = ref('전체');
 const selectedBilling = ref('전체');
 const statusOptions = ref(['전체', '운영 중', '준비 중', '계약 종료']);
-const typeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
+const sTypeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const vatOptions = ref([
   { label: '전체', value: '전체' },
   { label: '과세', value: 'Y' },
@@ -69,6 +74,7 @@ const toggleSort = (key) => {
 const resetFilters = () => {
   searchTerm.value     = '';
   selectedStatus.value   = '전체';
+  selectedStype.value   = '전체';
   selectedType.value   = '전체';
   selectedVat.value = '전체';
   currentPage.value = 1;
@@ -77,12 +83,17 @@ const resetFilters = () => {
 // 5. 필터링 및 정렬된 현장 목록
 const filteredSites = computed(() => {
   let result = sites.value.filter(site => {
+    const contracts = site.contracts || [];
     const statusMatch = selectedStatus.value === '전체' || site.status === selectedStatus.value;
-    const typeMatch   = selectedType.value === '전체' || site.sType === selectedType.value || site.type === selectedType.value;
+    const typeMatch   = selectedStype.value === '전체' || site.sType === selectedStype.value || site.type === selectedStype.value;
     const vatMatch    = selectedVat.value === '전체' || site.is_vat === selectedVat.value;
     const billingMatch = selectedBilling.value === '전체' || site.billingManager === selectedBilling.value;
     const searchMatch = site.name.toLowerCase().includes(searchTerm.value.toLowerCase());
-    return statusMatch && typeMatch && vatMatch && billingMatch && searchMatch;
+
+    const contractTypeMatch = selectedType.value === '전체' ||
+        contracts.some(contract => contract.type === selectedType.value);
+
+    return statusMatch && typeMatch && vatMatch && billingMatch && searchMatch && contractTypeMatch;
   });
 
   result.sort((a, b) => {
@@ -237,6 +248,10 @@ const goRemove = async (id) => {
     alert('삭제에 실패했습니다.');
   }
 }
+
+onMounted(async () => {
+  await fetchTypeOptions()
+})
 </script>
 
 <template>
@@ -360,8 +375,8 @@ const goRemove = async (id) => {
           <label class="filter-label">
             <i class="mdi mdi-office-building-cog-outline"></i> 현장 형태
           </label>
-          <select v-model="selectedType" class="filter-select">
-            <option v-for="type in typeOptions" :key="type" :value="type">
+          <select v-model="selectedStype" class="filter-select">
+            <option v-for="type in sTypeOptions" :key="type" :value="type">
               {{ type }}
             </option>
           </select>
@@ -374,6 +389,18 @@ const goRemove = async (id) => {
           <select v-model="selectedVat" class="filter-select">
             <option v-for="vat in vatOptions" :key="vat.value" :value="vat.value">
               {{ vat.label }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">
+            <i class="mdi mdi-account-box"></i> 구분
+          </label>
+          <select v-model="selectedType" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">
+              {{ opt.itemNm }}
             </option>
           </select>
         </div>
