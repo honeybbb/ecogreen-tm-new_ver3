@@ -777,27 +777,46 @@ const handleSubmit = async () => {
       viewConfig: viewConfigJson
     };
 
+    // 💡 STEP 1: 텍스트 및 계약 데이터 먼저 등록!
     const res = await axios.post(`/api/v1/site/register`, params);
     const savedSIdx = res.data.data || route.query.idx;
     if (!savedSIdx) throw new Error('sIdx를 찾을 수 없습니다.');
 
-    const formData = new FormData();
-    let hasFiles = false;
-
-    contractGroups.value.forEach((group, index) => {
-      if (group.files && group.files.length > 0) {
-        hasFiles = true;
-        group.files.forEach(file => {
-          // 백엔드 API 요구사항에 맞춰 Key 값 변경 가능 (예: `files_${index}`, `contractFiles[]` 등)
-          formData.append(`file_contract_${index}`, file);
-        });
-      }
-    });
+    // 💡 STEP 2: 파일이 하나라도 있는지 검사
+    const hasFiles = contractGroups.value.some(g => g.files && g.files.length > 0);
 
     if (hasFiles) {
-      await axios.post(`/api/v1/upload/file/${savedSIdx}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // 💡 STEP 3: 새로 생성된 scIdx를 알아내기 위해 현장 데이터를 재조회합니다. (기존 존재하는 API 활용)
+      const siteDataRes = await axios.get(`/api/v1/site/data/${savedSIdx}`);
+      const siteData = siteDataRes.data.data[0];
+
+      if (siteData && siteData.contractList) {
+        // 백엔드에서 계약 정보를 'order by idx asc' 로 가져오기 때문에 프론트의 배열 순서와 완벽히 일치합니다.
+        const fetchedContracts = JSON.parse(siteData.contractList);
+        const formData = new FormData();
+        let uploadCount = 0;
+
+        contractGroups.value.forEach((group, index) => {
+          // 기존에 있던 계약이면 group.scIdx, 방금 만든 새 계약이면 재조회한 DB 데이터의 idx 사용
+          const dbContract = fetchedContracts[index];
+          const targetScIdx = group.scIdx || (dbContract ? (dbContract.scIdx || dbContract.idx) : null);
+
+          if (targetScIdx && group.files && group.files.length > 0) {
+            group.files.forEach(file => {
+              // 백엔드가 요구하는 /file_contract_(\d+)/ 정규식에 정확히 맞는 이름 생성
+              formData.append(`file_contract_${targetScIdx}`, file);
+              uploadCount++;
+            });
+          }
+        });
+
+        // 💡 STEP 4: 맵핑된 파일들 전송
+        if (uploadCount > 0) {
+          await axios.post(`/api/v1/upload/file/${savedSIdx}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        }
+      }
     }
 
     alert(`${site.value.siteName} 현장 및 계약 정보가 등록되었습니다.`);
@@ -880,6 +899,7 @@ const getSiteData = async () => {
         }
 
         return {
+          scIdx: item.scIdx || item.idx,
           category: item.category,
           type: item.type,
           firstContractDt: item.firstContractDt || item.startDt,
