@@ -96,6 +96,8 @@ const filteredSites = computed(() => {
     const contractTypeMatch = selectedType.value === '전체' ||
         contracts.some(contract => contract.type === selectedType.value);
 
+    currentPage.value = 1; //첫페이지로 셋팅
+
     return statusMatch && typeMatch && vatMatch && managerMatch && billingMatch && searchMatch && contractTypeMatch;
   });
 
