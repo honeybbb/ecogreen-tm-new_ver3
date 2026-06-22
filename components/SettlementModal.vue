@@ -77,7 +77,7 @@ const formData = ref({
 });
 
 // ──────────────────────────────────────────────
-// ★ 커스텀 정산 항목 컨트롤 함수
+// 커스텀 정산 항목 컨트롤 함수
 // ──────────────────────────────────────────────
 const addCustomSummaryItem = () => {
   if (!formData.value.billingData.customSummaryItems) {
@@ -109,22 +109,11 @@ const filterKoreanOnly = (str) => {
   }
 };
 
-const onKoreanOnly = (e, row) => {
-  const original = e.target.value;
-  const hasKorean = /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(original);
-  let cleaned = original;
-  if (hasKorean) {
-    cleaned = original.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
-  }
-  row.empName = cleaned;
-  e.target.value = cleaned;
-};
-
 // ──────────────────────────────────────────────
 // 3. 계약 데이터 및 적용 요율
 // ──────────────────────────────────────────────
 const items = ref([]); // 최하위 leaf 노드 저장용
-const allWageCodes = ref([]); // ★ 추가: DB에서 불러온 전체 코드 원본 저장용
+const allWageCodes = ref([]); // DB에서 불러온 전체 코드 원본 저장용
 
 const contractIndirectLabor = ref([]);
 const contractIndirectLabels = ref([]);
@@ -134,7 +123,11 @@ const contractStaffList = ref([]);
 const contractTotalCost = ref(0);
 
 const insuranceRates = ref({
-  nationalPension: 0, healthInsurance: 0, longTermCare: 0, employmentInsurance: 0, industrialAccident: 0
+  nationalPension: 0,
+  healthInsurance: 0,
+  longTermCare: 0,
+  employmentInsurance: 0,
+  industrialAccident: 0
 });
 
 const fetchTaxRates = async () => {
@@ -304,7 +297,8 @@ const deductionItems = computed(() => {
   if (contractIndirectLabels.value.length > 0) {
     result = result.filter(item => contractIndirectLabels.value.some(label => item.itemCd === label || item.itemNm.includes(label)));
   } else {
-    const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
+    // const defaultKeywords = ['국민연금', '건강보험', '장기요양', '고용보험'];
+    const defaultKeywords = ['건강보험', '장기요양', '국민연금', '고용보험'];
     result = result.filter(item => defaultKeywords.some(kw => item.itemNm.includes(kw)));
   }
   return [...new Map(result.map(item => [item.itemCd, item])).values()];
@@ -333,10 +327,10 @@ const dynamicColumns = computed(() => {
   const getCodeName = (code) => {
     // 1. 가장 최우선: 과거 2계층 데이터 호환을 위한 하드코딩 매핑 (DB 이관 이슈 방어)
     const legacyMap = {
-      '04003001': '연차적립금',
-      '04003003': '퇴직적립금',
-      '04003010': '산재보험',
-      '04001008': '근로자의날수당'
+      '04001003': '연차적립금',
+      '04001004': '퇴직적립금',
+      '04002001008': '산재보험',
+      '04001002007': '근로자의날수당'
     };
     if (legacyMap[code]) return legacyMap[code];
 
@@ -502,11 +496,11 @@ const recalculateInsurances = (row) => {
     let amt = 0;
     if (name.includes('국민연금')) {
       amt = Math.floor((calcBase * (rates.nationalPension / 100)) / 10) * 10;
-    } else if (name.includes('건강보험')) {
-      amt = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
     } else if (name.includes('장기요양')) {
       const health = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
       amt = Math.floor((health * (rates.longTermCare / 100)) / 10) * 10;
+    } else if (name.includes('건강보험')) {
+      amt = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
     } else if (name.includes('고용보험')) {
       amt = Math.floor((calcBase * (rates.employmentInsurance / 100)) / 10) * 10;
     } else {
@@ -526,7 +520,7 @@ const getInsuranceTotal = (row) => {
     if (col.type === 'deduct') {
       if (col.isEmployment) {
         total += (Number(row.deductionItems?.[col.code]) || 0) + (Number(row.reserves?.empInsEmployer) || 0);
-      } else if (col.code === '04003010' || col.name.includes('산재')) {
+      } else if (col.name.includes('산재')) {
         total += Number(row.reserves?.sanjae) || 0;
       } else {
         total += Number(row.deductionItems?.[col.code]) || 0;
@@ -585,7 +579,7 @@ const payrollTotals = computed(() => {
           totals.deductionItems[col.code] += empDeduct;
           totals.empInsEmployer += empReserve;
           rowInsTotal += (empDeduct + empReserve);
-        } else if (col.code === '04003010' || col.name.includes('산재')) {
+        } else if (col.name.includes('산재')) {
           const sanjaeAmt = Number(row.reserves?.sanjae) || 0;
           totals.sanjae += sanjaeAmt;
           rowInsTotal += sanjaeAmt;
@@ -603,9 +597,9 @@ const payrollTotals = computed(() => {
 });
 
 const contractAnnualLeaveTotal = computed(() => {
-  let target = contractDirectLabor.value.find(d => d.label === '04003001' || String(d.label).includes('연차'));
+  let target = contractDirectLabor.value.find(d => String(d.label).includes('연차'));
   if (!target && contractIndirectLabor.value) {
-    target = contractIndirectLabor.value.find(d => d.label === '04003001' || String(d.label).includes('연차'));
+    target = contractIndirectLabor.value.find(d => String(d.label).includes('연차'));
   }
   if (!target || !target.values) return 0;
 
@@ -617,9 +611,9 @@ const contractAnnualLeaveTotal = computed(() => {
 });
 
 const contractSeveranceTotal = computed(() => {
-  let target = contractDirectLabor.value.find(d => d.label === '04003003' || String(d.label).includes('퇴직'));
+  let target = contractDirectLabor.value.find(d => String(d.label).includes('퇴직'));
   if (!target && contractIndirectLabor.value) {
-    target = contractIndirectLabor.value.find(d => d.label === '04003003' || String(d.label).includes('퇴직'));
+    target = contractIndirectLabor.value.find(d => String(d.label).includes('퇴직'));
   }
   if (!target || !target.values) return 0;
 
@@ -657,7 +651,7 @@ const actualInsuranceTotal = computed(() => {
         if (col.isEmployment) {
           total += Number(payrollTotals.value.empInsEmployer) || 0;
         }
-      } else if (col.code === '04003010' || col.name.includes('산재')) {
+      } else if (col.name.includes('산재')) {
         total += Number(payrollTotals.value.sanjae) || 0;
       }
     }
@@ -809,10 +803,10 @@ const getDynamicTotal = (col) => {
 
   let sum = 0;
   formData.value.payrollData.forEach(row => {
-    if (col.code === '04003001') sum += Number(row.reserves?.annualLeave) || 0;
-    else if (col.code === '04003003') sum += Number(row.reserves?.severance) || 0;
+    if (col.name.includes('연차')) sum += Number(row.reserves?.annualLeave) || 0;
+    else if (col.name.includes('퇴직')) sum += Number(row.reserves?.severance) || 0;
     else if (col.name.includes('근로자의날')) sum += Number(row.reserves?.workersDay) || 0;
-    else if (col.code === '04003010') sum += Number(row.reserves?.sanjae) || 0;
+    else if (col.name.includes('산재')) sum += Number(row.reserves?.sanjae) || 0;
     else if (col.type === 'pay') sum += Number(row.payments?.[col.code]) || 0;
     else if (col.type === 'deduct') sum += Number(row.deductionItems?.[col.code]) || 0;
   });
@@ -1045,8 +1039,8 @@ const loadPayrollData = async () => {
     await nextTick();
 
     const validItemCds = [
-      ...contractDirectLabor.value.map(d => String(d.label)),
-      ...contractIndirectLabor.value.map(i => String(i.label))
+      ...contractDirectLabor.value.map(d => String(d.code)),
+      ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
     const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
@@ -1083,6 +1077,7 @@ const loadPayrollData = async () => {
       Object.entries(parsedPayItems).forEach(([cd, amt]) => {
         if (reserveCodes.includes(cd)) return;
         if (validItemCds.includes(cd)) {
+          console.log(cd)
           filteredPayItems[cd] = Number(amt) || 0;
           recalculatedGrossPay += Number(amt) || 0;
         }
@@ -1653,8 +1648,8 @@ onMounted(async () => {
 
                 <template v-for="col in dynamicColumns" :key="'td-'+col.code">
                   <td v-if="col.type === 'pay'">
-                    <input v-if="col.code === '04003001'" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" class="cell-input text-right" />
-                    <input v-else-if="col.code === '04003003'" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" class="cell-input text-right" />
+                    <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" class="cell-input text-right" />
+                    <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" class="cell-input text-right" />
                     <input v-else-if="col.name.includes('근로자의날')" type="text" :value="formatCurrency(row.reserves.workersDay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')" class="cell-input text-right" />
                     <input v-else type="text" :value="formatCurrency(row.payments?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.payments, col.code, row, 'salary')" class="cell-input text-right" />
                   </td>
@@ -1668,7 +1663,7 @@ onMounted(async () => {
                       <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" /></td>
                       <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" class="cell-input text-right" /></td>
                     </template>
-                    <td v-else-if="col.code === '04003010'">
+                    <td v-else-if="col.name.includes('산재')">
                       <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" class="cell-input text-right" />
                     </td>
                     <td v-else>
