@@ -38,6 +38,115 @@ const pageSizeOptions = [50, 100, 200, 500];
 const payItems       = computed(() => items.value.filter(i => i.groupNm === '지급항목'));
 const deductionItems = computed(() => items.value.filter(i => i.groupNm === '공제항목'));
 
+// ── 보기 설정 ─────────────────────────────────────
+const showColumnSetting = ref(false);
+const staticCols = ref([
+  { id: 'siteName', name: '현장명', show: true, width: 110, sticky: true },
+  { id: 'role', name: '직책', show: true, width: 70, sticky: true },
+  { id: 'id', name: '사번', show: true, width: 80, sticky: true },
+  { id: 'staff', name: '성명', show: true, width: 80, sticky: true },
+  { id: 'birthDt', name: '생년월일', show: true, width: 100, sticky: true },
+  { id: 'age', name: '나이(만)', show: true, width: 70, sticky: true },
+  { id: 'disability', name: '장애여부', show: true, width: 80, sticky: true },
+  { id: 'gross', name: '지급합계', show: true, width: 80, sticky: true },
+  { id: 'ded', name: '공제합계', show: true, width: 80, sticky: true }
+]);
+const hiddenDynamicCols = ref({});
+
+const visiblePayItems = computed(() => {
+  return payItems.value.filter(i => !hiddenDynamicCols.value[i.itemCd]);
+});
+
+const visibleDeductionItems = computed(() => {
+  return deductionItems.value.filter(i => !hiddenDynamicCols.value[i.itemCd]);
+});
+
+const getStickyStyle = (colId) => {
+  const baseOrder = [
+    { id: 'check', width: 40, show: true },
+    { id: 'no', width: 40, show: true },
+    ...staticCols.value
+  ];
+
+  let left = 0;
+  for (const col of baseOrder) {
+    if (col.id === colId) {
+      if (!col.show) return { display: 'none' };
+      return { left: `${left}px` };
+    }
+    if (col.show) left += col.width;
+  }
+  return {};
+};
+
+const getSummaryGroupStyle = () => {
+  const baseOrder = [
+    { id: 'check', width: 40, show: true },
+    { id: 'no', width: 40, show: true },
+    ...staticCols.value.slice(0, 7)
+  ];
+  let left = 0;
+  for (const col of baseOrder) {
+    if (col.show) left += col.width;
+  }
+  const grossShow = staticCols.value.find(c => c.id === 'gross').show;
+  const dedShow = staticCols.value.find(c => c.id === 'ded').show;
+  if (!grossShow && !dedShow) return { display: 'none' };
+  return { left: `${left}px` };
+};
+
+const getSummaryGroupColspan = () => {
+  let count = 0;
+  if (staticCols.value.find(c => c.id === 'gross').show) count++;
+  if (staticCols.value.find(c => c.id === 'ded').show) count++;
+  return count;
+}
+
+const getFooterColspan = () => {
+  let span = 2; // check and no
+  for (let i = 0; i < 7; i++) {
+    if (staticCols.value[i].show) span++;
+  }
+  return span;
+};
+
+const toggleDynamicCol = (itemCd) => {
+  if (hiddenDynamicCols.value[itemCd]) {
+    delete hiddenDynamicCols.value[itemCd];
+  } else {
+    hiddenDynamicCols.value[itemCd] = true;
+  }
+};
+
+const saveColumnSettings = () => {
+  const userId = authStore.user?.idx || 'default';
+  const settings = {
+    staticCols: staticCols.value.map(c => ({ id: c.id, show: c.show })),
+    hiddenDynamicCols: hiddenDynamicCols.value
+  };
+  localStorage.setItem(`payroll_cols_${userId}`, JSON.stringify(settings));
+  showColumnSetting.value = false;
+};
+
+const loadColumnSettings = () => {
+  if (typeof window === 'undefined') return;
+  const userIdx = authStore.user?.idx || 'default';
+  const saved = localStorage.getItem(`payroll_cols_${userIdx}`);
+  if (saved) {
+    try {
+      const settings = JSON.parse(saved);
+      // 기본 항목(staticCols) 불러오기 로직 삭제 (항상 true로 유지)
+
+      // 지급/공제(동적) 항목 설정만 불러오기
+      if (settings.hiddenDynamicCols) {
+        hiddenDynamicCols.value = settings.hiddenDynamicCols;
+      }
+    } catch (e) {
+      console.error('Failed to load column settings', e);
+    }
+  }
+};
+
 // ── 데이터 ────────────────────────────────────────
 const payrollList  = ref([]);
 const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
@@ -551,6 +660,7 @@ const getPayrollList = async () => {
 
 // ── 초기 로드 ─────────────────────────────────────
 onMounted(async () => {
+  loadColumnSettings();
   await Promise.all([
     getTaxRate(),
     getWageCode(),
@@ -575,9 +685,47 @@ onMounted(async () => {
         <p class="page-subtitle">지급·공제 항목 관리 및 4대보험 자동 계산</p>
       </div>
       <div class="header-actions">
+        <button @click="showColumnSetting = true" class="btn-search">
+          <i class="mdi mdi-view-column"></i><span>보기 설정</span>
+        </button>
         <button @click="savePayroll" class="btn-save">
           <i class="mdi mdi-content-save-outline"></i><span>선택 급여 저장</span>
         </button>
+      </div>
+    </div>
+
+    <!-- ─── 보기 설정 모달 ─────────────────────────── -->
+    <div v-if="showColumnSetting" class="modal-overlay">
+      <div class="modal-content" style="max-width: 500px; max-height: 80vh; display: flex; flex-direction: column;">
+        <div class="modal-header">
+          <h3 style="margin: 0;">보기 설정</h3>
+          <button @click="showColumnSetting = false" style="background:none; border:none; font-size:18px; cursor:pointer;"><i class="mdi mdi-close"></i></button>
+        </div>
+        <div class="modal-body" style="flex: 1; overflow-y: auto; padding: 16px;">
+
+          <h4 style="margin-top: 0; margin-bottom: 8px;">기본 항목 <span style="font-size: 12px; color: #ef4444; font-weight: normal;">(필수 고정)</span></h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+            <label v-for="col in staticCols" :key="col.id" style="display: flex; align-items: center; gap: 6px; color: #9ca3af; cursor: not-allowed;">
+              <input type="checkbox" checked disabled /> {{ col.name }}
+            </label>
+          </div>
+
+          <h4 style="margin-bottom: 8px;">지급 항목</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+            <label v-for="item in payItems" :key="item.itemCd" style="display: flex; align-items: center; gap: 6px;">
+              <input type="checkbox" :checked="!hiddenDynamicCols[item.itemCd]" @change="toggleDynamicCol(item.itemCd)" /> {{ item.itemNm }}
+            </label>
+          </div>
+          <h4 style="margin-bottom: 8px;">공제 항목</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
+            <label v-for="item in deductionItems" :key="item.itemCd" style="display: flex; align-items: center; gap: 6px;">
+              <input type="checkbox" :checked="!hiddenDynamicCols[item.itemCd]" @change="toggleDynamicCol(item.itemCd)" /> {{ item.itemNm }}
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding: 16px; border-top: 1px solid var(--border-color); text-align: right;">
+          <button @click="saveColumnSettings" class="btn-save" style="padding: 8px 16px; margin: 0;">확인</button>
+        </div>
       </div>
     </div>
 
@@ -694,42 +842,39 @@ onMounted(async () => {
               <label class="checkbox-wrapper"><input type="checkbox" v-model="selectAll" class="custom-checkbox" /></label>
             </th>
             <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" style="min-width:40px; max-width:40px;" data-col-key="no">No.</th>
-            <th rowspan="2" class="text-center sortable col-site sticky-col sticky-col-3" style="min-width:110px; max-width:110px;" data-col-key="siteName" @click="toggleSort('siteName')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-3" :style="getStickyStyle('siteName')" data-col-key="siteName" @click="toggleSort('siteName')">
               <div class="th-content">현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-4" style="min-width:70px; max-width:70px;" data-col-key="role" @click="toggleSort('role')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-4" :style="getStickyStyle('role')" data-col-key="role" @click="toggleSort('role')">
               <div class="th-content">직책<i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-5" style="min-width:80px; max-width:80px;" data-col-key="id" @click="toggleSort('id')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-5" :style="getStickyStyle('id')" data-col-key="id" @click="toggleSort('id')">
               <div class="th-content">사번<i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-6" style="min-width:80px; max-width:80px;" data-col-key="staff" @click="toggleSort('staff')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-6" :style="getStickyStyle('staff')" data-col-key="staff" @click="toggleSort('staff')">
               <div class="th-content">성명<i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sticky-col sticky-col-7" style="min-width:100px; max-width:100px;">생년월일</th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" style="min-width:70px; max-width:70px;" data-col-key="age" @click="toggleSort('birthDt')">
+            <th rowspan="2" class="text-center sticky-col sticky-col-7" :style="getStickyStyle('birthDt')">생년월일</th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" :style="getStickyStyle('age')" data-col-key="age" @click="toggleSort('birthDt')">
               <div class="th-content">나이(만)<i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
 
-            <th rowspan="2" class="text-center sticky-col sticky-col-9" style="min-width:80px; max-width:80px;">장애여부</th>
+            <th rowspan="2" class="text-center sticky-col sticky-col-9" :style="getStickyStyle('disability')">장애여부</th>
 
-            <th colspan="2" class="text-center group-header-summary group-divider sticky-col sticky-col-group">합계</th>
+            <th :colspan="getSummaryGroupColspan()" class="text-center group-header-summary group-divider sticky-col sticky-col-group" :style="getSummaryGroupStyle()">합계</th>
 
-            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
-            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">공제 항목 (체크 시 자동계산)<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th v-if="visiblePayItems.length > 0" :colspan="visiblePayItems.length" class="text-center group-header-pay theme-pay-header group-divider">지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
+            <th v-if="visibleDeductionItems.length > 0" :colspan="visibleDeductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">공제 항목 (체크 시 자동계산)<span class="resize-handle" @mousedown.prevent="startResize($event)"></span></th>
           </tr>
 
           <tr>
-            <th class="text-right sub-header group-divider sticky-col sticky-col-10" style="min-width:80px; max-width:80px;" data-col-key="gross">지급합계</th>
-            <th class="text-right sub-header sticky-col sticky-col-11 sticky-divider" style="min-width:80px; max-width:80px;" data-col-key="ded">공제합계</th>
+            <th class="text-right sub-header group-divider sticky-col sticky-col-10" :style="getStickyStyle('gross')" data-col-key="gross">지급합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-11 sticky-divider" :style="getStickyStyle('ded')" data-col-key="ded">공제합계</th>
 
-            <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-pay-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'pay-' + item.itemCd">
+            <th v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-pay-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'pay-' + item.itemCd">
               {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <!--th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
-              {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
-            </th-->
-            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
+            <th v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
               <div style="display: flex;gap: 6px;">
                 <label class="checkbox-wrapper-sm" style="margin: 0; padding: 0;">
                   <input type="checkbox"
@@ -750,12 +895,12 @@ onMounted(async () => {
               <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
             <td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
-            <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
-            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
-            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
-            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
-            <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
-            <td class="text-center sticky-col sticky-col-8" style="overflow: visible !important;">
+            <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :style="getStickyStyle('siteName')" :title="p.siteName">{{ p.siteName }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :style="getStickyStyle('role')" :title="p.role">{{ p.role }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :style="getStickyStyle('id')" :title="p.id">{{ p.id }}</td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6" :style="getStickyStyle('staff')">{{ p.staff }}</td>
+            <td class="text-center text-gray sticky-col sticky-col-7" :style="getStickyStyle('birthDt')">{{ p.birthDt }}</td>
+            <td class="text-center sticky-col sticky-col-8" :style="{...getStickyStyle('age'), overflow: 'visible' }">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
     <span :class="['font-bold', getInsuranceWarning(p).type === 'danger' ? 'text-red' : getInsuranceWarning(p).type === 'warning' ? 'text-orange' : getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray']">
       {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
@@ -777,22 +922,22 @@ onMounted(async () => {
               </div>
             </td>
 
-            <td class="text-center sticky-col sticky-col-9">
+            <td class="text-center sticky-col sticky-col-9" :style="getStickyStyle('disability')">
               <span v-if="p.disability === 'Y' || p.disability === true"
-                class="badge tooltip-container"
-                :style="getDisabilityStyle(p.disability_grade)">
+                    class="badge tooltip-container"
+                    :style="getDisabilityStyle(p.disability_grade)">
                 <i class="mdi mdi-wheelchair-accessibility"></i> 장애
               </span>
               <span v-else class="text-gray">-</span>
             </td>
 
-            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-10">{{ formatCurrency(calculateRow(p).gross) }}</td>
-            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11 sticky-divider">{{ formatCurrency(calculateRow(p).ded) }}</td>
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-10" :style="getStickyStyle('gross')">{{ formatCurrency(calculateRow(p).gross) }}</td>
+            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11 sticky-divider" :style="getStickyStyle('ded')">{{ formatCurrency(calculateRow(p).ded) }}</td>
 
-            <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
+            <td v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
               <input v-if="p.payments" @focus="$event.target.select()" type="text" :value="formatCurrency(p.payments[item.itemCd])" @input="onInputAmount(p, item, 'pay', $event)" class="inline-input" />
             </td>
-            <td v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
+            <td v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
               <div class="deduction-combo-box">
                 <label class="checkbox-wrapper-sm"><input type="checkbox" v-model="p.deductionFlags[item.itemCd]" @change="markAsDraft(p); calculateInsurances(p, item)" class="custom-checkbox custom-checkbox-sm" /></label>
                 <input v-if="p.deductions" type="text" @focus="$event.target.select()" @input="onInputAmount(p, item, 'deduct', $event)" :value="formatCurrency(p.deductions[item.itemCd])" class="inline-input" />
@@ -810,7 +955,7 @@ onMounted(async () => {
           <tfoot>
           <tr class="table-footer sticky-footer">
 
-            <td colspan="9" class="sticky-col" style="left:0; min-width: 670px; z-index: 35;">
+            <td :colspan="getFooterColspan()" class="sticky-col" style="left:0; z-index: 35;">
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
                 <span class="font-bold text-dark">전체 합계</span>
                 <div class="net-pay-box" style="padding: 4px 16px; background-color: var(--primary-soft); border-radius: 6px;">
@@ -820,15 +965,15 @@ onMounted(async () => {
               </div>
             </td>
 
-            <td class="text-right font-bold group-divider sticky-col sticky-col-10">{{ formatCurrency(totalSummary.gross) }}</td>
-            <td class="text-right font-bold text-red sticky-col sticky-col-11 sticky-divider">{{ formatCurrency(totalSummary.ded) }}</td>
+            <td class="text-right font-bold group-divider sticky-col sticky-col-10" :style="getStickyStyle('gross')">{{ formatCurrency(totalSummary.gross) }}</td>
+            <td class="text-right font-bold text-red sticky-col sticky-col-11 sticky-divider" :style="getStickyStyle('ded')">{{ formatCurrency(totalSummary.ded) }}</td>
 
-            <td v-for="(item, index) in payItems" :key="'foot-pay-' + item.itemCd"
+            <td v-for="(item, index) in visiblePayItems" :key="'foot-pay-' + item.itemCd"
                 :class="['text-right font-bold text-blue bg-light-gray theme-pay-sub', { 'group-divider': index === 0 }]">
               {{ formatCurrency(totalSummary.pay[item.itemCd] || 0) }}
             </td>
 
-            <td v-for="(item, index) in deductionItems" :key="'foot-ded-' + item.itemCd"
+            <td v-for="(item, index) in visibleDeductionItems" :key="'foot-ded-' + item.itemCd"
                 :class="['text-right font-bold text-red bg-light-gray theme-deduct-sub', { 'group-divider': index === 0 }]">
               {{ formatCurrency(totalSummary.deduct[item.itemCd] || 0) }}
             </td>
@@ -927,7 +1072,7 @@ onMounted(async () => {
 }
 .inline-input:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 .amount-cell { width: 90px; }
-  /* === 커스텀 체크박스 === */
+/* === 커스텀 체크박스 === */
 .checkbox-wrapper    { display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; cursor: pointer; }
 .checkbox-wrapper-sm { display: flex; align-items: center; cursor: pointer; }
 .custom-checkbox {
@@ -1198,4 +1343,23 @@ tr.data-row:hover td.sticky-col {
 
 .calc-auto   { background: #dbeafe; color: #2563eb; }
 .calc-manual { background: #fef3c7; color: #b45309; }
+/* === 보기 설정 모달 === */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.modal-content {
+  background: var(--bg-surface, #ffffff);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1));
+  width: 100%;
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
 </style>

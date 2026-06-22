@@ -20,23 +20,26 @@ const {
 } = useApi();
 
 const DEFAULT_DIRECT_LABOR_COMMON = [
-  { code: '04001001', label: '기본급' },
-  { code: '04001002', label: '직책수당' },
+  { code: '04001001001', label: '기본급' },
+  { code: '04001002001', label: '직책수당' },
   { code: '04001003', label: '연차적립금' },
   { code: '04001004', label: '퇴직적립금' },
 ];
 
 const DEFAULT_DIRECT_LABOR_GUARD = [
-  ...DEFAULT_DIRECT_LABOR_COMMON,
-  { code: '04001003', label: '야간수당' },
+  { code: '04001001001', label: '기본급' },
+  { code: '04001002001', label: '직책수당' },
+  { code: '04001002003', label: '야간수당' },
+  { code: '04001003', label: '연차적립금' },
+  { code: '04001004', label: '퇴직적립금' },
 ];
 
 const DEFAULT_INDIRECT_LABOR = [
-  { code: '04002003', label: '국민연금' },
-  { code: '04002001', label: '건강보험' },
-  { code: '04002002', label: '요양보험' },
-  { code: '04002004', label: '고용보험' },
-  { code: '04003010', label: '산재보험' },
+  { code: '04002001001', label: '건강보험' },
+  { code: '04002001002', label: '장기요양보험' },
+  { code: '04002001003', label: '국민연금' },
+  { code: '04002001004', label: '고용보험' },
+  { code: '04002001008', label: '산재보험' },
 ];
 
 const getInitSiteData = () => ({
