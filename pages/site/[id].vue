@@ -1625,7 +1625,7 @@ onMounted(async () => {
                 </div>
                 <div class="contract-info-item full-width">
                   <label>휴게 시간</label>
-                  <input type="number" step="any" v-model="group.breakTime" class="info-input" />
+                  <input type="text" v-model="group.breakTime" class="info-input" placeholder="예: 주간 2시간, 야간 4시간"/>
                 </div>
               </div>
 
@@ -1935,8 +1935,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04001"
                             />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
+                            <p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2015,8 +2015,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04002"
                             />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
+                            <p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2084,8 +2084,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04003"
                             />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
+                            <p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p>
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
