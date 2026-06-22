@@ -264,7 +264,7 @@ const filteredMembers = computed(() => {
     const siteMatch   = selectedSite.value === '전체' || String(member.sIdx) === String(selectedSite.value);
     const searchMatch = member.name.toLowerCase().includes(searchTerm.value.toLowerCase());
     const typeMatch   = selectedType.value === '전체' || member.type === selectedType.value;
-    // ★ 급여일 필터 매칭 추가
+    // 급여일 필터 매칭 추가
     const paymentDayMatch = selectedPaymentDay.value === '전체' || String(member.payment_day) === String(selectedPaymentDay.value);
 
     const dateMatch =
@@ -280,6 +280,8 @@ const filteredMembers = computed(() => {
     const genderMatch = selectedGender.value === '전체' || member.gender == selectedGender.value;
 
     const contractMatch = !filterContractDate.value || !member.contract || member.contract === '';
+
+    currentPage.value = 1; //첫 페이지로
 
     return siteMatch && searchMatch && typeMatch && paymentDayMatch && // ★ paymentDayMatch 추가
         dateMatch && pensionMatch && employmentMatch &&
