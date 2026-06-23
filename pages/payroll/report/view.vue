@@ -1154,7 +1154,7 @@ onMounted(async () => {
       <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
         <div class="stat-icon"><i class="mdi mdi-account-group-outline"></i></div>
         <div class="stat-content">
-          <span class="stat-label">정산 대상</span>
+          <span class="stat-label">급여 대상</span>
           <span class="stat-value">{{ statsInfo.total }} <small>명</small></span>
         </div>
       </div>

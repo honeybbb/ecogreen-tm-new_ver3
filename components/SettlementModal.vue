@@ -45,6 +45,7 @@ const meltOptions = reactive({
 
 const isInitializing = ref(false);
 const dragIndex = ref(null);
+const lastBigoAlertSIdx = ref(null);//비고alert
 
 // ──────────────────────────────────────────────
 // 2. 폼 데이터 상태
@@ -213,6 +214,25 @@ const fetchContractData = async () => {
     const siteData = res.data.data?.[0];
 
     if (!siteData) return;
+
+    // ── 현장 특이사항(bigoList) 알림 ──────────────
+    if (siteData.bigoList && sIdx !== lastBigoAlertSIdx.value) {
+      try {
+        const bigoArr = typeof siteData.bigoList === 'string'
+            ? JSON.parse(siteData.bigoList)
+            : siteData.bigoList;
+
+        if (Array.isArray(bigoArr) && bigoArr.length > 0) {
+          const msg = bigoArr
+              .map(b => `[${(b.regDt || '').substring(0, 10)}] ${b.writer || ''}\n${b.bigo || ''}`)
+              .join('\n\n');
+          alert(`⚠ 특이사항\n\n${msg}`);
+        }
+      } catch (e) {
+        console.error('bigoList 파싱 에러:', e);
+      }
+      lastBigoAlertSIdx.value = sIdx;
+    }
 
     if ((!props.settlementId || !isInitializing.value) && siteData.viewConfig) {
       try {
@@ -460,7 +480,9 @@ const applyContractReserves = (row) => {
 
 const calculateRow = (row) => {
   let totalDeduct = 0;
-  visibleDeductionItems.value.forEach(item => { totalDeduct += Number(row.deductionItems?.[item.itemCd]) || 0; });
+  visibleDeductionItems.value.forEach(item => {
+    totalDeduct += Number(row.deductionItems?.[item.itemCd]) || 0;
+  });
   row.totalDeduct = totalDeduct;
   row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
 

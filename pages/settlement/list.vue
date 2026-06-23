@@ -428,7 +428,7 @@ onActivated(async () => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group period-group">
-          <label class="filter-label"><i class="mdi mdi-calendar-month-outline"></i> 청구 연월</label>
+          <label class="filter-label"><!--i class="mdi mdi-calendar-month-outline"></i--> 청구 연월</label>
           <div class="period-inputs">
             <input type="month" v-model="selectedPeriod.start" class="filter-select period-select" />
             <span class="period-separator">~</span>
@@ -437,11 +437,11 @@ onActivated(async () => {
         </div>
 
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-office-building-outline"></i> 현장</label>
+          <label class="filter-label"><!--i class="mdi mdi-office-building-outline"></i--> 현장</label>
           <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-format-list-bulleted-type"></i> 구분</label>
+          <label class="filter-label"><!--i class="mdi mdi-format-list-bulleted-type"></i--> 구분</label>
           <select v-model="selectedType" class="filter-select">
             <option value="전체">전체</option>
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
@@ -1060,10 +1060,4 @@ onActivated(async () => {
 }
 .btn-submit-unpaid:hover:not(:disabled) { filter:brightness(.9); transform:translateY(-1px); }
 .btn-submit-unpaid:disabled             { opacity:.5; cursor:not-allowed; }
-
-/* ──────────────────────────────────────────────
-   유틸
-────────────────────────────────────────────── */
-.text-sm   { font-size:12px; }
-.text-gray { color:var(--text-muted); }
 </style>
