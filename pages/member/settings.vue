@@ -497,7 +497,7 @@ const addCode = async () => {
                   <button
                       @click="startEdit(code)"
                       class="btn-action btn-edit"
-                      :disabled="!code.editFl"
+                      :disabled="code.editFl == 'N'"
                   >
                     <i class="mdi mdi-pencil"></i>
                     <span>수정</span>
