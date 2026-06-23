@@ -47,6 +47,7 @@ const getInitSiteData = () => ({
   siteId: '',
   siteType: '',
   businessNumber: '',
+  businessName: '',
   representative: '',
   businessType: '',
   businessItem: '',
@@ -70,6 +71,7 @@ const getInitSiteData = () => ({
   status: '운영 중',
   payment_day: '',
   bigo: '',
+  settlementBigo: '',
   bankName: '기업',
   accountNumber: '',
   accountName: '',
@@ -116,7 +118,8 @@ const site = ref({
 const contractGroups = ref([]);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const statusOptions  = ref(['운영 중', '계약 종료']);
-const bigoHistory    = ref([]);
+const bigoHistory    = ref([]);   // 현장 특이사항 (type: 1)
+const settlementHistory = ref([]);     // 정산 특이사항 (type: 2)
 const detailInput    = ref(null);
 
 const searchAvailable = ref('');
@@ -749,6 +752,7 @@ const handleSubmit = async () => {
       site_id: site.value.siteId,
       status: site.value.status,
       businessNumber: site.value.businessNumber,
+      businessName: site.value.businessName,
       representative: site.value.representative,
       businessType: site.value.businessType,
       businessItem: site.value.businessItem,
@@ -770,6 +774,7 @@ const handleSubmit = async () => {
       billingManager: site.value.billingManager,
       payrollManager: site.value.payrollManager,
       bigo: site.value.bigo,
+      settlementBigo: site.value.settlementBigo,
       bankName: site.value.bankName,
       accountNumber: site.value.accountNumber,
       accountName: site.value.accountName,
@@ -929,9 +934,21 @@ const getSiteData = async () => {
     // 3. 특이사항 히스토리 세팅
     if (result.bigoList) {
       try {
-        bigoHistory.value = JSON.parse(result.bigoList);
-        bigoHistory.value.sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
-      } catch { bigoHistory.value = []; }
+        const allLog = JSON.parse(result.bigoList);
+
+        // type 1: 현장 특이사항
+        bigoHistory.value = allLog
+            .filter(item => String(item.type) === '1')
+            .sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
+
+        // type 2: 정산 특이사항
+        settlementHistory.value = allLog
+            .filter(item => String(item.type) === '2')
+            .sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
+      } catch {
+        bigoHistory.value = [];
+        settlementHistory.value = [];
+      }
     }
 
     // 4. 정산 세부 노출 설정 세팅
@@ -961,6 +978,7 @@ const getSiteData = async () => {
     }
 
     site.value.bigo = '';
+    site.value.settlementBigo = ''; // 초기화 추가
   });
 };
 
@@ -1182,6 +1200,10 @@ onMounted(() => {
             <div class="form-group">
               <label class="form-label"><i class="mdi mdi-identifier"></i>사업자등록번호</label>
               <input type="text" v-model="site.businessNumber" class="form-input" placeholder="예: 123-45-67890" />
+            </div>
+            <div class="form-group">
+              <label class="form-label"><i class="mdi mdi-identifier"></i>상호명</label>
+              <input type="text" v-model="site.businessName" class="form-input" placeholder="예: 상호명" />
             </div>
             <div class="form-group">
               <label class="form-label"><i class="mdi mdi-account-tie"></i>대표자명</label>
@@ -2151,41 +2173,104 @@ onMounted(() => {
               <input type="tel" v-model="site.managerContact" class="form-input" placeholder="010-0000-0000" />
             </div>
             <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-account-hard-hat-outline"></i>관리 소장 이름
-              </label>
+              <label class="form-label required"><i class="mdi mdi-account-hard-hat-outline"></i>관리 소장 이름</label>
               <input type="text" v-model="site.director" required class="form-input" placeholder="김관리" />
             </div>
             <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-phone-outline"></i>관리 소장 연락처
-              </label>
+              <label class="form-label required"><i class="mdi mdi-phone-outline"></i>관리 소장 연락처</label>
               <input type="text" v-model="site.directorContact" required class="form-input" placeholder="010-0000-0000" />
             </div>
             <div class="form-group" style="grid-column: 1;">
-              <label class="form-label required">
-                <i class="mdi mdi-account-cash"></i>청구 담당자
-              </label>
+              <label class="form-label required"><i class="mdi mdi-account-cash"></i>청구 담당자</label>
               <input type="text" v-model="site.billingManager" required class="form-input" placeholder="김청구"/>
             </div>
             <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-account-cash"></i>급여 담당자
-              </label>
+              <label class="form-label required"><i class="mdi mdi-account-cash"></i>급여 담당자</label>
               <input type="text" v-model="site.payrollManager" required class="form-input" placeholder="김급여"/>
             </div>
-            <div class="form-group full-width">
-              <label class="section-label"><i class="mdi mdi-note-text-outline"></i>특이사항 및 메모</label>
-              <div v-if="bigoHistory.length > 0" class="memo-history">
-                <div class="history-header"><i class="mdi mdi-history"></i><span>히스토리 ({{ bigoHistory.length }}건)</span></div>
-                <div class="history-list">
-                  <div v-for="(item, i) in bigoHistory" :key="i" class="history-item">
-                    <span class="history-date">{{ item.regDt ? item.regDt.substring(0,10) : '-' }}</span>
-                    <p class="history-content">{{ item.bigo }}</p>
+
+            <div class="form-group full-width" style="margin-top: 16px;">
+              <div class="memo-stacked-panel">
+
+                <div class="memo-section">
+                  <div class="memo-section-header">
+                    <div class="header-title-group">
+                      <div class="section-icon-box bg-primary-soft">
+                        <i class="mdi mdi-office-building-outline text-primary"></i>
+                      </div>
+                      <div class="section-title-texts">
+                        <h3>현장 운영 기록</h3>
+                        <p>현장 조장 변경, 민원 발생 등 운영 관련 이슈</p>
+                      </div>
+                    </div>
+                    <div class="header-count-badge">총 {{ bigoHistory.length }}건</div>
+                  </div>
+
+                  <div class="clean-editor-card primary-focus">
+                    <textarea
+                        v-model="site.bigo"
+                        class="clean-textarea"
+                        rows="2"
+                        placeholder="새로운 현장 메모를 입력하세요 (저장 시 히스토리에 누적됩니다)"
+                    ></textarea>
+                  </div>
+
+                  <div class="clean-timeline-wrapper" v-if="bigoHistory.length > 0">
+                    <div class="clean-timeline">
+                      <div v-for="(item, idx) in bigoHistory" :key="'site-'+idx" class="clean-timeline-item">
+                        <div class="timeline-dot bg-primary"></div>
+                        <div class="timeline-card">
+                          <div class="card-meta">
+                            <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
+                            <span v-if="item.regUser" class="meta-user">{{ item.regUser }}</span>
+                          </div>
+                          <div class="card-text">{{ item.bigo }}</div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+                <div class="mt-4"></div>
+                <div class="memo-section">
+                  <div class="memo-section-header">
+                    <div class="header-title-group">
+                      <div class="section-icon-box bg-warning-soft">
+                        <i class="mdi mdi-calculator-variant-outline text-warning"></i>
+                      </div>
+                      <div class="section-title-texts">
+                        <h3>정산·청구 특이사항</h3>
+                        <p>용역비 청구 기준 변경, 특정 수당 제외 등</p>
+                      </div>
+                    </div>
+                    <div class="header-count-badge badge-warning">총 {{ settlementHistory.length }}건</div>
+                  </div>
+
+                  <div class="clean-editor-card warning-focus">
+                    <textarea
+                        v-model="site.settlementBigo"
+                        class="clean-textarea"
+                        rows="2"
+                        placeholder="새로운 정산/급여 메모를 입력하세요 (저장 시 히스토리에 누적됩니다)"
+                    ></textarea>
+                  </div>
+
+                  <div class="clean-timeline-wrapper" v-if="settlementHistory.length > 0">
+                    <div class="clean-timeline">
+                      <div v-for="(item, idx) in settlementHistory" :key="'set-'+idx" class="clean-timeline-item">
+                        <div class="timeline-dot bg-warning"></div>
+                        <div class="timeline-card border-warning-subtle">
+                          <div class="card-meta">
+                            <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
+                            <span v-if="item.regUser" class="meta-user">{{ item.regUser }}</span>
+                          </div>
+                          <div class="card-text">{{ item.bigo }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
-              <textarea v-model="site.bigo" class="form-textarea" rows="4" placeholder="추가할 특이사항을 입력하세요"></textarea>
             </div>
           </div>
 
@@ -3187,5 +3272,209 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
   color: var(--text-sub);
   font-weight: 600;
   padding-right: 6px;
+}
+
+/* =============================================
+   특이사항 탭 - Stacked & Clean Design (상세페이지 동일 규격)
+============================================= */
+.memo-stacked-panel {
+  width: 100%;
+  padding: 10px 0 20px;
+}
+
+.memo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 40px 0;
+  position: relative;
+}
+.section-divider::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 8px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+}
+
+/* 섹션 헤더 */
+.memo-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 12px;
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.section-icon-box i { font-size: 22px; }
+
+.bg-primary-soft { background: var(--primary-soft); }
+.bg-warning-soft { background: rgba(245, 158, 11, 0.1); }
+.text-primary { color: var(--primary); }
+.text-warning { color: var(--warning); }
+
+.section-title-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.section-title-texts h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+.section-title-texts p {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.header-count-badge {
+  padding: 4px 10px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.header-count-badge.badge-warning {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+}
+
+/* 작성 폼 */
+.clean-editor-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+.clean-editor-card:focus-within.primary-focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.clean-editor-card:focus-within.warning-focus {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.clean-textarea {
+  width: 100%;
+  padding: 16px 20px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-main);
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.clean-textarea:focus { outline: none; }
+
+/* 타임라인 피드 */
+.clean-timeline-wrapper {
+  position: relative;
+  margin-top: 4px;
+}
+
+.clean-timeline {
+  position: relative;
+  padding-left: 16px;
+}
+
+.clean-timeline::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 0;
+  left: 20px;
+  width: 2px;
+  background: var(--border-color);
+}
+
+.clean-timeline-item {
+  position: relative;
+  padding-left: 28px;
+  margin-bottom: 16px;
+}
+.clean-timeline-item:last-child { margin-bottom: 0; }
+
+.timeline-dot {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--bg-surface);
+  z-index: 1;
+}
+.bg-primary { background: var(--primary); }
+.bg-warning { background: var(--warning); }
+
+.timeline-card {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.border-warning-subtle {
+  border-left: 3px solid rgba(245, 158, 11, 0.4);
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.meta-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.meta-user {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.card-text {
+  font-size: 13px;
+  color: var(--text-main);
+  line-height: 1.5;
+  white-space: pre-line;
 }
 </style>

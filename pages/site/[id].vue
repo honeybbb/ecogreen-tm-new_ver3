@@ -48,6 +48,7 @@ const site = ref({
   siteId: '',
   siteType: '',
   businessNumber: '',
+  businessName: '',
   representative: '',
   businessType: '',
   businessItem: '',
@@ -74,6 +75,7 @@ const site = ref({
   status: '준비 중',
   payment_day: '',
   bigo: '',
+  settlementBigo: '',
   bankName: '기업',
   accountNumber: '',
   accountName: '',
@@ -222,7 +224,8 @@ const fetchEquipmentList = async () => {
 // =============================================
 // 특이사항
 // =============================================
-const bigoHistory = ref([]);
+const bigoHistory = ref([]);       // 현장 특이사항 (type: 1)
+const settlementHistory = ref([]); // 정산 특이사항 (type: 2)
 
 // =============================================
 // 직원 검색 모달 (배치인원 탭)
@@ -830,6 +833,7 @@ const getSiteData = async () => {
       siteId:         result.site_id,
       siteType:       result.sType,
       businessNumber: result.businessNumber || '',
+      businessName:   result.businessName || '',
       representative: result.representative || '',
       businessType:   result.businessType || '',
       businessItem:   result.businessItem || '',
@@ -853,6 +857,8 @@ const getSiteData = async () => {
       bankName:       result.bankName,
       accountNumber:  result.accountNumber,
       accountName:  result.accountName,
+      bigo:             '', // 현장 특이사항 작성용 인풋 초기화
+      settlementBigo:   '', // 정산 특이사항 작성용 인풋 초기화
     };
 
     if (result.contractList) {
@@ -928,9 +934,21 @@ const getSiteData = async () => {
 
     if (result.bigoList) {
       try {
-        bigoHistory.value = JSON.parse(result.bigoList);
-        bigoHistory.value.sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
-      } catch { bigoHistory.value = []; }
+        const allLog = JSON.parse(result.bigoList);
+
+        // type 1: 현장 특이사항
+        bigoHistory.value = allLog
+            .filter(item => String(item.type) == '1')
+            .sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
+
+        // type 2: 정산 특이사항
+        settlementHistory.value = allLog
+            .filter(item => String(item.type) == '2')
+            .sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
+      } catch {
+        bigoHistory.value = [];
+        settlementHistory.value = [];
+      }
     }
 
     originalData = JSON.parse(JSON.stringify({
@@ -1092,6 +1110,7 @@ const saveSiteData = async () => {
       site_id:          site.value.siteId,
       status:           site.value.status,
       businessNumber:   site.value.businessNumber,
+      businessName:     site.value.businessName,
       representative:   site.value.representative,
       businessType:     site.value.businessType,
       businessItem:     site.value.businessItem,
@@ -1114,6 +1133,7 @@ const saveSiteData = async () => {
       billingManager:   site.value.billingManager,
       payrollManager:   site.value.payrollManager,
       bigo:             site.value.bigo,
+      settlementBigo:   site.value.settlementBigo, // 정산 특이사항 새 입력값
       bankName:         site.value.bankName,
       accountNumber:    site.value.accountNumber,
       accountName:      site.value.accountName,
@@ -1451,6 +1471,10 @@ onMounted(async () => {
               <div class="info-item">
                 <label>사업자등록번호</label>
                 <input type="text" v-model="site.businessNumber" class="info-input" placeholder="예: 123-45-67890" />
+              </div>
+              <div class="info-item">
+                <label>상호명</label>
+                <input type="text" v-model="site.businessName" class="info-input" />
               </div>
               <div class="info-item">
                 <label>대표자명</label>
@@ -1935,8 +1959,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04001"
                             />
-                            <p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p>
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2015,8 +2039,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04002"
                             />
-                            <p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p>
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2084,8 +2108,8 @@ onMounted(async () => {
                                 v-model:code="item.code"
                                 topCode="04003"
                             />
-                            <p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p>
+                            <!--p>선택된 이름: {{ item.label }}</p>
+                            <p>선택된 코드: {{ item.code }}</p-->
                           </td>
                           <td v-for="staff in group.staffList" :key="staff.code">
                             <input
@@ -2604,28 +2628,108 @@ onMounted(async () => {
       </div>
 
       <!-- ── 특이사항 탭 ── -->
-      <div v-show="activeTab === 'memo'" class="tab-panel">
-        <div v-if="bigoHistory.length > 0" class="memo-timeline">
-          <div v-for="(item, idx) in bigoHistory" :key="idx" class="timeline-item">
-            <div class="timeline-marker"></div>
-            <div class="timeline-content">
-              <div class="timeline-header">
-                <i class="mdi mdi-calendar-outline"></i>
-                <span class="timeline-date">{{ item.regDt ? item.regDt.substring(0, 10) : '-' }}</span>
+      <div v-show="activeTab === 'memo'">
+
+        <!-- ==========================================
+             1. 현장 운영 특이사항
+        =========================================== -->
+        <div class="memo-section">
+          <div class="memo-section-header">
+            <div class="header-title-group">
+              <div class="section-icon-box bg-primary-soft">
+                <i class="mdi mdi-office-building-outline text-primary"></i>
               </div>
-              <p class="timeline-text">{{ item.bigo }}</p>
+              <div class="section-title-texts">
+                <h3>현장 운영 기록</h3>
+                <p>현장 운영 관련 이슈</p>
+              </div>
+            </div>
+            <div class="header-count-badge">총 {{ bigoHistory.length }}건</div>
+          </div>
+
+          <!-- 작성 폼 -->
+          <div class="clean-editor-card primary-focus">
+            <textarea
+                v-model="site.bigo"
+                class="clean-textarea"
+                rows="2"
+                placeholder="새로운 현장 메모를 입력하세요 (저장 시 히스토리에 누적됩니다)"
+            ></textarea>
+          </div>
+
+          <!-- 타임라인 -->
+          <div class="clean-timeline-wrapper">
+            <div v-if="bigoHistory.length === 0" class="clean-empty-state">
+              <i class="mdi mdi-text-box-search-outline"></i>
+              <p>등록된 현장 메모가 없습니다.</p>
+            </div>
+
+            <div v-else class="clean-timeline">
+              <div v-for="(item, idx) in bigoHistory" :key="'site-'+idx" class="clean-timeline-item">
+                <div class="timeline-dot bg-primary"></div>
+                <div class="timeline-card">
+                  <div class="card-meta">
+                    <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
+                    <span v-if="item.regUser" class="meta-user">{{ item.regUser }}</span>
+                  </div>
+                  <div class="card-text">{{ item.bigo }}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        <div v-else class="empty-state">
-          <i class="mdi mdi-note-text-outline"></i><p>등록된 특이사항이 없습니다</p>
+
+        <div class="section-divider"></div>
+
+        <!-- ==========================================
+             2. 정산/급여 특이사항
+        =========================================== -->
+        <div class="memo-section">
+          <div class="memo-section-header">
+            <div class="header-title-group">
+              <div class="section-icon-box bg-warning-soft">
+                <i class="mdi mdi-calculator-variant-outline text-warning"></i>
+              </div>
+              <div class="section-title-texts">
+                <h3>정산·청구 특이사항</h3>
+                <p>특정 수당 제외 등 정산, 청구 관련 이슈</p>
+              </div>
+            </div>
+            <div class="header-count-badge badge-warning">총 {{ settlementHistory.length }}건</div>
+          </div>
+
+          <!-- 작성 폼 -->
+          <div class="clean-editor-card warning-focus">
+            <textarea
+                v-model="site.settlementBigo"
+                class="clean-textarea"
+                rows="2"
+                placeholder="새로운 정산/급여 메모를 입력하세요 (저장 시 히스토리에 누적됩니다)"
+            ></textarea>
+          </div>
+
+          <!-- 타임라인 -->
+          <div class="clean-timeline-wrapper">
+            <div v-if="settlementHistory.length === 0" class="clean-empty-state">
+              <i class="mdi mdi-receipt-text-outline"></i>
+              <p>등록된 정산 메모가 없습니다.</p>
+            </div>
+
+            <div v-else class="clean-timeline">
+              <div v-for="(item, idx) in settlementHistory" :key="'set-'+idx" class="clean-timeline-item">
+                <div class="timeline-dot bg-warning"></div>
+                <div class="timeline-card border-warning-subtle">
+                  <div class="card-meta">
+                    <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
+                    <span v-if="item.regUser" class="meta-user">{{ item.regUser }}</span>
+                  </div>
+                  <div class="card-text">{{ item.bigo }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="memo-add-section">
-          <label class="section-label">
-            <i class="mdi mdi-pencil-outline"></i>새로운 메모 추가
-          </label>
-          <textarea v-model="site.bigo" class="info-textarea" rows="4" placeholder="특이사항을 입력하세요 (저장 시 히스토리에 추가됩니다)"></textarea>
-        </div>
+
       </div>
 
     </div><!-- /integrated-content -->
@@ -4190,5 +4294,248 @@ input:checked + .slider:before { transform: translateX(18px); }
   color: #ffffff;
   border-color: var(--primary);
   transform: translateY(-1px);
+}
+/* =============================================
+   특이사항 탭 - Stacked & Clean Design
+============================================= */
+.memo-stacked-panel {
+  max-width: 900px;
+  margin: 0 auto; /* 읽기 편하도록 중앙 정렬 */
+  padding: 10px 0 40px;
+}
+
+.memo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* 두 섹션 사이의 확실한 구분선 */
+.section-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 60px 0;
+  position: relative;
+}
+.section-divider::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 8px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+}
+
+/* 섹션 헤더 */
+.memo-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 16px;
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.section-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.section-icon-box i {
+  font-size: 24px;
+}
+
+.bg-primary-soft { background: var(--primary-soft); }
+.bg-warning-soft { background: rgba(245, 158, 11, 0.1); }
+.text-primary { color: var(--primary); }
+.text-warning { color: var(--warning); }
+
+.section-title-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section-title-texts h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.section-title-texts p {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.header-count-badge {
+  padding: 6px 12px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.header-count-badge.badge-warning {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+}
+
+/* 작성 폼 */
+.clean-editor-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.clean-editor-card:focus-within.primary-focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.clean-editor-card:focus-within.warning-focus {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.clean-textarea {
+  width: 100%;
+  padding: 20px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--text-main);
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.clean-textarea:focus {
+  outline: none;
+}
+
+/* 타임라인 피드 */
+.clean-timeline-wrapper {
+  position: relative;
+  margin-top: 10px;
+}
+
+.clean-empty-state {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--text-muted);
+  background: var(--bg-canvas);
+  border-radius: 12px;
+  border: 1px dashed var(--border-color);
+}
+
+.clean-empty-state i {
+  font-size: 32px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+  display: block;
+}
+
+.clean-empty-state p { margin: 0; font-size: 13px; }
+
+.clean-timeline {
+  position: relative;
+  padding-left: 20px;
+}
+
+/* 수직 가이드라인 */
+.clean-timeline::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 0;
+  left: 24px;
+  width: 2px;
+  background: var(--border-color);
+}
+
+.clean-timeline-item {
+  position: relative;
+  padding-left: 36px;
+  margin-bottom: 24px;
+}
+
+.clean-timeline-item:last-child {
+  margin-bottom: 0;
+}
+
+.timeline-dot {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--bg-surface);
+  z-index: 1;
+}
+
+.bg-primary { background: var(--primary); }
+.bg-warning { background: var(--warning); }
+
+.timeline-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px 20px;
+  transition: box-shadow 0.2s;
+}
+
+.timeline-card:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.border-warning-subtle {
+  border-left: 3px solid rgba(245, 158, 11, 0.4);
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.meta-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.meta-user {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-canvas);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.card-text {
+  font-size: 14px;
+  color: var(--text-main);
+  line-height: 1.6;
+  white-space: pre-line;
 }
 </style>
