@@ -201,7 +201,7 @@ const handleMainGroupChange = () => {
 };
 
 const startEdit = (code) => {
-  if (!code.editFl) {
+  if (code.editFl == 'N') {
     alert('수정 권한이 없는 항목입니다.');
     return;
   }
@@ -505,7 +505,7 @@ const addCode = async () => {
                   <button
                       @click="deleteCode(code.id)"
                       class="btn-action btn-delete"
-                      :disabled="code.deleteFl == 'N'"
+                      :disabled="Fl == 'N'"
                   >
                     <i class="mdi mdi-delete"></i>
                     <span>삭제</span>
