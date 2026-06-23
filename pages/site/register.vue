@@ -2199,8 +2199,8 @@ onMounted(() => {
                         <i class="mdi mdi-office-building-outline text-primary"></i>
                       </div>
                       <div class="section-title-texts">
-                        <h3>현장 운영 기록</h3>
-                        <p>현장 조장 변경, 민원 발생 등 운영 관련 이슈</p>
+                        <h3>현장 운영 특이사항</h3>
+                        <p>현장 운영 관련 이슈</p>
                       </div>
                     </div>
                     <div class="header-count-badge">총 {{ bigoHistory.length }}건</div>
@@ -2222,7 +2222,7 @@ onMounted(() => {
                         <div class="timeline-card">
                           <div class="card-meta">
                             <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
-                            <span v-if="item.regUser" class="meta-user">{{ item.regUser }}</span>
+                            <!--span v-if="item.writer" class="meta-user">{{ item.writer }}</span-->
                           </div>
                           <div class="card-text">{{ item.bigo }}</div>
                         </div>
@@ -2239,7 +2239,7 @@ onMounted(() => {
                       </div>
                       <div class="section-title-texts">
                         <h3>정산·청구 특이사항</h3>
-                        <p>용역비 청구 기준 변경, 특정 수당 제외 등</p>
+                        <p>특정 수당 제외 등 정산, 청구 관련 이슈</p>
                       </div>
                     </div>
                     <div class="header-count-badge badge-warning">총 {{ settlementHistory.length }}건</div>
@@ -2261,7 +2261,7 @@ onMounted(() => {
                         <div class="timeline-card border-warning-subtle">
                           <div class="card-meta">
                             <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
-                            <span v-if="item.regUser" class="meta-user">{{ item.regUser }}</span>
+                            <!--span v-if="item.writer" class="meta-user">{{ item.writer }}</span-->
                           </div>
                           <div class="card-text">{{ item.bigo }}</div>
                         </div>
