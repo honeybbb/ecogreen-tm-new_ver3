@@ -469,9 +469,9 @@ const applyContractReserves = (row) => {
 
   row.reserves.annualLeave = findContractValue('연차', '04003001', staffCode);
   row.reserves.severance   = findContractValue('퇴직', '04003003', staffCode);
-  row.reserves.workersDay  = findContractValue('근로자', '04003002', staffCode);
+  row.reserves.workersDay  = findContractValue('근로자', '04001002007', staffCode);
 
-  const sanjaeAmt = findContractValue('산재', '04003010', staffCode);
+  const sanjaeAmt = findContractValue('산재', '04002001008', staffCode);
   row.reserves.sanjae  = sanjaeAmt;
   row.originalSanjae   = sanjaeAmt;
 
@@ -1087,7 +1087,7 @@ const loadPayrollData = async () => {
       try { return JSON.parse(val); } catch { return {}; }
     };
 
-    const reserveCodes = ['04003001', '04003003', '04003002', '04003010'];
+    const reserveCodes = ['04003001', '04003003', '04001002007', '04002001008'];
 
     formData.value.payrollData = result.map(item => {
       const parsedPayItems   = safeParse(item.payItems);
