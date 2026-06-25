@@ -509,8 +509,14 @@ const fetchCalculatedPay = async () => {
             ? JSON.parse(calcData.payItems || '{}')
             : (calcData.payItems || {})
 
-        row.deductionItems  = {}
-        row.deductionFlags  = {}
+        row.deductionItems = typeof calcData.deductionItems === 'string'
+            ? JSON.parse(calcData.deductionItems || '{}')
+            : (calcData.deductionItems || {})
+
+        row.deductionFlags = typeof calcData.checkedItems === 'string'
+            ? JSON.parse(calcData.checkedItems || '{}')
+            : (calcData.checkedItems || {})
+
         row.workedDays      = calcData.workedDays
         row.scheduledDays   = calcData.scheduledDays
         row.absentDays      = calcData.absentDays
