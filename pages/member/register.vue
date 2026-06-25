@@ -849,6 +849,19 @@ onActivated(() => {
               <input type="text" v-model="employee.outReason" class="form-input" placeholder="퇴사 사유를 입력하세요" />
 
             </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-calendar-start-outline"></i>
+                고용승계일
+              </label>
+              <input
+                  type="date"
+                  v-model="employee.joinDate"
+                  class="form-input"
+                  max="9999-12-31"
+              />
+            </div>
           </div>
 
           <div class="section-main-header">

@@ -19,6 +19,117 @@ const {
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
+// View Settings States
+const staticCols = ref([
+  { id: 'siteName', name: '현장명', show: true, width: 110, sticky: true },
+  { id: 'role', name: '직책', show: true, width: 70, sticky: true },
+  { id: 'id', name: '사번', show: true, width: 80, sticky: true },
+  { id: 'staff', name: '성명', show: true, width: 80, sticky: true },
+  { id: 'birthDt', name: '생년월일', show: true, width: 100, sticky: true },
+  { id: 'age', name: '나이(만)', show: true, width: 70, sticky: true },
+  { id: 'inDate', name: '입사일', show: true, width: 110, sticky: true },
+  { id: 'workDays', name: '근무/기준', show: true, width: 110, sticky: true },
+  { id: 'gross', name: '지급합계', show: true, width: 90, sticky: true },
+  { id: 'ded', name: '공제합계', show: true, width: 90, sticky: true },
+  { id: 'net', name: '실지급액', show: true, width: 90, sticky: true }
+]);
+const hiddenDynamicCols = ref({});
+
+const visiblePayItems = computed(() => {
+  return payItems.value.filter(i => !hiddenDynamicCols.value[i.itemCd]);
+});
+
+const visibleDeductionItems = computed(() => {
+  return deductionItems.value.filter(i => !hiddenDynamicCols.value[i.itemCd]);
+});
+
+const getStickyStyle = (colId, extraStyle = {}) => {
+  const baseOrder = [
+    { id: 'check', width: 40, show: true },
+    { id: 'no', width: 40, show: true },
+    ...staticCols.value
+  ];
+
+  let left = 0;
+  for (const col of baseOrder) {
+    if (col.id === colId) {
+      if (!col.show) return { display: 'none' };
+      return {
+        left: `${left}px`,
+        minWidth: `${col.width}px`,
+        maxWidth: `${col.width}px`,
+        width: `${col.width}px`,
+        ...extraStyle
+      };
+    }
+    if (col.show) left += col.width;
+  }
+  return {};
+};
+
+const getSummaryGroupStyle = () => {
+  const baseOrder = [
+    { id: 'check', width: 40, show: true },
+    { id: 'no', width: 40, show: true },
+    ...staticCols.value.slice(0, 8)
+  ];
+  let left = 0;
+  for (const col of baseOrder) {
+    if (col.show) left += col.width;
+  }
+  const grossShow = staticCols.value.find(c => c.id === 'gross').show;
+  const dedShow = staticCols.value.find(c => c.id === 'ded').show;
+  const netShow = staticCols.value.find(c => c.id === 'net').show;
+  if (!grossShow && !dedShow && !netShow) return { display: 'none' };
+  return { left: `${left}px` };
+};
+
+const getSummaryGroupColspan = () => {
+  let count = 0;
+  if (staticCols.value.find(c => c.id === 'gross').show) count++;
+  if (staticCols.value.find(c => c.id === 'ded').show) count++;
+  if (staticCols.value.find(c => c.id === 'net').show) count++;
+  return count;
+}
+
+const getFooterColspan = () => {
+  let span = 2; // check and no
+  for (let i = 0; i < 8; i++) {
+    if (staticCols.value[i].show) span++;
+  }
+  return span;
+};
+
+const getFooterTotalWidth = () => {
+  let width = 80; // check and no
+  for (let i = 0; i < 8; i++) {
+    if (staticCols.value[i].show) width += staticCols.value[i].width;
+  }
+  return width;
+};
+
+const loadColumnSettings = () => {
+  if (typeof window === 'undefined') return;
+  const userId = authStore.user?.id || authStore.user?.userId || authStore.user?.cIdx || authStore.user?.adminId || 'default';
+  const saved = localStorage.getItem(`payroll_cols_${userId}`);
+  if (saved) {
+    try {
+      const settings = JSON.parse(saved);
+      if (settings.staticCols) {
+        settings.staticCols.forEach(sc => {
+          const col = staticCols.value.find(c => c.id === sc.id);
+          if (col) col.show = sc.show;
+        });
+      }
+      if (settings.hiddenDynamicCols) {
+        hiddenDynamicCols.value = settings.hiddenDynamicCols;
+      }
+    } catch (e) {
+      console.error('Failed to load column settings', e);
+    }
+  }
+};
+
 const selectedYearMonth = ref(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
 const searchTerm = ref('');
 const selectedSite = ref('전체');
@@ -56,7 +167,7 @@ watch([
   selectedYearMonth,
   // selectedPaymentDay,
   selectedPayHistory], () => {
-    currentPage.value = 1;
+  currentPage.value = 1;
 });
 
 // 2. 동적 컬럼
@@ -398,8 +509,14 @@ const fetchCalculatedPay = async () => {
             ? JSON.parse(calcData.payItems || '{}')
             : (calcData.payItems || {})
 
-        row.deductionItems  = {}
-        row.deductionFlags  = {}
+        row.deductionItems = typeof calcData.deductionItems === 'string'
+            ? JSON.parse(calcData.deductionItems || '{}')
+            : (calcData.deductionItems || {})
+
+        row.deductionFlags = typeof calcData.checkedItems === 'string'
+            ? JSON.parse(calcData.checkedItems || '{}')
+            : (calcData.checkedItems || {})
+
         row.workedDays      = calcData.workedDays
         row.scheduledDays   = calcData.scheduledDays
         row.absentDays      = calcData.absentDays
@@ -1208,6 +1325,7 @@ watch([selectedSite, selectedYearMonth], () => {
 });
 
 onMounted(async () => {
+  loadColumnSettings();
   await Promise.all([
     fetchSiteOptions(),
     fetchTypeOptions(),
@@ -1393,49 +1511,49 @@ onMounted(async () => {
         <table class="data-table">
           <thead>
           <tr>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-1">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-1" :style="getStickyStyle('check')">
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
               </label>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" data-col-key="no">No.</th>
-            <th rowspan="2" class="text-center sortable col-site sticky-col sticky-col-3" data-col-key="siteName" @click="toggleSort('siteName')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" data-col-key="no" :style="getStickyStyle('no')">No.</th>
+            <th rowspan="2" class="text-center sortable col-site sticky-col sticky-col-3" data-col-key="siteName" @click="toggleSort('siteName')" :style="getStickyStyle('siteName')">
               <div class="th-content">현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-4" data-col-key="role" @click="toggleSort('role')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-4" data-col-key="role" @click="toggleSort('role')" :style="getStickyStyle('role')">
               <div class="th-content">직책<i v-if="sortKey==='role'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-5" data-col-key="id" @click="toggleSort('id')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-5" data-col-key="id" @click="toggleSort('id')" :style="getStickyStyle('id')">
               <div class="th-content">사번<i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-6" data-col-key="staff" @click="toggleSort('staff')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-6" data-col-key="staff" @click="toggleSort('staff')" :style="getStickyStyle('staff')">
               <div class="th-content">성명<i v-if="sortKey==='staff'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-7">생년월일</th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" data-col-key="age" @click="toggleSort('birthDt')">
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-7" :style="getStickyStyle('birthDt')">생년월일</th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-8" data-col-key="age" @click="toggleSort('birthDt')" :style="getStickyStyle('age')">
               <div class="th-content">나이(만)<i v-if="sortKey==='birthDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-9">입사일</th>
-            <th rowspan="2" class="text-center sticky-col sticky-col-9">근무/기준</th>
+            <th rowspan="2" class="text-center sortable sticky-col sticky-col-9" :style="getStickyStyle('inDate')">입사일</th>
+            <th rowspan="2" class="text-center sticky-col sticky-col-10" :style="getStickyStyle('workDays')">근무/기준</th>
 
-            <th colspan="3" class="text-center group-header-summary group-divider sticky-col sticky-col-group">합계</th>
+            <th :colspan="getSummaryGroupColspan()" class="text-center group-header-summary group-divider sticky-col sticky-col-group" :style="getSummaryGroupStyle()">합계</th>
 
-            <th :colspan="payItems.length" class="text-center group-header-pay theme-pay-header group-divider">
+            <th v-if="visiblePayItems.length > 0" :colspan="visiblePayItems.length" class="text-center group-header-pay theme-pay-header group-divider">
               지급 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th :colspan="deductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">
+            <th v-if="visibleDeductionItems.length > 0" :colspan="visibleDeductionItems.length" class="text-center group-header-deduction theme-deduct-header group-divider">
               공제 항목<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
           </tr>
           <tr>
-            <th class="text-right sub-header group-divider sticky-col sticky-col-10">지급합계</th>
-            <th class="text-right sub-header sticky-col sticky-col-11">공제합계</th>
-            <th class="text-right sub-header sticky-col sticky-col-12 sticky-divider">실지급액</th>
+            <th class="text-right sub-header group-divider sticky-col sticky-col-11" :style="getStickyStyle('gross')">지급합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-12" :style="getStickyStyle('ded')">공제합계</th>
+            <th class="text-right sub-header sticky-col sticky-col-13 sticky-divider" :style="getStickyStyle('net')">실지급액</th>
 
-            <th v-for="(item, index) in payItems" :key="item.itemCd" :class="['text-right theme-pay-sub amount-header resizable', { 'group-divider': index === 0 }]">
+            <th v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['text-right theme-pay-sub amount-header resizable', { 'group-divider': index === 0 }]">
               {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
-            <th v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['text-right theme-deduct-sub amount-header resizable', { 'group-divider': index === 0 }]">
+            <th v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['text-right theme-deduct-sub amount-header resizable', { 'group-divider': index === 0 }]">
               {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
           </tr>
@@ -1443,16 +1561,16 @@ onMounted(async () => {
 
           <tbody>
           <tr v-for="(p, index) in pagedPayrollList" :key="p.idx" class="data-row">
-            <td class="text-center calculate-status transition-colors sticky-col sticky-col-1" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0}">
+            <td class="text-center calculate-status transition-colors sticky-col sticky-col-1" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0}" :style="getStickyStyle('check')">
               <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
-            <td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
-            <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName">{{ p.siteName }}</td>
-            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role">{{ p.role }}</td>
-            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id">{{ p.id }}</td>
-            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6">{{ p.staff }}</td>
-            <td class="text-center text-gray sticky-col sticky-col-7">{{ p.birthDt }}</td>
-            <td class="text-center sticky-col sticky-col-8" style="overflow: visible !important;">
+            <td class="text-center text-gray sticky-col sticky-col-2" :style="getStickyStyle('no')">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
+            <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName" :style="getStickyStyle('siteName')">{{ p.siteName }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role" :style="getStickyStyle('role')">{{ p.role }}</td>
+            <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id" :style="getStickyStyle('id')">{{ p.id }}</td>
+            <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6" :style="getStickyStyle('staff')">{{ p.staff }}</td>
+            <td class="text-center text-gray sticky-col sticky-col-7" :style="getStickyStyle('birthDt')">{{ p.birthDt }}</td>
+            <td class="text-center sticky-col sticky-col-8" :style="getStickyStyle('age', { overflow: 'visible !important' })">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
                 <span :class="[
                   'font-bold',
@@ -1479,9 +1597,9 @@ onMounted(async () => {
 
               </div>
             </td>
-            <td class="text-center sticky-col sticky-col-9">{{p.inDate}}</td>
+            <td class="text-center sticky-col sticky-col-9" :style="getStickyStyle('inDate')">{{p.inDate}}</td>
 
-            <td class="text-center sticky-col sticky-col-9">
+            <td class="text-center sticky-col sticky-col-10" :style="getStickyStyle('workDays')">
               <div class="days-input-group">
                 <input type="number" class="inline-input days-input" v-model.number="p.workedDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
                 <span class="days-separator">/</span>
@@ -1489,25 +1607,25 @@ onMounted(async () => {
               </div>
             </td>
 
-            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-10">
+            <td class="text-right bg-light-gray font-bold amount-cell group-divider sticky-col sticky-col-11" :style="getStickyStyle('gross')">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.gross ?? 0) }}
             </td>
-            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11">
+            <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-12" :style="getStickyStyle('ded')">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.ded ?? 0) }}
             </td>
-            <td class="text-right bg-light-gray font-bold text-blue amount-cell sticky-col sticky-col-12 sticky-divider">
+            <td class="text-right bg-light-gray font-bold text-blue amount-cell sticky-col sticky-col-13 sticky-divider" :style="getStickyStyle('net')">
               {{ formatCurrency(rowSummaryMap.get(p.idx)?.net ?? 0) }}
             </td>
 
-            <td v-for="(item, index) in payItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
+            <td v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
               <input type="text" :value="formatCurrency(p.payItems[item.itemCd])" @focus="$event.target.select()" @input="onInputAmount(p, item, 'pay', $event)" class="inline-input" />
             </td>
-            <td v-for="(item, index) in deductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
+            <td v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
               <input type="text" :value="formatCurrency(p.deductionItems[item.itemCd])" @focus="$event.target.select()" @input="onInputAmount(p, item, 'deduct', $event)" class="inline-input" />
             </td>
           </tr>
           <tr v-if="filteredPayrollList.length === 0">
-            <td :colspan="12 + payItems.length + deductionItems.length" class="empty-state">
+            <td :colspan="getFooterColspan() + getSummaryGroupColspan() + visiblePayItems.length + visibleDeductionItems.length" class="empty-state">
               <i class="mdi mdi-calculator-variant-outline"></i>
               <p>조건에 맞는 급여 대상자가 없습니다.</p>
             </td>
@@ -1517,7 +1635,7 @@ onMounted(async () => {
           <tfoot>
           <tr class="table-footer sticky-footer">
 
-            <td colspan="10" class="sticky-col sticky-col-span9" style="left:0; min-width: 700px; z-index: 35;">
+            <td :colspan="getFooterColspan()" class="sticky-col sticky-col-span-footer" :style="{ left: 0, minWidth: getFooterTotalWidth() + 'px', zIndex: 35 }">
               <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
                 <span class="font-bold text-dark">전체 합계</span>
                 <div class="net-pay-box" style="padding: 4px 16px; background-color: var(--primary-soft); border-radius: 6px;">
@@ -1527,16 +1645,16 @@ onMounted(async () => {
               </div>
             </td>
 
-            <td class="text-right font-bold group-divider sticky-col sticky-col-10">{{ formatCurrency(statsInfo.gross) }}</td>
-            <td class="text-right font-bold text-red sticky-col sticky-col-11">{{ formatCurrency(statsInfo.ded) }}</td>
-            <td class="text-right font-bold text-blue sticky-col sticky-col-12 sticky-divider">{{ formatCurrency(statsInfo.net) }}</td>
+            <td class="text-right font-bold group-divider sticky-col sticky-col-11" :style="getStickyStyle('gross')">{{ formatCurrency(statsInfo.gross) }}</td>
+            <td class="text-right font-bold text-red sticky-col sticky-col-12" :style="getStickyStyle('ded')">{{ formatCurrency(statsInfo.ded) }}</td>
+            <td class="text-right font-bold text-blue sticky-col sticky-col-13 sticky-divider" :style="getStickyStyle('net')">{{ formatCurrency(statsInfo.net) }}</td>
 
-            <td v-for="(item, index) in payItems" :key="'foot-pay-' + item.itemCd"
+            <td v-for="(item, index) in visiblePayItems" :key="'foot-pay-' + item.itemCd"
                 :class="['text-right font-bold text-blue bg-light-gray theme-pay-sub amount-cell', { 'group-divider': index === 0 }]">
               {{ formatCurrency(statsInfo.pay[item.itemCd] || 0) }}
             </td>
 
-            <td v-for="(item, index) in deductionItems" :key="'foot-ded-' + item.itemCd"
+            <td v-for="(item, index) in visibleDeductionItems" :key="'foot-ded-' + item.itemCd"
                 :class="['text-right font-bold text-red bg-light-gray theme-deduct-sub amount-cell', { 'group-divider': index === 0 }]">
               {{ formatCurrency(statsInfo.deduct[item.itemCd] || 0) }}
             </td>

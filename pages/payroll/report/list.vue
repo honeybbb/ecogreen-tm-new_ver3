@@ -272,113 +272,178 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* ─── 버튼 ─────────────────────────────────────────── */
 .btn-search {
-  background-color: #1a3b5c; color: #fff; border: 1px solid #1a3b5c;
-  padding: 6px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 20px; height: 42px;
+  background-color: var(--primary); border: none; border-radius: 8px;
+  color: var(--text-inverse); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);
 }
+.btn-search:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
+
 .btn-print {
-  background-color: #fff; color: #1a3b5c; border: 1px solid #1a3b5c;
-  padding: 6px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 20px; height: 42px;
+  background-color: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-sub);
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
 }
+.btn-print:hover { background-color: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
+
 .btn-icon {
-  background-color: #fff; color: #333; border: 1px solid #ccc;
-  padding: 6px 10px; font-size: 16px; cursor: pointer; border-radius: 4px; display: flex; align-items: center;
+  display: flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px;
+  background-color: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-sub); font-size: 18px;
+  cursor: pointer; transition: all 0.2s;
 }
-.btn-icon:hover { background-color: #f1f1f1; }
+.btn-icon:hover { background-color: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
 
-/* ─── 필터 영역 (수직선 UI) ─── */
-.filter-section {
-  padding: 12px 24px; border-bottom: 1px solid #c8d4e0; background-color: #f8f9fa;
-  display: flex; flex-direction: column;
+/* ─── 필터 패널 ─────────────────────────────────────── */
+.filter-panel {
+  background: var(--bg-surface);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
 }
-.filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; }
-.f-group { display: flex; align-items: center; }
-.f-label { font-size: 13px; font-weight: 700; color: #333; }
-.text-orange { color: #e65100; }
-.f-divider { color: #1a3b5c; margin: 0 10px; font-weight: bold; }
 
-.f-select, .f-input {
-  border: 1px solid #ccc; padding: 2px 6px; font-size: 13px;
-  min-width: 140px; height: 26px; box-sizing: border-box;
+.filter-row {
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px;
 }
-.f-select:focus, .f-input:focus { outline: none; border-color: #1a3b5c; }
-.highlight-select { border-color: #2b4b6b; color: #111; }
 
-/* ─── 로딩 ─── */
-.loading-state { display: flex; flex-direction: column; align-items: center; padding: 60px; }
+.filter-group {
+  display: flex; flex-direction: column; gap: 8px; min-width: 160px;
+}
+
+.filter-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
+}
+.filter-label i { font-size: 16px; color: var(--primary); }
+
+.filter-select {
+  padding: 10px 14px; border: 1px solid var(--border-color);
+  border-radius: 8px; font-size: 13px; color: var(--text-main);
+  background: var(--bg-surface); cursor: pointer;
+  transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+.filter-select:hover { border-color: var(--border-focus); }
+.filter-select:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* ─── 로딩 ──────────────────────────────────────────── */
+.loading-state {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 60px 0; color: var(--text-sub); gap: 16px;
+}
 .spinner {
-  width: 30px; height: 30px; border: 3px solid #ccc; border-top-color: #1a3b5c;
-  border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;
+  width: 32px; height: 32px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ─── 인쇄 및 테이블 공통 영역 ─── */
-.print-area { padding: 24px; }
-
-.print-header {
-  display: flex; justify-content: space-between; align-items: flex-end;
-  margin-bottom: 16px;
-}
-.print-title {
-  font-size: 26px; font-weight: 700; letter-spacing: 1px; color: #000; margin: 0;
+/* ─── 테이블 카드 ─────────────────────────────────── */
+.print-area {
+  background: var(--bg-surface);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
 }
 
-/* 결재란 테이블 */
-.approval-table { border-collapse: collapse; text-align: center; font-size: 12px; }
-.approval-table th, .approval-table td { border: 1px solid #000; padding: 4px 8px; }
-.approval-label { width: 20px; background-color: #f4f4f4; }
-.sign-box { height: 40px; width: 60px; }
-
-/* 엑셀 스타일 메인 테이블 */
+/* ─── 엑셀 스타일 테이블 ──────────────────────────── */
 .excel-table {
-  width: 100%; border-collapse: collapse; font-size: 12px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
   table-layout: fixed;
 }
-.excel-table th, .excel-table td {
-  border: 1px solid #444; /* 명확한 엑셀 라인 */
-  padding: 4px; vertical-align: middle;
-}
 
-/* 헤더 스타일 (이미지: 옅은 회색) */
+/* 헤더 */
+.excel-table thead {
+  position: sticky; top: 0; z-index: 10;
+  background-color: var(--bg-canvas);
+  border-bottom: 2px solid var(--border-color);
+}
 .excel-table thead th {
-  background-color: #f0f0f0; color: #000; font-weight: 600; text-align: center;
+  padding: 12px 10px;
+  text-align: center;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
 }
 
-/* 소계 행 (이미지: 그린 #92d050 계열) */
-.row-subtotal td { background-color: #b2d8b2; border-color: #444; }
+/* 바디 셀 */
+.excel-table td {
+  padding: 8px 6px;
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  vertical-align: middle;
+  font-size: 13px;
+}
 
-/* 총합계 행 (이미지: 옐로우 #ffff00 계열) */
-.row-grandtotal td { background-color: #ffffb2; border-color: #444; color: #000; }
+/* 데이터 행 hover */
+.data-row { transition: background 0.15s; background: var(--bg-surface); }
+.data-row:hover { background-color: var(--primary-soft); }
 
-/* 특정 셀 강조 하이라이트 */
-.bg-yellow { background-color: #ffff00; font-weight: 600; }
-.bg-red { background-color: #ff0000; font-weight: 600; }
-.text-white { color: #fff; }
+/* 소계 행 */
+.row-subtotal td {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
 
-/* 유틸리티 */
+/* 총합계 행 */
+.row-grandtotal td {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: var(--border-color);
+  color: var(--text-main);
+  border-top: 2px solid var(--border-focus);
+}
+
+/* 특정 셀 강조 */
+.bg-yellow { background-color: rgba(245, 158, 11, 0.2) !important; font-weight: 600; }
+.bg-red    { background-color: rgba(239, 68, 68, 0.15) !important; font-weight: 600; }
+
+/* ─── 유틸리티 ──────────────────────────────────────── */
 .text-center { text-align: center; }
-.text-left { text-align: left; }
-.text-right { text-align: right; }
-.font-bold { font-weight: 700; }
-.text-dark { color: #000; }
-.text-red { color: #dc2626; }
-.cell-pad { padding-left: 8px !important; padding-right: 8px !important; }
+.text-left   { text-align: left; }
+.text-right  { text-align: right; }
+.font-bold   { font-weight: 700; }
+.text-dark   { color: var(--text-main); }
+.text-red    { color: var(--danger) !important; }
+.cell-pad    { padding-left: 12px !important; padding-right: 12px !important; }
 
-/* ─── 인쇄용 미디어 쿼리 ─── */
+/* ─── 인쇄용 미디어 쿼리 ─────────────────────────── */
 @media print {
   @page { size: A4 portrait; margin: 10mm; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
   .hide-on-print { display: none !important; }
   .summary-list-page { padding: 0; background: #fff; }
-  .print-area { padding: 0; }
 
-  .excel-table { border: 2px solid #000; }
-  .excel-table th, .excel-table td { border-color: #333; font-size: 10px; padding: 3px; }
-  .excel-table thead th { border-bottom: 2px solid #000; }
+  .print-area {
+    border: none; box-shadow: none; border-radius: 0;
+  }
 
-  /* 프린트 시 색상 강제 적용 */
-  .row-subtotal td { background-color: #b2d8b2 !important; }
+  .excel-table thead {
+    position: static;
+    background-color: #f0f0f0 !important;
+  }
+  .excel-table thead th { border-color: #333; font-size: 10px; padding: 4px; }
+  .excel-table td      { border-color: #333; font-size: 10px; padding: 3px; }
+  .excel-table thead tr:first-child th { border-bottom: 2px solid #000; }
+
+  .row-subtotal  td { background-color: #b2d8b2 !important; }
   .row-grandtotal td { background-color: #ffffb2 !important; }
 }
 </style>

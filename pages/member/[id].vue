@@ -46,6 +46,7 @@ const employee = ref({
   inDate: '',
   outDate: '',
   outReason: '',
+  transferDate: '', //고용승계일
   status: '',
   disability: '',
   disability_grade: '',
@@ -363,6 +364,7 @@ const saveEmployee = async () => {
       joinDate: employee.value.inDate,
       endDate: employee.value.outDate,
       endReason: employee.value.outReason,
+      transferDate: employee.value.transferDate,
 
       sIdx: employee.value.sIdx,
       dayWorkTime: contractDataTemp.value?.dayWorkTime || employee.value.dayWorkTime,
@@ -670,6 +672,10 @@ onMounted(async () => {
                     <input type="text" v-model="employee.outReason" class="info-input border-red" placeholder="퇴사 사유를 입력하세요" />
                   </div>
                 </template>
+                <div class="info-item">
+                  <label>고용승계일</label>
+                  <input type="date" v-model="employee.transferDate" class="info-input" max="9999-12-31" />
+                </div>
               </div>
             </div>
 
