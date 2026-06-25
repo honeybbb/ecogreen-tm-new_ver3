@@ -72,7 +72,7 @@ const getInitSiteData = () => ({
   payment_day: '',
   bigo: '',
   settlementBigo: '',
-  bankName: '기업',
+  bankName: '',
   accountNumber: '',
   accountName: '',
 });
@@ -115,6 +115,7 @@ const site = ref({
 
  */
 
+const accountList = ref([]); //회사계좌list
 const contractGroups = ref([]);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const statusOptions  = ref(['운영 중', '계약 종료']);
@@ -1056,6 +1057,26 @@ const getWageCode = async () => {
   }
 };
 
+const fetchAccounts = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/company/account`);
+    accountList.value = res.data.data || [];
+  } catch (e) {
+    console.error('계좌 목록 로드 실패:', e);
+  }
+};
+
+const setCompanyAccount = () => {
+  // 선택한 은행명과 일치하는 계좌 정보를 accountList에서 찾습니다.
+  const selectedBank = accountList.value.find(b => b.bank === site.value.bankName);
+  console.log(selectedBank , 'selectedBank')
+  if (selectedBank) {
+    // API 데이터 구조에 맞춰 account와 accountNm 값을 넣어줍니다.
+    site.value.accountNumber = selectedBank.accountNumber || '';
+    site.value.accountName = selectedBank.accountName || '';
+  }
+};
+
 watch(() => route.query.idx, () => {
   getSiteData();
 });
@@ -1071,6 +1092,7 @@ onMounted(() => {
   fetchBankOption();
   getSiteData();
   getWageCode();
+  fetchAccounts();
 });
 </script>
 
@@ -1231,9 +1253,10 @@ onMounted(() => {
               <label class="form-label">
                 <i class="mdi mdi-bank"></i>은행명
               </label>
-              <select v-model="site.bankName" class="form-select">
-                <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">
-                  {{ bank.itemNm }}
+              <select v-model="site.bankName" class="form-select" @change="setCompanyAccount">
+                <option value="">은행 선택</option>
+                <option v-for="bank in accountList" :key="bank.bank" :value="bank.bank">
+                  {{ bank.bank }}
                 </option>
               </select>
             </div>
