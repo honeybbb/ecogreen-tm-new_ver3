@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { useAuthStore } from '~/stores/auth.js';
 import Pagination from '~/components/Pagination.vue';
@@ -16,11 +17,13 @@ const {
 } = useApi();
 
 // ── 상태 ──────────────────────────────────────────
+const route = useRoute();
+const router = useRouter();
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
 const searchTerm = ref('');
-const selectedSite = ref('전체');
+const selectedSite = ref(route.query.site || '전체');
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
 const selectedDisability = ref('전체');
@@ -293,17 +296,22 @@ const onInputAmount = (row, item, group, event) => {
 };
 
 // ── 행 합계 계산 ──────────────────────────────────
+// ── 행 합계 계산 ──────────────────────────────────
 const calculateRow = (row) => {
   let gross = 0, ded = 0;
+
+  // 전체(payItems) 대신 화면에 보이는(visiblePayItems) 항목만 합산
   if (row.payments)
-    payItems.value.forEach(i => gross += Number(row.payments[i.itemCd] || 0));
+    visiblePayItems.value.forEach(i => gross += Number(row.payments[i.itemCd] || 0));
+
+  // 전체(deductionItems) 대신 화면에 보이는(visibleDeductionItems) 항목만 합산
   if (row.deductions)
-    deductionItems.value.forEach(i => {
-      // 체크된 항목만 공제 합계에 포함
+    visibleDeductionItems.value.forEach(i => {
       if (row.deductionFlags?.[i.itemCd] !== false) {
         ded += Number(row.deductions[i.itemCd] || 0);
       }
     });
+
   return { gross, ded, net: gross - ded };
 };
 
@@ -631,9 +639,10 @@ const toggleSort = (key) => {
 
 const resetFilters = () => {
   searchTerm.value         = '';
-  selectedSite.value       = '전체';
+  selectedSite.value       = '전체'; // 위에서 작성한 watch가 감지하여 URL 파라미터도 자동으로 지워줍니다.
   selectedType.value       = '전체';
   selectedStatus.value     = '전체';
+  selectedDisability.value = '전체'; // (장애 여부 필터도 초기화에 추가하시는 것을 권장합니다)
   currentPage.value        = 1;
   sortKey.value            = 'id';
   sortOrder.value          = 'asc';
@@ -657,6 +666,17 @@ const getPayrollList = async () => {
     isLoading.value = false;
   }
 };
+
+// 현장 선택 값이 바뀔 때마다 URL Query Parameter 업데이트
+watch(selectedSite, (newSite) => {
+  router.replace({
+    query: {
+      ...route.query,
+      // '전체'를 선택했을 때는 URL 파라미터에서 site를 제거하여 깔끔하게 유지합니다.
+      site: newSite === '전체' ? undefined : newSite
+    }
+  });
+});
 
 // ── 초기 로드 ─────────────────────────────────────
 onMounted(async () => {
