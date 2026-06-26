@@ -1176,9 +1176,24 @@ watch(() => formData.value.type, (newType) => {
 
 const handleSiteChange = () => {
   const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+  console.log('현재 선택된 sIdx:', formData.value.sIdx);
+  console.log('찾아낸 현장 데이터:', selectedSite);
+
   if (selectedSite) {
     formData.value.siteName = selectedSite.name;
     formData.value.is_vat   = selectedSite.is_vat || 'N';
+
+    if (selectedSite.bankName || selectedSite.accountNumber) {
+      const bank = selectedSite.bankName || '';
+      const accNum = selectedSite.accountNumber || '';
+      const accName = selectedSite.accountName || '';
+
+      formData.value.billingData.bankInfo = `${bank} ${accNum} (예금주: ${accName})`.trim();
+    } else {
+      // 사이트 객체에 계좌 정보가 없을 경우의 기본값
+      formData.value.billingData.bankInfo = '기업은행 301-051564-01-017 (예금주: 에코그린티엠)';
+    }
+
     const vb = formData.value.billingData.vatBreakdown;
     const dbAreaUnder = Number(selectedSite.areaUnder || selectedSite.area_under) || 0;
     const dbAreaOver  = Number(selectedSite.areaOver || selectedSite.area_over) || 0;
@@ -1465,7 +1480,11 @@ onMounted(async () => {
                   <option value="" disabled>현장을 선택해주세요</option>
                   <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
                 </select-->
-                <SiteSelect v-model="formData.sIdx" @change="handleSiteChange" :width="'100%'"></SiteSelect>
+                <SiteSelect
+                    v-model="formData.sIdx"
+                    @update:modelValue="handleSiteChange"
+                    :width="'100%'">
+                </SiteSelect>
               </div>
               <div class="form-group">
                 <label>구분 선택 <span class="text-red">*</span></label>
