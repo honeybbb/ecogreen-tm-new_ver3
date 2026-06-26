@@ -746,8 +746,14 @@ onActivated(async () => {
                 </span>
               <span v-else class="text-gray">-</span>
             </td>
-            <td class="cursor-pointer"
-                :class="member.inYn == 'N' ? 'contract-warning':''" @click="updateFourInsStatus(member, 'inYn')">
+            <td
+                class="cursor-pointer"
+                :class="member.inYn == 'N' ? 'contract-warning':''"
+                @click="updateFourInsStatus(member, 'inYn')"
+            >
+              <template v-if="member.transferDate !== member.inDate">
+                {{ member.transferDate }}<br>
+              </template>
               {{ formatDate(member.inDate) }}
             </td>
             <td class="cursor-pointer"
