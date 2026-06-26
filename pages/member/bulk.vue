@@ -236,7 +236,7 @@ const saveData = async () => {
   }
 
   try {
-    const payload = { sIdx: selectedSite.value, type: selectedType, members: validItems };
+    const payload = { sIdx: selectedSite.value, type: selectedType.value, members: validItems };
     await axios.post('/api/v1/member/bulk', payload);
 
     console.log("저장 대상 데이터:", validItems);
