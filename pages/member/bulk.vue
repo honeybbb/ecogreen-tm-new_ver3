@@ -3,10 +3,10 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from 'axios';
 import SiteSelect from "~/components/SiteSelect.vue";
-
 const router = useRouter();
 
 const selectedSite = ref('');
+const selectedType = ref('');
 
 const columns = [
   { key: 'empNo', label: '사번', width: '100px', type: 'text' },
@@ -20,8 +20,8 @@ const columns = [
   { key: 'accountNumber', label: '계좌번호', width: '160px', type: 'text' },
   { key: 'accountNm', label: '예금주', width: '100px', type: 'text' },
   { key: 'joinDate', label: '입사일', width: '100px', type: 'text' },
-  { key: 'leaveDate', label: '퇴사일', width: '100px', type: 'text' },
-  { key: 'resignReason', label: '사직사유', width: '100px', type: 'text' },
+  { key: 'outDate', label: '퇴사일', width: '100px', type: 'text' },
+  { key: 'outReason', label: '사직사유', width: '100px', type: 'text' },
   { key: 'address', label: '주소', width: '250px', type: 'text' },
   { key: 'phone', label: '연락처', width: '150px', type: 'text' },
   { key: 'insurance', label: '4대보험', width: '80px', type: 'text' },
@@ -41,7 +41,18 @@ const columns = [
 
 const items = ref([]);
 
-const { siteOptions, disabledOptions, bankOptions, positionOptions, fetchSiteOptions, fetchDisabledOptions, fetchBankOption, fetchPositionOptions } = useApi();
+const {
+  siteOptions,
+  typeOptions,
+  disabledOptions,
+  bankOptions,
+  positionOptions,
+  fetchSiteOptions,
+  fetchTypeOptions,
+  fetchDisabledOptions,
+  fetchBankOption,
+  fetchPositionOptions
+} = useApi();
 
 const isDragging = ref(false);
 const selectionStart = ref({ r: -1, c: -1 });
@@ -150,6 +161,7 @@ const generateEmptyRows = (count = 15) => {
 
 onMounted(() => {
   fetchSiteOptions();
+  fetchTypeOptions();
   fetchDisabledOptions();
   fetchBankOption();
   fetchPositionOptions();
@@ -224,7 +236,7 @@ const saveData = async () => {
   }
 
   try {
-    const payload = { sIdx: selectedSite.value, members: validItems };
+    const payload = { sIdx: selectedSite.value, type: selectedType, members: validItems };
     await axios.post('/api/v1/member/bulk', payload);
 
     console.log("저장 대상 데이터:", validItems);
@@ -262,6 +274,14 @@ const saveData = async () => {
         <div class="filter-group">
           <label class="filter-label"><i class="mdi mdi-office-building"></i> 배치 현장</label>
           <SiteSelect v-model="selectedSite" />
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label"><i class="mdi mdi-office-building"></i> 구분</label>
+          <select v-model="selectedType" class="filter-select">
+            <option value="">구분을 선택해주세요.</option>
+            <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
+          </select>
         </div>
       </div>
     </div>
