@@ -1112,6 +1112,7 @@ const loadPayrollData = async () => {
         personalNo: item.birthDt,
         inDate: item.inDate,
         outDate: item.outDate ?? '',
+        transferDate: item.transferDate ?? '',
         grossPay: recalculatedGrossPay,
         payItems: filteredPayItems,
         deductionItems: parsedDeductions,
@@ -1195,7 +1196,26 @@ const handleSiteChange = () => {
 
 const addBillingRow = () => formData.value.billingData.items.push({ period: '', category: '', detail: '', amount: 0, note: '' });
 const removeBillingRow = (i) => { formData.value.billingData.items.splice(i, 1); calculateBillingTotal(); };
-const addPayrollRow = () => formData.value.payrollData.push({ empName: '', position: '', personalNo: '', inDate: '', outDate: '', grossPay: 0, deductionItems: {}, originalDeductions: {}, originalSanjae: 0, totalDeduct: 0, reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 }, netPay: 0 });
+const addPayrollRow = () => formData.value.payrollData.push(
+    {
+      empName: '',
+      position: '',
+      personalNo: '',
+      inDate: '',
+      outDate: '',
+      grossPay: 0,
+      deductionItems: {},
+      originalDeductions: {},
+      originalSanjae: 0,
+      totalDeduct: 0,
+      reserves: {
+        annualLeave: 0,
+        severance: 0,
+        empInsEmployer: 0,
+        sanjae: 0
+      },
+      netPay: 0
+    });
 const removePayrollRow = (i) => { if (confirm('삭제하시겠습니까?')) formData.value.payrollData.splice(i, 1); };
 
 const onDragStart = (index) => { dragIndex.value = index; };
@@ -1665,7 +1685,13 @@ onMounted(async () => {
                 <td><input type="text" v-model="row.empName"    class="cell-input text-center" /></td>
                 <td><input type="text" v-model="row.position" @input="applyContractReserves(row)" class="cell-input text-center" /></td>
                 <td><input type="text" v-model="row.personalNo" class="cell-input text-center" /></td>
-                <td><input type="text" v-model="row.inDate"     class="cell-input text-center" /></td>
+                <td class="text-center">
+                  <template v-if="row.transferDate && row.transferDate !== row.inDate">
+                    <span style="font-size: 11px; color: var(--text-muted);">{{ row.transferDate }}</span><br>
+                  </template>
+
+                  <input type="text" v-model="row.inDate" class="cell-input text-center" />
+                </td>
                 <td><input type="text" v-model="row.outDate"    class="cell-input text-center" /></td>
 
                 <template v-for="col in dynamicColumns" :key="'td-'+col.code">
@@ -1872,7 +1898,7 @@ onMounted(async () => {
 .excel-table th, .excel-table td {
   border-bottom: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
-  padding: 6px;
+  padding: 4px;
   vertical-align: middle;
   background-clip: padding-box;
 }
