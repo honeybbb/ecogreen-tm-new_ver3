@@ -222,11 +222,17 @@ const fetchContractData = async () => {
             ? JSON.parse(siteData.bigoList)
             : siteData.bigoList;
 
-        if (Array.isArray(bigoArr) && bigoArr.length > 0) {
-          const msg = bigoArr
-              .map(b => `[${(b.regDt || '').substring(0, 10)}] ${b.writer || ''}\n${b.bigo || ''}`)
-              .join('\n\n');
-          alert(`⚠ 특이사항\n\n${msg}`);
+        if (Array.isArray(bigoArr)) {
+          // type == 2인 정산 특이사항만 필터링 (자료형을 고려해 == 사용)
+          const settlementBigoList = bigoArr.filter(b => b.type == 2);
+
+          // 필터링된 정산 비고가 있을 때만 alert 발생
+          if (settlementBigoList.length > 0) {
+            const msg = settlementBigoList
+                .map(b => `[${(b.regDt || '').substring(0, 10)}] ${b.writer || ''}\n${b.bigo || ''}`)
+                .join('\n\n');
+            alert(`⚠ 정산 특이사항\n\n${msg}`);
+          }
         }
       } catch (e) {
         console.error('bigoList 파싱 에러:', e);
@@ -1055,6 +1061,7 @@ const loadPayrollData = async () => {
   try {
     const targetDate = formData.value.target_month || formData.value.billingDt || '';
     const [year, month] = targetDate.split('-');
+    const sIdx = formData.value.sIdx;
 
     await fetchTaxRates();
     await fetchContractData();
@@ -1065,7 +1072,7 @@ const loadPayrollData = async () => {
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
-    const res = await axios.get('/api/v1/member/payroll', { params: { year, month } });
+    const res = await axios.get('/api/v1/member/payroll', { params: { year, month, sIdx } });
     const rawData = res.data?.data || [];
 
     const periodStart = new Date(Number(year), Number(month) - 1, 1);
@@ -1087,7 +1094,7 @@ const loadPayrollData = async () => {
       try { return JSON.parse(val); } catch { return {}; }
     };
 
-    const reserveCodes = ['04003001', '04003003', '04001002007', '04002001008'];
+    const reserveCodes = ['04001003', '04001004', '04001002007', '04002001008'];
 
     formData.value.payrollData = result.map(item => {
       const parsedPayItems   = safeParse(item.payItems);
