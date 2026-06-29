@@ -110,6 +110,15 @@ const filterKoreanOnly = (str) => {
   }
 };
 
+// 시행일자 선택 시 구분값 선택 여부 체크
+const handleDateClick = (e) => {
+  if (!formData.value.type) {
+    e.preventDefault(); // 기본 클릭 동작(달력 열기) 방지 시도
+    alert('구분값을 먼저 선택해주세요.');
+    e.target.blur();    // 강제로 포커스를 해제하여 달력 팝업이 열리는 것을 차단
+  }
+};
+
 // ──────────────────────────────────────────────
 // 3. 계약 데이터 및 적용 요율
 // ──────────────────────────────────────────────
@@ -1510,7 +1519,12 @@ onMounted(async () => {
               </div>
               <div class="form-group">
                 <label>시행일자</label>
-                <input type="date" v-model="formData.billingDt" class="form-input" />
+                <input
+                    type="date"
+                    v-model="formData.billingDt"
+                    class="form-input"
+                    @click="handleDateClick($event)"
+                />
               </div>
               <div class="form-group">
                 <label>제목</label>
