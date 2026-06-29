@@ -47,12 +47,13 @@ const getInitialEmployee = () => ({
   endDate: '',
   status: '0', // 0: 재직
   outDate: '',
+  transferDate: '', //고용승계일
   gender: '',
-  disability: '',
+  disability: 'N',
   disability_date: '',
   disability_grade: '',
-  defector: '',
-  patriot: '',
+  defector: 'N',
+  patriot: 'N',
   //기타 특이사항 1, 2, 3 (이름과 여부)
   etc_name_1: '',
   etc_value_1: '',
@@ -60,9 +61,9 @@ const getInitialEmployee = () => ({
   etc_value_2: '',
   etc_name_3: '',
   etc_value_3: '',
-  intern: '',
-  beneficiary: '',
-  foreigner: '',
+  intern: 'N',
+  beneficiary: 'N',
+  foreigner: 'N',
   nationality: '',
   visa_code: '',
   visa_date: '',
@@ -857,7 +858,7 @@ onActivated(() => {
               </label>
               <input
                   type="date"
-                  v-model="employee.joinDate"
+                  v-model="employee.transferDate"
                   class="form-input"
                   max="9999-12-31"
               />
