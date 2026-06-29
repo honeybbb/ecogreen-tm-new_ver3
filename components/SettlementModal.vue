@@ -1511,11 +1511,22 @@ onMounted(async () => {
               </div>
               <div class="form-group">
                 <label>수신</label>
-                <input type="text" :value="formData.siteName ? formData.siteName + ' 관리사무소' : ''" readonly class="bg-gray form-input" placeholder="현장을 선택하면 자동 입력됩니다" />
+                <input
+                    type="text"
+                    :value="formData.siteName ? formData.siteName + ' 관리사무소' : ''"
+                    readonly
+                    class="bg-gray form-input"
+                    placeholder="현장을 선택하면 자동 입력됩니다"
+                />
               </div>
               <div class="form-group">
                 <label>문서번호</label>
-                <input type="text" v-model="formData.docNo" class="form-input" placeholder="예: 에코그린 2026-01-09호" />
+                <input
+                    type="text"
+                    v-model="formData.docNo"
+                    class="form-input"
+                    placeholder="예: 에코그린 2026-01-09호"
+                />
               </div>
               <div class="form-group">
                 <label>시행일자</label>
@@ -1528,7 +1539,12 @@ onMounted(async () => {
               </div>
               <div class="form-group">
                 <label>제목</label>
-                <input type="text" v-model="formData.billingData.summary" placeholder="예: 2026년 1월 미화용역비 청구의 건" class="form-input" />
+                <input
+                    type="text"
+                    v-model="formData.billingData.summary"
+                    placeholder="예: 2026년 1월 미화용역비 청구의 건"
+                    class="form-input"
+                />
               </div>
             </div>
 
