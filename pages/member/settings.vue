@@ -400,6 +400,8 @@ const addCode = async () => {
                     v-model="code.name"
                     class="input-edit"
                     placeholder="항목명"
+                    disabled
+                    title="항목명은 수정할 수 없습니다."
                 />
               </template>
               <template v-else>
@@ -789,5 +791,21 @@ const addCode = async () => {
   .selection-info { flex-direction: column; align-items: stretch; gap: 8px; }
   .color-edit-wrapper { flex-direction: column; align-items: flex-start; }
   .filter-spacer { display: none; }
+}
+
+/* === 비활성화된 입력창 스타일 === */
+.input-edit:disabled {
+  background-color: var(--bg-canvas, #f3f4f6); /* 입력창 배경을 어둡게 */
+  color: var(--text-muted, #9ca3af); /* 글씨 색상을 흐리게 */
+  cursor: not-allowed; /* 마우스 오버 시 금지 아이콘 표시 */
+  opacity: 0.7; /* 전체적으로 흐릿한 느낌 추가 */
+}
+
+/* 비활성화 상태에서는 호버/포커스 효과 제거 */
+.input-edit:disabled:hover,
+.input-edit:disabled:focus {
+  border-color: var(--border-color); /* 기존 테두리 색상 유지 */
+  box-shadow: none; /* 포커스 링 제거 */
+  outline: none;
 }
 </style>

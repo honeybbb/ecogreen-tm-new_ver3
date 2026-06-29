@@ -998,6 +998,50 @@ const updateCleaningCount = (task, delta) => {
   task.count = newVal;
 };
 
+// 메모 수정
+const editMemo = async (item) => {
+  const newText = prompt('특이사항 내용을 수정하세요:', item.bigo);
+
+  // 사용자가 취소를 누르거나, 내용이 비어있거나, 기존과 내용이 똑같으면 종료
+  if (newText === null || newText.trim() === '' || newText.trim() === item.bigo) return;
+
+  try {
+    const adminId = useAuthStore().user?.managerId || 'admin';
+
+    const payload = {
+      bigo: newText.trim(),
+      adminId: adminId
+    };
+
+    // 백엔드 API 호출 (수정)
+    await axios.put(`/api/v1/site/bigo/update/${item.bgIdx}`, payload);
+
+    // DB 수정 성공 시 로컬 데이터 즉시 업데이트 (화면 리렌더링)
+    item.bigo = newText.trim();
+
+  } catch (error) {
+    console.error('특이사항 수정 실패:', error);
+    alert('수정에 실패했습니다.');
+  }
+};
+
+// 메모 삭제
+const deleteMemo = async (list, index, item) => {
+  if (!confirm('이 특이사항을 삭제하시겠습니까?')) return;
+
+  try {
+    // 백엔드 API 호출 (삭제)
+    await axios.delete(`/api/v1/site/bigo/${item.bgIdx}`);
+
+    // DB 삭제 성공 시 로컬 배열에서 제거 (화면 리렌더링)
+    list.splice(index, 1);
+
+  } catch (error) {
+    console.error('특이사항 삭제 실패:', error);
+    alert('삭제에 실패했습니다.');
+  }
+};
+
 // 새 파일 선택 핸들러
 const onFileSelect = (group, event) => {
   const files = Array.from(event.target.files);
@@ -2301,7 +2345,8 @@ onMounted(async () => {
                             />
                           </td>
                           <td class="col-rowtotal-cell"></td>
-                          <td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비"></td>
+                          <td>
+                            <input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비"></td>
                         </tr>
                         <!--tr>
                           <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 (계약기간 총 용역비)</span></td>
@@ -2687,12 +2732,18 @@ onMounted(async () => {
             </div>
 
             <div v-else class="clean-timeline">
+              <!-- 현장 운영 특이사항 타임라인 -->
               <div v-for="(item, idx) in bigoHistory" :key="'site-'+idx" class="clean-timeline-item">
                 <div class="timeline-dot bg-primary"></div>
                 <div class="timeline-card">
-                  <div class="card-meta">
+                  <div class="card-meta" style="display: flex; align-items: center;">
                     <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
-                    <span v-if="item.writer" class="meta-user">{{ item.writer }}</span>
+                    <span v-if="item.writer" class="meta-user" style="margin-left: 8px;">{{ item.writer }}</span>
+
+                    <div style="margin-left: auto; display: flex; gap: 8px;">
+                      <button type="button" @click="editMemo(item)" style="border:none; background:none; cursor:pointer; color:var(--text-sub); font-size:12px;">수정</button>
+                      <button type="button" @click="deleteMemo(bigoHistory, idx, item)" style="border:none; background:none; cursor:pointer; color:var(--danger); font-size:12px;">삭제</button>
+                    </div>
                   </div>
                   <div class="card-text">{{ item.bigo }}</div>
                 </div>
@@ -2744,6 +2795,11 @@ onMounted(async () => {
                   <div class="card-meta">
                     <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
                     <span v-if="item.writer" class="meta-user">{{ item.writer }}</span>
+
+                    <div style="margin-left: auto; display: flex; gap: 8px;">
+                      <button type="button" @click="editMemo(item)" style="border:none; background:none; cursor:pointer; color:var(--text-sub); font-size:12px;">수정</button>
+                      <button type="button" @click="deleteMemo(settlementHistory, idx, item)" style="border:none; background:none; cursor:pointer; color:var(--danger); font-size:12px;">삭제</button>
+                    </div>
                   </div>
                   <div class="card-text">{{ item.bigo }}</div>
                 </div>
@@ -4338,17 +4394,6 @@ input:checked + .slider:before { transform: translateX(18px); }
   background: var(--border-color);
   margin: 60px 0;
   position: relative;
-}
-.section-divider::after {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40px;
-  height: 8px;
-  background: var(--bg-surface);
-  border-radius: 4px;
 }
 
 /* 섹션 헤더 */
