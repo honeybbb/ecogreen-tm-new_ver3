@@ -53,15 +53,23 @@ export const formatCurrency = (amount) => {
 export const formatDecimal = (amount) => {
     if (amount === null || amount === undefined || amount === '') return '0';
 
-    // 1. parseInt 대신 parseFloat 사용 (소수점 보존)
-    const numberAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
+    // 1. 입력값을 확실하게 문자열로 만들고 기존 콤마 제거
+    const strAmount = String(amount).replace(/,/g, '');
 
-    if (isNaN(numberAmount)) return '0';
+    // 2. 숫자가 아닌 값이 들어오면 0 반환 ('-' 만 입력 중인 상태는 허용)
+    if (isNaN(strAmount) && strAmount !== '-') return '0';
 
-    // 2. maximumFractionDigits 옵션을 주어 넉넉하게 소수점 자리를 허용 (예: 10자리)
-    return new Intl.NumberFormat('ko-KR', {
-        maximumFractionDigits: 10
-    }).format(numberAmount);
+    // 3. 소수점(.)을 기준으로 정수부와 소수부 분리
+    const parts = strAmount.split('.');
+
+    // 4. 정수부에만 콤마 적용
+    let integerPart = parts[0];
+    if (integerPart !== '' && integerPart !== '-') {
+        integerPart = new Intl.NumberFormat('ko-KR').format(Number(integerPart));
+    }
+
+    // 5. 입력값에 소수점이 있었다면, 분리해둔 소수부를 그대로 다시 이어 붙임
+    return parts.length > 1 ? `${integerPart}.${parts[1]}` : integerPart;
 };
 
 export const getStatusClass = (status) => {

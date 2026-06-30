@@ -1483,10 +1483,10 @@ onMounted(async () => {
           <!--i class="mdi mdi-table-account"></i-->
           <span class="tab-text">급여 세부 내역서</span>
         </button>
-        <button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
-          <!--i class="mdi mdi-text-account"></i-->
+        <!--button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
+          <i class="mdi mdi-text-account"></i>
           <span class="tab-text">급여 대장</span>
-        </button>
+        </button-->
       </div>
 
       <div class="modal-body">
