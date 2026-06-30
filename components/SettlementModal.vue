@@ -1626,23 +1626,23 @@ onMounted(async () => {
                     <td>
                       <input
                           type="text"
-                          :value="formatCurrency(formData.billingData.vatBreakdown.under135.area)"
+                          :value="formatDecimal(formData.billingData.vatBreakdown.under135.area)"
                           @focus="$event.target.select()"
                           @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'area', null, 'area')"
                           class="cell-input text-right"
                       />
                     </td>
-                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.under135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
-                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.under135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'supply', null, 'billing')" class="cell-input text-right font-bold text-blue" /></td>
+                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.under135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.under135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'supply', null, 'billing')" class="cell-input text-right font-bold text-blue" /></td>
                     <td class="text-right bg-gray-50 text-gray-400">0</td>
-                    <td class="text-right font-bold text-blue bg-blue-light">{{ formatCurrency(formData.billingData.vatBreakdown.under135.supply) }}</td>
+                    <td class="text-right font-bold text-blue bg-blue-light">{{ formatDecimal(formData.billingData.vatBreakdown.under135.supply) }}</td>
                   </tr>
                   <tr>
                     <td class="text-center font-bold bg-gray-50">135㎡ 초과 (과세)</td>
-                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'area', null, 'area')" class="cell-input text-right" /></td>
-                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
-                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'supply', null, 'manual')" class="cell-input text-right font-bold text-blue" /></td>
-                    <td><input type="text" :value="formatCurrency(formData.billingData.vatBreakdown.over135.vat)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'vat', null, 'manual')" class="cell-input text-right font-bold text-red" /></td>
+                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'area', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
+                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'supply', null, 'manual')" class="cell-input text-right font-bold text-blue" /></td>
+                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.vat)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'vat', null, 'manual')" class="cell-input text-right font-bold text-red" /></td>
                     <td class="text-right font-bold text-blue bg-blue-light">{{ formatCurrency(Number(formData.billingData.vatBreakdown.over135.supply) + Number(formData.billingData.vatBreakdown.over135.vat)) }}</td>
                   </tr>
                   </tbody>
@@ -1651,7 +1651,7 @@ onMounted(async () => {
                     <td class="text-center">총 계</td>
                     <td class="text-right">
                       {{
-                        formatCurrency(
+                        formatDecimal(
                             Number(formData.billingData.vatBreakdown.under135.area) +
                             Number(formData.billingData.vatBreakdown.over135.area)
                         )
