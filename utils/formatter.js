@@ -50,6 +50,20 @@ export const formatCurrency = (amount) => {
     return new Intl.NumberFormat('ko-KR').format(numberAmount);
 };
 
+export const formatDecimal = (amount) => {
+    if (amount === null || amount === undefined || amount === '') return '0';
+
+    // 1. parseInt 대신 parseFloat 사용 (소수점 보존)
+    const numberAmount = typeof amount === 'string' ? parseFloat(amount.replace(/,/g, '')) : Number(amount);
+
+    if (isNaN(numberAmount)) return '0';
+
+    // 2. maximumFractionDigits 옵션을 주어 넉넉하게 소수점 자리를 허용 (예: 10자리)
+    return new Intl.NumberFormat('ko-KR', {
+        maximumFractionDigits: 10
+    }).format(numberAmount);
+};
+
 export const getStatusClass = (status) => {
     switch (Number(status)) {
         case 0: return 'status-pending';
