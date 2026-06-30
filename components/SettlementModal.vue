@@ -353,7 +353,7 @@ const visibleDeductionItems = computed(() =>
 // ──────────────────────────────────────────────
 // ★ 3-1. 동적 컬럼 매핑 로직 (에러 해결 핵심 구역)
 // ──────────────────────────────────────────────
-const dynamicColumns = computed(() => {
+const dynamicColumnsTemp = computed(() => {
   const cols = [];
   const payLabels = currentConfig.activePayLabels || [];
   const dedLabels = currentConfig.activeDeductionLabels || currentConfig.activeDeductionCodes || [];
@@ -399,6 +399,58 @@ const dynamicColumns = computed(() => {
       code: code,
       name: itemName,
       isEmployment: itemName.includes('고용보험') // 고용보험은 칸 2개 차지
+    });
+  });
+
+  return cols;
+});
+
+const dynamicColumns = computed(() => {
+  const cols = [];
+  const payLabels = currentConfig.activePayLabels || [];
+  const dedLabels = currentConfig.activeDeductionLabels || currentConfig.activeDeductionCodes || [];
+
+  const getCodeName = (code) => {
+    const legacyMap = {
+      '04001003': '연차적립금',
+      '04001004': '퇴직적립금',
+      '04002001008': '산재보험',
+      '04001002007': '근로자의날수당'
+    };
+    if (legacyMap[code]) return legacyMap[code];
+
+    const foundInLeaves = items.value.find(i => i.itemCd === code);
+    if (foundInLeaves) return foundInLeaves.itemNm;
+
+    const foundInAll = allWageCodes.value.find(i => i.itemCd === code);
+    if (foundInAll) return foundInAll.itemNm;
+
+    return code;
+  };
+
+  // 연차/퇴직/근로자의날은 meltOptions 토글용 별도 컬럼
+  const RESERVE_KEYWORDS = ['연차', '퇴직', '근로자의날'];
+
+  // 1) 적립금 항목(연차/퇴직/근로자의날) 별도 컬럼
+  const reservePayLabels = payLabels.filter(code => RESERVE_KEYWORDS.some(kw => getCodeName(code).includes(kw)));
+  reservePayLabels.forEach(code => {
+    cols.push({ type: 'pay', code: code, name: getCodeName(code) });
+  });
+
+  // 2) 일반 지급항목(기본급, 직책수당 등) — 선택된 게 있을 때만 "급여" 컬럼 노출
+  const generalPayLabels = payLabels.filter(code => !RESERVE_KEYWORDS.some(kw => getCodeName(code).includes(kw)));
+  if (generalPayLabels.length > 0) {
+    cols.push({ type: 'gross', code: 'grossPay', name: '급여' });
+  }
+
+  // 3) 공제 항목 세팅
+  dedLabels.forEach(code => {
+    const itemName = getCodeName(code);
+    cols.push({
+      type: 'deduct',
+      code: code,
+      name: itemName,
+      isEmployment: itemName.includes('고용보험')
     });
   });
 
