@@ -110,6 +110,12 @@ const filterKoreanOnly = (str) => {
   }
 };
 
+const hasInvalidChars = (str) => {
+  if (!str) return false;
+  // 한글과 공백을 제외한 문자(영문, 숫자, 특수문자 등)가 하나라도 있는지 검사
+  return /[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/.test(str);
+};
+
 // 시행일자 선택 시 구분값 선택 여부 체크
 const handleDateClick = (e) => {
   if (!formData.value.type) {
@@ -554,16 +560,20 @@ const calculateRow = (row) => {
   row.netPay = (Number(row.grossPay) || 0) - totalDeduct;
 
   if (!row.isCustomEmp) {
-    let totalGross = Number(row.grossPay) || 0;
-    if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
-    if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
-    if (meltOptions.workersDay)   totalGross += Number(row.reserves?.workersDay)   || 0;
-
-    row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+    if (row.isMidMonthJoiner) {          // ← 추가
+      row.reserves.empInsEmployer = 0;   // ← 추가
+    } else {                             // ← 추가
+      let totalGross = Number(row.grossPay) || 0;
+      if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
+      if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
+      if (meltOptions.workersDay)  totalGross += Number(row.reserves?.workersDay)  || 0;
+      row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
+    }                                    // ← 추가
   }
 };
 
 const recalculateInsurances = (row) => {
+  if (row.isMidMonthJoiner) return; // 당월 중간 입사자는 4대보험 0 유지
   let baseAmount = Number(row.grossPay) || 0;
   let calcBase = baseAmount;
   if (meltOptions.annualLeave) calcBase += Number(row.reserves.annualLeave) || 0;
@@ -911,6 +921,20 @@ const colspanForSummary = computed(() => {
   return cols - 2;
 });
 
+const groupedPayrollData = computed(() => {
+  const groupMap = new Map();
+  formData.value.payrollData.forEach(row => {
+    const gno = row.groupNo ?? 0;
+    if (!groupMap.has(gno)) groupMap.set(gno, []);
+    groupMap.get(gno).push(row);
+  });
+  return Array.from(groupMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([groupNo, rows]) => ({ groupNo, rows }));
+});
+
+const getRowFlatIndex = (row) => formData.value.payrollData.indexOf(row);
+
 const calculateAreaSupply = () => {
   const vb = formData.value.billingData.vatBreakdown;
   const totalArea = (Number(vb.under135.area) || 0) + (Number(vb.over135.area) || 0);
@@ -981,6 +1005,10 @@ const initForm = () => {
       if (row.originalSanjae === undefined) {
         row.originalSanjae = row.reserves.sanjae;
       }
+
+      if (row.groupNo === undefined) row.groupNo = idx + 1;
+      if (row.isMidMonthJoiner === undefined) row.isMidMonthJoiner = false;
+
     });
 
     const selectedSite = siteOptions.value.find(s => s.idx === data.sIdx);
@@ -1121,7 +1149,9 @@ const loadPayrollData = async () => {
 
   try {
     const targetDate = formData.value.target_month || formData.value.billingDt || '';
-    const [year, month] = targetDate.split('-');
+    const [yearStr, monthStr] = targetDate.split('-');
+    const yearNum = parseInt(yearStr);
+    const monthNum = parseInt(monthStr);
     const sIdx = formData.value.sIdx;
 
     await fetchTaxRates();
@@ -1133,11 +1163,11 @@ const loadPayrollData = async () => {
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
-    const res = await axios.get('/api/v1/member/payroll', { params: { year, month, sIdx } });
+    const res = await axios.get('/api/v1/member/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
     const rawData = res.data?.data || [];
 
-    const periodStart = new Date(Number(year), Number(month) - 1, 1);
-    const periodEnd   = new Date(Number(year), Number(month), 0);
+    const periodStart = new Date(yearNum, monthNum - 1, 1);
+    const periodEnd   = new Date(yearNum, monthNum, 0);
 
     const result = rawData.filter(item => {
       if (item.type != formData.value.type) return false;
@@ -1167,15 +1197,21 @@ const loadPayrollData = async () => {
       Object.entries(parsedPayItems).forEach(([cd, amt]) => {
         if (reserveCodes.includes(cd)) return;
         if (validItemCds.includes(cd)) {
-          console.log(cd)
           filteredPayItems[cd] = Number(amt) || 0;
           recalculatedGrossPay += Number(amt) || 0;
         }
       });
 
+      // ── 당월 중간 입사 여부 판단 (1일 입사 제외) ──
+      const inDateObj = item.inDate ? new Date(item.inDate) : null;
+      const isMidMonthJoiner = !!(inDateObj &&
+          inDateObj.getFullYear() === yearNum &&
+          inDateObj.getMonth() + 1 === monthNum &&
+          inDateObj.getDate() !== 1);
+
       const rowObj = {
         idx: item.idx,
-        empName: filterKoreanOnly(item.staff),
+        empName: item.staff || '',
         position: item.role || '',
         personalNo: item.birthDt,
         inDate: item.inDate,
@@ -1189,13 +1225,69 @@ const loadPayrollData = async () => {
         totalDeduct: 0,
         reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
         netPay: 0,
+        isMidMonthJoiner,
+        groupNo: 0,
       };
 
       applyContractReserves(rowObj);
-      recalculateInsurances(rowObj);
-      calculateRow(rowObj);
+      recalculateInsurances(rowObj); // isMidMonthJoiner면 내부 첫 줄에서 return
 
+      // 당월 중간 입사자: 4대보험 전부 0으로 덮어쓰기
+      if (isMidMonthJoiner) {
+        deductionItems.value.forEach(dItem => {
+          rowObj.deductionItems[dItem.itemCd] = 0;
+          rowObj.originalDeductions[dItem.itemCd] = 0;
+        });
+        rowObj.reserves.empInsEmployer = 0;
+        rowObj.reserves.sanjae = 0;
+        rowObj.originalSanjae = 0;
+      }
+
+      calculateRow(rowObj);
       return rowObj;
+    });
+
+    // ── groupNo 할당: 같은 직책에서 당월 퇴사 → 당월 중간입사 쌍을 같은 번호로 묶기 ──
+    // inDate 오름차순 정렬로 퇴사자가 먼저 처리되도록 함
+    const sortedForGroup = [...formData.value.payrollData].sort((a, b) => {
+      const aIn = a.inDate ? new Date(a.inDate) : new Date(0);
+      const bIn = b.inDate ? new Date(b.inDate) : new Date(0);
+      return aIn - bIn;
+    });
+
+    let groupCounter = 0;
+    const posToGroup = new Map(); // position → groupNo (당월 퇴사자 추적용)
+
+    sortedForGroup.forEach(row => {
+      const pos = row.position || '';
+      const outDateObj = row.outDate ? new Date(row.outDate) : null;
+      const isCurrentMonthLeaver = !!(outDateObj &&
+          outDateObj.getFullYear() === yearNum &&
+          outDateObj.getMonth() + 1 === monthNum);
+
+      if (row.isMidMonthJoiner && posToGroup.has(pos)) {
+        // 같은 직책의 당월 퇴사자가 있으면 같은 그룹으로 묶기
+        row.groupNo = posToGroup.get(pos);
+        posToGroup.delete(pos); // 한 번 매칭되면 제거
+      } else {
+        groupCounter++;
+        row.groupNo = groupCounter;
+        if (isCurrentMonthLeaver) {
+          // 당월 퇴사자는 같은 직책의 중간입사자를 기다림
+          posToGroup.set(pos, groupCounter);
+        }
+      }
+    });
+
+    // 중간 입사자를 맨 뒤로, 나머지는 기존 순서 유지
+    formData.value.payrollData.sort((a, b) => {
+      if (a.isMidMonthJoiner === b.isMidMonthJoiner) return 0;
+      return a.isMidMonthJoiner ? 1 : -1;
+    });
+
+    // 순차 groupNo 부여 (자동 그룹핑 없음 — 사용자가 직접 조작)
+    formData.value.payrollData.forEach((row, idx) => {
+      row.groupNo = idx + 1;
     });
 
     if (formData.value.payrollData.length === 0) alert('조건에 맞는 직원 데이터가 없습니다.');
@@ -1279,30 +1371,78 @@ const handleSiteChange = () => {
 
 const addBillingRow = () => formData.value.billingData.items.push({ period: '', category: '', detail: '', amount: 0, note: '' });
 const removeBillingRow = (i) => { formData.value.billingData.items.splice(i, 1); calculateBillingTotal(); };
-const addPayrollRow = () => formData.value.payrollData.push(
-    {
-      empName: '',
-      position: '',
-      personalNo: '',
-      inDate: '',
-      outDate: '',
-      grossPay: 0,
-      deductionItems: {},
-      originalDeductions: {},
-      originalSanjae: 0,
-      totalDeduct: 0,
-      reserves: {
-        annualLeave: 0,
-        severance: 0,
-        empInsEmployer: 0,
-        sanjae: 0
-      },
-      netPay: 0
-    });
+const addPayrollRow = () => {
+  const maxGroupNo = formData.value.payrollData.reduce((max, r) => Math.max(max, r.groupNo || 0), 0);
+  formData.value.payrollData.push({
+    empName: '',
+    position: '',
+    personalNo: '',
+    inDate: '',
+    outDate: '',
+    grossPay: 0,
+    deductionItems: {},
+    originalDeductions: {},
+    originalSanjae: 0,
+    totalDeduct: 0,
+    reserves: {
+      annualLeave: 0,
+      severance: 0,
+      empInsEmployer: 0,
+      sanjae: 0
+    },
+    netPay: 0,
+    groupNo: maxGroupNo + 1,
+    isMidMonthJoiner: false,
+  });
+};
 const removePayrollRow = (i) => { if (confirm('삭제하시겠습니까?')) formData.value.payrollData.splice(i, 1); };
 
+// 위 행과 번호 합치기
+const mergeWithAbove = (row) => {
+  const flatIdx = getRowFlatIndex(row);
+  if (flatIdx === 0) return;
+  const aboveRow = formData.value.payrollData[flatIdx - 1];
+
+  // 물리적으로 바로 위에 있는 행의 그룹 번호로 맞춤
+  row.groupNo = aboveRow.groupNo;
+  resequenceGroupNos();
+};
+
+// 그룹에서 분리
+const separateRow = (row) => {
+  // 위, 아래 어떤 행과도 겹치지 않도록 임시 고유번호(타임스탬프) 부여
+  row.groupNo = Date.now();
+  resequenceGroupNos();
+};
+
+// 합치기/분리 후 groupNo 1부터 재정렬
+const resequenceGroupNos = () => {
+  let counter = 0;
+  let lastOldGroupNo = null;
+
+  formData.value.payrollData.forEach((row, index) => {
+    // 첫 번째 행이거나, 바로 위 행과 기존 그룹 번호가 다르면 새로운 그룹(counter 증가)
+    if (index === 0 || row.groupNo !== lastOldGroupNo) {
+      counter++;
+      lastOldGroupNo = row.groupNo;
+    }
+    // 객체 참조 꼬임 방지를 위해 임시 속성에 저장
+    row._newGroupNo = counter;
+  });
+
+  // 새 그룹 번호 일괄 확정
+  formData.value.payrollData.forEach(row => {
+    row.groupNo = row._newGroupNo;
+    delete row._newGroupNo;
+  });
+};
+
 const onDragStart = (index) => { dragIndex.value = index; };
-const onDragEnd   = ()        => { dragIndex.value = null; };
+const onDragEnd = () => {
+  dragIndex.value = null;
+  // ★ 핵심: 드래그로 원본 배열 순서가 바뀌었으니, 그 순서대로 그룹 번호를 다시 매깁니다.
+  resequenceGroupNos();
+};
 const onDragOver  = (e, index) => {
   e.preventDefault();
   if (dragIndex.value === null || dragIndex.value === index) return;
@@ -1798,53 +1938,104 @@ onMounted(async () => {
               </thead>
 
               <tbody>
-              <tr
-                  v-for="(row, index) in formData.payrollData" :key="'pay-'+index"
-                  draggable="true" @dragstart="onDragStart(index)" @dragover="onDragOver($event, index)" @dragend="onDragEnd"
-                  :class="{ dragging: dragIndex === index }"
-              >
-                <td class="text-center drag-handle"><i class="mdi mdi-drag-vertical drag-icon"></i> <span>{{ index + 1 }}</span></td>
-                <td><input type="text" v-model="row.empName"    class="cell-input text-center" /></td>
-                <td><input type="text" v-model="row.position" @input="applyContractReserves(row)" class="cell-input text-center" /></td>
-                <td><input type="text" v-model="row.personalNo" class="cell-input text-center" /></td>
-                <td class="text-center">
-                  <template v-if="row.transferDate && row.transferDate !== row.inDate">
-                    <span style="font-size: 11px; color: var(--text-muted);">{{ row.transferDate }}</span><br>
-                  </template>
-
-                  <input type="text" v-model="row.inDate" class="cell-input text-center" />
-                </td>
-                <td><input type="text" v-model="row.outDate"    class="cell-input text-center" /></td>
-
-                <template v-for="col in dynamicColumns" :key="'td-'+col.code">
-                  <td v-if="col.type === 'pay'">
-                    <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" class="cell-input text-right" />
-                    <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" class="cell-input text-right" />
-                    <input v-else-if="col.name.includes('근로자의날')" type="text" :value="formatCurrency(row.reserves.workersDay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')" class="cell-input text-right" />
-                    <input v-else type="text" :value="formatCurrency(row.payments?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.payments, col.code, row, 'salary')" class="cell-input text-right" />
+              <template v-for="group in groupedPayrollData" :key="'group-'+group.groupNo">
+                <tr
+                    v-for="(row, rowIndex) in group.rows"
+                    :key="'pay-'+(row.idx || rowIndex)+'-'+rowIndex"
+                    draggable="true"
+                    @dragstart="onDragStart(getRowFlatIndex(row))"
+                    @dragover="onDragOver($event, getRowFlatIndex(row))"
+                    @dragend="onDragEnd"
+                    :class="{
+                    dragging: dragIndex === getRowFlatIndex(row),
+                    'group-last-row': rowIndex === group.rows.length - 1,
+                    'mid-month-joiner': row.isMidMonthJoiner
+                  }"
+                >
+                  <!-- NO: 그룹 첫 행만 rowspan으로 표시 -->
+                  <td v-if="rowIndex === 0"
+                      :rowspan="group.rows.length"
+                      class="text-center drag-handle"
+                      style="vertical-align: middle;">
+                    <i class="mdi mdi-drag-vertical drag-icon"></i>
+                    <span>{{ group.groupNo }}</span>
                   </td>
 
-                  <td v-else-if="col.type === 'gross'">
-                    <input type="text" :value="formatCurrency(row.grossPay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row, 'grossPay', row, 'salary')" class="cell-input text-right font-bold text-blue" />
+                  <td>
+                    <input
+                        type="text"
+                        v-model="row.empName"
+                        class="cell-input text-center"
+                        :class="{ 'input-warning': hasInvalidChars(row.empName) }"
+                        :title="hasInvalidChars(row.empName) ? '영문, 숫자, 특수문자가 포함되어 있습니다.' : ''"
+                    />
                   </td>
-
-                  <template v-else-if="col.type === 'deduct'">
-                    <template v-if="col.isEmployment">
-                      <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" /></td>
-                      <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" class="cell-input text-right" /></td>
+                  <td><input type="text" v-model="row.position" @input="applyContractReserves(row)" class="cell-input text-center" /></td>
+                  <td><input type="text" v-model="row.personalNo" class="cell-input text-center" /></td>
+                  <td class="text-center">
+                    <template v-if="row.transferDate && row.transferDate !== row.inDate">
+                      <span style="font-size: 11px; color: var(--text-muted);">{{ row.transferDate }}</span><br>
                     </template>
-                    <td v-else-if="col.name.includes('산재')">
-                      <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" class="cell-input text-right" />
-                    </td>
-                    <td v-else>
-                      <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" />
-                    </td>
-                  </template>
-                </template>
+                    <input type="text" v-model="row.inDate" class="cell-input text-center" />
+                  </td>
+                  <td><input type="text" v-model="row.outDate" class="cell-input text-center" /></td>
 
-                <td class="text-right font-bold bg-gray-50">{{ formatCurrency(getInsuranceTotal(row)) }}</td>
-                <td class="text-center"><button class="btn-delete-row" @click="removePayrollRow(index)"><i class="mdi mdi-trash-can-outline"></i></button></td>
-              </tr>
+                  <template v-for="col in dynamicColumns" :key="'td-'+col.code">
+                    <!-- 기존 동적 컬럼 렌더링 코드 그대로 -->
+                    <td v-if="col.type === 'pay'">
+                      <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" class="cell-input text-right" />
+                      <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" class="cell-input text-right" />
+                      <input v-else-if="col.name.includes('근로자의날')" type="text" :value="formatCurrency(row.reserves.workersDay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')" class="cell-input text-right" />
+                      <input v-else type="text" :value="formatCurrency(row.payments?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.payments, col.code, row, 'salary')" class="cell-input text-right" />
+                    </td>
+                    <td v-else-if="col.type === 'gross'">
+                      <input type="text" :value="formatCurrency(row.grossPay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row, 'grossPay', row, 'salary')" class="cell-input text-right font-bold text-blue" />
+                    </td>
+                    <template v-else-if="col.type === 'deduct'">
+                      <template v-if="col.isEmployment">
+                        <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" /></td>
+                        <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" class="cell-input text-right" /></td>
+                      </template>
+                      <td v-else-if="col.name.includes('산재')">
+                        <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" class="cell-input text-right" />
+                      </td>
+                      <td v-else>
+                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" />
+                      </td>
+                    </template>
+                  </template>
+
+                  <td class="text-right font-bold bg-gray-50">{{ formatCurrency(getInsuranceTotal(row)) }}</td>
+                  <!--td class="text-center"><button class="btn-delete-row" @click="removePayrollRow(getRowFlatIndex(row))"><i class="mdi mdi-trash-can-outline"></i></button></td-->
+                  <td class="text-center" style="white-space: nowrap;">
+                    <!-- 단독 행이거나 그룹의 첫 행인 경우 (맨 윗줄은 제외): 합치기 버튼 -->
+                    <button
+                        v-if="rowIndex === 0 && getRowFlatIndex(row) > 0"
+                        class="btn-merge"
+                        @click="mergeWithAbove(row)"
+                        title="바로 위 작업자와 묶기">
+                      <i class="mdi mdi-link-variant"></i>
+                    </button>
+
+                    <!-- 그룹에 묶여있는 두 번째 이상 하위 행일 경우: 분리 버튼 -->
+                    <button
+                        v-else-if="rowIndex > 0"
+                        class="btn-separate"
+                        @click="separateRow(row)"
+                        title="묶기 해제 (독립 번호 부여)">
+                      <i class="mdi mdi-link-variant-off"></i>
+                    </button>
+
+                    <!-- 빈 공간 맞춤용 (맨 윗줄 첫 번째 데이터 처리) -->
+                    <span v-else style="display:inline-block; width:28px;"></span>
+
+                    <!-- 삭제 버튼 -->
+                    <button class="btn-delete-row" @click="removePayrollRow(getRowFlatIndex(row))">
+                      <i class="mdi mdi-trash-can-outline"></i>
+                    </button>
+                  </td>
+                </tr>
+              </template>
 
               <tr v-if="formData.payrollData.length === 0">
                 <td :colspan="7 + dynamicColumns.length" class="empty-row">등록된 데이터가 없습니다.</td>
@@ -2472,5 +2663,46 @@ input:checked + .slider:before { transform: translateX(14px); }
     flex: auto;
     width: 100%;
   }
+}
+
+.btn-merge {
+  background: rgba(59, 130, 246, .1);
+  color: #2563eb;
+  border: none;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: .2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 2px;
+}
+.btn-merge:hover { background: #2563eb; color: #fff; }
+
+.btn-separate {
+  background: rgba(245, 158, 11, .1);
+  color: #d97706;
+  border: none;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: .2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 2px;
+}
+.btn-separate:hover { background: #d97706; color: #fff; }
+
+/* 이름 입력창 경고 스타일 */
+.input-warning {
+  border: 1px solid #ef4444 !important; /* 붉은색 테두리 */
+  background-color: #fef2f2 !important; /* 연한 붉은색 배경 */
+  color: #b91c1c !important; /* 진한 붉은색 글씨 */
+  font-weight: bold;
+}
+.input-warning:focus {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
 }
 </style>
