@@ -13,6 +13,7 @@ const {
 
 // 1. 상태 및 검색 조건
 const searchTerm = ref('');
+const selectedPaymentDay = ref('전체');
 const selectedStatus = ref('전체');
 const selectedStype = ref('전체');
 const selectedType = ref('전체');
@@ -126,6 +127,7 @@ const getContractDates = (site) => {
 const filteredSites = computed(() => {
   let result = sites.value.filter(site => {
     const contracts = site.contracts || [];
+    const paymentDayMatch = selectedPaymentDay.value === '전체' || site.payment_day == selectedPaymentDay.value;
     const statusMatch = selectedStatus.value === '전체' || site.status === selectedStatus.value;
     const typeMatch   = selectedStype.value === '전체' || site.sType === selectedStype.value || site.type === selectedStype.value;
     const vatMatch    = selectedVat.value === '전체' || site.is_vat === selectedVat.value;
@@ -136,7 +138,7 @@ const filteredSites = computed(() => {
     const contractTypeMatch = selectedType.value === '전체' ||
         contracts.some(contract => contract.type === selectedType.value);
 
-    return statusMatch && typeMatch && vatMatch && managerMatch && billingMatch && searchMatch && contractTypeMatch;
+    return paymentDayMatch && statusMatch && typeMatch && vatMatch && managerMatch && billingMatch && searchMatch && contractTypeMatch;
   });
 
   result.sort((a, b) => {
@@ -469,6 +471,16 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
+            <!--i class="mdi mdi-account-box"></i--> 지급일
+          </label>
+          <select v-model="selectedPaymentDay" class="filter-select" @change="onFilterChange">
+            <option value="전체">전체</option>
+            <option v-for="day in 31" :key="day" :value="day">{{ day }}일</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">
             <!--i class="mdi mdi-account-box"></i--> 구분
           </label>
           <select v-model="selectedType" class="filter-select" @change="onFilterChange">
@@ -734,6 +746,79 @@ onMounted(async () => {
 /* =========================================
    페이지 고유 스타일 (공통 CSS 예외)
 ========================================= */
+/* === 필터 패널 (Grid 레이아웃 적용) === */
+.filter-panel {
+  background: var(--bg-surface);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 핵심 수정: 4칸(1fr) 2줄로 강제 분할 */
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px 10px; /* 위아래 간격 20px, 좌우 간격 16px */
+  align-items: flex-end;
+  margin-bottom: 20px;
+}
+
+.filter-group {
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 0; /* 그리드 안에서 영역 밖으로 삐져나가는 것 방지 */
+  width: 100%;
+}
+
+.filter-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
+}
+.filter-label i { font-size: 16px; color: var(--primary); }
+
+.filter-select {
+  width: 100%; /* 셀렉트 박스 꽉 채우기 */
+  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+  font-size: 13px; color: var(--text-main); background: var(--bg-surface); cursor: pointer;
+  transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+
+.filter-select:hover { border-color: var(--border-focus); }
+.filter-select:focus {
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* 검색 그룹 - 남은 2칸을 넓게 차지하며 오른쪽 정렬 */
+.search-group {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+
+.search-box {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--bg-canvas);
+  border: 1px solid var(--border-color); border-radius: 8px;
+  width: 100%; max-width: 340px; /* 검색창이 너무 비대해지는 것 제한 */
+  height: 42px; box-sizing: border-box; transition: all 0.2s;
+}
+
+.search-box:focus-within {
+  background: var(--bg-surface); border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.search-box i { font-size: 20px; color: var(--text-sub); }
+
+.search-input {
+  flex: 1; border: none; background: transparent; font-size: 13px; color: var(--text-main); outline: none;
+}
+.search-input::placeholder { color: var(--text-sub); opacity: 0.7; }
+.search-clear {
+  background: none; border: none; color: var(--text-sub); cursor: pointer;
+  padding: 4px; border-radius: 4px; transition: all 0.2s; display: flex; align-items: center;
+}
+.search-clear:hover { background: var(--border-color); color: var(--text-main); }
 
 /* 결과 정보 배지 */
 .result-info { padding-top: 16px; border-top: 1px solid var(--border-color); }
@@ -835,7 +920,8 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .stats-grid { grid-template-columns: 1fr; gap: 12px;}
   .filter-row { flex-direction: column; align-items: stretch; gap: 12px;}
-  .filter-group, .search-group { width: 100%; min-width: 100%; }
+  .filter-row { grid-template-columns: 1fr; gap: 12px; }
+  .search-group { grid-column: span 1; flex-direction: row; }
 
   /* 모바일 검색 영역 나란히 */
   .search-group { flex-direction: row; }
