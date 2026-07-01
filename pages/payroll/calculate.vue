@@ -1412,26 +1412,26 @@ onMounted(async () => {
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-calendar-month-outline"></i> 급여연월
+            <!--i class="mdi mdi-calendar-month-outline"></i--> 급여연월
           </label>
           <input type="month" v-model="selectedYearMonth" class="filter-select" @change="getPayrollMonth"/>
         </div>
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-office-building-outline"></i> 근무 현장
+            <!--i class="mdi mdi-office-building-outline"></i--> 근무 현장
           </label>
           <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-cash"></i> 지급일
+            <!--i class="mdi mdi-account-cash"></i--> 지급일
           </label>
           <input type="date" v-model="selectedPaymentDay" class="filter-select" />
         </div>
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-cash"></i> 청구 담당
+            <!--i class="mdi mdi-account-cash"></i--> 청구 담당
           </label>
           <select v-model="selectedBilling" class="filter-select">
             <option value="전체">전체</option>
@@ -1454,14 +1454,16 @@ onMounted(async () => {
         </div-->
 
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-account-box-outline"></i> 구분</label>
+          <label class="filter-label">
+            <!--i class="mdi mdi-account-box-outline"></i--> 구분</label>
           <select v-model="selectedType" class="filter-select">
             <option value="전체">전체</option>
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
           </select>
         </div>
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
+          <label class="filter-label">
+            <!--i class="mdi mdi-account-check"></i--> 재직 상태</label>
           <select v-model="selectedStatus" class="filter-select">
             <option value="전체">전체</option>
             <option value="0">재직</option>
