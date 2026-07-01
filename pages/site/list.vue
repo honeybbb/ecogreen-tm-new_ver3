@@ -80,6 +80,46 @@ const resetFilters = () => {
   selectedType.value   = '전체';
   selectedVat.value = '전체';
   currentPage.value = 1;
+  sortKey.value            = 'id';
+  sortOrder.value          = 'asc';
+  pageSize.value           = 50;
+};
+
+const getContractDates = (site) => {
+  // 기본값을 무한대로 설정 (비교를 위해)
+  let minStart = Infinity;
+  let maxEnd = -Infinity;
+
+  if (!site.contracts || !Array.isArray(site.contracts) || site.contracts.length === 0) {
+    return { minStart, maxEnd };
+  }
+
+  site.contracts.forEach(c => {
+    let sDt = c.firstContractDt;
+    let eDt = c.endDt;
+
+    // 만약 데이터에 startDt/endDt 속성이 없고 contract_period(예: 2025-01-01 ~ 2025-12-31)만 있다면 파싱
+    if ((!sDt || !eDt) && c.contract_period) {
+      const parts = c.contract_period.split('~');
+      if (parts.length >= 2) {
+        sDt = parts[0].trim().replace(/\./g, '-');
+        eDt = parts[1].trim().replace(/\./g, '-');
+      }
+    }
+
+    // 시작일(최초 계약) 체크
+    if (sDt) {
+      const sTime = new Date(sDt).getTime();
+      if (!isNaN(sTime) && sTime < minStart) minStart = sTime;
+    }
+    // 종료일(만료일) 체크
+    if (eDt) {
+      const eTime = new Date(eDt).getTime();
+      if (!isNaN(eTime) && eTime > maxEnd) maxEnd = eTime;
+    }
+  });
+
+  return { minStart, maxEnd };
 };
 
 // 5. 필터링 및 정렬된 현장 목록
@@ -96,15 +136,33 @@ const filteredSites = computed(() => {
     const contractTypeMatch = selectedType.value === '전체' ||
         contracts.some(contract => contract.type === selectedType.value);
 
-    currentPage.value = 1; //첫페이지로 셋팅
-
     return statusMatch && typeMatch && vatMatch && managerMatch && billingMatch && searchMatch && contractTypeMatch;
   });
 
   result.sort((a, b) => {
+    // 계약 기간(contract)일 경우 특별 정렬 로직 적용
+    if (sortKey.value === 'contract') {
+      const datesA = getContractDates(a);
+      const datesB = getContractDates(b);
+
+      if (sortOrder.value === 'asc') {
+        // 오름차순: '최초 계약 순서' (시작일이 가장 빠른 순)
+        return datesA.minStart - datesB.minStart;
+      } else {
+        // 내림차순: '만료일 순서' (종료일이 가장 늦은 순)
+        return datesB.maxEnd - datesA.maxEnd;
+      }
+    }
+
+    // 그 외 일반 컬럼들의 정렬 로직
     const modifier = sortOrder.value === 'asc' ? 1 : -1;
     const valA = a[sortKey.value];
     const valB = b[sortKey.value];
+
+    // undefined/null 값 처리 (빈 값은 항상 리스트 맨 뒤로)
+    if (valA == null && valB == null) return 0;
+    if (valA == null) return 1;
+    if (valB == null) return -1;
 
     if (typeof valA === 'string') {
       return valA.localeCompare(valB) * modifier;
@@ -378,7 +436,7 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-filter-variant"></i> 상태
+            <!--i class="mdi mdi-filter-variant"></i--> 상태
           </label>
           <select v-model="selectedStatus" class="filter-select">
             <option v-for="status in statusOptions" :key="status" :value="status">
@@ -389,7 +447,7 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-office-building-cog-outline"></i> 현장 형태
+            <!--i class="mdi mdi-office-building-cog-outline"></i--> 현장 형태
           </label>
           <select v-model="selectedStype" class="filter-select">
             <option v-for="type in sTypeOptions" :key="type" :value="type">
@@ -400,7 +458,7 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-cash-register"></i> 과세 여부
+            <!--i class="mdi mdi-cash-register"></i--> 과세 여부
           </label>
           <select v-model="selectedVat" class="filter-select">
             <option v-for="vat in vatOptions" :key="vat.value" :value="vat.value">
@@ -411,7 +469,7 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-box"></i> 구분
+            <!--i class="mdi mdi-account-box"></i--> 구분
           </label>
           <select v-model="selectedType" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
@@ -423,7 +481,7 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-cash-outline"></i> 본사 담당
+            <!--i class="mdi mdi-account-cash-outline"></i--> 본사 담당
           </label>
           <select v-model="selectedManager" class="filter-select">
             <option value="전체">전체</option>
@@ -435,7 +493,7 @@ onMounted(async () => {
 
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-cash-outline"></i> 청구 담당
+            <!--i class="mdi mdi-account-cash-outline"></i--> 청구 담당
           </label>
           <select v-model="selectedBilling" class="filter-select">
             <option value="전체">전체</option>
