@@ -989,8 +989,8 @@ const initForm = () => {
     if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } };
     data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
 
-    data.payrollData.forEach(row => {
-      row.empName = filterKoreanOnly(row.empName);
+    data.payrollData.forEach((row, idx) => {
+      // row.empName = filterKoreanOnly(row.empName);
       if (!row.deductionItems) row.deductionItems = {};
       row.totalDeduct = row.totalDeduct || 0;
       if (!row.reserves) row.reserves = { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 };
@@ -1675,10 +1675,10 @@ onMounted(async () => {
           <!--i class="mdi mdi-table-account"></i-->
           <span class="tab-text">급여 세부 내역서</span>
         </button>
-        <!--button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
-          <i class="mdi mdi-text-account"></i>
+        <button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
+          <!--i class="mdi mdi-text-account"></i-->
           <span class="tab-text">급여 대장</span>
-        </button-->
+        </button>
       </div>
 
       <div class="modal-body">
