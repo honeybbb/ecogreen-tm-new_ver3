@@ -214,10 +214,24 @@ const getSiteData = async () => {
   try {
     const res = await axios.get(`/api/v1/site/list`);
     const result = res.data.data;
-    // if (stats.value[0]) stats.value[0].value = result.length;
-    const processedData = calculateProcessed(result.slice(0, 3));
-    siteStatus.value = processedData;
-  } catch (err) { console.error('현장 로드 실패:', err); }
+
+    // 1. 전체 데이터를 먼저 가공하여 각 현장별 contractEnd(가장 빠른 만료일)를 계산
+    const processedData = calculateProcessed(result);
+
+    // 2. 계약 만료일이 빠른 순(오름차순)으로 현장 정렬
+    processedData.sort((a, b) => {
+      // 계약 종료일 정보가 없는 현장은 리스트 최하단(뒤쪽)으로 보냄
+      if (!a.contractEnd) return 1;
+      if (!b.contractEnd) return -1;
+
+      return new Date(a.contractEnd).getTime() - new Date(b.contractEnd).getTime();
+    });
+
+    // 3. 만료가 가장 임박한 상위 3개 현장만 대시보드에 노출
+    siteStatus.value = processedData.slice(0, 3);
+  } catch (err) {
+    console.error('현장 로드 실패:', err);
+  }
 }
 
 const getMemberData = async () => {
@@ -456,6 +470,9 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
         <div class="table-card">
           <div class="table-header">
             <h3 class="table-title">최신 공지사항</h3>
+            <button class="btn-more" @click="router.push('/notice/list')">
+              더보기 <i class="mdi mdi-chevron-right"></i>
+            </button>
           </div>
           <div class="list-body">
             <div v-for="notice in notices" :key="notice.idx" class="notice-row">
@@ -471,9 +488,14 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
       <div class="grid-column">
         <div class="table-card">
-          <div class="table-header">
+          <!-- 수정된 헤더 부분 -->
+          <div class="table-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h3 class="table-title">주요 현장 계약 현황</h3>
+            <button class="btn-more" @click="router.push('/site/list')">
+              더보기 <i class="mdi mdi-chevron-right"></i>
+            </button>
           </div>
+
           <div class="list-body">
             <div v-for="(site, idx) in siteStatus" :key="idx" class="site-status-row">
               <div class="site-top">
@@ -657,6 +679,31 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 .type-tag-blue { background-color: var(--primary-soft); color: var(--primary); }
 .type-tag-green { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .type-tag-gray { background-color: var(--bg-hover); color: var(--text-sub); }
+
+/* 더보기 버튼 스타일 */
+.btn-more {
+  background: transparent;
+  border: none;
+  color: var(--text-sub);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-more i {
+  font-size: 16px;
+}
+
+.btn-more:hover {
+  background-color: var(--bg-hover);
+  color: var(--primary); /* 호버 시 메인 테마 색상으로 강조 */
+}
 
 .badge-count {
   margin-left: 8px;
