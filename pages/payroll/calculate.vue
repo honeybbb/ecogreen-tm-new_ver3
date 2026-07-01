@@ -1266,6 +1266,17 @@ const toggleSort = (key) => {
   currentPage.value = 1;
 };
 
+const resetFilters = () => {
+  searchTerm.value = '';
+  selectedYearMonth.value = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  selectedSite.value = '전체';
+  selectedType.value = '전체';
+  selectedStatus.value = '전체';
+  selectedPaymentDay.value = '전체';
+  selectedBilling.value = '전체';
+  currentPage.value = 1;
+}
+
 const getPayrollMonth = async function () {
   const [year, month] = selectedYearMonth.value.split('-');
   try {
@@ -1420,7 +1431,7 @@ onMounted(async () => {
           <label class="filter-label">
             <!--i class="mdi mdi-office-building-outline"></i--> 근무 현장
           </label>
-          <SiteSelect v-model="selectedSite" />
+          <SiteSelect v-model="selectedSite" width="100%" />
         </div>
         <div class="filter-group">
           <label class="filter-label">
@@ -1475,9 +1486,21 @@ onMounted(async () => {
         <div class="search-group">
           <div class="search-box">
             <i class="mdi mdi-magnify"></i>
-            <input type="text" v-model="searchTerm" placeholder="이름으로 검색..." class="search-input" @keyup.enter="fetchCalculatedPay" />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear"><i class="mdi mdi-close"></i></button>
+            <input
+                type="text"
+                v-model="searchTerm"
+                placeholder="이름으로 검색..."
+                class="search-input"
+                @keyup.enter="fetchCalculatedPay"
+            />
+            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+              <i class="mdi mdi-close"></i>
+            </button>
           </div>
+          <button @click="resetFilters" class="btn-search" title="필터 초기화">
+            <i class="mdi mdi-filter-off"></i>
+            <span>초기화</span>
+          </button>
         </div>
       </div>
     </div>
