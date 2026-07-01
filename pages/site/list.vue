@@ -80,6 +80,9 @@ const resetFilters = () => {
   selectedType.value   = '전체';
   selectedVat.value = '전체';
   currentPage.value = 1;
+  sortKey.value            = 'id';
+  sortOrder.value          = 'asc';
+  pageSize.value           = 50;
 };
 
 const getContractDates = (site) => {
