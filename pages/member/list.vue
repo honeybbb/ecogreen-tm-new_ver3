@@ -470,12 +470,12 @@ onActivated(async () => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-office-building"></i> 근무 현장</label>
+          <label class="filter-label"><!--i class="mdi mdi-office-building"></i--> 근무 현장</label>
           <SiteSelect v-model="selectedSite" :width="'100%'" />
         </div>
 
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-calendar-clock"></i> 급여일</label>
+          <label class="filter-label"><!--i class="mdi mdi-calendar-clock"></i--> 급여일</label>
           <select v-model="selectedPaymentDay" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
             <option v-for="day in paymentDayOptions" :key="day" :value="day">
@@ -485,14 +485,14 @@ onActivated(async () => {
         </div>
 
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-account-box"></i> 구분</label>
+          <label class="filter-label"><!--i class="mdi mdi-account-box"></i--> 구분</label>
           <select v-model="selectedType" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemNm">{{ opt.itemNm }}</option>
           </select>
         </div>
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
+          <label class="filter-label"><!--i class="mdi mdi-account-check"></i--> 재직 상태</label>
           <select v-model="selectedStatus" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
             <option value="0">재직</option>
@@ -503,7 +503,7 @@ onActivated(async () => {
         </div>
         <div class="filter-group">
           <!--label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label-->
-          <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 재직 기간 조회</label>
+          <label class="filter-label"><!--i class="mdi mdi-calendar-range"></i--> 재직 기간 조회</label>
           <div class="date-range-inputs">
             <input type="date" v-model="filterStartDate" @change="onFilterChange" class="filter-select date-input" max="9999-12-31" />
             <span class="date-separator">~</span>
@@ -511,7 +511,7 @@ onActivated(async () => {
           </div>
         </div>
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-gender-male-female"></i> 성별</label>
+          <label class="filter-label"><!--i class="mdi mdi-gender-male-female"></i--> 성별</label>
           <select v-model="selectedGender" @change="onFilterChange" class="filter-select" >
             <option value="전체">전체</option>
             <option value="M">남성</option>
