@@ -754,13 +754,13 @@ onMounted(async () => {
       <div class="filter-row">
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-office-building-outline"></i> 근무 현장
+            <!--i class="mdi mdi-office-building-outline"></i--> 근무 현장
           </label>
           <SiteSelect v-model="selectedSite" @update:modelValue="onFilterChange" />
         </div>
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-box-outline"></i> 구분
+            <!--i class="mdi mdi-account-box-outline"></i--> 구분
           </label>
           <select v-model="selectedType" @change="onFilterChange" class="filter-select">
             <option value="전체">전체</option>
@@ -770,7 +770,7 @@ onMounted(async () => {
           </select>
         </div>
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-account-check"></i> 재직 상태</label>
+          <label class="filter-label"><!--i class="mdi mdi-account-check"></i--> 재직 상태</label>
           <select v-model="selectedStatus" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
             <option value="0">재직</option>
@@ -781,7 +781,7 @@ onMounted(async () => {
         </div>
         <div class="filter-group">
           <label class="filter-label">
-            <i class="mdi mdi-account-check"></i> 장여 여부
+            <!--i class="mdi mdi-wheelchair-accessibility"></i--> 장여 여부
           </label>
           <select v-model="selectedDisability" class="filter-select" @change="onFilterChange">
             <option value="전체">전체</option>
