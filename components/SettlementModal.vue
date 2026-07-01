@@ -1924,7 +1924,7 @@ onMounted(async () => {
                 </template>
 
                 <th rowspan="2" class="bg-red-light" style="min-width:120px;">총계</th>
-                <th rowspan="2" style="width:20px;min-width:20px;">관리</th>
+                <th rowspan="2" style="width:50px;min-width:20px;">관리</th>
               </tr>
 
               <tr>
