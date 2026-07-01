@@ -1514,11 +1514,20 @@ const resequenceGroupNos = () => {
 };
 
 const onDragStart = (index) => { dragIndex.value = index; };
-const onDragEnd = () => {
-  dragIndex.value = null;
-  // ★ 핵심: 드래그로 원본 배열 순서가 바뀌었으니, 그 순서대로 그룹 번호를 다시 매깁니다.
+
+// 마우스를 놓을 때 한 번만 배열 순서를 바꿈
+const onDrop = (index) => {
+  if (dragIndex.value === null || dragIndex.value === index) return;
+
+  const list = formData.value.payrollData;
+  const dragged = list.splice(dragIndex.value, 1)[0];
+  list.splice(index, 0, dragged);
+
+  // 순서가 바뀌었으니 번호 다시 매기기
   resequenceGroupNos();
 };
+
+const onDragEnd = () => { dragIndex.value = null; };
 const onDragOver  = (e, index) => {
   e.preventDefault();
   if (dragIndex.value === null || dragIndex.value === index) return;
@@ -2020,13 +2029,14 @@ onMounted(async () => {
                     :key="'pay-'+(row.idx || rowIndex)+'-'+rowIndex"
                     draggable="true"
                     @dragstart="onDragStart(getRowFlatIndex(row))"
-                    @dragover="onDragOver($event, getRowFlatIndex(row))"
+                    @dragover.prevent
+                    @drop="onDrop(getRowFlatIndex(row))"
                     @dragend="onDragEnd"
                     :class="{
-                    dragging: dragIndex === getRowFlatIndex(row),
-                    'group-last-row': rowIndex === group.rows.length - 1,
-                    'mid-month-joiner': row.isMidMonthJoiner
-                  }"
+                      dragging: dragIndex === getRowFlatIndex(row),
+                      'group-last-row': rowIndex === group.rows.length - 1,
+                      'mid-month-joiner': row.isMidMonthJoiner
+                    }"
                 >
                   <!-- NO: 그룹 첫 행만 rowspan으로 표시 -->
                   <td v-if="rowIndex === 0"
@@ -2285,7 +2295,15 @@ onMounted(async () => {
               <tbody>
               <tr
                   v-for="(row, index) in formData.payrollData" :key="'ledger-'+index"
-                  :class="{ 'mid-month-joiner': row.isMidMonthJoiner }"
+                  draggable="true"
+                  @dragstart="onDragStart(index)"
+                  @dragover.prevent
+                  @drop="onDrop(index)"
+                  @dragend="onDragEnd"
+                  :class="{
+                    dragging: dragIndex === index,
+                    'mid-month-joiner': row.isMidMonthJoiner
+                  }"
               >
                 <td class="text-center">{{ index + 1 }}</td>
                 <td class="text-center">
