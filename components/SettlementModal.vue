@@ -100,16 +100,6 @@ const toggleCustomSign = (index) => {
   item.sign = item.sign === 1 ? -1 : 1;
 };
 
-const filterKoreanOnly = (str) => {
-  if (!str) return '';
-  const hasKorean = /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(str);
-  if (hasKorean) {
-    return str.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '');
-  } else {
-    return str;
-  }
-};
-
 const hasInvalidChars = (str) => {
   if (!str) return false;
   // 한글과 공백을 제외한 문자(영문, 숫자, 특수문자 등)가 하나라도 있는지 검사
@@ -935,6 +925,101 @@ const groupedPayrollData = computed(() => {
 
 const getRowFlatIndex = (row) => formData.value.payrollData.indexOf(row);
 
+// ──────────────────────────────────────────────
+// 급여대장 전용 컬럼/계산 로직
+// ──────────────────────────────────────────────
+const LEDGER_EXCLUDE_PAY = ['04001003', '04001004', '04001002007']; // 연차, 퇴직, 근로자의날 제외
+
+const LEDGER_DEDUCT_KEYWORDS = ['국민연금', '건강보험', '장기요양', '고용보험', '소득세', '지방소득세', '기타공제'];
+const LEDGER_DEDUCT_EXCLUDE_KEYWORDS = ['고용안정', '실업급여'];
+
+const payrollLedgerColumns = computed(() => {
+  const payCodeSet = new Set();
+
+  formData.value.payrollData.forEach(row => {
+    Object.keys(row.payItems || {}).forEach(cd => {
+      if (!LEDGER_EXCLUDE_PAY.includes(cd)) payCodeSet.add(cd);
+    });
+  });
+
+  const getCodeName = (code) => {
+    const found = items.value.find(i => i.itemCd === code) || allWageCodes.value.find(i => i.itemCd === code);
+    return found ? found.itemNm : code;
+  };
+
+  // 공제항목: 전체 deductionItems 코드 중 지정 키워드에 해당하는 것만 필터
+  const deductCodeSet = new Set();
+  formData.value.payrollData.forEach(row => {
+    Object.keys(row.deductionItems || {}).forEach(cd => {
+      const name = getCodeName(cd);
+      // 필터 부분에서
+      if (
+          LEDGER_DEDUCT_KEYWORDS.some(kw => name.includes(kw)) &&
+          !LEDGER_DEDUCT_EXCLUDE_KEYWORDS.some(ex => name.includes(ex))
+      ) {
+        deductCodeSet.add(cd);
+      }
+    });
+  });
+
+  // 키워드 순서대로 정렬
+  const sortedDeductCols = Array.from(deductCodeSet)
+      .map(cd => ({ code: cd, name: getCodeName(cd) }))
+      .sort((a, b) => {
+        const aIdx = LEDGER_DEDUCT_KEYWORDS.findIndex(kw => a.name.includes(kw));
+        const bIdx = LEDGER_DEDUCT_KEYWORDS.findIndex(kw => b.name.includes(kw));
+        return aIdx - bIdx;
+      });
+
+  return {
+    payCols:    Array.from(payCodeSet).map(cd => ({ code: cd, name: getCodeName(cd) })),
+    deductCols: sortedDeductCols,
+  };
+});
+
+const getLedgerGrossPay = (row) =>
+    Object.entries(row.payItems || {}).reduce((sum, [cd, amt]) =>
+        LEDGER_EXCLUDE_PAY.includes(cd) ? sum : sum + (Number(amt) || 0), 0);
+
+const getLedgerTotalDeduct = (row) => {
+  const getCodeName = (code) => {
+    const found = items.value.find(i => i.itemCd === code) || allWageCodes.value.find(i => i.itemCd === code);
+    return found ? found.itemNm : code;
+  };
+  return Object.entries(row.deductionItems || {}).reduce((sum, [cd, amt]) => {
+    const name = getCodeName(cd);
+    const include = LEDGER_DEDUCT_KEYWORDS.some(kw => name.includes(kw));
+    const exclude = LEDGER_DEDUCT_EXCLUDE_KEYWORDS.some(ex => name.includes(ex));
+    return (include && !exclude) ? sum + (Number(amt) || 0) : sum;
+  }, 0);
+};
+
+const getLedgerNetPay = (row) => getLedgerGrossPay(row) - getLedgerTotalDeduct(row);
+
+const payrollLedgerTotals = computed(() => {
+  const payTotals = {};
+  const deductTotals = {};
+  let grossTotal = 0, deductTotal = 0, netTotal = 0;
+
+  formData.value.payrollData.forEach(row => {
+    const gross = getLedgerGrossPay(row);
+    const deduct = getLedgerTotalDeduct(row);
+    grossTotal += gross;
+    deductTotal += deduct;
+    netTotal += gross - deduct;
+
+    Object.entries(row.payItems || {}).forEach(([cd, amt]) => {
+      if (!LEDGER_EXCLUDE_PAY.includes(cd))
+        payTotals[cd] = (payTotals[cd] || 0) + (Number(amt) || 0);
+    });
+    Object.entries(row.deductionItems || {}).forEach(([cd, amt]) => {
+      deductTotals[cd] = (deductTotals[cd] || 0) + (Number(amt) || 0);
+    });
+  });
+
+  return { payTotals, deductTotals, grossTotal, deductTotal, netTotal };
+});
+
 const calculateAreaSupply = () => {
   const vb = formData.value.billingData.vatBreakdown;
   const totalArea = (Number(vb.under135.area) || 0) + (Number(vb.over135.area) || 0);
@@ -1417,23 +1502,14 @@ const separateRow = (row) => {
 
 // 합치기/분리 후 groupNo 1부터 재정렬
 const resequenceGroupNos = () => {
+  const oldToNew = new Map();
   let counter = 0;
-  let lastOldGroupNo = null;
 
-  formData.value.payrollData.forEach((row, index) => {
-    // 첫 번째 행이거나, 바로 위 행과 기존 그룹 번호가 다르면 새로운 그룹(counter 증가)
-    if (index === 0 || row.groupNo !== lastOldGroupNo) {
-      counter++;
-      lastOldGroupNo = row.groupNo;
-    }
-    // 객체 참조 꼬임 방지를 위해 임시 속성에 저장
-    row._newGroupNo = counter;
-  });
-
-  // 새 그룹 번호 일괄 확정
   formData.value.payrollData.forEach(row => {
-    row.groupNo = row._newGroupNo;
-    delete row._newGroupNo;
+    if (!oldToNew.has(row.groupNo)) {
+      oldToNew.set(row.groupNo, ++counter);
+    }
+    row.groupNo = oldToNew.get(row.groupNo);
   });
 };
 
@@ -1675,10 +1751,10 @@ onMounted(async () => {
           <!--i class="mdi mdi-table-account"></i-->
           <span class="tab-text">급여 세부 내역서</span>
         </button>
-        <!--button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
-          <i class="mdi mdi-text-account"></i>
+        <button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
+          <!--i class="mdi mdi-text-account"></i-->
           <span class="tab-text">급여 대장</span>
-        </button-->
+        </button>
       </div>
 
       <div class="modal-body">
@@ -1970,8 +2046,21 @@ onMounted(async () => {
                         :title="hasInvalidChars(row.empName) ? '영문, 숫자, 특수문자가 포함되어 있습니다.' : ''"
                     />
                   </td>
-                  <td><input type="text" v-model="row.position" @input="applyContractReserves(row)" class="cell-input text-center" /></td>
-                  <td><input type="text" v-model="row.personalNo" class="cell-input text-center" /></td>
+                  <td>
+                    <input
+                        type="text"
+                        v-model="row.position"
+                        @input="applyContractReserves(row)"
+                        class="cell-input text-center"
+                    />
+                  </td>
+                  <td>
+                    <input
+                        type="text"
+                        v-model="row.personalNo"
+                        class="cell-input text-center"
+                    />
+                  </td>
                   <td class="text-center">
                     <template v-if="row.transferDate && row.transferDate !== row.inDate">
                       <span style="font-size: 11px; color: var(--text-muted);">{{ row.transferDate }}</span><br>
@@ -2141,223 +2230,156 @@ onMounted(async () => {
 
         <div v-show="activeTab === 'payroll'" class="tab-content">
           <div class="table-actions">
-            <h4><i class="mdi mdi-table-account"></i> 직원별 급여 내역</h4>
-
+            <h4><i class="mdi mdi-table-account"></i> 급여 대장</h4>
             <div class="action-btns" style="align-items: center;">
               <div class="melt-toggles-group">
-                <span class="melt-title"><i class="mdi mdi-calculator-variant"></i> 공제 계산 시 포함:</span>
+                <span class="melt-title"><i class="mdi mdi-calculator-variant"></i> 4대보험 계산 기준:</span>
                 <label class="melt-toggle">
-                  <span class="melt-label">연차수당</span>
-                  <div class="switch">
-                    <input type="checkbox" v-model="meltOptions.annualLeave">
-                    <span class="slider round"></span>
-                  </div>
+                  <span class="melt-label">연차수당 포함</span>
+                  <div class="switch"><input type="checkbox" v-model="meltOptions.annualLeave"><span class="slider round"></span></div>
                 </label>
                 <label class="melt-toggle">
-                  <span class="melt-label">퇴직충당금</span>
-                  <div class="switch">
-                    <input type="checkbox" v-model="meltOptions.severance">
-                    <span class="slider round"></span>
-                  </div>
+                  <span class="melt-label">퇴직충당금 포함</span>
+                  <div class="switch"><input type="checkbox" v-model="meltOptions.severance"><span class="slider round"></span></div>
                 </label>
                 <label class="melt-toggle">
-                  <span class="melt-label">근로자의날 수당</span>
-                  <div class="switch">
-                    <input type="checkbox" v-model="meltOptions.workersDay">
-                    <span class="slider round"></span>
-                  </div>
+                  <span class="melt-label">근로자의날 포함</span>
+                  <div class="switch"><input type="checkbox" v-model="meltOptions.workersDay"><span class="slider round"></span></div>
                 </label>
               </div>
-
-              <button class="btn-load-data" @click="loadPayrollData">
-                <i class="mdi mdi-download-box-outline"></i>
-                <span class="btn-text">데이터 불러오기</span>
-              </button>
-              <button class="btn-add-row" @click="addPayrollRow"><i class="mdi mdi-plus-thick"></i> <span class="btn-text">직원 추가</span></button>
             </div>
           </div>
 
-          <div class="excel-table-wrapper">
+          <div v-if="formData.payrollData.length === 0" class="empty-row" style="text-align:center; padding: 40px;">
+            데이터 불러오기를 먼저 실행해주세요.
+          </div>
+
+          <div v-else class="excel-table-wrapper">
             <table class="excel-table">
               <thead>
               <tr>
-                <th rowspan="2" style="width:40px; min-width:40px;">NO</th>
-                <th rowspan="2" style="width:70px; min-width:70px;">이름</th>
-                <th rowspan="2" style="width:70px; min-width:70px;">직책</th>
-                <th rowspan="2" style="width:80px; min-width:80px;">생년월일</th>
-                <th rowspan="2" style="width:80px; min-width:80px;">입사일</th>
-                <th rowspan="2" style="width:80px; min-width:80px;">퇴사일</th>
+                <th rowspan="2" style="width:36px;">NO</th>
+                <th rowspan="2" style="width:70px;">이름</th>
+                <th rowspan="2" style="width:60px;">직책</th>
+                <th rowspan="2" style="width:76px;">생년월일</th>
+                <th rowspan="2" style="width:76px;">입사일 / 퇴사일</th>
 
-                <template v-for="col in dynamicColumns" :key="'th1-'+col.code">
-                  <th v-if="col.isEmployment" colspan="2" class="bg-red-light" style="min-width:200px;">
-                    고용보험({{ insuranceRates.employmentInsurance }}%)
-                  </th>
-                  <th v-else rowspan="2" :class="col.type === 'pay' ? 'bg-yellow-light' : (col.type === 'gross' ? 'bg-blue-light' : 'bg-red-light')" style="min-width:100px;">
-                    {{ col.name }}
-                  </th>
-                </template>
+                <!-- 지급 항목들 -->
+                <th v-for="col in payrollLedgerColumns.payCols" :key="'lph-'+col.code"
+                    rowspan="2" class="bg-yellow-light" style="min-width:90px;">
+                  {{ col.name }}
+                </th>
+                <th rowspan="2" class="bg-blue-light" style="min-width:100px;">지급합계</th>
 
-                <th rowspan="2" class="bg-red-light" style="min-width:120px;">총계</th>
-                <th rowspan="2" style="width:20px;min-width:20px;">관리</th>
+                <!-- 공제 항목들 -->
+                <th v-for="col in payrollLedgerColumns.deductCols" :key="'ldh-'+col.code"
+                    rowspan="2" class="bg-red-light" style="min-width:90px;">
+                  {{ col.name }}
+                </th>
+                <th rowspan="2" class="bg-red-light" style="min-width:100px;">공제합계</th>
+                <th rowspan="2" style="min-width:100px; background: rgba(16,185,129,.1); color: #065f46;">실수령액</th>
               </tr>
-
-              <tr>
-                <template v-for="col in dynamicColumns" :key="'th2-'+col.code">
-                  <template v-if="col.isEmployment">
-                    <th class="bg-red-light" style="min-width:100px; font-size:11px;">실업급여<br>{{ insuranceRates.employmentInsurance }}%</th>
-                    <th class="bg-red-light" style="min-width:100px; font-size:11px;">고용안정 등<br>0.45%</th>
-                  </template>
-                </template>
-              </tr>
+              <tr></tr>
               </thead>
 
               <tbody>
               <tr
-                  v-for="(row, index) in formData.payrollData" :key="'pay-'+index"
-                  draggable="true" @dragstart="onDragStart(index)" @dragover="onDragOver($event, index)" @dragend="onDragEnd"
-                  :class="{ dragging: dragIndex === index }"
+                  v-for="(row, index) in formData.payrollData" :key="'ledger-'+index"
+                  :class="{ 'mid-month-joiner': row.isMidMonthJoiner }"
               >
-                <td class="text-center drag-handle"><i class="mdi mdi-drag-vertical drag-icon"></i> <span>{{ index + 1 }}</span></td>
-                <td><input type="text" v-model="row.empName"    class="cell-input text-center" /></td>
-                <td><input type="text" v-model="row.position" @input="applyContractReserves(row)" class="cell-input text-center" /></td>
-                <td><input type="text" v-model="row.personalNo" class="cell-input text-center" /></td>
+                <td class="text-center">{{ index + 1 }}</td>
+                <td class="text-center">
+                  <input
+                      type="text"
+                      v-model="row.empName"
+                      class="cell-input text-center"
+                      :class="{ 'input-warning': hasInvalidChars(row.empName) }"
+                      :title="hasInvalidChars(row.empName) ? '영문, 숫자, 특수문자가 포함되어 있습니다.' : ''"
+                  />
+                </td>
+                <td class="text-center">
+                  <input
+                      type="text"
+                      v-model="row.position"
+                      @input="applyContractReserves(row)"
+                      class="cell-input text-center"
+                  />
+                </td>
+                <td class="text-center">
+                  <input
+                      type="text"
+                      v-model="row.personalNo"
+                      class="cell-input text-center"
+                  />
+                </td>
                 <td class="text-center">
                   <template v-if="row.transferDate && row.transferDate !== row.inDate">
                     <span style="font-size: 11px; color: var(--text-muted);">{{ row.transferDate }}</span><br>
                   </template>
-
                   <input type="text" v-model="row.inDate" class="cell-input text-center" />
+                  <input v-if="row.outDate" type="text" v-model="row.outDate" class="cell-input text-center" />
                 </td>
-                <td><input type="text" v-model="row.outDate"    class="cell-input text-center" /></td>
 
-                <template v-for="col in dynamicColumns" :key="'td-'+col.code">
-                  <td v-if="col.type === 'pay'">
-                    <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" class="cell-input text-right" />
-                    <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" class="cell-input text-right" />
-                    <input v-else-if="col.name.includes('근로자의날')" type="text" :value="formatCurrency(row.reserves.workersDay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')" class="cell-input text-right" />
-                    <input v-else type="text" :value="formatCurrency(row.payments?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.payments, col.code, row, 'salary')" class="cell-input text-right" />
-                  </td>
+                <!-- 지급 항목 -->
+                <td v-for="col in payrollLedgerColumns.payCols" :key="'lpd-'+col.code" class="text-right">
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.payItems?.[col.code] || 0)"
+                      class="cell-input text-right"
+                  />
+                </td>
+                <td class="text-right font-bold text-blue">
+                  <input
+                      type="text"
+                      :value="formatCurrency(getLedgerGrossPay(row))"
+                      class="cell-input text-right"
+                  />
+                </td>
 
-                  <td v-else-if="col.type === 'gross'">
-                    <input type="text" :value="formatCurrency(row.grossPay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row, 'grossPay', row, 'salary')" class="cell-input text-right font-bold text-blue" />
-                  </td>
-
-                  <template v-else-if="col.type === 'deduct'">
-                    <template v-if="col.isEmployment">
-                      <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" /></td>
-                      <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" class="cell-input text-right" /></td>
-                    </template>
-                    <td v-else-if="col.name.includes('산재')">
-                      <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" class="cell-input text-right" />
-                    </td>
-                    <td v-else>
-                      <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" />
-                    </td>
-                  </template>
-                </template>
-
-                <td class="text-right font-bold bg-gray-50">{{ formatCurrency(getInsuranceTotal(row)) }}</td>
-                <td class="text-center"><button class="btn-delete-row" @click="removePayrollRow(index)"><i class="mdi mdi-trash-can-outline"></i></button></td>
-              </tr>
-
-              <tr v-if="formData.payrollData.length === 0">
-                <td :colspan="7 + dynamicColumns.length" class="empty-row">등록된 데이터가 없습니다.</td>
+                <!-- 공제 항목 -->
+                <td v-for="col in payrollLedgerColumns.deductCols" :key="'ldd-'+col.code" class="text-right">
+                  <input
+                      type="text"
+                      :value="formatCurrency(row.deductionItems?.[col.code] || 0)"
+                      class="cell-input text-right"
+                  />
+                </td>
+                <td class="text-right font-bold text-red">
+                  <input
+                      type="text"
+                      :value="formatCurrency(getLedgerTotalDeduct(row))"
+                      class="cell-input text-right"
+                  />
+                </td>
+                <td class="text-right font-bold" style="color: #065f46;">
+                  {{ formatCurrency(getLedgerNetPay(row)) }}
+                </td>
               </tr>
               </tbody>
 
-              <tfoot v-if="formData.payrollData.length > 0">
-              <tr class="bg-gray-50 font-bold" style="font-size:14px;">
-                <td colspan="6" class="text-center">총 계</td>
+              <tfoot>
+              <tr class="bg-gray-50 font-bold" style="font-size: 13px;">
+                <td colspan="5" class="text-center">합 계</td>
 
-                <template v-for="col in dynamicColumns" :key="'foot-'+col.code">
-                  <template v-if="col.isEmployment">
-                    <td class="text-right">{{ formatCurrency(getDynamicTotal(col)) }}</td>
-                    <td class="text-right">{{ formatCurrency(payrollTotals.empInsEmployer) }}</td>
-                  </template>
-                  <td v-else :class="['text-right', col.type === 'pay' ? 'bg-yellow-light text-yellow-700' : (col.type === 'gross' ? 'bg-blue-light text-blue' : '')]" style="color: inherit;">
-                    {{ formatCurrency(getDynamicTotal(col)) }}
-                  </td>
-                </template>
+                <td v-for="col in payrollLedgerColumns.payCols" :key="'lpt-'+col.code" class="text-right bg-yellow-light">
+                  {{ formatCurrency(payrollLedgerTotals.payTotals[col.code] || 0) }}
+                </td>
+                <td class="text-right text-blue bg-blue-light">
+                  {{ formatCurrency(payrollLedgerTotals.grossTotal) }}
+                </td>
 
-                <td class="text-right text-red bg-red-light">{{ formatCurrency(payrollTotals.insuranceTotal) }}</td>
-                <td></td>
+                <td v-for="col in payrollLedgerColumns.deductCols" :key="'ldt-'+col.code" class="text-right bg-red-light">
+                  {{ formatCurrency(payrollLedgerTotals.deductTotals[col.code] || 0) }}
+                </td>
+                <td class="text-right text-red bg-red-light">
+                  {{ formatCurrency(payrollLedgerTotals.deductTotal) }}
+                </td>
+                <td class="text-right font-bold" style="color: #065f46;">
+                  {{ formatCurrency(payrollLedgerTotals.netTotal) }}
+                </td>
               </tr>
               </tfoot>
             </table>
-          </div>
-          <div v-if="formData.payrollData.length > 0" class="bottom-flex-layout">
-            <div class="memo-area">
-              <div class="memo-wrapper">
-                <div class="memo-header">
-                  <i class="mdi mdi-note-edit-outline"></i>
-                  <span>정산 특이사항 및 메모</span>
-                </div>
-                <RichTextEditor v-model="formData.billingData.memo" />
-              </div>
-            </div>
-
-            <div class="summary-area">
-              <table class="excel-table" style="background: var(--bg-surface)">
-                <tbody>
-                <template v-for="(summary, sIdx) in totalSummary" :key="'summary-'+summary.key">
-                  <tr v-if="summary.key === 'grandTotal'">
-                    <td colspan="2" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
-                      <button @click="addCustomSummaryItem" class="btn-add-row" style="font-size: 12px; padding: 4px 10px; display: inline-flex; float: right;">
-                        <i class="mdi mdi-plus-thick"></i> 정산 항목 추가
-                      </button>
-                    </td>
-                  </tr>
-
-                  <tr>
-                    <td class="text-center bg-gray-50 font-bold"
-                        :class="{'summary-label-cell': summary.toggleable && !summary.isCustom}"
-                        @click="summary.toggleable && !summary.isCustom && toggleSummarySign(summary.key)"
-                        style="font-size: 13px;white-space: pre-line;"
-                        :title="summary.toggleable && !summary.isCustom ? '클릭하여 양수/음수 전환' : ''">
-                      <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
-                        <template v-if="summary.isCustom">
-                          <button @click.stop="toggleCustomSign(summary.index)" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'" style="border: none; cursor: pointer; flex-shrink: 0;">
-                            {{ summary.sign < 0 ? '-' : '+' }}
-                          </button>
-                          <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 6px; box-sizing: border-box;" />
-                        </template>
-                        <template v-else>
-                            <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
-                              {{ summary.sign < 0 ? '-' : '+' }}
-                            </span>
-                          {{ summary.label }}
-                        </template>
-                      </div>
-                    </td>
-
-                    <td class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color); position: relative;">
-                      <button v-if="summary.isCustom" @click="removeCustomSummaryItem(summary.index)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
-                        <i class="mdi mdi-minus"></i>
-                      </button>
-
-                      <template v-if="summary.key === 'insuranceDiff'">
-                        <div style="display: flex; align-items: center; padding-left: 8px;">
-                          <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                          <input type="text" :value="formatCurrency(formData.billingData.insuranceDiff)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
-                        </div>
-                      </template>
-                      <template v-else-if="summary.isCustom">
-                        <div style="display: flex; align-items: center; padding-left: 8px;">
-                          <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                          <input type="text" :value="formatCurrency(formData.billingData.customSummaryItems[summary.index].amount)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
-                        </div>
-                      </template>
-                      <template v-else>
-                        <div style="padding: 6px;" :class="summary.sign < 0 ? 'text-red' : (summary.toggleable ? 'text-blue' : '')">
-                          <span v-if="summary.value !== 0">{{ summary.sign < 0 ? '- ' : (summary.toggleable ? '+ ' : '') }}</span>{{ formatCurrency(summary.value) }}
-                        </div>
-                      </template>
-                    </td>
-                  </tr>
-                </template>
-                </tbody>
-              </table>
-            </div>
           </div>
         </div>
 
@@ -2705,4 +2727,6 @@ input:checked + .slider:before { transform: translateX(14px); }
 .input-warning:focus {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
 }
+
+
 </style>
