@@ -268,8 +268,10 @@ const filteredMembers = computed(() => {
     const paymentDayMatch = selectedPaymentDay.value === '전체' || String(member.payment_day) === String(selectedPaymentDay.value);
 
     const dateMatch =
-        (!filterStartDate.value || member.inDate >= filterStartDate.value) &&
-        (!filterEndDate.value   || member.inDate <= filterEndDate.value);
+        // 1. 검색 종료일(filterEndDate)이 있다면: 입사일(inDate)이 검색 종료일 이전이거나 같아야 함
+        (!filterEndDate.value || (member.inDate && member.inDate <= filterEndDate.value)) &&
+        // 2. 검색 시작일(filterStartDate)이 있다면: 퇴사일(outDate)이 없거나(재직중), 퇴사일이 검색 시작일 이후이거나 같아야 함
+        (!filterStartDate.value || !member.outDate || member.outDate >= filterStartDate.value);
 
     const pensionMatch    = !filterNoPension.value    || calculateAge(member.birthDt) >= ageLimits.value.pension;
     const employmentMatch = !filterNoEmployment.value || calculateAge(member.birthDt) >= ageLimits.value.employment
@@ -500,7 +502,8 @@ onActivated(async () => {
           </select>
         </div>
         <div class="filter-group">
-          <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label>
+          <!--label class="filter-label"><i class="mdi mdi-calendar-range"></i> 입사 기간</label-->
+          <label class="filter-label"><i class="mdi mdi-calendar-range"></i> 재직 기간 조회</label>
           <div class="date-range-inputs">
             <input type="date" v-model="filterStartDate" @change="onFilterChange" class="filter-select date-input" max="9999-12-31" />
             <span class="date-separator">~</span>
