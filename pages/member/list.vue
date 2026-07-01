@@ -691,7 +691,7 @@ onActivated(async () => {
           </tr>
           </thead>
           <tbody>
-          <tr v-for="member in pagedMembers" :key="member.idx" class="data-row">
+          <tr v-for="member in pagedMembers" :key="member.idx" :class="['data-row', { 'is-resigned': member.status == 1 }]">
             <td>{{ member.id }}</td>
             <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
             <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
@@ -1122,5 +1122,20 @@ onActivated(async () => {
     flex: 1;
     justify-content: center;
   }
+}
+
+/* 퇴사자 행 아주 연한 붉은 배경 */
+.data-table tbody tr.is-resigned {
+  background-color: rgba(239, 68, 68, 0.02);
+}
+
+/* 첫 번째 셀(ID) 좌측에 붉은색 포인트 바 생성 */
+.data-table tbody tr.is-resigned td:first-child {
+  border-left: 4px solid var(--danger, #ef4444);
+}
+
+/* 퇴사자 텍스트 살짝 흐리게 */
+.data-table tbody tr.is-resigned td {
+  color: var(--text-sub);
 }
 </style>
