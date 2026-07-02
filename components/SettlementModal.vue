@@ -239,7 +239,7 @@ const fetchContractData = async () => {
                 // .map(b => `[${(b.regDt || '').substring(0, 10)}] ${b.writer || ''}\n${b.bigo || ''}`)
                 .map(b => `${b.bigo || ''}`)
                 .join('\n\n');
-            alert(`⚠ 정산 특이사항\n\n${msg}`);
+            window.customAlert(`${msg}`, 'special');
           }
         }
       } catch (e) {

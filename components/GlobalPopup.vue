@@ -19,7 +19,7 @@
         </div>
         <div class="popup-footer">
           <button v-if="type === 'prompt' || type === 'confirm'" class="popup-btn-cancel" @click="hide">취소</button>
-          <button class="popup-btn" @click="confirm">확인</button>
+          <button class="popup-btn" :class="[`btn--${(type === 'prompt' || type === 'confirm') ? 'info' : type}`]" @click="confirm">확인</button>
         </div>
       </div>
     </div>
@@ -40,6 +40,7 @@ const title = computed(() => {
     case 'warning': return '경고';
     case 'prompt': return '입력';
     case 'confirm': return '확인';
+    case 'special': return '특이사항';
     default: return '알림';
   }
 });
@@ -87,10 +88,11 @@ watch(isVisible, async (newVal) => {
   color: white;
 }
 
-.header--info { background-color: #3b82f6; }
-.header--success { background-color: #10b981; }
-.header--error { background-color: #ef4444; }
-.header--warning { background-color: #f59e0b; }
+.header--info { background-color: var(--primary); }
+.header--success { background-color: var(--success); }
+.header--error { background-color: var(--danger); }
+.header--warning { background-color: var(--warning); }
+.header--special { background-color: var(--warning); }
 
 .popup-title {
   margin: 0;
@@ -156,7 +158,6 @@ watch(isVisible, async (newVal) => {
 }
 
 .popup-btn {
-  background-color: #3b82f6;
   color: white;
   border: none;
   padding: 8px 24px;
@@ -167,9 +168,20 @@ watch(isVisible, async (newVal) => {
   transition: background-color 0.2s;
 }
 
-.popup-btn:hover {
-  background-color: #2563eb;
-}
+.btn--info { background-color: #3b82f6; }
+.btn--info:hover { background-color: #2563eb; }
+
+.btn--success { background-color: #10b981; }
+.btn--success:hover { background-color: #059669; }
+
+.btn--error { background-color: #ef4444; }
+.btn--error:hover { background-color: #dc2626; }
+
+.btn--warning { background-color: #f59e0b; }
+.btn--warning:hover { background-color: #d97706; }
+
+.btn--special { background-color: #f59e0b; }
+.btn--special:hover { background-color: #d97706; }
 
 .popup-btn-cancel {
   background-color: #f3f4f6;

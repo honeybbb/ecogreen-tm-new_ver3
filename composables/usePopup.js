@@ -8,7 +8,7 @@ const promptValue = ref('');
 let resolvePromise = null;
 
 export const usePopup = () => {
-    const show = (msg: string, t: string = 'info') => {
+    const show = (msg, t = 'info') => {
         message.value = msg;
         type.value = t;
         isVisible.value = true;
@@ -18,7 +18,7 @@ export const usePopup = () => {
         });
     };
 
-    const showPrompt = (msg: string, defaultVal: string = '') => {
+    const showPrompt = (msg, defaultVal = '') => {
         message.value = msg;
         type.value = 'prompt';
         promptValue.value = defaultVal;
@@ -29,7 +29,7 @@ export const usePopup = () => {
         });
     };
 
-    const showConfirm = (msg: string) => {
+    const showConfirm = (msg) => {
         message.value = msg;
         type.value = 'confirm';
         isVisible.value = true;
