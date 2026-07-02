@@ -458,8 +458,24 @@ const dynamicColumns = computed(() => {
 // ──────────────────────────────────────────────
 // 4. 숫자 콤마 전용 입력 핸들러
 // ──────────────────────────────────────────────
+// '=' 로 시작하는 입력을 안전하게 계산 (숫자, + - * / ( ) . 공백만 허용)
+const evaluateFormula = (str) => {
+  const expr = str.slice(1).replace(/,/g, '').trim();
+  if (!expr || !/^[0-9+\-*/(). ]+$/.test(expr)) return null;
+  try {
+    // eslint-disable-next-line no-new-func
+    const result = Function(`"use strict"; return (${expr})`)();
+    if (typeof result === 'number' && isFinite(result)) return Math.round(result);
+  } catch (e) { /* 잘못된 수식은 무시 */ }
+    return null;
+};
+
 const handleCurrencyInput = async (e, obj, key, row, calcType) => {
   const input = e.target;
+
+  // '=' 로 시작하면 수식 입력 모드 — stripping 하지 않고 blur에서 처리
+  if (input.value.trim().startsWith('=')) return;
+
   const cursorPosition = input.selectionStart;
   const oldLength = input.value.length;
 
@@ -480,6 +496,23 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
   let newCursorPos = cursorPosition + diff;
   if (newCursorPos < 0) newCursorPos = 0;
   input.setSelectionRange(newCursorPos, newCursorPos);
+};
+
+// '=' 로 시작한 수식을 포커스 아웃 시점에 계산해서 값에 반영
+const handleFormulaBlur = (e, obj, key, row, calcType) => {
+  const raw = e.target.value.trim();
+  if (!raw.startsWith('=')) return;
+  const result = evaluateFormula(raw);
+  if (result !== null) {
+    obj[key] = result;
+  } else {
+    alert('수식을 계산할 수 없습니다. 예: =100000+50000*2');
+  }
+  if (calcType === 'salary') onSalaryInput(row);
+  else if (calcType === 'row') calculateRow(row);
+  else if (calcType === 'billing') calculateBillingTotal();
+  else if (calcType === 'area') calculateAreaSupply();
+  else if (calcType === 'manual') handleManualBreakdownUpdate();
 };
 
 // ──────────────────────────────────────────────
@@ -2245,13 +2278,31 @@ onMounted(async () => {
                     <template v-if="summary.key === 'insuranceDiff'">
                       <div style="display: flex; align-items: center; padding-left: 8px;">
                         <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                        <input type="text" :value="formatCurrency(formData.billingData.insuranceDiff)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+                        <input
+                            type="text"
+                            :value="formatCurrency(formData.billingData.insuranceDiff)"
+                            @focus="$event.target.select()"
+                            @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')"
+                            @blur="handleFormulaBlur($event, formData.billingData, 'insuranceDiff', null, 'none')"
+                            @keyup.enter="$event.target.blur()"
+                            class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'"
+                            style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
+                        />
                       </div>
                     </template>
                     <template v-else-if="summary.isCustom">
                       <div style="display: flex; align-items: center; padding-left: 8px;">
                         <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                        <input type="text" :value="formatCurrency(formData.billingData.customSummaryItems[summary.index].amount)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')" class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;" />
+                        <input
+                            type="text"
+                            :value="formatCurrency(formData.billingData.customSummaryItems[summary.index].amount)"
+                            @focus="$event.target.select()"
+                            @input="handleCurrencyInput($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')"
+                            @blur="handleFormulaBlur($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')"
+                            @keyup.enter="$event.target.blur()"
+                            class="cell-input text-right font-bold"
+                            :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
+                        />
                       </div>
                     </template>
                     <template v-else>
