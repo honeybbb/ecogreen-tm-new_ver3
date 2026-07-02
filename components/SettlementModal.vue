@@ -28,6 +28,7 @@ const currentConfig = reactive({
   activePayLabels: [],       //지급항목 배열
   activeDeductionLabels: [], //공제항목 배열
   activeDeductionCodes: [],
+  hiddenSummaryKeys: [],
   summarySigns: {
     severance: -1,
     annualLeave: -1,
@@ -45,6 +46,7 @@ const meltOptions = reactive({
 
 const isInitializing = ref(false);
 const dragIndex = ref(null);
+const draggableRowIdx = ref(null);//마우스를 누른 특정 행만 드래그 활성화
 const lastBigoAlertSIdx = ref(null);//비고alert
 
 // ──────────────────────────────────────────────
@@ -758,6 +760,16 @@ const toggleSummarySign = (key) => {
   }
 };
 
+const removeSummaryItem = (key) => {
+  if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
+  if (!currentConfig.hiddenSummaryKeys.includes(key)) {
+    currentConfig.hiddenSummaryKeys.push(key);
+  }
+  // 청구공문(billingData.items)에 이미 동기화된 항목도 같이 제거
+  formData.value.billingData.items = formData.value.billingData.items.filter(i => i._syncKey !== key);
+  calculateBillingTotal();
+};
+
 const totalSummary = computed(() => {
   const monthlyFee  = contractTotalCost.value || 0;
   const severance   = contractSeveranceTotal.value || 0;
@@ -766,6 +778,7 @@ const totalSummary = computed(() => {
   const actIns      = actualInsuranceTotal.value || 0;
   const insDiff     = Number(formData.value.billingData.insuranceDiff) || 0;
   const signs       = currentConfig.summarySigns;
+  const hidden      = currentConfig.hiddenSummaryKeys || [];
 
   let customTotal = 0;
   const customItems = (formData.value.billingData.customSummaryItems || []).map((item, idx) => {
@@ -785,23 +798,31 @@ const totalSummary = computed(() => {
   });
 
   let grandTotal = monthlyFee
-      + (severance * signs.severance)
-      + (annualLeave * signs.annualLeave)
+      + (hidden.includes('severance')   ? 0 : severance   * signs.severance)
+      + (hidden.includes('annualLeave') ? 0 : annualLeave * signs.annualLeave)
       + (insDiff * signs.insuranceDiff)
       + customTotal;
 
   grandTotal = Math.floor(grandTotal / 10) * 10;
 
-  return [
+  const result = [
     { key: 'monthlyFee', label: '월간용역비', value: monthlyFee, sign: 1, toggleable: false, hiddenInBilling: false },
-    { key: 'severance', label: '퇴직적립금', value: severance, sign: signs.severance, toggleable: true, hiddenInBilling: false },
-    { key: 'annualLeave', label: '연차적립금', value: annualLeave, sign: signs.annualLeave, toggleable: true, hiddenInBilling: false },
     { key: 'estimatedIns', label: '4대보험료 (견적서)', value: estIns, sign: 1, toggleable: false, hiddenInBilling: true },
     { key: 'actualIns', label: '4대보험료 (실비정산)', value: actIns, sign: 1, toggleable: false, hiddenInBilling: true },
     { key: 'insuranceDiff', label: '4대보험차액', value: insDiff, sign: signs.insuranceDiff, toggleable: true, hiddenInBilling: false },
     ...customItems,
     { key: 'grandTotal', label: '당월 청구금액 \n(원 단위 절사)', value: grandTotal, sign: 1, toggleable: false, hiddenInBilling: true }
   ];
+
+  if (!hidden.includes('severance')) {
+    result.splice(1, 0, { key: 'severance', label: '퇴직적립금', value: severance, sign: signs.severance, toggleable: true, hiddenInBilling: false, deletable: true });
+  }
+
+  if (!hidden.includes('annualLeave')) {
+    result.splice(hidden.includes('severance') ? 1 : 2, 0, { key: 'annualLeave', label: '연차적립금', value: annualLeave, sign: signs.annualLeave, toggleable: true, hiddenInBilling: false, deletable: true });
+  }
+
+  return result;
 });
 
 const syncBillingItems = () => {
@@ -1110,8 +1131,10 @@ const initForm = () => {
       if (!currentConfig.summarySigns) {
         currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
       }
+      if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
     } else {
       currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+      currentConfig.hiddenSummaryKeys = [];
       meltOptions.annualLeave = false;
       meltOptions.severance = false;
       meltOptions.workersDay = false;
@@ -1212,6 +1235,7 @@ const resetAll = () => {
   currentConfig.showWorkersDay  = true;
   currentConfig.showSanjae      = true;
   currentConfig.summarySigns    = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+  currentConfig.hiddenSummaryKeys = [];
   if (deductionItems.value.length > 0) {
     currentConfig.activeDeductionCodes = deductionItems.value.map(i => i.itemCd);
   }
@@ -1527,7 +1551,10 @@ const onDrop = (index) => {
   resequenceGroupNos();
 };
 
-const onDragEnd = () => { dragIndex.value = null; };
+const onDragEnd = () => {
+  dragIndex.value = null;
+  draggableRowIdx.value = null; //드래그 종료 시 초기화
+};
 const onDragOver  = (e, index) => {
   e.preventDefault();
   if (dragIndex.value === null || dragIndex.value === index) return;
@@ -2027,7 +2054,7 @@ onMounted(async () => {
                 <tr
                     v-for="(row, rowIndex) in group.rows"
                     :key="'pay-'+(row.idx || rowIndex)+'-'+rowIndex"
-                    draggable="true"
+                    :draggable="draggableRowIdx === 'details-' + getRowFlatIndex(row)"
                     @dragstart="onDragStart(getRowFlatIndex(row))"
                     @dragover.prevent
                     @drop="onDrop(getRowFlatIndex(row))"
@@ -2038,12 +2065,13 @@ onMounted(async () => {
                       'mid-month-joiner': row.isMidMonthJoiner
                     }"
                 >
-                  <!-- NO: 그룹 첫 행만 rowspan으로 표시 -->
                   <td v-if="rowIndex === 0"
                       :rowspan="group.rows.length"
                       class="text-center drag-handle"
-                      style="vertical-align: middle;">
-                    <i class="mdi mdi-drag-vertical drag-icon"></i>
+                      style="vertical-align: middle;"
+                      @mousedown="draggableRowIdx = 'details-' + getRowFlatIndex(row)"
+                      @mouseup="draggableRowIdx = null"
+                      @mouseleave="draggableRowIdx = null"> <i class="mdi mdi-drag-vertical drag-icon"></i>
                     <span>{{ group.groupNo }}</span>
                   </td>
 
@@ -2210,6 +2238,9 @@ onMounted(async () => {
                     <button v-if="summary.isCustom" @click="removeCustomSummaryItem(summary.index)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
                       <i class="mdi mdi-minus"></i>
                     </button>
+                    <button v-else-if="summary.deletable" @click="removeSummaryItem(summary.key)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
+                      <i class="mdi mdi-minus"></i>
+                    </button>
 
                     <template v-if="summary.key === 'insuranceDiff'">
                       <div style="display: flex; align-items: center; padding-left: 8px;">
@@ -2295,17 +2326,23 @@ onMounted(async () => {
               <tbody>
               <tr
                   v-for="(row, index) in formData.payrollData" :key="'ledger-'+index"
-                  draggable="true"
+                  :draggable="draggableRowIdx === 'payroll-' + index"
                   @dragstart="onDragStart(index)"
                   @dragover.prevent
                   @drop="onDrop(index)"
                   @dragend="onDragEnd"
                   :class="{
-                    dragging: dragIndex === index,
-                    'mid-month-joiner': row.isMidMonthJoiner
-                  }"
+      dragging: dragIndex === index,
+      'mid-month-joiner': row.isMidMonthJoiner
+    }"
               >
-                <td class="text-center">{{ index + 1 }}</td>
+                <td class="text-center drag-handle"
+                    style="cursor: grab;"
+                    @mousedown="draggableRowIdx = 'payroll-' + index"
+                    @mouseup="draggableRowIdx = null"
+                    @mouseleave="draggableRowIdx = null">
+                  {{ index + 1 }}
+                </td>
                 <td class="text-center">
                   <input
                       type="text"
