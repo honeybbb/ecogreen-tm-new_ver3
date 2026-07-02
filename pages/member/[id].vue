@@ -334,7 +334,7 @@ const saveEmployee = async () => {
     return;
   }
 
-  if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
+  if (!await window.customConfirm('수정된 정보를 저장하시겠습니까?')) return;
 
   try {
     const memberIdx = employee.value.idx;
@@ -400,7 +400,7 @@ const saveEmployee = async () => {
 
 // 삭제
 const deleteEmployee = async () => {
-  if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  if (!await window.customConfirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
 
   try {
     const memberId = route.params.id;

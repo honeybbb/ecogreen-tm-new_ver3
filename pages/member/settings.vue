@@ -229,7 +229,7 @@ const saveCode = async (code) => {
 };
 
 const deleteCode = async (itemCd) => {
-  if (!confirm('정말 삭제하시겠습니까?')) return;
+  if (!await window.customConfirm('정말 삭제하시겠습니까?')) return;
   try {
     await axios.delete(`/api/v1/code/${itemCd}`);
     alert('삭제되었습니다.');

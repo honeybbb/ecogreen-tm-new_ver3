@@ -33,8 +33,9 @@ const activityLogs = ref([
 ]);
 
 // 4. 이벤트 핸들러
-const updateProfile = () => {
-  if(!confirm('회원 정보를 수정하시겠습니까?')) return;
+const updateProfile = async () => {
+  //if(!confirm('회원 정보를 수정하시겠습니까?')) return;
+  if(!await window.customConfirm('회원 정보를 수정하시겠습니까?')) return;
   // API 호출 로직
   alert('정보가 수정되었습니다.');
 };

@@ -187,7 +187,7 @@ const saveNotice = async () => {
 };
 
 const deleteNotice = async () => {
-  if (confirm('정말 삭제하시겠습니까?')) {
+  if (await window.customConfirm('정말 삭제하시겠습니까?')) {
     try {
       await axios.delete(`/api/v1/notice/remove/${currentNotice.value.idx}`);
       alert('삭제되었습니다.');

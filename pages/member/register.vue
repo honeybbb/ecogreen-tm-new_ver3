@@ -142,7 +142,7 @@ const handleSubmit = async () => {
 
    */
 
-  if (!confirm(`${employee.value.name} 직원을 등록하시겠습니까?`)) return;
+  if (!await window.customConfirm(`${employee.value.name} 직원을 등록하시겠습니까?`)) return;
 
   const payload = {
     ...employee.value,
@@ -173,8 +173,8 @@ const handleSubmit = async () => {
 };
 
 // 5. 취소 버튼 핸들러
-const handleCancel = () => {
-  if (confirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) {
+const handleCancel = async () => {
+  if (await window.customConfirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) {
     resetForm();
     router.push({
       path: '/member/list',

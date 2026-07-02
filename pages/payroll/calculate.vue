@@ -429,7 +429,7 @@ const deleteCalculatedPay = async () => {
     return;
   }
 
-  if (!confirm('선택한 직원의 급여 계산 내역을 삭제하시겠습니까?')) {
+  if (!await window.customConfirm('선택한 직원의 급여 계산 내역을 삭제하시겠습니까?')) {
     return;
   }
 
@@ -449,7 +449,7 @@ const deleteCalculatedPay = async () => {
   }
 }
 
-const resetCalculatedPay = () => {
+const resetCalculatedPay = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
 
   if (selectedRows.length === 0) {
@@ -457,7 +457,7 @@ const resetCalculatedPay = () => {
     return;
   }
 
-  if (!confirm('선택한 직원의 급여 계산 내역을 초기화하시겠습니까?\n(저장하지 않은 내역은 모두 0원으로 되돌아갑니다.)')) {
+  if (!await window.customConfirm('선택한 직원의 급여 계산 내역을 초기화하시겠습니까?\n(저장하지 않은 내역은 모두 0원으로 되돌아갑니다.)')) {
     return;
   }
 
@@ -636,7 +636,7 @@ const savePayroll = async () => {
   if (selectedRows.length === 0) { alert('저장할 직원을 체크해주세요.'); return; }
   if (!selectedPaymentDay.value) { alert('적용할 실제 급여 지급일을 선택해주세요.'); return; }
 
-  if (!confirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
+  if (!await window.customConfirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
   try {
     const [saveYear, saveMonth] = selectedYearMonth.value.split('-');
     await Promise.all(selectedRows.map(row => {

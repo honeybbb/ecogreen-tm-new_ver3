@@ -89,7 +89,7 @@ const deleteAccount = async (item) => {
   }
 
    */
-  if (!confirm(`'${item.bank} ${item.accountNumber}' 계좌를 삭제하시겠습니까?`)) return;
+  if (!await window.customConfirm(`'${item.bank} ${item.accountNumber}' 계좌를 삭제하시겠습니까?`)) return;
 
   try {
     await axios.delete(`/api/v1/config/company/account/${item.idx}`);

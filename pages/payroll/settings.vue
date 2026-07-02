@@ -211,7 +211,7 @@ const cancelCategoryEdit = () => {
 
 // 2차 카테고리 삭제 로직 (DB 연동)
 const deleteCategory = async (group, childId) => {
-  if (!confirm('이 중분류를 삭제하시겠습니까? 하위 항목도 모두 보이지 않게 됩니다.')) return;
+  if (!await window.customConfirm('이 중분류를 삭제하시겠습니까? 하위 항목도 모두 보이지 않게 됩니다.')) return;
 
   try {
     await axios.delete(`/api/v1/code/${childId}`);
@@ -266,7 +266,7 @@ const saveCode = async (code) => {
 
 // 3차 코드 삭제
 const deleteCode = async (itemCd) => {
-  if (!confirm('정말 삭제하시겠습니까?')) return;
+  if (!await window.customConfirm('정말 삭제하시겠습니까?')) return;
   try {
     await axios.delete(`/api/v1/code/${itemCd}`);
     alert('삭제되었습니다.');

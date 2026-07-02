@@ -69,7 +69,7 @@ const toggleEdit = () => {
 };
 
 const handleSave = async () => {
-  if (confirm('변경된 요율을 저장하시겠습니까?\n산재보험은 회사 부담금 계산에만 영향을 미칩니다.')) {
+  if (await window.customConfirm('변경된 요율을 저장하시겠습니까?\n산재보험은 회사 부담금 계산에만 영향을 미칩니다.')) {
     const params = {
       applied_year: tempRates.value.appliedYear,
       pension_rate: tempRates.value.nationalPension,

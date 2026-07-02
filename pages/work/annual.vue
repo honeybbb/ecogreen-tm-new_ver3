@@ -485,7 +485,7 @@ async function fetchRequests() {
 }
 
 async function updateStatus(idx, status) {
-  if (!confirm('처리하시겠습니까?')) return
+  if (!await window.customConfirm('처리하시겠습니까?')) return
   await withLoading(isLoadingReq, async () => {
     await axios.post('/api/v1/member/off/status', { idx, status, approverIdx })
     await fetchRequests()
@@ -494,7 +494,7 @@ async function updateStatus(idx, status) {
 
 async function bulkUpdateStatus(status) {
   const targets = selectedReq.value
-  if (!targets.length || !confirm(`${targets.length}건을 일괄 처리하시겠습니까?`)) return
+  if (!targets.length || !await window.customConfirm(`${targets.length}건을 일괄 처리하시겠습니까?`)) return
   await withLoading(isLoadingReq, async () => {
     await Promise.allSettled(targets.map(r => axios.post('/api/v1/member/off/status', { idx: r.idx, status, approverIdx })))
     await fetchRequests()
@@ -614,7 +614,7 @@ function openGrant() {
 }
 async function executeGrant() {
   const targets = selectedQuota.value.length > 0 ? selectedQuota.value : filteredQuota.value.filter(i => !i.hasQuota);
-  if (!targets.length || !confirm(`${targets.length}명에게 일괄 부여하시겠습니까?`)) return;
+  if (!targets.length || !await window.customConfirm(`${targets.length}명에게 일괄 부여하시겠습니까?`)) return;
   await withLoading(isGranting, async () => {
     await Promise.allSettled(targets.map(i => axios.post('/api/v1/member/annual/register', {
       mIdx: i.mIdx, sIdx: i.sIdx, mName: i.name, mType: i.positionCd,
@@ -670,7 +670,7 @@ async function executeEdit() {
     return;
   }
 
-  if (!confirm('연차 정보를 수정하시겠습니까?')) return;
+  if (!await window.customConfirm('연차 정보를 수정하시겠습니까?')) return;
 
   await withLoading(isEditing, async () => {
     // 백엔드 register API는 idx가 있으면 Update, 없으면 Insert로 동작하므로

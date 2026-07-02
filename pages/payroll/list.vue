@@ -597,7 +597,7 @@ const savePayroll = async () => {
     alert('저장할 직원을 체크해주세요.');
     return;
   }
-  if (!confirm(`체크된 ${selectedRows.length}명의 급여 정보를 저장하시겠습니까?`)) return;
+  if (!await window.customConfirm(`체크된 ${selectedRows.length}명의 급여 정보를 저장하시겠습니까?`)) return;
 
   try {
     await Promise.all(selectedRows.map(row => {

@@ -107,7 +107,7 @@ const updateFourInsStatus = async (m, colName) => {
   const newValue = m[colName] === 'Y' ? 'N' : 'Y';
   const label = colName === 'inYn' ? '취득신고' : '상실신고';
 
-  if (!confirm(`${m.name} 직원의 4대보험 ${label} 여부를 변경하시겠습니까?`)) return;
+  if (!await window.customConfirm(`${m.name} 직원의 4대보험 ${label} 여부를 변경하시겠습니까?`)) return;
 
   let payload = {
     colName: colName,
@@ -135,7 +135,7 @@ const toggleRRN = async () => {
     revealedRRNs.value = {};
     return;
   }
-  if (!confirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
+  if (!await window.customConfirm('주민번호 전체를 표시합니다. 계속하시겠습니까?')) return;
 
   rrnLoading.value = true;
   try {
@@ -362,7 +362,7 @@ const goToRegister = () => {
 };
 const goToDetail   = (id) => router.push(`/member/${id}`);
 const goRemove = async (id) => {
-  if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  if (!await window.customConfirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
 
   try {
     await axios.delete(`/api/v1/member/${id}`);

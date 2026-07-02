@@ -248,7 +248,7 @@ const saveSchedule = async () => {
 // ================================================================
 const deleteRecord = async (record) => {
   if (!record.idx) return alert('삭제할 수 없는 항목입니다.');
-  if (!confirm(`${record.staffName}의 ${record.date} 근태를 삭제하시겠습니까?`)) return;
+  if (!await window.customConfirm(`${record.staffName}의 ${record.date} 근태를 삭제하시겠습니까?`)) return;
   try {
     await axios.delete(`/api/v1/work/${record.idx}`);
     await fetchSchedules();

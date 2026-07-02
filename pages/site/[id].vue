@@ -197,7 +197,8 @@ const saveEquip = async () => {
 };
 
 const deleteEquip = async (equip) => {
-  if (!confirm(`'${equip.name}' 장비를 삭제하시겠습니까?`)) return;
+  //if (!confirm(`'${equip.name}' 장비를 삭제하시겠습니까?`)) return;
+  if (!(await window.customConfirm(`'${equip.name}' 장비를 삭제하시겠습니까?`))) return;
   try {
     await axios.delete(`/api/v1/site/equipment/${equip.idx}`);
   } catch { /* 목업 모드 */ }
@@ -296,7 +297,7 @@ const confirmAssign = async () => {
 };
 
 const removeAssignedStaff = async (assignIdx) => {
-  if (!confirm('배치를 해제하시겠습니까?')) return;
+  if (!await window.customConfirm('배치를 해제하시겠습니까?')) return;
   try {
     const res = await axios.put(`/api/v1/member/staffing/${assignIdx}`);
     if (res.data.result) {
@@ -543,6 +544,61 @@ const updateStaffCount = (staff, delta) => {
 const addItem    = (g, sec)      => g.costBreakdown[sec].push({ label: '', values: makeValuesObj(g.staffList) });
 const removeItem = (g, sec, idx) => g.costBreakdown[sec].splice(idx, 1);
 
+const activeContractIndex = ref(0);
+
+// =============================================
+// 계약 리스트 검색/필터/정렬 (계약 건수가 많아질 때 대비)
+// =============================================
+const contractSearchKeyword = ref('');
+const contractFilterCategory = ref('all');
+// 오늘이 계약 시작일~종료일 사이에 포함되는지 (진행중 여부)
+const isContractActive = (group) => {
+  const today = new Date();
+  const start = group.contractStart ? new Date(group.contractStart) : null;
+  const end = group.contractEnd ? new Date(group.contractEnd) : null;
+
+  if (start && today < start) return false;
+  if (end && today > end) return false;
+  return true;
+};
+
+const isEffectiveContract = (group) => {
+  if (!isContractActive(group)) return false;
+
+  const sameCat = contractGroups.value.filter(g => g.type === group.type);
+  const covering = sameCat.filter(g => isContractActive(g));
+
+  if (covering.length === 0) return false;
+  // 오늘을 포함하는 계약들 중 시작일이 가장 늦은(최신) 계약을 찾음
+  const latest = covering.reduce((best, g) => {
+    const gStart = g.contractStart ? new Date(g.contractStart) : new Date(0);
+    const bestStart = best.contractStart ? new Date(best.contractStart) : new Date(0);
+    return gStart > bestStart ? g : best;
+  });
+  return latest === group;
+};
+
+// { group, idx } 형태로 원본 contractGroups 인덱스를 보존한 채 필터링/정렬
+const filteredContractList = computed(() => {
+  return contractGroups.value.map((group, idx) => ({ group, idx }))
+      .filter(({ group }) => {
+        if (contractFilterCategory.value !== 'all' && group.category !== contractFilterCategory.value) return false;
+        const kw = contractSearchKeyword.value.trim();
+        if (kw) {
+            const periodStr = `${group.contractStart || ''}~${group.contractEnd || ''}`;
+            if (!periodStr.includes(kw) && !(group.category || '').includes(kw)) return false;
+        }
+        return true;
+      }).sort((a, b) => {
+        const aEffective = isEffectiveContract(a.group);
+        const bEffective = isEffectiveContract(b.group);
+        if (aEffective !== bEffective) return aEffective ? -1 : 1; // 진짜 진행중 계약이 최상단
+        const aStart = a.group.contractStart ? new Date(a.group.contractStart) : new Date(0);
+        const bStart = b.group.contractStart ? new Date(b.group.contractStart) : new Date(0);
+        return bStart - aStart; // 최신 시작일 우선
+      });
+});
+
 const addContractGroup = (category) => {
   contractGroups.value.push({
     category: category.itemNm,
@@ -568,10 +624,18 @@ const addContractGroup = (category) => {
     tempCleaningCode: '',    // 임시 선택 코드
     tempCleaningCount: 1,    // 임시 입력 횟수
   });
+
+  activeContractIndex.value = contractGroups.value.length - 1;
 };
 
 const removeContractGroup = (index) => {
-  if (confirm('해당 계약 정보를 삭제하시겠습니까?')) contractGroups.value.splice(index, 1);
+  if (confirm('해당 계약 정보를 삭제하시겠습니까?')) {
+    contractGroups.value.splice(index, 1);
+    // 삭제 후 인덱스 범위 초과 방지
+    if (activeContractIndex.value >= contractGroups.value.length) {
+      activeContractIndex.value = Math.max(0, contractGroups.value.length - 1);
+    }
+  }
 };
 
 // =============================================
@@ -823,7 +887,7 @@ const getSiteData = async () => {
   const sIdx = route.params.id || route.query.idx;
   if (!sIdx) return;
   try {
-    const res    = await axios.get(`/api/v1/site/data/${sIdx}`);
+    const res    = await axios.get(`/api/v2/site/data/${sIdx}`);
     const result = res.data.data[0];
     if (!result) return;
 
@@ -861,8 +925,8 @@ const getSiteData = async () => {
       settlementBigo:   '', // 정산 특이사항 작성용 인풋 초기화
     };
 
-    if (result.contractList) {
-      contractGroups.value = JSON.parse(result.contractList).map(item => {
+    if (result.contractList && Array.isArray(result.contractList)) {
+      contractGroups.value = result.contractList.map(item => {
         //staffList 안전 파싱 (문자열일 경우 대비)
         let rawStaff = item.staffList || [];
         if (typeof rawStaff === 'string') {
@@ -934,7 +998,7 @@ const getSiteData = async () => {
 
     if (result.bigoList) {
       try {
-        const allLog = JSON.parse(result.bigoList);
+        const allLog = result.bigoList;
 
         // type 1: 현장 특이사항
         bigoHistory.value = allLog
@@ -1000,7 +1064,8 @@ const updateCleaningCount = (task, delta) => {
 
 // 메모 수정
 const editMemo = async (item) => {
-  const newText = prompt('특이사항 내용을 수정하세요:', item.bigo);
+  //const newText = prompt('특이사항 내용을 수정하세요:', item.bigo);
+  const newText = await window.customPrompt('특이사항 내용을 수정하세요:', item.bigo);
 
   // 사용자가 취소를 누르거나, 내용이 비어있거나, 기존과 내용이 똑같으면 종료
   if (newText === null || newText.trim() === '' || newText.trim() === item.bigo) return;
@@ -1027,7 +1092,8 @@ const editMemo = async (item) => {
 
 // 메모 삭제
 const deleteMemo = async (list, index, item) => {
-  if (!confirm('이 특이사항을 삭제하시겠습니까?')) return;
+  //if (!confirm('이 특이사항을 삭제하시겠습니까?')) return;
+  if (!(await window.customConfirm('이 특이사항을 삭제하시겠습니까?'))) return;
 
   try {
     // 백엔드 API 호출 (삭제)
@@ -1056,8 +1122,9 @@ const removeNewFile = (group, index) => {
 };
 
 // 기존 파일 삭제 (화면에서만 지우고 저장 시 백엔드에 반영)
-const removeExistingFile = (group, index) => {
-  if (!confirm('기존 계약서 파일을 삭제하시겠습니까? (저장 시 최종 반영됩니다)')) return;
+const removeExistingFile = async (group, index) => {
+  //if (!confirm('기존 계약서 파일을 삭제하시겠습니까? (저장 시 최종 반영됩니다)')) return;
+  if (!(await window.customConfirm('기존 계약서 파일을 삭제하시겠습니까? (저장 시 최종 반영됩니다)'))) return;
   group.files.splice(index, 1);
 };
 
@@ -1158,7 +1225,8 @@ const setCompanyAccount = () => {
 };
 
 const saveSiteData = async () => {
-  if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
+  //if (!confirm('수정된 정보를 저장하시겠습니까?')) return;
+  if (!(await window.customConfirm('수정된 정보를 저장하시겠습니까?'))) return;
 
   contractGroups.value.forEach(group => {
     const finalFee = getDisplayMonthlyTotal(group);
@@ -1236,7 +1304,8 @@ const saveSiteData = async () => {
 };
 
 const deleteSite = async () => {
-  if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  //if (!confirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  if (!(await window.customConfirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'))) return;
   try {
     await axios.delete(`/api/v1/site/${route.params.id || route.query.idx}`);
     alert('삭제되었습니다.');
@@ -1278,6 +1347,70 @@ const searchAddress = async () => {
       detailInput.value?.focus();
     },
   }).open();
+};
+
+// =============================================
+// 산출내역서 엑셀 방향키 이동 로직 (상하좌우 모두 지원)
+// =============================================
+const handleTableKeydown = (e) => {
+  const isUp = e.key === 'ArrowUp';
+  const isDown = e.key === 'ArrowDown';
+  const isLeft = e.key === 'ArrowLeft';
+  const isRight = e.key === 'ArrowRight';
+
+  // 방향키가 아니면 무시
+  if (!isUp && !isDown && !isLeft && !isRight) return;
+
+  const currentInput = e.target;
+  if (currentInput.tagName !== 'INPUT') return;
+
+  // ★ 핵심 UX: 좌우 방향키 처리 시 텍스트 편집(커서 이동) 우선 보장
+  // selectionStart/End를 지원하는 text 타입 등에서 커서가 중간에 있으면 셀 이동을 하지 않음
+  if (typeof currentInput.selectionStart === 'number') {
+    if (isLeft && currentInput.selectionStart > 0) return;
+    if (isRight && currentInput.selectionEnd < currentInput.value.length) return;
+  }
+
+  const currentTd = currentInput.closest('td');
+  const currentTr = currentInput.closest('tr');
+  if (!currentTd || !currentTr) return;
+
+  // 셀 이동이 확정되었으므로 브라우저 기본 스크롤 동작 방지
+  e.preventDefault();
+
+  // 1. 상/하 이동
+  if (isUp || isDown) {
+    const cellIndex = Array.from(currentTr.children).indexOf(currentTd);
+    let targetTr = isUp ? currentTr.previousElementSibling : currentTr.nextElementSibling;
+
+    while (targetTr) {
+      const targetTd = targetTr.children[cellIndex];
+      if (targetTd) {
+        const targetInput = targetTd.querySelector('input:not([disabled])');
+        if (targetInput) {
+          targetInput.focus();
+          targetInput.select(); // 엑셀처럼 이동 시 전체 선택
+          return;
+        }
+      }
+      targetTr = isUp ? targetTr.previousElementSibling : targetTr.nextElementSibling;
+    }
+  }
+
+  // 2. 좌/우 이동
+  else if (isLeft || isRight) {
+    let targetTd = isLeft ? currentTd.previousElementSibling : currentTd.nextElementSibling;
+
+    while (targetTd) {
+      const targetInput = targetTd.querySelector('input:not([disabled])');
+      if (targetInput) {
+        targetInput.focus();
+        targetInput.select();
+        return;
+      }
+      targetTd = isLeft ? targetTd.previousElementSibling : targetTd.nextElementSibling;
+    }
+  }
 };
 
 // =============================================
@@ -1602,766 +1735,764 @@ onMounted(async () => {
           <i class="mdi mdi-file-document-outline"></i><p>등록된 계약이 없습니다</p>
         </div>
 
-        <div class="contract-list">
-          <div v-for="(group, idx) in contractGroups" :key="idx" class="contract-card-detail">
-            <div class="contract-card-header">
-              <div class="contract-title-row">
-                <span :class="['contract-badge', `badge-${group.category}`]">
-                  <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
-                </span>
-                <span v-if="getContractDuration(group)" class="contract-duration">
-                  <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
-                </span>
-              </div>
-
-              <!--div class="contract-header-options">
-                <div class="header-melt-option">
-                  <span>연차 수당 포함</span>
-                  <label class="switch-xs">
-                    <input type="checkbox" v-model="group.meltOptions.annualLeave" />
-                    <span class="slider-xs round"></span>
-                  </label>
-                </div>
-                <div class="header-melt-option">
-                  <span>퇴직 수당 포함</span>
-                  <label class="switch-xs">
-                    <input type="checkbox" v-model="group.meltOptions.severance" />
-                    <span class="slider-xs round"></span>
-                  </label>
-                </div>
-                <div class="header-melt-option">
-                  <span>근로자의날 수당 포함</span>
-                  <label class="switch-xs">
-                    <input type="checkbox" v-model="group.meltOptions.workersDay" />
-                    <span class="slider-xs round"></span>
-                  </label>
-                </div>
-              </div-->
+        <div v-else class="contract-layout">
+          <!-- 좌측: 계약 리스트 (검색/필터) -->
+          <div class="contract-sidebar">
+            <div class="contract-sidebar-search">
+              <i class="mdi mdi-magnify"></i>
+              <input type="text" v-model="contractSearchKeyword" placeholder="기간 또는 구분 검색" class="transfer-input" />
+            </div>
+            <div class="contract-sidebar-filters">
+              <button
+                    type="button"
+                    class="filter-chip"
+                    :class="{ active: contractFilterCategory === 'all' }"
+                    @click="contractFilterCategory = 'all'">
+                전체 {{ contractGroups.length }}
+              </button>
+              <button
+                    v-for="cat in typeOptions" :key="cat.itemCd"
+                    type="button"
+                    class="filter-chip"
+                    :class="[`chip-filter-${cat.itemNm}`, { active: contractFilterCategory === cat.itemNm }]"
+                    @click="contractFilterCategory = cat.itemNm">
+                {{ cat.itemNm }} {{ contractGroups.filter(g => g.category === cat.itemNm).length }}
+              </button>
             </div>
 
-            <div class="contract-card-body">
-              <div class="contract-file-section" style="margin-bottom: 24px;">
-                <div class="file-upload-wrap" style="margin-bottom: 12px;">
-                  <label class="btn-edit" style="display: inline-flex; width: auto;">
-                    <i class="mdi mdi-upload"></i> 파일 추가
-                    <input type="file" multiple @change="onFileSelect(group, $event)" style="display: none;" />
+            <div class="contract-sidebar-list">
+              <div v-if="filteredContractList.length === 0" class="empty-list" style="padding: 24px 8px;">
+                조건에 맞는 계약이 없습니다
+              </div>
+              <div
+                    v-for="({ group, idx }) in filteredContractList"
+                    :key="'item-' + idx"
+                    class="sidebar-contract-item"
+                    :class="[`item-${group.category}`, { active: activeContractIndex === idx, expired: !isContractActive(group) }]"
+                    @click="activeContractIndex = idx"
+                >
+                <div class="item-top-row">
+                  <span class="sheet-type-chip" :class="`chip-${group.category}`">{{ group.category }}</span>
+                  <span v-if="isEffectiveContract(group)" class="active-badge">진행중</span>
+                  <span v-else-if="isContractActive(group)" class="superseded-badge">이전 계약</span>
+                  <span v-else-if="group.contractStart && new Date(group.contractStart) > new Date()" class="upcoming-badge">예정</span>
+                  <span v-else class="expired-badge">종료</span>
+                  <span class="btn-delete-sheet" @click.stop="removeContractGroup(idx)" title="계약 삭제">
+          <i class="mdi mdi-close"></i>
+        </span>
+                </div>
+                <div class="item-period">
+                  {{ group.contractStart && group.contractEnd ? `${group.contractStart} ~ ${group.contractEnd}` : '신규 계약' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 우측: 선택된 계약 상세 -->
+          <div class="contract-detail-panel">
+            <div
+                v-for="(group, idx) in contractGroups"
+                :key="idx"
+                v-show="activeContractIndex === idx"
+                class="contract-card-detail"
+            >
+              <div class="contract-card-header">
+                <div class="contract-title-row">
+                  <span :class="['contract-badge', `badge-${group.category}`]">
+                    <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
+                  </span>
+                  <span v-if="getContractDuration(group)" class="contract-duration">
+                    <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="contract-card-body">
+                <div class="contract-file-section" style="margin-bottom: 24px;">
+                  <div class="file-upload-wrap" style="margin-bottom: 12px;">
+                    <label class="btn-edit" style="display: inline-flex; width: auto;">
+                      <i class="mdi mdi-upload"></i> 파일 추가
+                      <input type="file" multiple @change="onFileSelect(group, $event)" style="display: none;" />
+                    </label>
+                  </div>
+
+                  <label class="section-label">
+                    <i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일
                   </label>
-                </div>
 
-                <label class="section-label">
-                  <i class="mdi mdi-file-pdf-box"></i>계약서 원본 파일
-                </label>
-
-                <div v-if="group.files && group.files.length > 0" class="file-list-container">
-                  <div v-for="(file, fIdx) in group.files" :key="fIdx" class="file-item-card readonly-file-card">
-                    <div class="file-info">
-                      <div class="file-icon-wrap">
-                        <i class="mdi mdi-file-pdf-box"></i>
-                      </div>
-                      <div class="file-name-group">
-                        <span class="file-name">{{ file.name || '계약서 파일' }}</span>
-                        <span v-if="file.size" class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
-                      </div>
-                    </div>
-                    <div class="file-actions" style="display: flex; gap:4px;">
-                      <a :href="`/api${file.url}`" target="_blank" class="btn-download" title="새 탭에서 보기 / 다운로드">
-                        <i class="mdi mdi-download"></i>
-                      </a>
-
-                      <button type="button" class="btn-remove-cost" @click="removeExistingFile(group, fIdx)" title="기존 파일 삭제">
-                        <i class="mdi mdi-close"></i>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-else class="empty-staff-text" style="background: var(--bg-canvas); border-radius: 8px; border: 1px dashed var(--border-color); padding: 16px 0;">
-                  <p style="margin: 0;">등록된 계약서 파일이 없습니다.</p>
-                </div>
-
-                <div v-if="group.newFiles && group.newFiles.length > 0" class="file-list-container" style="margin-top: 12px;">
-                  <div v-for="(file, nIdx) in group.newFiles" :key="'new-'+nIdx" class="file-item-card readonly-file-card" style="border-color: var(--primary);">
-                    <div class="file-info">
-                      <div class="file-icon-wrap" style="background: var(--primary-soft);"><i class="mdi mdi-file-plus text-primary"></i></div>
-                      <div class="file-name-group">
-                        <span class="file-name text-primary">[새 파일] {{ file.name }}</span>
-                      </div>
-                    </div>
-                    <div class="file-actions">
-                      <button type="button" class="btn-remove-cost" @click="removeNewFile(group, nIdx)">
-                        <i class="mdi mdi-close"></i>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="contract-info-grid">
-                <div class="contract-info-item">
-                  <label>최초 계약일</label>
-                  <input type="date" v-model="group.firstContractDt" class="info-input" max="9999-12-31" />
-                </div>
-                <div class="contract-info-item">
-                  <label>계약 시작일</label>
-                  <input type="date" v-model="group.contractStart" class="info-input" max="9999-12-31"/>
-                </div>
-                <div class="contract-info-item">
-                  <label>계약 종료일</label>
-                  <input type="date" v-model="group.contractEnd" class="info-input" max="9999-12-31" />
-                </div>
-                <div class="contract-info-item full-width">
-                  <label>근무 시간 및 형태</label>
-                  <textarea v-model="group.workSchedule" class="info-textarea" rows="2"></textarea>
-                </div>
-                <div class="contract-info-item full-width">
-                  <label>휴게 시간</label>
-                  <input type="text" v-model="group.breakTime" class="info-input" placeholder="예: 주간 2시간, 야간 4시간"/>
-                </div>
-              </div>
-
-              <!-- 인원 구성 -->
-              <div class="staff-info-grid">
-                <label class="section-label">
-                  <i class="mdi mdi-account-group-outline"></i>인원 구성 및 스케줄
-                </label>
-
-                <div class="staff-input-group">
-                  <select v-model="group.tempJobCode" class="info-select staff-position-select">
-                    <option value="">직책 선택</option>
-                    <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
-                  </select>
-                  <input
-                      type="number"
-                      v-model="group.tempCount"
-                      min="1"
-                      class="info-input staff-count-input text-right"
-                      placeholder="인원 수"
-                  />
-                  <button type="button" @click="addStaffToGroup(idx)" class="btn-add-staff-small">
-                    <i class="mdi mdi-plus"></i> 추가
-                  </button>
-                </div>
-
-                <div v-if="group.staffList?.length > 0" class="staff-list-vertical">
-                  <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
-                    <div class="staff-member-card">
-                      <div class="staff-member-info">
-                        <div class="staff-member-details">
-                          <i class="mdi mdi-account-outline"></i>
-                          <span class="staff-position">{{ staff.name }}</span>
-                          <div class="staff-count-stepper">
-                            <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, -1)">
-                              <i class="mdi mdi-minus"></i>
-                            </button>
-                            <input type="number" v-model.number="staff.count" class="input-stepper" min="1" />
-                            <span class="stepper-text">명</span>
-                            <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, 1)">
-                              <i class="mdi mdi-plus"></i>
-                            </button>
-                          </div>
+                  <div v-if="group.files && group.files.length > 0" class="file-list-container">
+                    <div v-for="(file, fIdx) in group.files" :key="fIdx" class="file-item-card readonly-file-card">
+                      <div class="file-info">
+                        <div class="file-icon-wrap">
+                          <i class="mdi mdi-file-pdf-box"></i>
+                        </div>
+                        <div class="file-name-group">
+                          <span class="file-name">{{ file.name || '계약서 파일' }}</span>
+                          <span v-if="file.size" class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
                         </div>
                       </div>
-                      <div class="staff-actions">
-                        <button type="button" @click="staff.showSchedule = !staff.showSchedule" class="btn-toggle-schedule" :class="{ 'active': staff.showSchedule }">
-                          <i class="mdi" :class="staff.showSchedule ? 'mdi-calendar-collapse-horizontal' : 'mdi-calendar-expand-horizontal'"></i>
-                          근무 설정
-                        </button>
-                        <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff-small">
+                      <div class="file-actions" style="display: flex; gap:4px;">
+                        <a :href="`/api${file.url}`" target="_blank" class="btn-download" title="새 탭에서 보기 / 다운로드">
+                          <i class="mdi mdi-download"></i>
+                        </a>
+
+                        <button type="button" class="btn-remove-cost" @click="removeExistingFile(group, fIdx)" title="기존 파일 삭제">
                           <i class="mdi mdi-close"></i>
                         </button>
                       </div>
                     </div>
+                  </div>
 
-                    <div v-show="staff.showSchedule" class="schedule-panel">
-                      <div class="schedule-header">
-                        <span><i class="mdi mdi-clock-outline"></i> 요일별 근무시간</span>
-                        <button type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">
-                          <i class="mdi mdi-layers-outline"></i> 평일 일괄 적용
+                  <div v-else class="empty-staff-text" style="background: var(--bg-canvas); border-radius: 8px; border: 1px dashed var(--border-color); padding: 16px 0;">
+                    <p style="margin: 0;">등록된 계약서 파일이 없습니다.</p>
+                  </div>
+
+                  <div v-if="group.newFiles && group.newFiles.length > 0" class="file-list-container" style="margin-top: 12px;">
+                    <div v-for="(file, nIdx) in group.newFiles" :key="'new-'+nIdx" class="file-item-card readonly-file-card" style="border-color: var(--primary);">
+                      <div class="file-info">
+                        <div class="file-icon-wrap" style="background: var(--primary-soft);"><i class="mdi mdi-file-plus text-primary"></i></div>
+                        <div class="file-name-group">
+                          <span class="file-name text-primary">[새 파일] {{ file.name }}</span>
+                        </div>
+                      </div>
+                      <div class="file-actions">
+                        <button type="button" class="btn-remove-cost" @click="removeNewFile(group, nIdx)">
+                          <i class="mdi mdi-close"></i>
                         </button>
                       </div>
+                    </div>
+                  </div>
+                </div>
 
-                      <div class="schedule-table-wrap">
-                        <table class="schedule-table">
-                          <thead>
-                          <tr>
-                            <th class="col-day">요일</th>
-                            <th class="col-time">출근 ~ 퇴근</th>
-                            <th class="col-break">휴게(분)</th>
-                            <th class="col-opt">옵션</th>
-                          </tr>
-                          </thead>
-                          <tbody>
-                          <tr v-for="day in weekDays" :key="day.val" :class="{'inactive-row': !staff.schedule[day.val].isActive}">
-                            <td>
-                              <label class="day-checkbox">
-                                <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
-                                <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
-                              </label>
-                            </td>
-                            <td>
-                              <div class="time-inputs" v-if="staff.schedule[day.val].isActive">
-                                <input type="time" v-model="staff.schedule[day.val].startTime" class="info-input time-input" />
-                                <span>~</span>
-                                <input type="time" v-model="staff.schedule[day.val].endTime" class="info-input time-input" />
-                              </div>
-                              <span v-else class="text-muted" style="font-size:12px;">휴무</span>
-                            </td>
-                            <td>
-                              <input
-                                  v-if="
-                                    staff.schedule[day.val].isActive"
+                <div class="contract-info-grid">
+                  <div class="contract-info-item">
+                    <label>최초 계약일</label>
+                    <input type="date" v-model="group.firstContractDt" class="info-input" max="9999-12-31" />
+                  </div>
+                  <div class="contract-info-item">
+                    <label>계약 시작일</label>
+                    <input type="date" v-model="group.contractStart" class="info-input" max="9999-12-31"/>
+                  </div>
+                  <div class="contract-info-item">
+                    <label>계약 종료일</label>
+                    <input type="date" v-model="group.contractEnd" class="info-input" max="9999-12-31" />
+                  </div>
+                  <div class="contract-info-item full-width">
+                    <label>근무 시간 및 형태</label>
+                    <textarea v-model="group.workSchedule" class="info-textarea" rows="2"></textarea>
+                  </div>
+                  <div class="contract-info-item full-width">
+                    <label>휴게 시간</label>
+                    <input type="text" v-model="group.breakTime" class="info-input" placeholder="예: 주간 2시간, 야간 4시간"/>
+                  </div>
+                </div>
+
+                <div class="staff-info-grid">
+                  <label class="section-label">
+                    <i class="mdi mdi-account-group-outline"></i>인원 구성 및 스케줄
+                  </label>
+
+                  <div class="staff-input-group">
+                    <select v-model="group.tempJobCode" class="info-select staff-position-select">
+                      <option value="">직책 선택</option>
+                      <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
+                    </select>
+                    <input
+                        type="number"
+                        v-model="group.tempCount"
+                        min="1"
+                        class="info-input staff-count-input text-right"
+                        placeholder="인원 수"
+                    />
+                    <button type="button" @click="addStaffToGroup(idx)" class="btn-add-staff-small">
+                      <i class="mdi mdi-plus"></i> 추가
+                    </button>
+                  </div>
+
+                  <div v-if="group.staffList?.length > 0" class="staff-list-vertical">
+                    <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
+                      <div class="staff-member-card">
+                        <div class="staff-member-info">
+                          <div class="staff-member-details">
+                            <i class="mdi mdi-account-outline"></i>
+                            <span class="staff-position">{{ staff.name }}</span>
+                            <div class="staff-count-stepper">
+                              <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, -1)">
+                                <i class="mdi mdi-minus"></i>
+                              </button>
+                              <input type="number" v-model.number="staff.count" class="input-stepper" min="1" />
+                              <span class="stepper-text">명</span>
+                              <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, 1)">
+                                <i class="mdi mdi-plus"></i>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="staff-actions">
+                          <button type="button" @click="staff.showSchedule = !staff.showSchedule" class="btn-toggle-schedule" :class="{ 'active': staff.showSchedule }">
+                            <i class="mdi" :class="staff.showSchedule ? 'mdi-calendar-collapse-horizontal' : 'mdi-calendar-expand-horizontal'"></i>
+                            근무 설정
+                          </button>
+                          <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff-small">
+                            <i class="mdi mdi-close"></i>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div v-show="staff.showSchedule" class="schedule-panel">
+                        <div class="schedule-header">
+                          <span><i class="mdi mdi-clock-outline"></i> 요일별 근무시간</span>
+                          <button type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">
+                            <i class="mdi mdi-layers-outline"></i> 평일 일괄 적용
+                          </button>
+                        </div>
+
+                        <div class="schedule-table-wrap">
+                          <table class="schedule-table">
+                            <thead>
+                            <tr>
+                              <th class="col-day">요일</th>
+                              <th class="col-time">출근 ~ 퇴근</th>
+                              <th class="col-break">휴게(분)</th>
+                              <th class="col-opt">옵션</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr v-for="day in weekDays" :key="day.val" :class="{'inactive-row': !staff.schedule[day.val].isActive}">
+                              <td>
+                                <label class="day-checkbox">
+                                  <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
+                                  <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
+                                </label>
+                              </td>
+                              <td>
+                                <div class="time-inputs" v-if="staff.schedule[day.val].isActive">
+                                  <input type="time" v-model="staff.schedule[day.val].startTime" class="info-input time-input" />
+                                  <span>~</span>
+                                  <input type="time" v-model="staff.schedule[day.val].endTime" class="info-input time-input" />
+                                </div>
+                                <span v-else class="text-muted" style="font-size:12px;">휴무</span>
+                              </td>
+                              <td>
+                                <input
+                                    v-if="
+                                      staff.schedule[day.val].isActive"
                                     type="number"
                                     v-model="staff.schedule[day.val].breakTime"
                                     class="info-input break-input"
                                     min="0"
                                     placeholder="0"
+                                />
+                                <span v-else class="text-muted">-</span>
+                              </td>
+                              <td>
+                                <label class="biweekly-checkbox" v-if="staff.schedule[day.val].isActive" >
+                                  <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" />
+                                  <span>격주</span>
+                                </label>
+                                <span v-else class="text-muted">-</span>
+                              </td>
+                            </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  <div v-else class="empty-staff-text"><p>직책을 추가해주세요.</p></div>
+
+                  <div v-if="group.staffList?.length > 0" class="staff-total-bar" style="margin-top: 12px;">
+                    <i class="mdi mdi-sigma"></i>
+                    <span>필요 인원 합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
+                  </div>
+                </div>
+
+                <div class="staff-info-grid" style="margin-top: 16px;">
+                  <label class="section-label">
+                    <i class="mdi mdi-spray-bottle"></i>대청소 및 특수과업
+                  </label>
+
+                  <div class="staff-input-group">
+                    <select v-model="group.tempCleaningCode" class="info-select staff-position-select">
+                      <option value="">특수과업 항목 선택</option>
+                      <option v-for="opt in cleaningTaskOptions" :key="opt.itemCd" :value="opt.itemCd">
+                        {{ opt.itemNm }}
+                      </option>
+                    </select>
+                    <label>/ 연</label>
+                    <input
+                        type="number"
+                        v-model="group.tempCleaningCount"
+                        min="1"
+                        class="info-input staff-count-input text-right"
+                        placeholder="횟수"
+                    />
+                    <label>회</label>
+                    <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-add-staff-small">
+                      <i class="mdi mdi-plus"></i> 추가
+                    </button>
+                  </div>
+
+                  <div v-if="group.cleaningTasks?.length > 0" class="staff-list-vertical">
+                    <div v-for="(task, tIdx) in group.cleaningTasks" :key="tIdx" class="staff-item-wrapper">
+                      <div class="staff-member-card">
+                        <div class="staff-member-info">
+                          <div class="staff-member-details">
+                            <i class="mdi mdi-broom"></i>
+                            <span class="staff-position">{{ task.name }}</span>
+                            <div class="staff-count-stepper">
+                              <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, -1)">
+                                <i class="mdi mdi-minus"></i>
+                              </button>
+                              <span class="stepper-text">연</span>
+                              <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
+                              <span class="stepper-text">회</span>
+                              <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)">
+                                <i class="mdi mdi-plus"></i>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="staff-actions">
+                          <button type="button" @click="removeCleaningTaskFromGroup(idx, tIdx)" class="btn-remove-staff-small">
+                            <i class="mdi mdi-close"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-else class="empty-staff-text"><p>등록된 특수과업이 없습니다.</p></div>
+                </div>
+
+                <div class="cost-breakdown-wrapper">
+                  <button type="button" class="btn-toggle-cost" @click="group.showCostBreakdown = !group.showCostBreakdown">
+                    <i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i>
+                    <span>{{ group.showCostBreakdown ? '산출내역서 접기' : '산출내역서 펼치기' }}</span>
+
+                    <span v-if="getDisplayMonthlyTotal(group) > 0" class="cost-preview-badge">
+                      월 {{ formatCurrency(getDisplayMonthlyTotal(group)) }}원
+                    </span>
+                  </button>
+
+                  <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
+                    <div v-if="!group.staffList?.length" class="cost-no-staff">
+                      <i class="mdi mdi-table-plus"></i>
+                      <p>직책별 인원 구성을 먼저 설정해주세요.</p>
+                    </div>
+                    <template v-else>
+                      <div class="cost-scroll-area" @keydown="handleTableKeydown">
+                        <div class="cost-section-title">
+                          <span class="cost-block-label label-hours">
+                            <i class="mdi mdi-clock-check"></i>
+                            ️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
+                        </div>
+
+                        <table class="cost-table hours-standalone-table">
+                          <thead>
+                          <tr>
+                            <th class="col-label">항목</th>
+                            <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                              <span class="staff-th-name">{{ staff.name }}</span>
+                              <span class="staff-th-count">({{ staff.count }}명)</span>
+                            </th>
+                            <th class="col-rowtotal-head">행합계</th>
+                            <th class="col-bigo">산출내역 / 근거</th>
+                            <th class="col-action"></th>
+                          </tr>
+                          </thead>
+                          <tbody>
+                          <tr>
+                            <td class="hours-label-cell">
+                              <span class="summary-label">
+                                <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
+                              </span>
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  v-model.number="group.costBreakdown.dailyWorkHours[staff.code]"
+                                  @focus="$event.target.select()"
+                                  class="tbl-value-input text-right hours-input"
+                                  placeholder="0"
                               />
-                              <span v-else class="text-muted">-</span>
                             </td>
+                            <td class="col-rowtotal-cell hours-empty-cell">-</td>
                             <td>
-                              <label class="biweekly-checkbox" v-if="staff.schedule[day.val].isActive" >
-                                <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" />
-                                <span>격주</span>
-                              </label>
-                              <span v-else class="text-muted">-</span>
+                              <input type="text" class="tbl-value-input" v-model="group.costBreakdown.dailyHoursBigo" placeholder="예: 휴게 1시간 제외" />
                             </td>
+                            <td></td>
+                          </tr>
+                          <tr>
+                            <td class="hours-label-cell">
+                              <span class="summary-label">
+                                <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
+                              </span>
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]"
+                                  @focus="$event.target.select()"
+                                  class="tbl-value-input text-right hours-input"
+                                  placeholder="0"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell hours-empty-cell">-</td>
+                            <td>
+                              <input
+                                  type="text"
+                                  class="tbl-value-input"
+                                  v-model="group.costBreakdown.monthlyHoursBigo"
+                                  placeholder="예: 주 40시간 + 주휴"
+                              />
+                            </td>
+                            <td></td>
                           </tr>
                           </tbody>
                         </table>
-                      </div>
-                    </div>
 
-                  </div>
-                </div>
-
-                <div v-else class="empty-staff-text"><p>직책을 추가해주세요.</p></div>
-
-                <div v-if="group.staffList?.length > 0" class="staff-total-bar" style="margin-top: 12px;">
-                  <i class="mdi mdi-sigma"></i>
-                  <span>필요 인원 합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
-                </div>
-              </div>
-
-              <!-- 대청소 및 특수과업 -->
-              <div class="staff-info-grid" style="margin-top: 16px;">
-                <label class="section-label">
-                  <i class="mdi mdi-spray-bottle"></i>대청소 및 특수과업
-                </label>
-
-                <div class="staff-input-group">
-                  <select v-model="group.tempCleaningCode" class="info-select staff-position-select">
-                    <option value="">특수과업 항목 선택</option>
-                    <option v-for="opt in cleaningTaskOptions" :key="opt.itemCd" :value="opt.itemCd">
-                      {{ opt.itemNm }}
-                    </option>
-                  </select>
-                  <label>/ 연</label>
-                  <input
-                      type="number"
-                      v-model="group.tempCleaningCount"
-                      min="1"
-                      class="info-input staff-count-input text-right"
-                      placeholder="횟수"
-                  />
-                  <label>회</label>
-                  <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-add-staff-small">
-                    <i class="mdi mdi-plus"></i> 추가
-                  </button>
-                </div>
-
-                <div v-if="group.cleaningTasks?.length > 0" class="staff-list-vertical">
-                  <div v-for="(task, tIdx) in group.cleaningTasks" :key="tIdx" class="staff-item-wrapper">
-                    <div class="staff-member-card">
-                      <div class="staff-member-info">
-                        <div class="staff-member-details">
-                          <i class="mdi mdi-broom"></i>
-                          <span class="staff-position">{{ task.name }}</span>
-                          <div class="staff-count-stepper">
-                            <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, -1)">
-                              <i class="mdi mdi-minus"></i>
-                            </button>
-                            <span class="stepper-text">연</span>
-                            <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
-                            <span class="stepper-text">회</span>
-                            <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)">
-                              <i class="mdi mdi-plus"></i>
-                            </button>
-                          </div>
+                        <div class="cost-section-title">
+                          <span class="cost-block-label label-direct">A</span>직접노무비 <em>(지급내역)</em>
+                          <button type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
                         </div>
-                      </div>
-                      <div class="staff-actions">
-                        <button type="button" @click="removeCleaningTaskFromGroup(idx, tIdx)" class="btn-remove-staff-small">
-                          <i class="mdi mdi-close"></i>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                        <table class="cost-table">
+                          <thead>
+                          <tr>
+                            <th class="col-label">항목</th>
+                            <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                              <span class="staff-th-name">{{ staff.name }}</span>
+                              <span class="staff-th-count">({{ staff.count }}명)</span>
+                            </th>
+                            <th class="col-rowtotal-head">행합계</th>
+                            <th class="col-bigo">산출내역</th>
+                            <th class="col-action"></th>
+                          </tr>
+                          </thead>
+                          <tbody>
+                          <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
+                            <td>
+                              <CategorySelect
+                                  v-model="item.label"
+                                  v-model:code="item.code"
+                                  topCode="04001"
+                              />
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(item.values[staff.code])"
+                                  @focus="$event.target.select()"
+                                  @input="onInputCost(item, staff.code, $event)"
+                                  class="tbl-value-input"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell">
+                              {{ formatCurrency(getRowTotal(item, group.staffList)) }}
+                            </td>
+                            <td>
+                              <input type="text" class="tbl-value-input" v-model="item.bigo" />
+                            </td>
+                            <td>
+                              <button
+                                  type="button"
+                                  @click="removeItem(group, 'directLabor', iIdx)"
+                                  class="btn-remove-cost"
+                              >
+                                <i class="mdi mdi-close"></i>
+                              </button>
+                            </td>
+                          </tr>
+                          </tbody>
+                          <tfoot>
+                          <tr class="tfoot-subtotal">
+                            <td>소계 (A)</td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              {{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}
+                            </td>
+                            <td class="col-rowtotal-cell subtotal-rowtotal">
+                              {{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}
+                            </td>
+                            <td>
+                              <input type="text" class="tbl-value-input">
+                            </td>
+                            <td></td>
+                          </tr>
+                          </tfoot>
+                        </table>
 
-                <div v-else class="empty-staff-text"><p>등록된 특수과업이 없습니다.</p></div>
+                        <div class="cost-section-title">
+                          <span class="cost-block-label label-indirect">B</span>간접노무비 <em>(공제내역)</em>
+                          <button
+                              type="button"
+                              @click="addItem(group, 'indirectLabor')"
+                              class="btn-add-cost-item">
+                            <i class="mdi mdi-plus"></i>항목 추가
+                          </button>
+                        </div>
+                        <table class="cost-table">
+                          <thead>
+                          <tr>
+                            <th class="col-label">항목</th>
+                            <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                              <span class="staff-th-name">{{ staff.name }}</span>
+                              <span class="staff-th-count">({{ staff.count }}명)</span>
+                            </th>
+                            <th class="col-rowtotal-head">행합계</th>
+                            <th class="col-bigo">산출내역</th>
+                            <th class="col-action"></th>
+                          </tr>
+                          </thead>
+                          <tbody>
+                          <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
+                            <td>
+                              <CategorySelect
+                                  v-model="item.label"
+                                  v-model:code="item.code"
+                                  topCode="04002"
+                              />
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(item.values[staff.code])"
+                                  @focus="$event.target.select()"
+                                  @input="onInputCost(item, staff.code, $event)"
+                                  class="tbl-value-input"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell">
+                              {{ formatCurrency(getRowTotal(item, group.staffList)) }}
+                            </td>
+                            <td>
+                              <input type="text" class="tbl-value-input" v-model="item.bigo" />
+                            </td>
+                            <td>
+                              <button
+                                  type="button"
+                                  @click="removeItem(group, 'indirectLabor', iIdx)"
+                                  class="btn-remove-cost"
+                              >
+                                <i class="mdi mdi-close"></i>
+                              </button>
+                            </td>
+                          </tr>
+                          </tbody>
+                          <tfoot>
+                          <tr class="tfoot-subtotal">
+                            <td>소계 (B)</td>
+                            <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}</td>
+                            <td class="col-rowtotal-cell subtotal-rowtotal">
+                              {{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}
+                            </td>
+                            <td><input type="text" class="tbl-value-input"></td>
+                            <td></td>
+                          </tr>
+                          </tfoot>
+                        </table>
 
-                <!--div v-if="group.cleaningTasks?.length > 0" class="staff-total-bar" style="margin-top: 12px;">
-                  <i class="mdi mdi-sigma"></i>
-                  <span>과업 합계: <strong>{{ group.cleaningTasks.reduce((s, t) => s + t.count, 0) }}회</strong></span>
-                </div-->
-              </div>
+                        <div class="cost-section-title">
+                          <span class="cost-block-label label-expense">C</span>제경비
+                          <button type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
+                        </div>
+                        <table class="cost-table">
+                          <thead>
+                          <tr>
+                            <th class="col-label">항목</th>
+                            <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                              <span class="staff-th-name">{{ staff.name }}</span>
+                              <span class="staff-th-count">({{ staff.count }}명)</span>
+                            </th>
+                            <th class="col-rowtotal-head">행합계</th>
+                            <th class="col-bigo">산출내역</th>
+                            <th class="col-action"></th>
+                          </tr>
+                          </thead>
+                          <tbody>
+                          <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
+                            <td>
+                              <CategorySelect
+                                  v-model="item.label"
+                                  v-model:code="item.code"
+                                  topCode="04003"
+                              />
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(item.values[staff.code])"
+                                  @focus="$event.target.select()"
+                                  @input="onInputCost(item, staff.code, $event)"
+                                  class="tbl-value-input"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell">
+                              {{ formatCurrency(getRowTotal(item, group.staffList)) }}
+                            </td>
+                            <td>
+                              <input
+                                  type="text"
+                                  class="tbl-value-input"
+                                  v-model="item.bigo"
+                              />
+                            </td>
+                            <td>
+                              <button
+                                  type="button"
+                                  @click="removeItem(group, 'expenses', eIdx)"
+                                  class="btn-remove-cost"
+                              >
+                                <i class="mdi mdi-close"></i>
+                              </button>
+                            </td>
+                          </tr>
+                          </tbody>
+                          <tfoot>
+                          <tr class="tfoot-subtotal">
+                            <td>소계 (C)</td>
+                            <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getExpensesColTotal(group, staff.code)) }}</td>
+                            <td class="col-rowtotal-cell subtotal-rowtotal">
+                              {{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}
+                            </td>
+                            <td><input type="text" class="tbl-value-input"></td>
+                            <td></td>
+                          </tr>
+                          </tfoot>
+                        </table>
 
-              <!-- 산출내역서 -->
-              <div class="cost-breakdown-wrapper">
-                <button type="button" class="btn-toggle-cost" @click="group.showCostBreakdown = !group.showCostBreakdown">
-                  <i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i>
-                  <span>{{ group.showCostBreakdown ? '산출내역서 접기' : '산출내역서 펼치기' }}</span>
+                        <div class="cost-section-title">
+                          <span class="cost-block-label label-total">합계</span>노무비 합계 및 용역비 산출
+                        </div>
+                        <table class="cost-table summary-table">
+                          <thead>
+                          <tr>
+                            <th class="col-label">항목</th>
+                            <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
+                              <span class="staff-th-name">{{ staff.name }}</span>
+                              <span class="staff-th-count">({{ staff.count }}명)</span>
+                            </th>
+                            <th class="col-rowtotal-head">행합계</th>
+                            <th class="col-bigo">산출 내역</th>
+                          </tr>
+                          </thead>
+                          <tbody>
+                          <tr class="summary-row row-d">
+                            <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span>
+                            </td>
+                            <td class="col-rowtotal-cell">
+                              <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getLaborColTotal)) }}</span>
+                            </td>
+                            <td><input type="text" class="tbl-value-input"></td>
+                          </tr>
+                          <tr class="summary-row row-e">
+                            <td>
+                              <div class="summary-label-rate">
+                                  <span class="summary-label">
+                                    <span class="cost-block-label label-mgmt">E</span>일반관리비
+                                  </span>
+                              </div>
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
+                                  @focus="$event.target.select()"
+                                  @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
+                                  class="tbl-value-input text-right"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell">
+                              <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
+                            </td>
+                            <td>
+                              <input type="text" class="tbl-value-input">
+                            </td>
+                          </tr>
 
-                  <span v-if="getDisplayMonthlyTotal(group) > 0" class="cost-preview-badge">
-                    월 {{ formatCurrency(getDisplayMonthlyTotal(group)) }}원
-                  </span>
-                </button>
+                          <tr class="summary-row row-f">
+                            <td>
+                              <div class="summary-label-rate">
+                                  <span class="summary-label">
+                                    <span class="cost-block-label label-profit">F</span>기업이윤
+                                  </span>
+                              </div>
+                            </td>
+                            <td v-for="staff in group.staffList" :key="staff.code">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(group.costBreakdown.profit[staff.code])"
+                                  @focus="$event.target.select()"
+                                  @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)"
+                                  class="tbl-value-input text-right"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell">
+                              <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>
+                            </td>
+                            <td><input type="text" class="tbl-value-input"></td>
+                          </tr>
+                          <tr class="summary-row row-monthly">
+                            <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
+                            <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
+                            <td class="col-rowtotal-cell">
+                              <span class="summary-val highlight">{{ formatCurrency(getSubtotalRowTotal(group, getMonthlyTotalCol)) }}</span>
+                            </td>
+                            <td><input type="text" class="tbl-value-input"></td>
+                          </tr>
+                          <tr class="summary-row row-total-fee">
+                            <td>
+                              <span class="summary-label">
+                                <span class="cost-block-label label-total-fee">합</span>
+                                월간 용역비 총계
+                              </span>
+                            </td>
+                            <td :colspan="group.staffList.length">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(getDisplayMonthlyTotal(group))"
+                                  @focus="$event.target.select()"
+                                  @input="onInputMonthlyTotal(group, $event)"
+                                  class="tbl-value-input grand-total-input"
+                              />
+                            </td>
 
-                <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
-                  <div v-if="!group.staffList?.length" class="cost-no-staff">
-                    <i class="mdi mdi-table-plus"></i>
-                    <p>직책별 인원 구성을 먼저 설정해주세요.</p>
-                  </div>
-                  <template v-else>
-                    <div class="cost-scroll-area">
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-hours">
-                          <i class="mdi mdi-clock-check"></i>
-                          ️</span>근로시간 기준 <em>(인건비 산출 근거)</em>
-                      </div>
-
-                      <table class="cost-table hours-standalone-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-bigo">산출내역 / 근거</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr>
-                          <td class="hours-label-cell">
-                            <span class="summary-label">
-                              <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
+                            <td class="col-rowtotal-cell">
+                              <span class="summary-val grand-total">
+                              {{ formatCurrency(getDisplayMonthlyTotal(group)) }}
                             </span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                v-model.number="group.costBreakdown.dailyWorkHours[staff.code]"
-                                @focus="$event.target.select()"
-                                class="tbl-value-input text-right hours-input"
-                                placeholder="0"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
-                          <td>
-                            <input type="text" class="tbl-value-input" v-model="group.costBreakdown.dailyHoursBigo" placeholder="예: 휴게 1시간 제외" />
-                          </td>
-                          <td></td>
-                        </tr>
-                        <tr>
-                          <td class="hours-label-cell">
-                            <span class="summary-label">
-                              <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
-                            </span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]"
-                                @focus="$event.target.select()"
-                                class="tbl-value-input text-right hours-input"
-                                placeholder="0"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
-                          <td>
-                            <input
-                                type="text"
-                                class="tbl-value-input"
-                                v-model="group.costBreakdown.monthlyHoursBigo"
-                                placeholder="예: 주 40시간 + 주휴"
-                            />
-                          </td>
-                          <td></td>
-                        </tr>
-                        </tbody>
-                      </table>
+                            </td>
+                            <td><input type="text" class="tbl-value-input"></td>
+                          </tr>
+                          <tr class="summary-row row-contract-total">
+                            <td>
+                              <span class="summary-label">
+                                <span class="cost-block-label label-contract-total">계</span>
+                                계약기간 총액
+                              </span>
+                            </td>
+                            <td :colspan="group.staffList.length">
+                              <input
+                                  type="text"
+                                  :value="formatCurrency(group.costBreakdown.contractTotalFee)"
+                                  @focus="$event.target.select()"
+                                  @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)"
+                                  class="tbl-value-input grand-total-input"
+                                  placeholder="직접 입력"
+                                  style="font-size: 14px; font-weight: 700; color: var(--text-main);"
+                              />
+                            </td>
+                            <td class="col-rowtotal-cell"></td>
+                            <td>
+                              <input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비"></td>
+                          </tr>
+                          </tbody>
+                        </table>
 
-                      <!-- ══ 직접노무비 ══ -->
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-direct">A</span>직접노무비 <em>(지급내역)</em>
-                        <button type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
-                      </div>
-                      <table class="cost-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-bigo">산출내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                          <td>
-                            <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
-                            <CategorySelect
-                                v-model="item.label"
-                                v-model:code="item.code"
-                                topCode="04001"
-                            />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(item.values[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputCost(item, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <!-- 행합계 -->
-                          <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input" v-model="item.bigo" />
-                          </td>
-                          <td>
-                            <button
-                                type="button"
-                                @click="removeItem(group, 'directLabor', iIdx)"
-                                class="btn-remove-cost"
-                            >
-                              <i class="mdi mdi-close"></i>
-                            </button>
-                          </td>
-                        </tr>
-                        </tbody>
-                        <tfoot>
-                        <tr class="tfoot-subtotal">
-                          <td>소계 (A)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}
-                          </td>
-                          <!-- 소계 행합계 -->
-                          <td class="col-rowtotal-cell subtotal-rowtotal">
-                            {{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
-                          <td></td>
-                        </tr>
-                        </tfoot>
-                      </table>
-
-                      <!-- ══ 간접노무비 ══ -->
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-indirect">B</span>간접노무비 <em>(공제내역)</em>
-                        <button
-                            type="button"
-                            @click="addItem(group, 'indirectLabor')"
-                            class="btn-add-cost-item">
-                          <i class="mdi mdi-plus"></i>항목 추가
-                        </button>
-                      </div>
-                      <table class="cost-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-bigo">산출내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
-                          <td>
-                            <!--CodeSelect v-model="item.label" /-->
-                            <CategorySelect
-                                v-model="item.label"
-                                v-model:code="item.code"
-                                topCode="04002"
-                            />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(item.values[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputCost(item, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input" v-model="item.bigo" />
-                          </td>
-                          <td>
-                            <button
-                                type="button"
-                                @click="removeItem(group, 'indirectLabor', iIdx)"
-                                class="btn-remove-cost"
-                            >
-                              <i class="mdi mdi-close"></i>
-                            </button>
-                          </td>
-                        </tr>
-                        </tbody>
-                        <tfoot>
-                        <tr class="tfoot-subtotal">
-                          <td>소계 (B)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}</td>
-                          <td class="col-rowtotal-cell subtotal-rowtotal">
-                            {{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        </tfoot>
-                      </table>
-
-                      <!-- ══ 제경비 ══ -->
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-expense">C</span>제경비
-                        <button type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item"><i class="mdi mdi-plus"></i>항목 추가</button>
-                      </div>
-                      <table class="cost-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-bigo">산출내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
-                          <td>
-                            <!--CodeSelect v-model="item.label" /-->
-                            <CategorySelect
-                                v-model="item.label"
-                                v-model:code="item.code"
-                                topCode="04003"
-                            />
-                            <!--p>선택된 이름: {{ item.label }}</p>
-                            <p>선택된 코드: {{ item.code }}</p-->
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(item.values[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputCost(item, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            {{ formatCurrency(getRowTotal(item, group.staffList)) }}
-                          </td>
-                          <td>
-                            <input
-                                type="text"
-                                class="tbl-value-input"
-                                v-model="item.bigo"
-                            />
-                          </td>
-                          <td>
-                            <button
-                                type="button"
-                                @click="removeItem(group, 'expenses', eIdx)"
-                                class="btn-remove-cost"
-                            >
-                              <i class="mdi mdi-close"></i>
-                            </button>
-                          </td>
-                        </tr>
-                        </tbody>
-                        <tfoot>
-                        <tr class="tfoot-subtotal">
-                          <td>소계 (C)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getExpensesColTotal(group, staff.code)) }}</td>
-                          <td class="col-rowtotal-cell subtotal-rowtotal">
-                            {{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        </tfoot>
-                      </table>
-
-                      <!-- ══ 합계 ══ -->
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-total">합계</span>노무비 합계 및 용역비 산출
-                      </div>
-                      <table class="cost-table summary-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-bigo">산출 내역</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr class="summary-row row-d">
-                          <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span>
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getLaborColTotal)) }}</span>
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                        </tr>
-                        <tr class="summary-row row-e">
-                          <td>
-                            <div class="summary-label-rate">
-                                <span class="summary-label">
-                                  <span class="cost-block-label label-mgmt">E</span>일반관리비
-                                </span>
-                            </div>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
-                                class="tbl-value-input text-right"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getManagementFeeCol)) }}</span>
-                          </td>
-                          <td>
-                            <input type="text" class="tbl-value-input">
-                          </td>
-                        </tr>
-
-                        <tr class="summary-row row-f">
-                          <td>
-                            <div class="summary-label-rate">
-                                <span class="summary-label">
-                                  <span class="cost-block-label label-profit">F</span>기업이윤
-                                </span>
-                            </div>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(group.costBreakdown.profit[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)"
-                                class="tbl-value-input text-right"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val">{{ formatCurrency(getSubtotalRowTotal(group, getProfitCol)) }}</span>
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                        </tr>
-                        <tr class="summary-row row-monthly">
-                          <td><span class="summary-label"><span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val highlight">{{ formatCurrency(getSubtotalRowTotal(group, getMonthlyTotalCol)) }}</span>
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                        </tr>
-                        <tr class="summary-row row-total-fee">
-                          <td>
-                            <span class="summary-label">
-                              <span class="cost-block-label label-total-fee">합</span>
-                              월간 용역비 총계
-                            </span>
-                          </td>
-                          <td :colspan="group.staffList.length">
-                            <input
-                                type="text"
-                                :value="formatCurrency(getDisplayMonthlyTotal(group))"
-                                @focus="$event.target.select()"
-                                @input="onInputMonthlyTotal(group, $event)"
-                                class="tbl-value-input grand-total-input"
-                                />
-                          </td>
-
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val grand-total">
-                            {{ formatCurrency(getDisplayMonthlyTotal(group)) }}
-                          </span>
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                        </tr>
-                        <tr class="summary-row row-contract-total">
-                          <td>
-                            <span class="summary-label">
-                              <span class="cost-block-label label-contract-total">계</span>
-                              계약기간 총액
-                            </span>
-                          </td>
-                          <td :colspan="group.staffList.length">
-                            <input
-                                type="text"
-                                :value="formatCurrency(group.costBreakdown.contractTotalFee)"
-                                @focus="$event.target.select()"
-                                @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)"
-                                class="tbl-value-input grand-total-input"
-                                placeholder="직접 입력"
-                                style="font-size: 14px; font-weight: 700; color: var(--text-main);"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell"></td>
-                          <td>
-                            <input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비"></td>
-                        </tr>
-                        <!--tr>
-                          <td><span class="summary-label"><span class="cost-block-label label-total-fee">합</span>입찰 금액 (계약기간 총 용역비)</span></td>
-                          <td :colspan="group.staffList.length">
-                            <input v-if="isEditing" type="text" class="tbl-value-input">
-                            <span v-else></span>
-                          </td>
-                          <td></td>
-                          <td class="col-rowtotal-cell"></td>
-                        </tr-->
-                        </tbody>
-                      </table>
-
-                    </div><!-- /cost-scroll-area -->
-                    <div class="cost-special-note">
+                      </div><div class="cost-special-note">
                       <label class="form-label">
                         <i class="mdi mdi-text-box-edit-outline"></i>특이사항
                       </label>
@@ -2372,7 +2503,8 @@ onMounted(async () => {
                           placeholder="예: 최저임금 기준 적용, 5대보험 전원 가입 조건 등"
                       ></textarea>
                     </div>
-                  </template>
+                    </template>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4604,5 +4736,274 @@ input:checked + .slider:before { transform: translateX(18px); }
   color: var(--text-main);
   line-height: 1.6;
   white-space: pre-line;
+}
+
+/* =============================================
+   계약정보 엑셀 시트 탭 스타일
+============================================= */
+.contract-sheet-container {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contract-sheet-tabs {
+  display: flex;
+  border-radius: 8px 8px 0 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch; /* 모바일 부드러운 스크롤 */
+  /* 스크롤바가 탭 디자인을 가리지 않도록 하단 여백 살짝 추가 */
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+/* 스크롤바 디자인 (웹킷 브라우저용) */
+.contract-sheet-tabs::-webkit-scrollbar {
+  height: 6px;
+}
+.contract-sheet-tabs::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+  border-radius: 4px;
+}
+.contract-sheet-tabs::-webkit-scrollbar-thumb {
+  background: var(--border-focus);
+  border-radius: 4px;
+}
+.contract-sheet-tabs::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* 개별 시트(탭) 모양 */
+.sheet-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-bottom: none; /* 하단 선 제거해서 본문과 이어지게 */
+  border-radius: 8px 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-sub);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s;
+  position: relative;
+  top: 2px; /* 비활성 탭은 살짝 내려가 보이게 */
+  border-top: 3px solid transparent; /* 타입 컬러 자리 확보 */
+  flex-shrink: 0;/* 탭이 많아져도 글씨나 모양이 찌그러지지 않도록 고정 */
+}
+
+/* 계약 타입별 상단 컬러 바 */
+.sheet-tab-경비 { border-top-color: #3b82f6; }
+.sheet-tab-미화 { border-top-color: #ec4899; }
+
+/* 타입 미니 칩 */
+.sheet-type-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+.chip-경비 { background: #3b82f6; }
+.chip-미화 { background: #ec4899; }
+
+.sheet-tab:hover {
+  background-color: var(--bg-hover);
+}
+
+/* 활성화된 시트(탭) */
+.sheet-tab.active {
+  background-color: var(--bg-surface);
+  color: var(--primary);
+  border: 2px solid var(--primary);
+  border-bottom: 2px solid var(--bg-surface); /* 하단 뚫어주기 */
+  top: 2px;
+  z-index: 10;
+}
+
+/* 탭 안의 삭제(X) 버튼 */
+.btn-delete-sheet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  margin-left: 4px;
+  color: var(--text-muted);
+  transition: all 0.2s;
+}
+
+.sheet-tab:hover .btn-delete-sheet {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+.sheet-tab.active .btn-delete-sheet {
+  color: var(--text-sub);
+}
+.sheet-tab.active .btn-delete-sheet:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+
+/* =============================================
+   계약 마스터-디테일 레이아웃 (건수 많아질 때 대비)
+============================================= */
+.contract-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.contract-sidebar {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  overflow: hidden;
+  max-height: 800px;
+}
+
+.contract-sidebar-search {
+  position: relative;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.contract-sidebar-search i {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 16px;
+}
+.contract-sidebar-search .transfer-input {
+  padding-left: 32px;
+}
+
+.contract-sidebar-filters {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-canvas);
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.filter-chip:hover { border-color: var(--border-focus); }
+.filter-chip.active {
+  background: var(--text-main);
+  color: #fff;
+  border-color: var(--text-main);
+}
+
+.contract-sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-contract-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--bg-canvas);
+}
+.sidebar-contract-item:hover { background: var(--bg-hover); }
+.sidebar-contract-item.item-경비 { border-left-color: #3b82f6; }
+.sidebar-contract-item.item-미화 { border-left-color: #ec4899; }
+.sidebar-contract-item.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  border-left-color: var(--primary);
+}
+.sidebar-contract-item.expired { opacity: 0.55; }
+
+.item-top-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.item-top-row .btn-delete-sheet { margin-left: auto; }
+
+.item-period {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.expired-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.active-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--success);
+  background: rgba(16,185,129,.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.superseded-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.upcoming-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.contract-detail-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .contract-layout { flex-direction: column; }
+    .contract-sidebar { flex: none; width: 100%; max-height: 320px; }
 }
 </style>

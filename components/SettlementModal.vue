@@ -236,7 +236,8 @@ const fetchContractData = async () => {
           // 필터링된 정산 비고가 있을 때만 alert 발생
           if (settlementBigoList.length > 0) {
             const msg = settlementBigoList
-                .map(b => `[${(b.regDt || '').substring(0, 10)}] ${b.writer || ''}\n${b.bigo || ''}`)
+                // .map(b => `[${(b.regDt || '').substring(0, 10)}] ${b.writer || ''}\n${b.bigo || ''}`)
+                .map(b => `${b.bigo || ''}`)
                 .join('\n\n');
             alert(`⚠ 정산 특이사항\n\n${msg}`);
           }
@@ -1229,8 +1230,9 @@ const initForm = () => {
 
 watch(() => props.initialData, initForm, { immediate: true });
 
-const resetAll = () => {
-  if (!confirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값은 유지됩니다.')) return;
+const resetAll = async () => {
+  // if (!confirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값은 유지됩니다.')) return;
+  if (!await window.customConfirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값은 유지됩니다.')) return;
 
   isInitializing.value = true;
 
@@ -1287,7 +1289,7 @@ const loadPayrollData = async () => {
   if (!formData.value.sIdx) { alert('현장을 먼저 선택해주세요.'); return; }
   if (
       formData.value.payrollData.length > 0
-      && !confirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) return;
+      && !await window.customConfirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) return;
 
   try {
     const targetDate = formData.value.target_month || formData.value.billingDt || '';
@@ -1537,7 +1539,7 @@ const addPayrollRow = () => {
     isMidMonthJoiner: false,
   });
 };
-const removePayrollRow = (i) => { if (confirm('삭제하시겠습니까?')) formData.value.payrollData.splice(i, 1); };
+const removePayrollRow = async (i) => { if (await window.customConfirm('삭제하시겠습니까?')) formData.value.payrollData.splice(i, 1); };
 
 // 위 행과 번호 합치기
 const mergeWithAbove = (row) => {
@@ -2354,22 +2356,24 @@ onMounted(async () => {
                 <th rowspan="2" style="width:70px;">이름</th>
                 <th rowspan="2" style="width:60px;">직책</th>
                 <th rowspan="2" style="width:76px;">생년월일</th>
-                <th rowspan="2" style="width:76px;">입사일 / 퇴사일</th>
+                <th rowspan="2" style="width:76px;">입사일</th>
+                <th rowspan="2" style="width:76px;">퇴사일</th>
+                <th rowspan="2" style="width:36px;">근무일수</th>
 
                 <!-- 지급 항목들 -->
                 <th v-for="col in payrollLedgerColumns.payCols" :key="'lph-'+col.code"
-                    rowspan="2" class="bg-yellow-light" style="min-width:90px;">
+                    rowspan="2" class="bg-yellow-light" style="min-width:120px;">
                   {{ col.name }}
                 </th>
-                <th rowspan="2" class="bg-blue-light" style="min-width:100px;">지급합계</th>
+                <th rowspan="2" class="bg-blue-light" style="min-width:120px;">지급합계</th>
 
                 <!-- 공제 항목들 -->
                 <th v-for="col in payrollLedgerColumns.deductCols" :key="'ldh-'+col.code"
-                    rowspan="2" class="bg-red-light" style="min-width:90px;">
+                    rowspan="2" class="bg-red-light" style="min-width:120px;">
                   {{ col.name }}
                 </th>
-                <th rowspan="2" class="bg-red-light" style="min-width:100px;">공제합계</th>
-                <th rowspan="2" style="min-width:100px; background: rgba(16,185,129,.1); color: #065f46;">실수령액</th>
+                <th rowspan="2" class="bg-red-light" style="min-width:120px;">공제합계</th>
+                <th rowspan="2" style="min-width:120px; background: rgba(16,185,129,.1); color: #065f46;">실수령액</th>
               </tr>
               <tr></tr>
               </thead>
@@ -2383,9 +2387,9 @@ onMounted(async () => {
                   @drop="onDrop(index)"
                   @dragend="onDragEnd"
                   :class="{
-      dragging: dragIndex === index,
-      'mid-month-joiner': row.isMidMonthJoiner
-    }"
+                    dragging: dragIndex === index,
+                    'mid-month-joiner': row.isMidMonthJoiner
+                  }"
               >
                 <td class="text-center drag-handle"
                     style="cursor: grab;"
@@ -2423,7 +2427,12 @@ onMounted(async () => {
                     <span style="font-size: 11px; color: var(--text-muted);">{{ row.transferDate }}</span><br>
                   </template>
                   <input type="text" v-model="row.inDate" class="cell-input text-center" />
-                  <input v-if="row.outDate" type="text" v-model="row.outDate" class="cell-input text-center" />
+                </td>
+                <td class="text-center">
+                  <input type="text" v-model="row.outDate" class="cell-input text-center" />
+                </td>
+                <td>
+                  <input type="text" v-model="row.workersDay" class="cell-input text-center"/>
                 </td>
 
                 <!-- 지급 항목 -->
@@ -2465,7 +2474,7 @@ onMounted(async () => {
 
               <tfoot>
               <tr class="bg-gray-50 font-bold" style="font-size: 13px;">
-                <td colspan="5" class="text-center">합 계</td>
+                <td colspan="7" class="text-center">합 계</td>
 
                 <td v-for="col in payrollLedgerColumns.payCols" :key="'lpt-'+col.code" class="text-right bg-yellow-light">
                   {{ formatCurrency(payrollLedgerTotals.payTotals[col.code] || 0) }}
@@ -2496,7 +2505,7 @@ onMounted(async () => {
 
 <style scoped>
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
-.modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1); overflow: hidden; border: 1px solid var(--border-color); }
+.modal-container { background: var(--bg-surface); width: 100%; max-width: 1580px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0,0,0,.1); overflow: hidden; border: 1px solid var(--border-color); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-wrap: wrap; }
 .header-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
@@ -2512,7 +2521,7 @@ onMounted(async () => {
 .tab-btn { padding: 14px 18px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; margin-bottom: -1px; white-space: nowrap; }
 .tab-btn:hover  { color: var(--text-main); }
 .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-.modal-body { flex: 1; overflow-y: auto; padding: 20px; background: var(--bg-canvas); -webkit-overflow-scrolling: touch; }
+.modal-body { flex: 1; overflow-y: auto; padding: 15px; background: var(--bg-canvas); -webkit-overflow-scrolling: touch; }
 .modal-body::-webkit-scrollbar { width: 8px; }
 .modal-body::-webkit-scrollbar-track { background: var(--bg-canvas); }
 .modal-body::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }

@@ -149,7 +149,7 @@ async function sendReceipe(item) {
 }
 
 async function confirmDeposit(item) {
-  if (!confirm(`[${item.siteName}] 입금 확인 처리하시겠습니까?`)) return
+  if (!await window.customConfirm(`[${item.siteName}] 입금 확인 처리하시겠습니까?`)) return
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:       item.id,
@@ -191,7 +191,7 @@ async function executeUnpaid() {
 
 async function revertStatus(item) {
   const label = statusInfo(item.status).text
-  if (!confirm(`[${item.siteName}] ${label} 상태를 작성중으로 되돌리시겠습니까?`)) return
+  if (!await window.customConfirm(`[${item.siteName}] ${label} 상태를 작성중으로 되돌리시겠습니까?`)) return
   try {
     await axios.post('/api/v1/settle/site/status', {
       idx:      item.id,

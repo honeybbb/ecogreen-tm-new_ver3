@@ -141,6 +141,8 @@ const filteredSites = computed(() => {
     return paymentDayMatch && statusMatch && typeMatch && vatMatch && managerMatch && billingMatch && searchMatch && contractTypeMatch;
   });
 
+  currentPage.value = 1;
+
   result.sort((a, b) => {
     // 계약 기간(contract)일 경우 특별 정렬 로직 적용
     if (sortKey.value === 'contract') {
@@ -315,7 +317,7 @@ onActivated(async () => {
 const goToRegister = () => router.push('/site/register');
 const goToDetail = (id) => router.push(`/site/${id}`);
 const goRemove = async (id) => {
-  if (!confirm('현장을 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+  if (!await window.customConfirm('현장을 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
   try {
     await axios.delete(`/api/v1/site/${id}`);
     alert('삭제되었습니다.');
