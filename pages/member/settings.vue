@@ -241,7 +241,8 @@ const deleteCode = async (itemCd) => {
 
 const addCode = async () => {
   if (!newCodeName.value) {
-    alert('항목명을 입력해주세요.');
+    window.customAlert('항목명을 입력해주세요.', 'error');
+    // alert('항목명을 입력해주세요.');
     return;
   }
   const generatedNumber = newCodeNumber.value;

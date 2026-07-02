@@ -164,7 +164,8 @@ const handleSubmit = async () => {
         query: route.query
       });
     } else {
-      alert('등록 실패: ' + (res.data.message || '알 수 없는 오류'));
+      // alert('등록 실패: ' + (res.data.message || '알 수 없는 오류'));
+      window.customAlert('등록 실패: ' + (res.data.message || '알 수 없는 오류'), 'error');
     }
   } catch (error) {
     console.error('API 호출 에러:', error);

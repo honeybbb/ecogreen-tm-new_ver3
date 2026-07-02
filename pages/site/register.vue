@@ -829,7 +829,8 @@ const handleSubmit = async () => {
     await router.push('/site/list');
   } catch (err) {
     console.error('등록 에러:', err);
-    alert('저장 중 오류가 발생했습니다.');
+    // alert('저장 중 오류가 발생했습니다.');
+    window.customAlert('저장 중 오류가 발생했습니다.', 'error');
   }
 };
 

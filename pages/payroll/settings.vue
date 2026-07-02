@@ -279,7 +279,7 @@ const deleteCode = async (itemCd) => {
 
 // 신규 3차 코드 추가
 const addCode = async () => {
-  if (!newCodeName.value.trim()) return alert('항목명을 입력해주세요.');
+  if (!newCodeName.value.trim()) return window.customAlert('항목명을 입력해주세요.', 'error');
 
   try {
     const payload = {
