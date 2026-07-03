@@ -90,7 +90,7 @@ const calendarDays = computed(() => {
     const fullDate = `${selectedYear.value}-${String(selectedMonth.value + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dow      = new Date(selectedYear.value, selectedMonth.value, d).getDay();
 
-    // ★ 3. 일별 스케줄 필터링 교체 (schedules.value -> filteredSchedules.value)
+    // 3. 일별 스케줄 필터링 교체 (schedules.value -> filteredSchedules.value)
     const daily    = filteredSchedules.value.filter(s => s.date === fullDate);
 
     days.push({
@@ -106,6 +106,7 @@ const calendarDays = computed(() => {
         leave:   daily.filter(s => ['leave','annual'].includes(s.workType)).length,
         half:    daily.filter(s => s.workType === 'half').length,
         absent:  daily.filter(s => s.workType === 'absent').length,
+        resigned: daily.filter(s => s.outDate && s.date > s.outDate).length,     // 퇴사일(outDate)이 존재하고, 근무일(date)이 퇴사일보다 큰 경우만 에러로 카운트
       },
     });
   }
@@ -160,6 +161,7 @@ const fetchSchedules = async () => {
         staffName: staff?.name || `직원(${item.mIdx})`,
         workType:  item.workType || 'work',
         bigo:      item.bigo || '',
+        outDate:   staff?.outDate || null // 직원의 퇴사일 데이터 매핑
       });
     });
 
@@ -462,6 +464,9 @@ onMounted(() => {
             </div>
             <div class="summary-container custom-scrollbar">
               <template v-if="day.schedules.length > 0">
+                <div v-if="day.summary.resigned > 0" class="summary-badge resigned">
+                  <i class="mdi mdi-alert-circle"></i> 퇴사자 확인
+                </div>
                 <div v-if="day.summary.work    > 0" class="summary-badge work">출근 <strong>{{ day.summary.work }}</strong></div>
                 <div v-if="day.summary.holiday > 0" class="summary-badge holiday">특근 <strong>{{ day.summary.holiday }}</strong></div>
                 <div v-if="day.summary.leave   > 0" class="summary-badge leave">연차 <strong>{{ day.summary.leave }}</strong></div>
@@ -506,25 +511,26 @@ onMounted(() => {
               <div
                   v-else
                   v-for="(sch, i) in selectedDay.schedules" :key="i"
-                  class="daily-list-item"
+                  :class="['daily-list-item', { 'is-resigned': sch.outDate && sch.date > sch.outDate }]"
               >
                 <div class="worker-info">
-                  <div class="worker-avatar"><i class="mdi mdi-account"></i></div>
-                  <span class="staff-name">{{ sch.staffName }}</span>
+                  <div :class="['worker-avatar', { 'avatar-red': sch.outDate && sch.date > sch.outDate }]">
+                    <i class="mdi mdi-account"></i>
+                  </div>
+                  <div class="worker-name-group">
+                    <span class="staff-name">{{ sch.staffName }}</span>
+                    <span v-if="sch.outDate && sch.date > sch.outDate" class="resign-warning-text">
+                      <i class="mdi mdi-alert-circle-outline"></i> 퇴사일({{ sch.outDate }}) 이후 근무 데이터
+                    </span>
+                  </div>
                 </div>
 
                 <div class="record-actions">
                   <span :class="['status-badge', getStatusClass(sch.workType)]">
                     {{ getWorkTypeName(sch.workType) }}
                   </span>
-                  <!-- 수정 버튼 -->
-                  <button class="btn-icon edit" @click="openEditModal(sch)" title="수정">
-                    <i class="mdi mdi-pencil-outline"></i>
-                  </button>
-                  <!-- 삭제 버튼 -->
-                  <button class="btn-icon delete" @click="deleteRecord(sch)" title="삭제">
-                    <i class="mdi mdi-trash-can-outline"></i>
-                  </button>
+                  <button class="btn-icon edit" @click="openEditModal(sch)" title="수정"><i class="mdi mdi-pencil-outline"></i></button>
+                  <button class="btn-icon delete" @click="deleteRecord(sch)" title="삭제"><i class="mdi mdi-trash-can-outline"></i></button>
                 </div>
               </div>
             </div>
@@ -695,6 +701,23 @@ onMounted(() => {
 .summary-badge.leave   { background: #fff9c4; color: #f57f17; }
 .summary-badge.half    { background: #fff9c4; color: #f57f17; }
 .summary-badge.absent  { background: #ffebee; color: #d32f2f; }
+/* ── 달력 내부 퇴사자 확인 요망 배지 ── */
+.summary-badge.resigned {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center; /* 가운데 정렬로 강조 */
+  gap: 4px;
+  font-weight: 700;
+  animation: pulse-red-bg 2s infinite;
+}
+
+.summary-badge.resigned i {
+  font-size: 13px;
+}
+
 .empty-cell-hint { opacity: 0; flex: 1; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--text-muted); transition: opacity 0.2s; }
 .day-cell:hover .empty-cell-hint { opacity: 1; }
 
@@ -796,5 +819,34 @@ onMounted(() => {
 }
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── 팝업 내 오류 데이터(퇴사일 이후) 스타일 ── */
+.daily-list-item.is-resigned {
+  border-color: rgba(239, 68, 68, 0.4);
+  background-color: rgba(239, 68, 68, 0.03);
+}
+.worker-name-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.worker-avatar.avatar-red {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
+.resign-warning-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  animation: pulse-red 2s infinite;
+}
+@keyframes pulse-red {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.6; }
+  100% { opacity: 1; }
 }
 </style>
