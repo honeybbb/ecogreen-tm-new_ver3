@@ -153,6 +153,7 @@ const loadColumnSettings = () => {
 // ── 데이터 ────────────────────────────────────────
 const payrollList  = ref([]);
 const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
+const taxBrackets = ref([]); // 소득세 구간표 전체 (연 1회 로드)
 const ageLimits    = ref({ pension: 0, employment: 0 });
 
 // ── 컬럼 리사이즈 ─────────────────────────────────
@@ -472,6 +473,18 @@ const getTaxRate = async () => {
   } catch {}
 };
 
+// ── API: 소득세 구간표 전체 조회 (1회) ─────────────
+const getTaxBrackets = async () => {
+  const year = new Date().getFullYear();
+  try {
+    const res = await axios.get(`/api/v1/config/tax/income/${year}`); // salary 없이 호출 → 전체 테이블
+    taxBrackets.value = res.data.data || [];
+  } catch (e) {
+    console.error('소득세 구간표 로드 실패:', e);
+    taxBrackets.value = [];
+  }
+};
+
 // ── API: 4대보험 연령 상한 ────────────────────────
 const fetchOverAgeOption = async () => {
   try {
@@ -486,31 +499,31 @@ const fetchOverAgeOption = async () => {
   }
 };
 
-// ── 보험료 계산 ───────────────────────────────────
-const calculateInsurances = (row, sourceItem) => {
+// ── 과세표준 계산 (calculateInsurances에서 분리, 배치 소득세 계산에도 재사용) ──
+const getTaxableBase = (row) => {
   let taxable = 0;
   if (row.payments) {
     Object.keys(row.payments).forEach(k => {
       const amount = Number(row.payments[k] || 0);
-
-      // items(임금코드)에서 해당 지급항목의 option(비과세 한도) 조회
       const payItem = payItems.value.find(i => i.itemCd === k);
       const taxFreeLimit = payItem?.tax_free ? Number(payItem.tax_free) : 0;
 
       if (taxFreeLimit > 0) {
-        // 비과세 한도가 설정된 항목: 한도 초과분만 과세
         taxable += Math.max(0, amount - taxFreeLimit);
       } else {
-        // 비과세 한도 없는 항목: 전액 과세
         taxable += amount;
       }
     });
   }
+  return taxable;
+};
 
+// ── 보험료 계산 ───────────────────────────────────
+const calculateInsurances = (row, sourceItem) => {
+  const taxable = getTaxableBase(row); // getTaxableBase 헬퍼는 재사용 목적으로 유지해도 무방
   const rates = targetCodes.value;
 
   if (!sourceItem) {
-    // 전체 재계산
     deductionItems.value.forEach(d =>
         row.deductionFlags?.[d.itemCd]
             ? applyDeductionLogic(row, d, taxable, rates)
@@ -552,10 +565,10 @@ const calculateInsurances = (row, sourceItem) => {
   }
 };
 
-const applyDeductionLogic = async (row, item, base, rates) => {
-  // 소득세: API 호출 후 지방소득세 동시 처리
+const applyDeductionLogic = (row, item, base, rates) => {
+  // 소득세: 미리 로드한 구간표에서 클라이언트 계산
   if (item.itemCd === '04002002004') {
-    const { incomeTax, localTax } = await getIncomeTax(base, row.familyCnt || 1);
+    const { incomeTax, localTax } = calcIncomeTaxLocal(base, row.familyCnt || 1);
     row.deductions['04002002004'] = incomeTax;
     row.deductions['04002002003'] = localTax;
     return;
@@ -588,6 +601,44 @@ const getIncomeTax = async (taxableIncome, familyCnt = 1) => {
     params: { salary: taxableIncome, familyCnt, year },
   });
   return res.data; // { incomeTax, localTax }
+};
+
+// ── 소득세/지방소득세 클라이언트 계산 (API 호출 없음) ──
+const calcIncomeTaxLocal = (salary, familyCnt = 1) => {
+  const bracket = taxBrackets.value.find(
+      b => salary >= b.income_min && salary < b.income_max
+  );
+  const famKey = `family_${Math.min(Number(familyCnt) || 1, 11)}`;
+  const incomeTax = bracket ? (Number(bracket[famKey]) || 0) : 0;
+  const localTax = Math.floor(incomeTax * 0.1 / 10) * 10;
+  return { incomeTax, localTax };
+};
+
+// ── API: 소득세/지방소득세 일괄 조회 (초기 로드용) ─
+const getIncomeTaxBatch = async (rows) => {
+  const year = new Date().getFullYear();
+  const targets = rows.filter(r => r.deductionFlags?.['04002002004']);
+  if (targets.length === 0) return;
+
+  const items = targets.map(r => ({
+    idx: r.idx,
+    salary: getTaxableBase(r),
+    familyCnt: r.familyCnt || 1,
+  }));
+
+  try {
+    const res = await axios.post(`/api/v1/config/tax/income/batch/${year}`, { items });
+    const resultMap = new Map(res.data.data.map(d => [d.idx, d]));
+    targets.forEach(r => {
+      const result = resultMap.get(r.idx);
+      if (result) {
+        r.deductions['04002002004'] = result.incomeTax;
+        r.deductions['04002002003'] = result.localTax;
+      }
+    });
+  } catch (e) {
+    console.error('소득세 일괄 계산 실패:', e);
+  }
 };
 
 // ── 선택 저장 ─────────────────────────────────────
@@ -656,7 +707,6 @@ const getPayrollList = async () => {
     const res = await axios.get('/api/v1/member/payroll');
     payrollList.value = res.data.data?.length ? transformPayrollList(res.data.data) : [];
 
-    // 전체 행에 대해 요율 기준으로 초기 계산
     payrollList.value.forEach(row => calculateInsurances(row, null));
 
     currentPage.value = 1;
@@ -683,6 +733,7 @@ onMounted(async () => {
   loadColumnSettings();
   await Promise.all([
     getTaxRate(),
+    getTaxBrackets(),// 소득세 구간표 1회 로드
     getWageCode(),
     fetchOverAgeOption(),
     fetchSiteOptions(),
