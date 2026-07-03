@@ -115,23 +115,23 @@ const resetForm = () => {
 const handleContractSave = (savedData) => {
   wageInputs.value = savedData.wageInputs;
   contractDataTemp.value = savedData;
-  alert('근로계약서 내용이 임시 저장되었습니다.');
+  window.alert('근로계약서 내용이 임시 저장되었습니다.');
 };
 
 // 4. 폼 제출 핸들러 (한 번에 검증)
 const handleSubmit = async () => {
   if (!employee.value.site) {
-    alert('현장을 선택해주세요.');
+    window.customAlert('현장을 선택해주세요.','error')//alert('현장을 선택해주세요.');
     return;
   }
 
   // 특수 조건 검증
   if (employee.value.foreigner === 'Y' && (!employee.value.nationality || !employee.value.visa_code)) {
-    alert('외국인인 경우 국적과 비자 코드를 입력해주세요.');
+    window.customAlert('외국인인 경우 국적과 비자 코드를 입력해주세요.','error');
     return;
   }
   if (employee.value.disability === 'Y' && !employee.value.disability_grade) {
-    alert('장애 여부가 "예"인 경우 장애 등급을 선택해주세요.');
+    window.customAlert('장애 여부가 "예"인 경우 장애 등급을 선택해주세요.','error');
     return;
   }
 
@@ -158,7 +158,7 @@ const handleSubmit = async () => {
     const res = await axios.post('/api/v1/member/register', payload);
 
     if (res.data.result) {
-      alert(`${employee.value.name} 직원이 성공적으로 등록되었습니다.`);
+      window.alert(`${employee.value.name} 직원이 성공적으로 등록되었습니다.`);
       resetForm();
       await router.push({
         path: '/member/list',
@@ -170,7 +170,7 @@ const handleSubmit = async () => {
     }
   } catch (error) {
     console.error('API 호출 에러:', error);
-    alert('서버 통신 중 오류가 발생했습니다.');
+    window.customAlert('서버 통신 중 오류가 발생했습니다.','error');
   }
 };
 

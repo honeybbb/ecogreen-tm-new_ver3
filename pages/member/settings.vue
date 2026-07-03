@@ -202,7 +202,7 @@ const handleMainGroupChange = () => {
 
 const startEdit = (code) => {
   if (code.editFl == 'N') {
-    alert('수정 권한이 없는 항목입니다.');
+    window.customAlert('수정 권한이 없는 항목입니다.','error');
     return;
   }
   code.isEditing = true;
@@ -220,7 +220,7 @@ const saveCode = async (code) => {
 
   try {
     await axios.put(`/api/v1/code/${code.id}`, params);
-    alert('수정되었습니다.');
+    window.alert('수정되었습니다.');
     code.isEditing = false;
     await getCode();
   } catch (err) {
@@ -232,7 +232,7 @@ const deleteCode = async (itemCd) => {
   if (!await window.customConfirm('정말 삭제하시겠습니까?')) return;
   try {
     await axios.delete(`/api/v1/code/${itemCd}`);
-    alert('삭제되었습니다.');
+    window.alert('삭제되었습니다.');
     await getCode();
   } catch (err) {
     console.error("삭제 실패", err);
@@ -358,7 +358,7 @@ const addCode = async () => {
                 <span>순서</span>
               </div>
             </th>
-            <th v-if="selectedSubGroupKey == '02002'" style="width: 150px;">
+            <th v-if="selectedSubGroupKey == '02002' || selectedSubGroupKey == '02004'" style="width: 150px;">
               <div class="th-content">
                 <i class="mdi mdi-palette"></i>
                 <span>색상</span>
@@ -424,7 +424,7 @@ const addCode = async () => {
               </template>
             </td>
 
-            <td v-if="selectedSubGroupKey == '02002'">
+            <td v-if="selectedSubGroupKey == '02002' || selectedSubGroupKey == '02004'">
               <template v-if="code.isEditing">
                 <div class="color-edit-wrapper">
                   <input

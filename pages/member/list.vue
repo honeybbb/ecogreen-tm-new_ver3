@@ -40,6 +40,11 @@ const sortKey   = ref('id');
 const sortOrder = ref('asc');
 
 const members   = ref([]);
+const adminMemoArray = ref([
+  'cIdx','name','position','contract','gender',
+  'foreigner','disability','inDate','outDate','outReason',
+  'four_ins','retire_pension','accountNumber','phone'
+])
 const isLoading = ref(false);
 const error     = ref(null);
 
@@ -121,11 +126,11 @@ const updateFourInsStatus = async (m, colName) => {
       // DB 업데이트가 성공하면 화면의 데이터도 즉시 변경해줍니다. (새로고침 불필요)
       m[colName] = newValue;
     } else {
-      alert('상태 변경에 실패했습니다.');
+      window.customAlert('상태 변경에 실패했습니다.','error')//alert('상태 변경에 실패했습니다.');
     }
   } catch (error) {
     console.error('API 에러:', error);
-    alert('서버 통신 중 오류가 발생했습니다.');
+    window.customAlert('서버 통신 중 오류가 발생했습니다.','error');
   }
 }
 
@@ -143,13 +148,13 @@ const toggleRRN = async () => {
     const res = await axios.post('/api/v1/member/rrn/batch', { mIdxList });
 
     if (!res.data.result) {
-      alert('주민번호 조회 권한이 없습니다.');
+      window.customAlert('주민번호 조회 권한이 없습니다.','error');
       return;
     }
     revealedRRNs.value = res.data.data;
     showRRN.value = true;
   } catch (e) {
-    alert('주민번호 조회 중 오류가 발생했습니다.');
+    window.customAlert('주민번호 조회 중 오류가 발생했습니다.','error');
   } finally {
     rrnLoading.value = false;
   }
@@ -366,11 +371,11 @@ const goRemove = async (id) => {
 
   try {
     await axios.delete(`/api/v1/member/${id}`);
-    alert('삭제되었습니다.');
+    window.customAlert('삭제되었습니다.','error')//alert('삭제되었습니다.');
     await fetchMembers()
   } catch (error) {
     console.error('삭제 실패:', error);
-    alert('삭제에 실패했습니다.');
+    window.customAlert('삭제에 실패했습니다.','error');
   }
 }
 
