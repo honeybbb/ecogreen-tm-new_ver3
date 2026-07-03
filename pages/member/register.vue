@@ -73,6 +73,7 @@ const getInitialEmployee = () => ({
   four_ins: 'Y',
   retire_pension: 'N',
   bigo: '',
+  payrollBigo: '',       // 급여 관련 특이사항
   departureDate: '',
   departureReason: '',
 });
@@ -957,17 +958,58 @@ onActivated(() => {
               </div>
             </div>
 
-            <div class="form-group full-width">
-              <label class="form-label">
-                <i class="mdi mdi-note-text-outline"></i>
-                비고
-              </label>
-              <textarea
-                  v-model="employee.bigo"
-                  class="form-textarea"
-                  rows="4"
-                  placeholder="추가 사항을 입력하세요"
-              ></textarea>
+            <div class="form-group full-width" style="margin-top: 16px;">
+              <div class="memo-stacked-panel">
+
+                <div class="memo-section">
+                  <div class="memo-section-header">
+                    <div class="header-title-group">
+                      <div class="section-icon-box bg-primary-soft">
+                        <i class="mdi mdi-account-details-outline text-primary"></i>
+                      </div>
+                      <div class="section-title-texts">
+                        <h3>직원 기본 특이사항</h3>
+                        <p>직원 관리, 업무 및 산재 관련 이슈</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="clean-editor-card primary-focus">
+                    <textarea
+                        v-model="employee.bigo"
+                        class="clean-textarea"
+                        rows="3"
+                        placeholder="직원 기본 특이사항을 입력하세요"
+                    ></textarea>
+                  </div>
+                </div>
+
+                <div class="mt-4" style="margin-top: 24px;"></div>
+
+                <div class="memo-section">
+                  <div class="memo-section-header">
+                    <div class="header-title-group">
+                      <div class="section-icon-box bg-warning-soft">
+                        <i class="mdi mdi-calculator-variant-outline text-warning"></i>
+                      </div>
+                      <div class="section-title-texts">
+                        <h3>급여 관련 특이사항</h3>
+                        <p>수당 지급, 공제 예외 등 급여 처리 관련 이슈</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="clean-editor-card warning-focus">
+                    <textarea
+                        v-model="employee.payrollBigo"
+                        class="clean-textarea"
+                        rows="3"
+                        placeholder="급여 및 정산 관련 특이사항을 입력하세요"
+                    ></textarea>
+                  </div>
+                </div>
+
+              </div>
             </div>
           </div>
 
@@ -1134,4 +1176,94 @@ onActivated(() => {
   .ssn-group { flex-direction: row; display: grid; }
   .btn-save { width: 100%; justify-content: center; }
 }
+
+/* =============================================
+   특이사항 탭 - Stacked & Clean Design
+============================================= */
+.memo-stacked-panel {
+  width: 100%;
+  padding: 10px 0 20px;
+}
+
+.memo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 섹션 헤더 */
+.memo-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 12px;
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.section-icon-box i { font-size: 22px; }
+
+.bg-primary-soft { background: var(--primary-soft); }
+.bg-warning-soft { background: rgba(245, 158, 11, 0.1); }
+.text-primary { color: var(--primary); }
+.text-warning { color: var(--warning); }
+
+.section-title-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.section-title-texts h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+.section-title-texts p {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+/* 작성 폼 (에디터 스타일) */
+.clean-editor-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+.clean-editor-card:focus-within.primary-focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.clean-editor-card:focus-within.warning-focus {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.clean-textarea {
+  width: 100%;
+  padding: 16px 20px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-main);
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.clean-textarea:focus { outline: none; }
 </style>

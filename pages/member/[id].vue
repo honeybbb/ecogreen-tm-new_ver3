@@ -65,8 +65,13 @@ const employee = ref({
   four_ins: 'Y',
   retire_pension: 'N',
   bigo: '',
+  payrollBigo: '', // 급여 관련 특이사항 추가
   photo: null
 });
+
+// 비고(특이사항) 히스토리 변수
+const basicBigoHistory = ref([]);
+const payrollBigoHistory = ref([]);
 
 // 근로계약서 모달 상태 추가
 const isContractModalOpen = ref(false);
@@ -187,16 +192,16 @@ watch(
 );
 
 // 데이터 로드
+// 데이터 로드
 const loadEmployeeData = async () => {
   isLoading.value = true;
   try {
     const memberId = route.params.id;
     const response = await axios.get(`/api/v1/member/data/${memberId}`);
     const rawData = response.data.data[0];
-    console.log(rawData, 'dd')
+
+    // 1. 계약 정보 파싱
     const contract = rawData.contract ? JSON.parse(rawData.contract)[0] : { contractData: {} };
-    // console.log(contract);
-    // workSchedule 파싱: contract 안에 저장된 JSON 문자열이면 파싱, 아니면 그대로 사용
     let workSchedule = null;
     if (contract?.workSchedule) {
       workSchedule = typeof contract.workSchedule === 'string'
@@ -204,18 +209,83 @@ const loadEmployeeData = async () => {
           : contract.workSchedule;
     }
 
+    // 2. 비고 히스토리 데이터 파싱 및 분리
+    let parsedBigoHistory = [];
+    try {
+      if (rawData.bigoList) {
+        parsedBigoHistory = JSON.parse(rawData.bigoList).filter(Boolean); // null 방지
+      }
+    } catch (e) {
+      console.error('비고 히스토리 파싱 에러:', e);
+    }
+
+    // 최신순 정렬 (regDt 기준 내림차순)
+    parsedBigoHistory.sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
+
+    // 타입에 맞게 데이터 분배 (1: 기본, 2: 급여관련)
+    basicBigoHistory.value = parsedBigoHistory.filter(log => String(log.type) === '1');
+    payrollBigoHistory.value = parsedBigoHistory.filter(log => String(log.type) === '2');
+
+    // 3. 직원 정보 세팅
     employee.value = {
       ...rawData,
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
       contract,
       workSchedule,
+      bigo: '',          // 입력 폼 초기화
+      payrollBigo: ''    // 입력 폼 초기화
     };
+
     await loadSalaryHistory();
   } catch (error) {
     console.error('직원 정보 로드 실패:', error);
     alert('직원 정보를 불러오는데 실패했습니다.');
   } finally {
     isLoading.value = false;
+  }
+};
+
+// 메모 수정
+const editMemo = async (item) => {
+  const newText = await window.customPrompt('특이사항 내용을 수정하세요:', item.bigo);
+
+  // 사용자가 취소를 누르거나, 내용이 비어있거나, 기존과 내용이 똑같으면 종료
+  if (newText === null || newText.trim() === '' || newText.trim() === item.bigo) return;
+
+  try {
+    const adminId = useAuthStore().user?.managerId || 'admin';
+
+    const payload = {
+      bigo: newText.trim(),
+      adminId: adminId
+    };
+
+    await axios.put(`/api/v1/member/bigo/update/${item.bgIdx}`, payload);
+
+    item.bigo = newText.trim();
+
+  } catch (error) {
+    console.error('특이사항 수정 실패:', error);
+    // alert('수정에 실패했습니다.');
+    window.customAlert('수정에 실패했습니다.', 'error');
+  }
+};
+
+// 메모 삭제
+const deleteMemo = async (list, index, item) => {
+  if (!(await window.customConfirm('이 특이사항을 삭제하시겠습니까?'))) return;
+
+  try {
+    // 백엔드 API 호출 (삭제) - 라우터 주소 확인 필요
+    await axios.delete(`/api/v1/member/bigo/${item.bgIdx}`);
+
+    // DB 삭제 성공 시 로컬 배열에서 제거 (화면 리렌더링)
+    list.splice(index, 1);
+
+  } catch (error) {
+    console.error('특이사항 삭제 실패:', error);
+    window.customAlert('삭제에 실패했습니다.', 'error');
+    // alert('삭제에 실패했습니다.');
   }
 };
 
@@ -377,6 +447,10 @@ const saveEmployee = async () => {
           : JSON.parse(employee.value.contract?.jsonData || '{}'),
 
        */
+      bigo: employee.value.bigo,
+      payrollBigo: employee.value.payrollBigo,
+      adminId: authStore.user?.managerId || employee.value.id, // 세션/스토어의 로그인 아이디
+
       contractData: contractDataTemp.value || {
         wageInputs: employee.value.contract?.contractData || {},
         workSchedule: employee.value.workSchedule || {}
@@ -389,12 +463,17 @@ const saveEmployee = async () => {
 
     await axios.put(`/api/v1/member/data/${memberIdx}`, payload);
 
-    alert('저장되었습니다.');
+    window.alert('저장되었습니다.');
+    // alert('저장되었습니다.');
     contractDataTemp.value = null; // 저장 후 임시 데이터 초기화
+    employee.value.bigo = '';
+    employee.value.payrollBigo = '';
+
     await loadEmployeeData();
   } catch (error) {
     console.error('저장 실패:', error);
-    alert('저장에 실패했습니다.');
+    window.customAlert('저장에 실패했습니다.', 'error');
+    // alert('저장에 실패했습니다.');
   }
 };
 
@@ -862,13 +941,100 @@ onMounted(async () => {
                     </label>
                   </div>
                 </div>
-                <div class="info-item full-width">
-                  <label>비고</label>
-                  <textarea
-                      v-model="employee.bigo"
-                      class="info-textarea"
-                      rows="3"
-                  ></textarea>
+                <div class="info-item full-width" style="margin-top: 16px;">
+                  <div class="memo-stacked-panel">
+
+                    <div class="memo-section">
+                      <div class="memo-section-header">
+                        <div class="header-title-group">
+                          <div class="section-icon-box bg-primary-soft">
+                            <i class="mdi mdi-account-details-outline text-primary"></i>
+                          </div>
+                          <div class="section-title-texts">
+                            <h3>직원 기본 특이사항</h3>
+                            <p>직원 관리, 업무 및 근태 관련 이슈</p>
+                          </div>
+                        </div>
+                        <div class="header-count-badge">총 {{ basicBigoHistory.length }}건</div>
+                      </div>
+
+                      <div class="clean-editor-card primary-focus">
+      <textarea
+          v-model="employee.bigo"
+          class="clean-textarea"
+          rows="2"
+          placeholder="새로운 특이사항을 입력하고 저장하세요 (히스토리에 누적됩니다)"
+      ></textarea>
+                      </div>
+
+                      <div class="clean-timeline-wrapper" v-if="basicBigoHistory.length > 0">
+                        <div class="clean-timeline">
+                          <div v-for="(item, idx) in basicBigoHistory" :key="'basic-'+idx" class="clean-timeline-item">
+                            <div class="timeline-dot bg-primary"></div>
+                            <div class="timeline-card">
+                              <div class="card-meta" style="display: flex; align-items: center;">
+                                <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
+                                <span v-if="item.admin_id" class="meta-user" style="margin-left: 8px;">{{ item.admin_id }}</span>
+
+                                <div style="margin-left: auto; display: flex; gap: 8px;">
+                                  <button type="button" @click="editMemo(item)" style="border:none; background:none; cursor:pointer; color:var(--text-sub); font-size:12px;">수정</button>
+                                  <button type="button" @click="deleteMemo(basicBigoHistory, idx, item)" style="border:none; background:none; cursor:pointer; color:var(--danger); font-size:12px;">삭제</button>
+                                </div>
+                              </div>
+                              <div class="card-text">{{ item.bigo }}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="mt-4" style="margin-top: 32px;"></div>
+
+                    <div class="memo-section">
+                      <div class="memo-section-header">
+                        <div class="header-title-group">
+                          <div class="section-icon-box bg-warning-soft">
+                            <i class="mdi mdi-calculator-variant-outline text-warning"></i>
+                          </div>
+                          <div class="section-title-texts">
+                            <h3>급여 관련 특이사항</h3>
+                            <p>수당 지급, 공제 예외 등 급여 처리 관련 이슈</p>
+                          </div>
+                        </div>
+                        <div class="header-count-badge badge-warning">총 {{ payrollBigoHistory.length }}건</div>
+                      </div>
+
+                      <div class="clean-editor-card warning-focus">
+      <textarea
+          v-model="employee.payrollBigo"
+          class="clean-textarea"
+          rows="2"
+          placeholder="새로운 급여 특이사항을 입력하고 저장하세요 (히스토리에 누적됩니다)"
+      ></textarea>
+                      </div>
+
+                      <div class="clean-timeline-wrapper" v-if="payrollBigoHistory.length > 0">
+                        <div class="clean-timeline">
+                          <div v-for="(item, idx) in payrollBigoHistory" :key="'payroll-'+idx" class="clean-timeline-item">
+                            <div class="timeline-dot bg-warning"></div>
+                            <div class="timeline-card border-warning-subtle">
+                              <div class="card-meta" style="display: flex; align-items: center;">
+                                <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
+                                <span v-if="item.admin_id" class="meta-user" style="margin-left: 8px;">{{ item.admin_id }}</span>
+
+                                <div style="margin-left: auto; display: flex; gap: 8px;">
+                                  <button type="button" @click="editMemo(item)" style="border:none; background:none; cursor:pointer; color:var(--text-sub); font-size:12px;">수정</button>
+                                  <button type="button" @click="deleteMemo(payrollBigoHistory, idx, item)" style="border:none; background:none; cursor:pointer; color:var(--danger); font-size:12px;">삭제</button>
+                                </div>
+                              </div>
+                              <div class="card-text">{{ item.bigo }}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
               </div>
             </div>
@@ -1289,5 +1455,188 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   width: 100%;
+}
+
+/* =============================================
+   특이사항 탭 (상세/수정 페이지 히스토리용)
+============================================= */
+.memo-stacked-panel {
+  width: 100%;
+  padding: 10px 0 20px;
+}
+
+.memo-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.memo-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-bottom: 12px;
+}
+
+.header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.section-icon-box i { font-size: 22px; }
+
+.bg-primary-soft { background: var(--primary-soft); }
+.bg-warning-soft { background: rgba(245, 158, 11, 0.1); }
+.text-primary { color: var(--primary); }
+.text-warning { color: var(--warning); }
+
+.section-title-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.section-title-texts h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+.section-title-texts p {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin: 0;
+}
+
+.header-count-badge {
+  padding: 4px 10px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.header-count-badge.badge-warning {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+}
+
+/* 폼 디자인 (에디터 스타일) */
+.clean-editor-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.2s;
+  margin-bottom: 8px;
+}
+.clean-editor-card:focus-within.primary-focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.clean-editor-card:focus-within.warning-focus {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.clean-textarea {
+  width: 100%;
+  padding: 16px 20px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-main);
+  line-height: 1.6;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.clean-textarea:focus { outline: none; }
+
+/* 타임라인 히스토리 UI */
+.clean-timeline-wrapper {
+  position: relative;
+  margin-top: 4px;
+}
+
+.clean-timeline {
+  position: relative;
+  padding-left: 16px;
+}
+.clean-timeline::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 0;
+  left: 20px;
+  width: 2px;
+  background: var(--border-color);
+}
+
+.clean-timeline-item {
+  position: relative;
+  padding-left: 28px;
+  margin-bottom: 16px;
+}
+.clean-timeline-item:last-child { margin-bottom: 0; }
+
+.timeline-dot {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--bg-surface);
+  z-index: 1;
+}
+.bg-primary { background: var(--primary); }
+.bg-warning { background: var(--warning); }
+
+.timeline-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.border-warning-subtle {
+  border-left: 3px solid rgba(245, 158, 11, 0.4);
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.meta-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+.meta-user {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.card-text {
+  font-size: 13px;
+  color: var(--text-main);
+  line-height: 1.5;
+  white-space: pre-line;
+  margin: 0;
 }
 </style>
