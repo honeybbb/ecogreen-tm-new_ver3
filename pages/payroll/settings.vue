@@ -112,6 +112,7 @@ const fetchAllCodes = async () => {
     const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
     rawCodeList.value = (res.data.data || []).map(item => ({
       ...item,
+      tax_free: item.tax_free || 0,
       isEditing: false
     }));
 
@@ -317,7 +318,7 @@ onMounted(async () => {
   <div class="payroll-settings-page">
     <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title"><i class="mdi mdi-cash-multiple"></i> 급여 코드 및 카테고리 관리</h1>
+        <h1 class="page-title"><i class="mdi mdi-cash-multiple"></i> 급여 코드 설정</h1>
         <p class="page-subtitle">좌측에서 중분류를 관리하고, 우측에서 세부 급여 코드를 설정하세요.</p>
       </div>
     </div>
@@ -432,7 +433,7 @@ onMounted(async () => {
                   </td>
 
                   <td>
-                    <input v-if="code.isEditing" type="text" v-model="code.itemNm" class="input-inline w-full" />
+                    <input v-if="code.isEditing" type="text" v-model="code.itemNm" class="input-edit w-full" disabled/>
                     <span v-else class="code-name">{{ code.itemNm }}</span>
                   </td>
 
@@ -733,4 +734,20 @@ onMounted(async () => {
 .btn-add-submit { display: inline-flex; align-items: center; gap: 5px; padding: 0 20px; height: 36px; background: var(--primary); border: none; border-radius: 7px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s; white-space: nowrap; flex-shrink: 0; }
 .btn-add-submit:hover { background: var(--primary-hover, #2563eb); }
 .btn-add-submit .mdi { font-size: 16px; }
+
+/* === 비활성화된 입력창 스타일 === */
+.input-edit:disabled {
+  background-color: var(--bg-canvas, #f3f4f6); /* 입력창 배경을 어둡게 */
+  color: var(--text-muted, #9ca3af); /* 글씨 색상을 흐리게 */
+  cursor: not-allowed; /* 마우스 오버 시 금지 아이콘 표시 */
+  opacity: 0.7; /* 전체적으로 흐릿한 느낌 추가 */
+}
+
+/* 비활성화 상태에서는 호버/포커스 효과 제거 */
+.input-edit:disabled:hover,
+.input-edit:disabled:focus {
+  border-color: var(--border-color); /* 기존 테두리 색상 유지 */
+  box-shadow: none; /* 포커스 링 제거 */
+  outline: none;
+}
 </style>
