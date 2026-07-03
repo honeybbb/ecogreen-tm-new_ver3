@@ -12,7 +12,7 @@ const { siteOptions, fetchSiteOptions, typeOptions, fetchTypeOptions } = useApi(
 const currentDate   = ref(new Date());
 const schedules     = ref([]);
 const isLoading     = ref(false);
-const currentSiteId = ref('');
+const selectedSite = ref('');
 const staffList     = ref([]);
 
 // 모달
@@ -25,6 +25,7 @@ const modal = ref({
 const selectedDay     = ref(null);
 const selectedRecord  = ref(null); // 수정 대상 근태 레코드
 const selectedType  = ref('');
+const searchTerm = ref('');
 const isBulkLoading   = ref(false);
 
 // 폼
@@ -51,10 +52,20 @@ const monthTitle = computed(() =>
 );
 
 const filteredSchedules = computed(() => {
-  // 아무것도 선택하지 않았으면 전체 데이터를 보여줌
-  if (!selectedType.value) return schedules.value;
-  // 선택한 구분값과 일치하는 데이터만 필터링
-  return schedules.value.filter(s => s.type === selectedType.value);
+  let result = schedules.value;
+
+  // 1. 직원 구분 필터링
+  if (selectedType.value) {
+    result = result.filter(s => s.type === selectedType.value);
+  }
+
+  // 2. 직원 이름 검색 필터링 (실시간)
+  if (searchTerm.value.trim()) {
+    const keyword = searchTerm.value.trim();
+    result = result.filter(s => s.staffName.includes(keyword));
+  }
+
+  return result;
 });
 
 const monthSummary = computed(() => ({
@@ -102,7 +113,7 @@ const calendarDays = computed(() => {
 });
 
 const currentSiteName = computed(() =>
-    siteOptions.value.find(s => s.idx === currentSiteId.value)?.name || ''
+    siteOptions.value.find(s => s.idx === selectedSite.value)?.name || ''
 );
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -111,22 +122,29 @@ const TODAY = new Date().toISOString().split('T')[0];
 // 데이터 로딩
 // ================================================================
 const loadStaffList = async () => {
-  if (!currentSiteId.value) return;
+  if (!selectedSite.value) return;
   try {
-    const res = await axios.get(`/api/v1/member/staffing/${currentSiteId.value}`);
+    const res = await axios.get(`/api/v1/member/staffing/${selectedSite.value}`);
     staffList.value = res.data.data || [];
   } catch (e) {
     console.error('직원 목록 로드 실패', e);
   }
 };
 
+const resetFilters = () => {
+  searchTerm.value    = '';
+  selectedSite.value  = '';
+  selectedType.value  = '';
+};
+
+
 const fetchSchedules = async () => {
-  if (!currentSiteId.value) return;
+  if (!selectedSite.value) return;
   isLoading.value = true;
   try {
     const [workRes, leaveRes] = await Promise.all([
-      axios.get(`/api/v1/work/list?month=${selectedYearMonth.value}&sIdx=${currentSiteId.value}`),
-      axios.get(`/api/v1/work/off?month=${selectedYearMonth.value}&sIdx=${currentSiteId.value}`),
+      axios.get(`/api/v1/work/list?month=${selectedYearMonth.value}&sIdx=${selectedSite.value}`),
+      axios.get(`/api/v1/work/off?month=${selectedYearMonth.value}&sIdx=${selectedSite.value}`),
     ]);
 
     const combined = [];
@@ -184,8 +202,8 @@ const prevMonth = () => { currentDate.value = new Date(selectedYear.value, selec
 const nextMonth = () => { currentDate.value = new Date(selectedYear.value, selectedMonth.value + 1, 1); };
 const goToday   = () => { currentDate.value = new Date(); };
 
-watch([currentDate, currentSiteId], () => {
-  if (currentSiteId.value) loadStaffList().then(fetchSchedules);
+watch([currentDate, selectedSite], () => {
+  if (selectedSite.value) loadStaffList().then(fetchSchedules);
 });
 
 // ================================================================
@@ -193,7 +211,7 @@ watch([currentDate, currentSiteId], () => {
 // ================================================================
 const handleDayClick = (day) => {
   if (day.isEmpty) return;
-  if (!currentSiteId.value) return alert('현장을 먼저 선택해주세요.');
+  if (!selectedSite.value) return alert('현장을 먼저 선택해주세요.');
   selectedDay.value = day;
   modal.value.daily = true;
 };
@@ -208,7 +226,7 @@ const openCreateModal = () => {
     idx:         null,
     workStartDt: selectedDay.value.fullDate,
     mIdx:        '',
-    sIdx:        currentSiteId.value,
+    sIdx:        selectedSite.value,
     workType:    'work',
     bigo:        '',
   };
@@ -222,7 +240,7 @@ const openEditModal = (record) => {
     idx:         record.idx,
     workStartDt: record.date,
     mIdx:        record.mIdx,
-    sIdx:        currentSiteId.value,
+    sIdx:        selectedSite.value,
     workType:    record.workType,
     bigo:        record.bigo || '',
   };
@@ -261,7 +279,7 @@ const deleteRecord = async (record) => {
 // 일괄 생성
 // ================================================================
 const openBulkModal = () => {
-  if (!currentSiteId.value) return alert('현장을 먼저 선택해주세요.');
+  if (!selectedSite.value) return alert('현장을 먼저 선택해주세요.');
   modal.value.bulk = true;
 };
 
@@ -276,7 +294,7 @@ const executeBulkGenerate = async () => {
 
   try {
     const res = await axios.post('/api/v1/work/bulk', {
-      sIdx:  currentSiteId.value,
+      sIdx:  selectedSite.value,
       month: selectedYearMonth.value,
       type:  selectedType.value,
     });
@@ -338,14 +356,38 @@ onMounted(() => {
     <!-- ── 필터 ── -->
     <div class="filter-panel">
       <div class="filter-row">
-        <SiteSelect :allow-empty="false" v-model="currentSiteId" />
-        <select v-model="selectedType" required class="filter-select">
-          <option value="">선택하세요</option>
-          <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
-            {{ type.itemNm }}
-          </option>
-        </select>
-        <button v-if="currentSiteId" @click="openBulkModal" class="btn-bulk" :disabled="isBulkLoading">
+        <div class="filter-group">
+          <label class="filter-label">근무 현장</label>
+          <SiteSelect :allow-empty="false" v-model="selectedSite" />
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">직원 구분</label>
+          <select v-model="selectedType" required class="filter-select">
+            <option value="">선택하세요</option>
+            <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+              {{ type.itemNm }}
+            </option>
+          </select>
+        </div>
+        <div class="search-group">
+          <div class="search-box">
+            <i class="mdi mdi-magnify"></i>
+            <input
+                v-model="searchTerm" type="text"
+                placeholder="직원 이름으로 검색..."
+                class="search-input"
+                @input=""
+            />
+            <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
+              <i class="mdi mdi-close"></i>
+            </button>
+          </div>
+          <button @click="resetFilters" class="btn-search">
+            <i class="mdi mdi-filter-off"></i><span>초기화</span>
+          </button>
+        </div>
+
+        <button @click="openBulkModal" class="btn-search" :disabled="isBulkLoading">
           <i class="mdi" :class="isBulkLoading ? 'mdi-loading mdi-spin' : 'mdi-calendar-multiselect'"></i>
           <span>{{ monthTitle }} 일괄 생성</span>
         </button>
@@ -604,7 +646,22 @@ onMounted(() => {
 .btn-today:hover { background: var(--bg-hover); color: var(--text-main); }
 
 /* ── 일괄 생성 버튼 ── */
-.btn-bulk { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; border: none; background: var(--primary); color: #fff; box-shadow: var(--shadow-sm); transition: all 0.2s; margin-left: auto; }
+.btn-bulk {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px; padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s;
+  margin-left: auto;
+  height: 42px;
+}
 .btn-bulk:hover:not(:disabled) { filter: brightness(0.9); transform: translateY(-1px); }
 .btn-bulk:disabled { opacity: 0.6; cursor: not-allowed; }
 
