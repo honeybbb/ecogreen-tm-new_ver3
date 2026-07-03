@@ -1,4 +1,5 @@
 <script setup>
+definePageMeta({ layout: "empty" });
 import {ref, computed, onMounted, watch} from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
@@ -239,7 +240,7 @@ const loadEmployeeData = async () => {
     await loadSalaryHistory();
   } catch (error) {
     console.error('직원 정보 로드 실패:', error);
-    alert('직원 정보를 불러오는데 실패했습니다.');
+    window.customAlert('직원 정보를 불러오는데 실패했습니다.','error');
   } finally {
     isLoading.value = false;
   }
@@ -394,13 +395,13 @@ const handleContractSave = (savedData) => {
   wageInputs.value = savedData.wageInputs;
   contractDataTemp.value = savedData;
 
-  alert('근로계약서 내용이 임시 저장되었습니다.');
+  window.alert('근로계약서 내용이 임시 저장되었습니다.');
 };
 
 // 저장
 const saveEmployee = async () => {
   if (employee.value.status == '1' && !employee.value.outDate) {
-    alert('퇴사 처리를 위해 퇴사일을 입력해주세요.');
+    window.customAlert('퇴사 처리를 위해 퇴사일을 입력해주세요.','error');
     return;
   }
 
@@ -484,17 +485,20 @@ const deleteEmployee = async () => {
   try {
     const memberId = route.params.id;
     await axios.delete(`/api/v1/member/${memberId}`);
-    alert('삭제되었습니다.');
-    await router.push('/member/list');
+    window.alert('삭제되었습니다.');
+    window.close()
+    window.opener.location.reload()
+    // await router.push('/member/list');
   } catch (error) {
     console.error('삭제 실패:', error);
-    alert('삭제에 실패했습니다.');
+    window.customAlert('삭제에 실패했습니다.','error');
   }
 };
 
 // 목록으로
 const goBack = () => {
-  router.push('/member/list');
+  // router.push('/member/list');
+  if (window.opener) { window.close(); return; }
 };
 
 watch(activeTab, async (newTab) => {
@@ -1112,6 +1116,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.member-detail-page {
+  padding: 20px;
+}
 /* === 페이지 헤더 === */
 .page-header {
   display: flex;

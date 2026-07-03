@@ -44,7 +44,94 @@ const adminMemoArray = ref([
   'cIdx','name','position','contract','gender',
   'foreigner','disability','inDate','outDate','outReason',
   'four_ins','retire_pension','accountNumber','phone'
-])
+]);
+// ── 컬럼명 → 한글 라벨 매핑 ──────────────────────────
+const memoColLabelMap = {
+  cIdx: '계약번호', name: '이름', position: '직책', contract: '근로계약일',
+  gender: '성별', foreigner: '내/외국인', disability: '장애여부',
+  inDate: '입사일', outDate: '퇴사일', outReason: '퇴직사유',
+  four_ins: '4대보험', retire_pension: '퇴직연금',
+  accountNumber: '계좌번호', phone: '연락처'
+};
+
+// ── 메모 타입 옵션 (02004: 중요/일반) ────────────────
+const memoTypeOptions = [
+  { itemCd: '02004001', itemNm: '중요', color: 'var(--danger)' },
+  { itemCd: '02004002', itemNm: '일반', color: 'var(--text-sub)' },
+];
+const getMemoTypeInfo = (type) => memoTypeOptions.find(o => o.itemCd === type) || memoTypeOptions[1];
+
+// ── 셀 메모 상태 ──────────────────────────────────────
+const contextMenu = ref({ visible: false, x: 0, y: 0, member: null, colName: null });
+const memoPanel    = ref({ visible: false, x: 0, y: 0, member: null, colName: null, newText: '', newType: '02004002' });
+
+const parseMemo = (member) => {
+  if (!member.memo) return {};
+  if (typeof member.memo === 'string') {
+    try { return JSON.parse(member.memo); } catch { return {}; }
+  }
+  return member.memo;
+};
+const getMemoList = (member, colName) => parseMemo(member)[colName] || [];
+const hasMemo = (member, colName) => getMemoList(member, colName).length > 0;
+const memoCount = (member, colName) => getMemoList(member, colName).length;
+// 셀 인디케이터 색상: 중요 메모가 하나라도 있으면 빨강, 없으면 회색
+const memoIndicatorClass = (member, colName) => {
+  const list = getMemoList(member, colName);
+  if (!list.length) return '';
+  return list.some(m => m.type === '02004001') ? 'memo-dot-important' : 'memo-dot-normal';
+};
+
+const onCellContextMenu = (e, member, colName) => {
+  if (!adminMemoArray.value.includes(colName)) return;
+  e.preventDefault();
+  contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, member, colName };
+  memoPanel.value.visible = false;
+};
+const closeContextMenu = () => { contextMenu.value.visible = false; };
+
+const openMemoPanel = () => {
+  const { x, y, member, colName } = contextMenu.value;
+  memoPanel.value = {
+    visible: true,
+    x: Math.min(x, window.innerWidth - 300),
+    y: Math.min(y, window.innerHeight - 260),
+    member, colName,
+    newText: '', newType: '02004002'
+  };
+  closeContextMenu();
+};
+const closeMemoPanel = () => { memoPanel.value.visible = false; };
+
+const addMemo = async () => {
+  const { member, colName, newText, newType } = memoPanel.value;
+  const text = newText.trim();
+  if (!text) return;
+  try {
+    const res = await axios.put(`/api/v1/member/memo/${member.idx}`, { colName, type: newType, text });
+    if (res.data.result) {
+      member.memo = res.data.data; // 화면 즉시 반영
+      memoPanel.value.newText = '';
+    }
+  } catch (e) {
+    console.error('메모 저장 실패:', e);
+    window.customAlert('메모 저장에 실패했습니다.', 'error');
+  }
+};
+
+const removeMemo = async (member, colName, memoId) => {
+  if (!await window.customConfirm('이 메모를 삭제하시겠습니까?')) return;
+  try {
+    const res = await axios.delete(`/api/v1/member/memo/${member.idx}`, { data: { colName, memoId } });
+    if (res.data.result) member.memo = res.data.data;
+  } catch (e) {
+    console.error('메모 삭제 실패:', e);
+    window.customAlert('메모 삭제에 실패했습니다.', 'error');
+  }
+};
+
+const handleGlobalClick = () => { if (contextMenu.value.visible) closeContextMenu(); };
+
 const isLoading = ref(false);
 const error     = ref(null);
 
@@ -365,13 +452,14 @@ const goToRegister = () => {
     query: route.query
   });
 };
-const goToDetail   = (id) => router.push(`/member/${id}`);
+// const goToDetail   = (id) => router.push(`/member/${id}`);
+const goToDetail = (id) => window.open(router.resolve(`/member/${id}`).href, "_blank", "width=1200,height=800");
 const goRemove = async (id) => {
   if (!await window.customConfirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
 
   try {
     await axios.delete(`/api/v1/member/${id}`);
-    window.customAlert('삭제되었습니다.','error')//alert('삭제되었습니다.');
+    window.alert('삭제되었습니다.')//alert('삭제되었습니다.');
     await fetchMembers()
   } catch (error) {
     console.error('삭제 실패:', error);
@@ -391,6 +479,11 @@ onMounted(async () => {
   ]);
   // URL 필터가 반영된 상태로 리스트 로드
   await fetchMembers();
+  window.addEventListener('click', handleGlobalClick);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', handleGlobalClick);
 });
 
 onActivated(async () => {
@@ -700,7 +793,17 @@ onActivated(async () => {
             <td>{{ member.id }}</td>
             <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
             <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
+            <!--td class="member-name"
+                :class="[memoIndicatorClass(member, 'name') ? 'has-memo' : '']"
+                @click="goToDetail(member.id)"
+                @contextmenu="onCellContextMenu($event, member, 'name')">
+              {{ member.name }}
+              <span v-if="hasMemo(member, 'name')"
+                    class="memo-dot" :class="memoIndicatorClass(member, 'name')"
+                    :title="`메모 ${memoCount(member, 'name')}건`"></span>
+            </td-->
             <td>{{ member.position }}</td>
+
             <td :class="{ 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 }">
               <span v-if="member.contract" class="tooltip-container">
                 {{ member.contract }}
@@ -785,6 +888,13 @@ onActivated(async () => {
               <span v-else class="text-gray">-</span>
             </td>
             <td>{{member.phone}}</td>
+            <!--td :class="[memoIndicatorClass(member, 'phone') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'phone')">
+              {{member.phone}}
+              <span v-if="hasMemo(member, 'phone')"
+                    class="memo-dot" :class="memoIndicatorClass(member, 'phone')"
+                    :title="`메모 ${memoCount(member, 'phone')}건`"></span>
+            </td-->
             <td>
                 <span :class="['status-badge',
                   member.status == 0 ? 'status-active' :
@@ -821,6 +931,56 @@ onActivated(async () => {
           </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="contextMenu.visible" class="cell-context-menu"
+           :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
+        <div class="context-menu-title">{{ memoColLabelMap[contextMenu.colName] }}</div>
+        <button @click="openMemoPanel">
+          <i class="mdi mdi-note-plus-outline"></i>
+          메모 {{ hasMemo(contextMenu.member, contextMenu.colName) ? `보기/추가 (${memoCount(contextMenu.member, contextMenu.colName)})` : '추가' }}
+        </button>
+      </div>
+
+      <!-- 메모 리스트 + 입력 패널 -->
+      <div v-if="memoPanel.visible" class="memo-panel"
+           :style="{ top: memoPanel.y + 'px', left: memoPanel.x + 'px' }" @click.stop>
+        <div class="memo-panel-header">
+          <span>{{ memoColLabelMap[memoPanel.colName] }} 메모</span>
+          <i class="mdi mdi-close" @click="closeMemoPanel"></i>
+        </div>
+
+        <div class="memo-list" v-if="getMemoList(memoPanel.member, memoPanel.colName).length">
+          <div v-for="m in getMemoList(memoPanel.member, memoPanel.colName)" :key="m.id" class="memo-item">
+            <span class="memo-type-badge" :style="{ color: getMemoTypeInfo(m.type).color, borderColor: getMemoTypeInfo(m.type).color }">
+              {{ getMemoTypeInfo(m.type).itemNm }}
+            </span>
+            <div class="memo-item-body">
+              <p>{{ m.text }}</p>
+              <span class="memo-date">{{ m.date }}</span>
+            </div>
+            <i class="mdi mdi-close memo-item-remove" @click="removeMemo(memoPanel.member, memoPanel.colName, m.id)"></i>
+          </div>
+        </div>
+        <div v-else class="memo-empty">등록된 메모가 없습니다</div>
+
+        <div class="memo-add-row">
+          <div class="memo-type-select">
+            <label v-for="opt in memoTypeOptions" :key="opt.itemCd"
+                   class="memo-type-radio" :class="{ active: memoPanel.newType === opt.itemCd }"
+                   :style="memoPanel.newType === opt.itemCd ? { borderColor: opt.color, color: opt.color } : {}">
+              <input type="radio" :value="opt.itemCd" v-model="memoPanel.newType" style="display:none;">
+              {{ opt.itemNm }}
+            </label>
+          </div>
+          <textarea
+              v-model="memoPanel.newText"
+              rows="2"
+              placeholder="메모 입력 후 추가"
+              @keydown.enter.exact.prevent="addMemo"
+          ></textarea>
+          <button class="btn-memo-add" @click="addMemo"><i class="mdi mdi-plus"></i> 추가</button>
+        </div>
       </div>
 
       <Pagination
@@ -1142,5 +1302,73 @@ onActivated(async () => {
 /* 퇴사자 텍스트 살짝 흐리게 */
 .data-table tbody tr.is-resigned td {
   color: var(--text-sub);
+}
+/* 메모 인디케이터 */
+.has-memo { position: relative; }
+.memo-dot {
+  position: absolute; top: 2px; right: 2px;
+  width: 0; height: 0; border-style: solid; border-width: 0 7px 7px 0;
+  cursor: help;
+}
+.memo-dot-important { border-color: transparent var(--danger, #ef4444) transparent transparent; }
+.memo-dot-normal    { border-color: transparent var(--text-sub, #94a3b8) transparent transparent; }
+
+/* 컨텍스트 메뉴 */
+.cell-context-menu {
+  position: fixed; z-index: 1000;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px;
+  box-shadow: var(--shadow-md); min-width: 170px; padding: 6px;
+}
+.context-menu-title {
+  padding: 6px 10px 4px; font-size: 11px; color: var(--text-sub); font-weight: 600;
+  border-bottom: 1px solid var(--border-color); margin-bottom: 4px;
+}
+.cell-context-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px;
+  background: none; border: none; border-radius: 6px; font-size: 13px; color: var(--text-main);
+  cursor: pointer; text-align: left;
+}
+.cell-context-menu button:hover { background: var(--bg-hover); }
+
+/* 메모 패널 */
+.memo-panel {
+  position: fixed; z-index: 1001; width: 280px;
+  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
+  box-shadow: var(--shadow-md); padding: 12px;
+}
+.memo-panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; font-weight: 700; color: var(--text-main); margin-bottom: 8px;
+}
+.memo-panel-header i { cursor: pointer; color: var(--text-sub); }
+
+.memo-list { max-height: 160px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.memo-item { display: flex; align-items: flex-start; gap: 6px; padding: 6px; background: var(--bg-canvas); border-radius: 6px; }
+.memo-type-badge {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 2px 6px;
+  border: 1px solid; border-radius: 4px; white-space: nowrap;
+}
+.memo-item-body { flex: 1; min-width: 0; }
+.memo-item-body p { margin: 0; font-size: 12px; color: var(--text-main); word-break: break-word; }
+.memo-date { font-size: 10px; color: var(--text-sub); }
+.memo-item-remove { font-size: 14px; color: var(--text-sub); cursor: pointer; flex-shrink: 0; }
+.memo-item-remove:hover { color: var(--danger); }
+.memo-empty { font-size: 12px; color: var(--text-sub); text-align: center; padding: 12px 0; }
+
+.memo-add-row { border-top: 1px solid var(--border-color); padding-top: 8px; }
+.memo-type-select { display: flex; gap: 6px; margin-bottom: 6px; }
+.memo-type-radio {
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border: 1px solid var(--border-color);
+  border-radius: 12px; cursor: pointer; color: var(--text-sub);
+}
+.memo-add-row textarea {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px;
+  font-size: 12px; outline: none; margin-bottom: 6px;
+}
+.memo-add-row textarea:focus { border-color: var(--primary); }
+.btn-memo-add {
+  width: 100%; padding: 6px; border-radius: 6px; border: none;
+  background: var(--primary); color: var(--text-inverse); font-size: 12px; font-weight: 600; cursor: pointer;
 }
 </style>
