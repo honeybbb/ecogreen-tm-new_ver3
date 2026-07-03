@@ -225,7 +225,7 @@ const closeAddModal = () => {
 
 const saveAddModal = () => {
   if (!addForm.value.sIdx || !addForm.value.itemCd || !addForm.value.cleaningDt) {
-    alert("모든 필드를 입력해주세요.");
+    window.customAlert("필수 입력 값을 입력해주세요.",'error');
     return;
   }
 
@@ -367,12 +367,13 @@ const deleteSchedule = () => {
         <div class="modal-body">
           <div class="form-group">
             <label>현장 선택</label>
-            <select v-model="addForm.sIdx" class="form-control" @change="onSiteChange">
+            <!--select v-model="addForm.sIdx" class="form-control" @change="onSiteChange">
               <option value="" disabled>현장을 선택하세요</option>
               <option v-for="site in siteContracts" :key="site.sIdx" :value="site.sIdx">
                 {{ site.siteName }}
               </option>
-            </select>
+            </select-->
+            <SiteSelect v-model="addForm.sIdx" width="100%"/>
           </div>
 
           <div class="form-group" v-if="availableTasks.length > 0">
