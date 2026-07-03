@@ -211,7 +211,7 @@ watch([currentDate, selectedSite], () => {
 // ================================================================
 const handleDayClick = (day) => {
   if (day.isEmpty) return;
-  if (!selectedSite.value) return alert('현장을 먼저 선택해주세요.');
+  if (!selectedSite.value) return window.customAlert('현장을 먼저 선택해주세요.','error')//alert('현장을 먼저 선택해주세요.');
   selectedDay.value = day;
   modal.value.daily = true;
 };
@@ -251,13 +251,13 @@ const openEditModal = (record) => {
 
 // 저장 (등록 or 수정)
 const saveSchedule = async () => {
-  if (!form.value.mIdx) return alert('직원을 선택해주세요.');
+  if (!form.value.mIdx) return window.customAlert('직원을 선택해주세요.','error');
   try {
     await axios.post('/api/v1/work/upsert', { ...form.value });
     modal.value.form = false;
     await fetchSchedules();
   } catch (e) {
-    alert('저장 중 오류가 발생했습니다.');
+    window.customAlert('저장 중 오류가 발생했습니다.','error');
   }
 };
 
@@ -265,13 +265,13 @@ const saveSchedule = async () => {
 // 근태 삭제
 // ================================================================
 const deleteRecord = async (record) => {
-  if (!record.idx) return alert('삭제할 수 없는 항목입니다.');
+  if (!record.idx) return window.customAlert('삭제할 수 없는 항목입니다.', 'error');
   if (!await window.customConfirm(`${record.staffName}의 ${record.date} 근태를 삭제하시겠습니까?`)) return;
   try {
     await axios.delete(`/api/v1/work/${record.idx}`);
     await fetchSchedules();
   } catch (e) {
-    alert('삭제 중 오류가 발생했습니다.');
+    window.customAlert('삭제 중 오류가 발생했습니다.','error');
   }
 };
 
@@ -279,13 +279,13 @@ const deleteRecord = async (record) => {
 // 일괄 생성
 // ================================================================
 const openBulkModal = () => {
-  if (!selectedSite.value) return alert('현장을 먼저 선택해주세요.');
+  if (!selectedSite.value) return window.customAlert('현장을 먼저 선택해주세요.','error');
   modal.value.bulk = true;
 };
 
 const executeBulkGenerate = async () => {
   if (!selectedType.value) {
-    alert('직원 구분 값을 먼저 선택해주세요.');
+    window.customAlert('직원 구분 값을 먼저 선택해주세요.','error');
     return;
   }
 
@@ -299,13 +299,13 @@ const executeBulkGenerate = async () => {
       type:  selectedType.value,
     });
     if (res.data.result) {
-      alert(`${monthTitle.value} [${selectedType.value === '01001' ? '경비' : '미화'}] 일괄 근태 생성 완료\n등록: ${res.data.success}건 / 휴가보존: ${res.data.skippedByLeave}건`);
+      window.alert(`${monthTitle.value} [${selectedType.value === '01001' ? '경비' : '미화'}] 일괄 근태 생성 완료\n등록: ${res.data.success}건 / 휴가보존: ${res.data.skippedByLeave}건`);
       await fetchSchedules();
     } else {
-      alert(res.data.message || '생성 실패');
+      window.customAlert(res.data.message || '생성 실패', 'error');
     }
   } catch (e) {
-    alert(e.response?.data?.message || '서버 오류가 발생했습니다.');
+    window.customAlert(e.response?.data?.message || '서버 오류가 발생했습니다.','error');
   } finally {
     isBulkLoading.value = false;
   }
