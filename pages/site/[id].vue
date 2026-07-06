@@ -546,12 +546,14 @@ const addItem    = (g, sec)      => g.costBreakdown[sec].push({ label: '', value
 const removeItem = (g, sec, idx) => g.costBreakdown[sec].splice(idx, 1);
 
 const activeContractIndex = ref(0);
+// =============================================
+// 정산 설정용: 현재 '진행중'인 계약만 필터링
+// =============================================
+const effectiveContractGroups = computed(() => {
+  // 전체 계약 중 isEffectiveContract가 true인(현재 진행중인 최신) 계약만 반환
+  return contractGroups.value.filter(g => isEffectiveContract(g));
+});
 
-// =============================================
-// 계약 리스트 검색/필터/정렬 (계약 건수가 많아질 때 대비)
-// =============================================
-const contractSearchKeyword = ref('');
-const contractFilterCategory = ref('all');
 // 오늘이 계약 시작일~종료일 사이에 포함되는지 (진행중 여부)
 const isContractActive = (group) => {
   const today = new Date();
@@ -652,13 +654,16 @@ const addContractGroup = (category) => {
   activeContractIndex.value = 0; // 방금 추가한 맨 위 카드 열기
 };
 
-const removeContractGroup = (index) => {
+const removeContractGroup = async (index, group) => {
   if (confirm('해당 계약 정보를 삭제하시겠습니까?')) {
     contractGroups.value.splice(index, 1);
     // 삭제 후 인덱스 범위 초과 방지
     if (activeContractIndex.value >= contractGroups.value.length) {
       activeContractIndex.value = Math.max(0, contractGroups.value.length - 1);
     }
+    await axios.delete(`/api/v1/site/contract/${group.scIdx}`).then((res) => {
+      console.log(res.data.data)
+    })
   }
 };
 
@@ -1818,7 +1823,7 @@ onMounted(async () => {
                 </div>
 
                 <div class="action-buttons">
-                  <button class="icon-btn-delete" @click.stop="removeContractGroup(idx)" title="계약 삭제">
+                  <button class="icon-btn-delete" @click.stop="removeContractGroup(idx, group)" title="계약 삭제">
                     <i class="mdi mdi-trash-can-outline"></i>
                   </button>
                   <div class="expand-icon-wrap">
@@ -2467,57 +2472,51 @@ onMounted(async () => {
       <!-- 정산정보 탭 -->
       <div v-show="activeTab === 'settlement'" class="tab-panel">
         <div class="info-sections">
-          <!-- 수당 포함 옵션 섹션 -->
-          <!-- 정산설정 탭 — 기존 "급여 데이터 기준 설정" + "수당 포함 설정" 두 섹션을 아래 하나로 교체 -->
+
           <div class="info-section">
             <div class="section-header">
               <i class="mdi mdi-cash-sync"></i>
-              <h3>계약별 정산 기준 및 옵션 설정</h3>
+              <h3>현재 적용 중인 계약 정산 설정</h3>
             </div>
             <p class="info-helper-text" style="margin-bottom: 20px;">
-              * 각 계약 분류별로 정산서에 적용할 급여 정보의 출처 및 수당 포함 여부를 설정해주세요.
+              <strong>* 현재 진행 중(적용 중)인 계약에 대해서만 정산 옵션을 설정할 수 있습니다.</strong>
             </p>
 
-            <div v-if="contractGroups.length === 0"
-                 class="empty-list"
-                 style="border: 1px dashed var(--border-color); border-radius: 8px; padding: 20px; text-align: center; color: var(--text-muted);">
-              등록된 계약 정보가 없습니다. [계약정보] 탭에서 계약을 먼저 추가해주세요.
+            <div v-if="effectiveContractGroups.length === 0" class="empty-state-modern" style="padding: 40px 20px;">
+              <div class="empty-icon" style="width:48px; height:48px; margin-bottom:12px;">
+                <i class="mdi mdi-file-hidden" style="font-size:24px;"></i>
+              </div>
+              <p style="margin:0; font-weight:600; color:var(--text-sub);">현재 진행 중인 계약이 없습니다.</p>
             </div>
 
             <div v-else class="salary-source-list">
-              <div v-for="(group, idx) in contractGroups" :key="idx" class="source-selection-row">
+              <div v-for="(group, idx) in effectiveContractGroups" :key="'eff-' + idx" class="source-selection-row">
 
-                <!-- 계약 분류 배지 -->
-                <div class="source-group-title">
-        <span :class="['contract-badge', `badge-${group.category}`]"
-              style="padding: 6px 12px; font-size: 13px;">
-          <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
-        </span>
+                <div class="source-group-title" style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+            <span :class="['contract-badge', `badge-${group.category}`]" style="padding: 6px 12px; font-size: 13px;">
+              <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
+            </span>
+                  <span class="active-badge" style="margin-left: 4px; padding: 3px 8px; font-size: 11px;">진행중</span>
                 </div>
 
-                <!-- 설정 블록들 -->
                 <div class="source-settings-content">
 
-                  <!-- 급여 기준 -->
                   <div class="setting-block">
                     <span class="setting-label">급여 데이터 기준</span>
                     <div class="source-selection-options">
                       <label class="source-radio-label">
-                        <input type="radio" v-model="group.salarySource"
-                               value="employee" :name="'salarySource_' + idx" />
+                        <input type="radio" v-model="group.salarySource" value="employee" :name="'salarySource_eff_' + group.category" />
                         <strong>직원 급여 정보</strong>
                         <span class="text-hint">(저장된 기본 급여 기준)</span>
                       </label>
                       <label class="source-radio-label">
-                        <input type="radio" v-model="group.salarySource"
-                               value="contract" :name="'salarySource_' + idx" />
+                        <input type="radio" v-model="group.salarySource" value="contract" :name="'salarySource_eff_' + group.category" />
                         <strong>계약 산출 정보</strong>
                         <span class="text-hint">(계약 정보 산출 기준)</span>
                       </label>
                     </div>
                   </div>
 
-                  <!-- 수당 포함 옵션 -->
                   <div class="setting-block">
                     <span class="setting-label">수당 포함 옵션</span>
                     <div class="source-melt-options">
