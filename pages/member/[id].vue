@@ -193,7 +193,6 @@ watch(
 );
 
 // 데이터 로드
-// 데이터 로드
 const loadEmployeeData = async () => {
   isLoading.value = true;
   try {
@@ -309,7 +308,7 @@ const getWageCode = async () => {
   const cIdx = authStore.user?.cIdx;
   try {
     const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
-    items.value = res.data.data || [];
+    items.value = res.data.data.filter(c => c.itemCd.startsWith('04')) || [];
   } catch (err) {
     console.error('항목 로드 실패', err);
   }
@@ -550,6 +549,7 @@ onMounted(async () => {
     </div>
 
     <div class="integrated-paper">
+      <div class="sticky-header">
       <div class="profile-section">
         <div class="profile-banner"></div>
         <div class="profile-content">
@@ -615,6 +615,7 @@ onMounted(async () => {
           <i :class="['mdi', tab.icon]"></i>
           <span>{{ tab.name }}</span>
         </button>
+      </div>
       </div>
 
       <div class="integrated-content">
@@ -1218,7 +1219,7 @@ onMounted(async () => {
   border-radius: 12px;
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-sm);
-  overflow: hidden;
+  /*overflow: hidden;*/
   margin-bottom: 24px;
   display: flex;
   flex-direction: column;
@@ -1227,6 +1228,14 @@ onMounted(async () => {
 /* === 상단 프로필 영역 === */
 .profile-section {
   position: relative;
+}
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--bg-surface);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05); /* 스크롤 내릴 때 살짝 그림자 생김 */
 }
 
 .profile-banner {
