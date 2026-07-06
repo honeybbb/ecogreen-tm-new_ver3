@@ -74,6 +74,7 @@ const site = ref({
   memo: '',
   status: '준비 중',
   payment_day: '',
+  billing_day: '31',
   bigo: '',
   settlementBigo: '',
   bankName: '',
@@ -917,6 +918,7 @@ const getSiteData = async () => {
       billingManager: result.billingManager,
       payrollManager: result.payrollManager,
       payment_day:    result.payment_day,
+      billing_day:    result.billing_day,
       zipcode:        result.zipcode || '',
       bankName:       result.bankName,
       accountNumber:  result.accountNumber,
@@ -1258,6 +1260,7 @@ const saveSiteData = async () => {
       addressDetail:    site.value.addressDetail,
       postalCode:       site.value.zipcode,
       payment_day:      site.value.payment_day,
+      billing_day:      site.value.billing_day,
       manager:          site.value.managerName,
       phone:            site.value.managerContact,
       director:         site.value.director,
@@ -1559,6 +1562,12 @@ onMounted(async () => {
               <div class="info-item">
                 <label>급여지급일</label>
                 <select v-model="site.payment_day" class="info-select">
+                  <option v-for="day in 31" :key="day" :value="day">{{ day }}일</option>
+                </select>
+              </div>
+              <div class="info-item">
+                <label>청구예정일</label>
+                <select v-model="site.billing_day" class="info-select">
                   <option v-for="day in 31" :key="day" :value="day">{{ day }}일</option>
                 </select>
               </div>
