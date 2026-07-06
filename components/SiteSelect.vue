@@ -104,12 +104,12 @@ fetchSiteOptions()
     <!-- 옵션 아이템 슬롯 -->
     <template #option="{ option }">
       <div class="ss-option" :class="{ 'ss-option--all': option.idx === null }">
-        <i
+        <!--i
             :class="['mdi', option.idx === null
             ? 'mdi-view-list'
             : 'mdi-office-building-marker']"
             class="ss-option-icon"
-        ></i>
+        ></i-->
         <span class="ss-option-name">{{ option.label }}</span>
       </div>
     </template>
