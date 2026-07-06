@@ -70,6 +70,7 @@ const getInitSiteData = () => ({
   memo: '',
   status: '운영 중',
   payment_day: '',
+  billing_day: '31',
   bigo: '',
   settlementBigo: '',
   bankName: '',
@@ -726,6 +727,7 @@ const handleSubmit = async () => {
   if (!site.value.building_su) { alert('건물 수를 입력해주세요.'); return; }
   if (!site.value.unit_su) { alert('세대 수를 입력해주세요.'); return; }
   if (!site.value.payment_day) { alert('급여지급일을 선택해주세요.'); return; }
+  if (!site.value.billing_day) { alert('청구예정일을 선택해주세요.'); return; }
   if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); return; }
   if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); return; }
 
@@ -768,6 +770,7 @@ const handleSubmit = async () => {
       address: site.value.addressMain,
       addressDetail: site.value.addressDetail,
       payment_day: site.value.payment_day,
+      billing_day: site.value.billing_day,
       manager: site.value.managerName,
       phone: site.value.managerContact,
       director: site.value.director,
@@ -881,6 +884,7 @@ const getSiteData = async () => {
     site.value.director       = result.director;
     site.value.directorContact= result.director_phone;
     site.value.payment_day    = result.payment_day;
+    site.value.billing_day    = result.billing_day;
     site.value.bankName       = result.bankName || '';
     site.value.accountNumber  = result.accountNumber || '';
     site.value.accountName    = result.accountName || '';
@@ -1192,6 +1196,13 @@ onMounted(() => {
             <div class="form-group">
               <label class="form-label required"><i class="mdi mdi-calendar-clock-outline"></i>급여지급일</label>
               <select v-model="site.payment_day" required class="form-select">
+                <option value="">선택</option>
+                <option v-for="d in 31" :key="d" :value="d">{{ d }}일</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label required"><i class="mdi mdi-calendar-clock-outline"></i>청구예정일</label>
+              <select v-model="site.billing_day" required class="form-select">
                 <option value="">선택</option>
                 <option v-for="d in 31" :key="d" :value="d">{{ d }}일</option>
               </select>
