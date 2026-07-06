@@ -2493,10 +2493,10 @@ onMounted(async () => {
               <div v-for="(group, idx) in effectiveContractGroups" :key="'eff-' + idx" class="source-selection-row">
 
                 <div class="source-group-title" style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
-            <span :class="['contract-badge', `badge-${group.category}`]" style="padding: 6px 12px; font-size: 13px;">
-              <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
-            </span>
-                  <span class="active-badge" style="margin-left: 4px; padding: 3px 8px; font-size: 11px;">진행중</span>
+                  <span :class="['contract-badge', `badge-${group.category}`]" style="padding: 6px 12px; font-size: 13px;">
+                    <!--i class="mdi mdi-briefcase-outline"></i-->{{ group.category }}
+                  </span>
+                  <!--span class="active-badge" style="margin-left: 4px; padding: 3px 8px; font-size: 11px;">진행중</span-->
                 </div>
 
                 <div class="source-settings-content">
