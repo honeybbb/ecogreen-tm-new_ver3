@@ -147,7 +147,7 @@ const pageSizeOptions = [50, 100, 200, 500];
 
 const ageLimits = ref({ pension: 0, employment: 0 });
 
-// ★ 급여일 옵션 동적 생성 (존재하는 급여일만 추출 후 정렬)
+// 급여일 옵션 동적 생성 (존재하는 급여일만 추출 후 정렬)
 const paymentDayOptions = computed(() => {
   const days = new Set(
       members.value
@@ -161,6 +161,48 @@ const paymentDayOptions = computed(() => {
     if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
     return String(a).localeCompare(String(b), 'ko');
   });
+});
+
+// =============================================
+// 선택된 현장의 계약 인원(staffCount) 계산
+// =============================================
+// =============================================
+// [수정] 선택된 현장의 계약 인원 및 공백 인원 계산
+// =============================================
+const currentSiteContractCount = computed(() => {
+  if (selectedSite.value === '전체' || !selectedSite.value) return null;
+
+  const foundSite = siteOptions.value.find(s => String(s.idx) === String(selectedSite.value));
+  if (!foundSite || !foundSite.contracts || foundSite.contracts.length === 0) return null;
+
+  const formatList = foundSite.contracts
+      .filter(c => c.staffCount > 0)
+      .map(c => {
+        // 1. 해당 현장(sIdx) + 해당 직종(typeNm) + 재직중(status == 0)인 실제 직원 수 구하기
+        const activeStaffCount = members.value.filter(
+            m => String(m.sIdx) === String(selectedSite.value)
+                && String(m.status) === '0'
+                && m.type === c.typeNm
+        ).length;
+
+        // 2. 공백 인원 = 계약 인원 - 재직 인원
+        const missingCount = c.staffCount - activeStaffCount;
+
+        // 3. 상태에 따른 텍스트 분기 처리
+        let missingText = '';
+        if (missingCount > 0) {
+          missingText = `공백 ${missingCount}명`;
+        } else if (missingCount < 0) {
+          missingText = `초과 ${Math.abs(missingCount)}명`;
+        } else {
+          missingText = `충원완료`;
+        }
+
+        // 결과 예시: "경비 3명(공백 1명)"
+        return `${c.typeNm} ${c.staffCount}명(${missingText})`;
+      });
+
+  return formatList.length > 0 ? formatList.join(', ') : null;
 });
 
 const fetchOverAgeOption = async () => {
@@ -679,6 +721,13 @@ onActivated(async () => {
       <div class="table-header" style="justify-content: space-between; display: flex;">
         <div class="table-title">
           <span>직원 목록 ({{ filteredMembers.length }}명)</span>
+
+          <span
+              v-if="currentSiteContractCount !== null"
+              style="font-size: 14px; font-weight: 600; color: var(--text-sub);"
+          >
+            (계약인원 : {{ currentSiteContractCount }})
+          </span>
         </div>
         <div class="page-size-select">
           <label>페이지당</label>
@@ -792,8 +841,8 @@ onActivated(async () => {
           <tr v-for="member in pagedMembers" :key="member.idx" :class="['data-row', { 'is-resigned': member.status == 1 }]">
             <td>{{ member.id }}</td>
             <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
-            <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
-            <!--td class="member-name"
+            <!--td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td-->
+            <td class="member-name"
                 :class="[memoIndicatorClass(member, 'name') ? 'has-memo' : '']"
                 @click="goToDetail(member.id)"
                 @contextmenu="onCellContextMenu($event, member, 'name')">
@@ -801,7 +850,7 @@ onActivated(async () => {
               <span v-if="hasMemo(member, 'name')"
                     class="memo-dot" :class="memoIndicatorClass(member, 'name')"
                     :title="`메모 ${memoCount(member, 'name')}건`"></span>
-            </td-->
+            </td>
             <td>{{ member.position }}</td>
 
             <td :class="{ 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 }">
@@ -887,14 +936,14 @@ onActivated(async () => {
               </div>
               <span v-else class="text-gray">-</span>
             </td>
-            <td>{{member.phone}}</td>
-            <!--td :class="[memoIndicatorClass(member, 'phone') ? 'has-memo' : '']"
+            <!--td>{{member.phone}}</td-->
+            <td :class="[memoIndicatorClass(member, 'phone') ? 'has-memo' : '']"
                 @contextmenu="onCellContextMenu($event, member, 'phone')">
               {{member.phone}}
               <span v-if="hasMemo(member, 'phone')"
                     class="memo-dot" :class="memoIndicatorClass(member, 'phone')"
                     :title="`메모 ${memoCount(member, 'phone')}건`"></span>
-            </td-->
+            </td>
             <td>
                 <span :class="['status-badge',
                   member.status == 0 ? 'status-active' :
