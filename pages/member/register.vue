@@ -104,6 +104,17 @@ const todayDate = computed(() => {
   return `${year}-${month}-${day}`;
 });
 
+// [추가] 현재 펼쳐진 부모 메뉴 코드를 저장
+const expandedNodeCd = ref(null);
+
+// [추가] 하위 메뉴 토글 함수
+const toggleNode = (itemCd) => {
+  if (expandedNodeCd.value === itemCd) {
+    expandedNodeCd.value = null; // 이미 열려있으면 닫기
+  } else {
+    expandedNodeCd.value = itemCd; // 클릭한 메뉴 열기
+  }
+};
 // ==========================================
 // 커스텀 트리 드롭다운 로직 (직위)
 // ==========================================
@@ -923,13 +934,27 @@ onActivated(() => {
               <ul v-if="isPositionMenuOpen" class="custom-dropdown-menu">
                 <li v-for="node in positionTree" :key="node.itemCd" class="menu-item">
 
-                  <div class="menu-label" @click="selectPosition(node)">
-                    <span>{{ node.itemNm }}</span>
-                    <i v-if="node.children.length > 0" class="mdi mdi-chevron-right"></i>
+                  <div class="menu-label">
+  <span class="menu-text" @click.stop="selectPosition(node)">
+    {{ node.itemNm }}
+  </span>
+
+                    <div
+                        v-if="node.children.length > 0"
+                        class="toggle-icon-wrap"
+                        @click.stop="toggleNode(node.itemCd)"
+                    >
+                      <i class="mdi" :class="expandedNodeCd === node.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                    </div>
                   </div>
 
-                  <ul v-if="node.children.length > 0" class="custom-submenu">
-                    <li v-for="child in node.children" :key="child.itemCd" class="submenu-item" @click="selectPosition(child)">
+                  <ul v-show="expandedNodeCd === node.itemCd" class="custom-submenu">
+                    <li
+                        v-for="child in node.children"
+                        :key="child.itemCd"
+                        class="submenu-item"
+                        @click.stop="selectPosition(child)"
+                    >
                       {{ child.itemNm }}
                     </li>
                   </ul>
@@ -1453,15 +1478,9 @@ onActivated(() => {
 .menu-label:hover {
   background: var(--bg-hover); color: var(--primary); font-weight: 600;
 }
-/* 화살표 회전 애니메이션 */
-.menu-item:hover .mdi-chevron-right {
-  transform: rotate(90deg);
-  transition: transform 0.2s;
-}
 
 /* 아래로 펼쳐지는 서브메뉴 스타일 */
 .custom-submenu {
-  display: none;
   position: static;
   width: 100%;
   background: var(--bg-canvas);
@@ -1470,7 +1489,34 @@ onActivated(() => {
   border-bottom: 1px solid var(--border-color);
 }
 
-.menu-item:hover .custom-submenu { display: block; }
+/* 1. 서브메뉴 스타일 (display: none; 삭제됨) */
+.custom-submenu {
+  position: static;
+  width: 100%;
+  background: var(--bg-canvas);
+  padding: 4px 0; margin: 0; list-style: none;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 2. 신규 추가 클래스 (클릭 영역 및 아이콘 래퍼) */
+.menu-text {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.toggle-icon-wrap {
+  padding: 4px 8px;
+  margin-right: -8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.toggle-icon-wrap:hover {
+  background: var(--border-color);
+}
 
 /* 하위 메뉴 아이템 */
 .submenu-item {
