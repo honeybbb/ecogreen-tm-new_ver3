@@ -192,6 +192,42 @@ watch(
     }
 );
 
+// ==========================================
+// [추가] 커스텀 트리 드롭다운 로직 (직위)
+// ==========================================
+const isPositionMenuOpen = ref(false);
+
+const positionTree = computed(() => {
+  if (!positionOptions.value || positionOptions.value.length === 0) return [];
+
+  // 1. '01002'(5자리 직책 루트)가 배열에 섞여 있을 경우를 대비해 순수 하위 항목(8자리 이상)만 필터링
+  const validItems = positionOptions.value.filter(p => p.itemCd.length > 5);
+  if (validItems.length === 0) return [];
+
+  // 2. 가장 짧은 길이(보통 8자리, 예: 01002001 미화원)를 부모 메뉴로 설정
+  const minLength = Math.min(...validItems.map(p => p.itemCd.length));
+  const parents = validItems.filter(p => p.itemCd.length === minLength);
+
+  return parents.map(parent => {
+    // 3. 부모 코드로 시작하면서 길이가 더 긴 것들(보통 11자리, 예: 01002001001 미화원1)을 자식으로 매핑
+    const children = validItems.filter(
+        p => p.itemCd.startsWith(parent.itemCd) && p.itemCd.length > parent.itemCd.length
+    );
+    return { ...parent, children };
+  });
+});
+
+const selectedPositionName = computed(() => {
+  if (!employee.value.positionCd) return '직위 선택';
+  const found = positionOptions.value.find(p => p.itemCd === employee.value.positionCd);
+  return found ? found.itemNm : '선택됨';
+});
+
+const selectPosition = (pos) => {
+  employee.value.positionCd = pos.itemCd;
+  isPositionMenuOpen.value = false;
+};
+
 // 데이터 로드
 const loadEmployeeData = async () => {
   isLoading.value = true;
@@ -314,7 +350,18 @@ const getWageCode = async () => {
   }
 };
 
+const getPositionCode = async () => {
+  const cIdx = authStore.user?.cIdx;
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    positionOptions.value = res.data.data.filter(c => c.itemCd.startsWith('01002')) || [];
+  } catch (err) {
+    console.error('항목 로드 실패', err);
+  }
+};
+
 // 1. 예산 데이터 가져오기 함수 추가
+/*
 const getBudgetData = async () => {
   const { sIdx, typeCd, positionCd } = employee.value;
   if (!sIdx || !typeCd || !positionCd) return;
@@ -347,6 +394,57 @@ const getBudgetData = async () => {
         .filter(Boolean); // null 제거
 
     const targetStaff = budgetData.staffDetail?.find(s => s.code === positionCd);
+
+    wageInputs.value = newWageInputs;
+    contractDataTemp.value = {
+      ...contractDataTemp.value,
+      wageInputs: newWageInputs,
+      workSchedule: targetStaff?.schedule || null
+    };
+
+  } catch (err) {
+    console.error('예산 데이터 로드 실패:', err);
+  }
+};
+
+ */
+// 1. 예산 데이터 가져오기 함수 (계약 직책 자동 추론 로직 적용)
+const getBudgetData = async () => {
+  const { sIdx, typeCd, positionCd } = employee.value;
+  if (!sIdx || !typeCd || !positionCd) return;
+
+  // 코드가 8자리(예: 01002001)를 넘어가면 뒤에 붙은 꼬리를 자르고 부모 코드(8자리)만 추출해서 임금 계약의 기준으로 삼음
+  const contractPosCd = positionCd.length > 8 ? positionCd.substring(0, 8) : positionCd;
+
+  try {
+    const res = await axios.get(`/api/v1/site/contract/budget`, {
+      params: { sIdx, type: typeCd }
+    });
+
+    const budgetData = res.data.data[0];
+    if (!budgetData) return;
+
+    const newWageInputs = {};
+
+    ['directLabor', 'indirectLabor'].forEach(key => {
+      (budgetData.jsonData?.[key] || []).forEach(item => {
+        // ★ 잘라낸 부모 코드(contractPosCd)로 산출내역서의 임금을 찾음!
+        if (item.code && item.values?.[contractPosCd] !== undefined) {
+          newWageInputs[item.code] = item.values[contractPosCd];
+        }
+      });
+    });
+
+    items.value = Object.entries(newWageInputs)
+        .map(([code, amount]) => {
+          const found = items.value.find(w => w.itemCd === code);
+          if (!found) return null;
+          return { ...found, amount: Number(amount) || 0 };
+        })
+        .filter(Boolean);
+
+    // 스케줄 정보도 부모 코드(contractPosCd) 기준으로 가져옴
+    const targetStaff = budgetData.staffDetail?.find(s => s.code === contractPosCd);
 
     wageInputs.value = newWageInputs;
     contractDataTemp.value = {
@@ -511,11 +609,12 @@ onMounted(async () => {
   await Promise.all([
     getCompanyData(),
     fetchSiteOptions(),
-    fetchPositionOptions(),
+    // fetchPositionOptions(),
     fetchTypeOptions(),
     fetchBankOption(),
     fetchDisabledOptions(),
-    getWageCode()
+    getWageCode(),
+    getPositionCode()
   ]);
   await loadEmployeeData();
 });
@@ -715,11 +814,37 @@ onMounted(async () => {
                       style="background: var(--bg-canvas) !important; border-radius: 8px !important;"
                   />
                 </div>
-                <div class="info-item">
+                <!--div class="info-item">
                   <label>직위</label>
                   <select v-model="employee.positionCd" class="info-select">
                     <option v-for="pos in positionOptions" :key="pos.itemCd" :value="pos.itemCd">{{ pos.itemNm }}</option>
                   </select>
+                </div-->
+                <div class="info-item position-dropdown-container">
+                  <label>직위</label>
+
+                  <div class="custom-select-btn" @click="isPositionMenuOpen = !isPositionMenuOpen">
+                    <span>{{ selectedPositionName }}</span>
+                    <i class="mdi mdi-chevron-down"></i>
+                  </div>
+
+                  <div v-if="isPositionMenuOpen" class="dropdown-overlay" @click="isPositionMenuOpen = false"></div>
+
+                  <ul v-if="isPositionMenuOpen" class="custom-dropdown-menu">
+                    <li v-for="node in positionTree" :key="node.itemCd" class="menu-item">
+                      <div class="menu-label" @click="selectPosition(node)">
+                        <span>{{ node.itemNm }}</span>
+                        <i v-if="node.children.length > 0" class="mdi mdi-chevron-right"></i>
+                      </div>
+
+                      <ul v-if="node.children.length > 0" class="custom-submenu">
+                        <li v-for="child in node.children" :key="child.itemCd" class="submenu-item" @click="selectPosition(child)">
+                          {{ child.itemNm }}
+                        </li>
+                      </ul>
+
+                    </li>
+                  </ul>
                 </div>
                 <div class="info-item " style="word-break:keep-all;">
                   <label>재직 상태</label>
@@ -1420,10 +1545,9 @@ onMounted(async () => {
 }
 .status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .status-preparing { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
+.status-inactive {     background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
 /* 텍스트 유틸 */
-.text-red { color: var(--danger) !important; font-weight: 600; }
 .border-red { border-color: rgba(239, 68, 68, 0.3) !important; }
 .border-red:focus { border-color: var(--danger) !important; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important; }
 
@@ -1654,5 +1778,82 @@ onMounted(async () => {
   line-height: 1.5;
   white-space: pre-line;
   margin: 0;
+}
+
+/* ==========================================
+   커스텀 트리 드롭다운 메뉴 CSS (아코디언 방식)
+========================================== */
+.position-dropdown-container {
+  position: relative;
+}
+
+.dropdown-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 99; cursor: default;
+}
+
+.custom-select-btn {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-surface); font-size: 13px; color: var(--text-main);
+  cursor: pointer; transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+.custom-select-btn:hover { border-color: var(--border-focus); }
+
+/* 활성화 시 포커스 링 효과 */
+.position-dropdown-container:focus-within .custom-select-btn {
+  border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.custom-dropdown-menu {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  width: 100%; min-width: 180px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  padding: 6px 0; margin: 0; list-style: none;
+  z-index: 100; max-height: 300px; overflow-y: auto; /* 세로 스크롤 유지 */
+}
+
+/* 상위 메뉴 아이템 */
+.menu-label {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; font-size: 13px; color: var(--text-main);
+  cursor: pointer; transition: background 0.15s;
+}
+.menu-label:hover {
+  background: var(--bg-hover); color: var(--primary); font-weight: 600;
+}
+/* 하위 메뉴가 있을 때 표시되는 화살표 회전 애니메이션 */
+.menu-item:hover .mdi-chevron-right {
+  transform: rotate(90deg);
+  transition: transform 0.2s;
+}
+
+/* ★ 수정한 부분: 아래로 펼쳐지는 서브메뉴 스타일 ★ */
+.custom-submenu {
+  display: none;
+  position: static; /* 옆으로 띄우지 않고 아래로 흐르게 배치 */
+  width: 100%;
+  background: var(--bg-canvas); /* 부모보다 살짝 어두운 배경으로 구분감 줌 */
+  padding: 4px 0; margin: 0; list-style: none;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 부모 항목에 마우스를 올리면 서브메뉴가 아래로 부드럽게 표시됨 */
+.menu-item:hover .custom-submenu {
+  display: block;
+}
+
+/* 하위 메뉴 아이템 */
+.submenu-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 16px 8px 36px; /* ★ 좌측 여백(36px)을 줘서 하위 메뉴 느낌을 확실히 줌 */
+  font-size: 12px; color: var(--text-sub);
+  cursor: pointer; transition: background 0.15s;
+}
+.submenu-item:hover {
+  background: var(--primary-soft); color: var(--primary); font-weight: 700;
 }
 </style>

@@ -1,812 +1,756 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router'; // 라우터 임포트 추가
-import axios from 'axios';
+import { ref, computed, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import axios from "axios";
 import { useAuthStore } from "~/stores/auth.js";
 
-// ==========================================
-// 1. 상태 관리 (State)
-// ==========================================
-const route = useRoute();     // 현재 URL 정보 가져오기
-const router = useRouter();   // URL 변경 조작용
-
+const route = useRoute();
+const router = useRouter();
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
-const allCodeData = ref({});
-const selectedGroupKey = ref('');
-const selectedSubGroupKey = ref('');
+// ==========================================
+// 1. 상태 관리 변수
+// ==========================================
+const rawCodeList = ref([]);
+
+// 현재 선택된 카테고리 ID (2차 중분류부터 3차, 4차 등 깊숙한 소분류 ID까지 모두 담길 수 있음)
+const selectedCategoryId = ref(null);
 const searchQuery = ref('');
 
-// 입력 폼 상태
+const addingToGroupId = ref(null);
+const newCategoryName = ref('');
+const editingCategoryId = ref(null);
+const editingCategoryName = ref('');
+
 const newCodeName = ref('');
-const newCodeOption = ref(0);
 const newCodeSort = ref(0);
+const newCodeOption = ref('');
 
-const newCodeNumber = computed(() => {
-  const list = currentCodeList.value;
-  if (!list || list.length === 0) {
-    return selectedSubGroupKey.value ? `${selectedSubGroupKey.value}001` : '';
-  }
-  const lastCode = list.reduce((max, code) => {
-    const currentNum = parseInt(code.codeNumber, 10);
-    return currentNum > max ? currentNum : max;
-  }, 0);
-  const nextNum = lastCode + 1;
-  const codeLength = list[0].codeNumber.length;
-  return String(nextNum).padStart(codeLength, '0');
-});
+// ==========================================
+// 2. 핵심 계층(Drill-down) 로직
+// ==========================================
 
-const transformCodeData = (rows) => {
-  const result = {};
-  rows.forEach(row => {
-    const {
-      groupCode, groupName, subCode, subName, detailCode, detailName,
-      useFl, editFl, deleteFl, option, sort
-    } = row;
+// 좌측 사이드바에 고정으로 보여질 2차 카테고리 (length: 5)
+const categories = computed(() => {
+  const baseGroups = [
+    { id: '01', name: '인사 코드', icon: 'mdi-account-tie' },
+    { id: '02', name: '관리 코드', icon: 'mdi-domain' }
+  ];
 
-    if (!result[groupCode]) {
-      result[groupCode] = { name: groupName, subGroups: [], codes: [] };
-    }
-    const currentGroup = result[groupCode];
+  return baseGroups.map(group => {
+    const children = rawCodeList.value
+        .filter(c => c.groupCd === group.id && c.itemCd.length === 5)
+        .sort((a, b) => a.sort - b.sort)
+        .map(c => ({ id: c.itemCd, name: c.itemNm, editFl: c.editFl, deleteFl: c.deleteFl }));
 
-    const createCodeObj = (id, name, dbUseFl, dbSort) => ({
-      id: id, codeNumber: id, name: name, useFl: dbUseFl,
-      sort: dbSort || 0, isEditing: false, editFl: editFl,
-      deleteFl: deleteFl, option: option,
-    });
-
-    if (detailCode) {
-      let subGroup = currentGroup.subGroups.find(sg => sg.id === subCode);
-      if (!subGroup) {
-        subGroup = { id: subCode, subName: subName, codes: [] };
-        currentGroup.subGroups.push(subGroup);
-      }
-      subGroup.codes.push(createCodeObj(detailCode, detailName, useFl, sort));
-    } else if (subCode) {
-      currentGroup.codes.push(createCodeObj(subCode, subName, useFl, sort));
-    }
+    return { ...group, children };
   });
-  return result;
-};
-
-// ==========================================
-// ★ URL 변경 감지 및 업데이트 설정
-// ==========================================
-// 셀렉트 박스(상태)가 변경될 때마다 URL 파라미터를 업데이트 합니다.
-watch([selectedGroupKey, selectedSubGroupKey], ([newGroup, newSub]) => {
-  if (newGroup) {
-    router.replace({
-      query: {
-        ...route.query, // 기존 다른 쿼리 유지
-        group: newGroup,
-        sub: newSub || undefined // 값이 없으면 URL에서 제거
-      }
-    });
-  }
 });
 
-const getCode = async () => {
-  try {
-    const res = await axios.get(`/api/v1/code/${cIdx}`);
-    if (!res.data.data.length > 0) return console.error("코드를 가져오지 못 했습니다.");
+// 하위 코드로 깊게 들어갔을 때, 좌측 사이드바 하이라이트를 유지하기 위한 2차 부모 ID 추출
+const activeSidebarId = computed(() => {
+  if (!selectedCategoryId.value) return null;
+  return selectedCategoryId.value.length >= 5
+      ? selectedCategoryId.value.substring(0, 5)
+      : selectedCategoryId.value;
+});
 
-    const result = res.data.data.filter(item =>
-        item.groupCode == '01' || item.groupCode == '02'
-    );
+// 상단 Breadcrumb(경로 표시줄)용 데이터 생성
+const activeBreadcrumbs = computed(() => {
+  if (!selectedCategoryId.value) return [];
+  const crumbs = [];
 
-    allCodeData.value = transformCodeData(result);
+  const baseGroup = categories.value.find(g => selectedCategoryId.value.startsWith(g.id));
+  if (baseGroup) crumbs.push({ id: baseGroup.id, name: baseGroup.name });
 
-    // === ★ URL 쿼리 기반 초기 세팅 로직 ===
-    const queryGroup = route.query.group;
-    const querySubGroup = route.query.sub;
+  let currentPath = selectedCategoryId.value.substring(0, 2);
+  for (let i = 5; i <= selectedCategoryId.value.length; i += 3) {
+    currentPath = selectedCategoryId.value.substring(0, i);
+    const node = rawCodeList.value.find(c => c.itemCd === currentPath);
 
-    if (queryGroup && allCodeData.value[queryGroup]) {
-      // 1. URL에 group 파라미터가 유효한 경우 적용
-      selectedGroupKey.value = queryGroup;
-      const group = allCodeData.value[queryGroup];
-
-      // 2. URL의 sub 파라미터가 유효한지 검증 후 적용
-      if (querySubGroup && group.subGroups.some(sg => sg.id === querySubGroup)) {
-        selectedSubGroupKey.value = querySubGroup;
-      } else if (group.subGroups.length > 0) {
-        selectedSubGroupKey.value = group.subGroups[0].id; // 유효하지 않으면 첫번째 하위 그룹
-      } else {
-        selectedSubGroupKey.value = '';
-      }
-    } else {
-      // 파라미터가 없거나 유효하지 않으면 기본값(첫 번째 대분류)으로 초기화
-      const firstKey = Object.keys(allCodeData.value)[0];
-      if (firstKey) {
-        selectedGroupKey.value = firstKey;
-        handleMainGroupChange();
-      }
+    if (node) {
+      crumbs.push({ id: node.itemCd, name: node.itemNm });
+    } else if (i === 5 && baseGroup) { // 사이드바에서 신규 추가되어 DB 응답 전일 경우 대비
+      const sidebarNode = baseGroup.children.find(c => c.id === currentPath);
+      if (sidebarNode) crumbs.push({ id: sidebarNode.id, name: sidebarNode.name });
     }
-  } catch (err) {
-    console.error("데이터 로드 실패", err);
   }
-};
-
-onMounted(() => {
-  getCode();
+  return crumbs;
 });
 
-// ==========================================
-// 4. Computed Properties
-// ==========================================
-const mainGroupOptions = computed(() => {
-  return Object.keys(allCodeData.value).map(key => ({
-    key: key,
-    name: allCodeData.value[key].name,
-    hasSub: allCodeData.value[key].subGroups.length > 0
-  }));
-});
+// 동적 컬럼(색상, 연령) 표시 여부 (최상위 2차 카테고리 기준 상속)
+const isColorTarget = computed(() => ['02002', '02004'].includes(activeSidebarId.value));
+const isAgeTarget = computed(() => activeSidebarId.value === '02003');
 
-const subGroupOptions = computed(() => {
-  const group = allCodeData.value[selectedGroupKey.value];
-  if (group && group.subGroups.length > 0) {
-    return group.subGroups.map(sub => ({
-      key: sub.id,
-      name: sub.subName
-    }));
-  }
-  return [];
-});
+// 현재 3차 이상 하위 카테고리 내부로 들어와 있는지 여부
+const isSubCategoryLevel = computed(() => selectedCategoryId.value && selectedCategoryId.value.length > 5);
 
-const currentCodeList = computed(() => {
-  const group = allCodeData.value[selectedGroupKey.value];
-  if (!group) return [];
-  let codeList = [];
-  if (group.subGroups.length > 0) {
-    const sub = group.subGroups.find(s => s.id === selectedSubGroupKey.value);
-    codeList = sub ? sub.codes : [];
-  } else {
-    codeList = group.codes;
-  }
-
-  codeList.sort((a, b) => a.sort - b.sort);
-
+// 우측 테이블 렌더링 리스트 (현재 선택된 부모 ID를 가진 자식들만)
+const filteredCodeList = computed(() => {
+  let list = rawCodeList.value.filter(
+      code => code.groupCd === selectedCategoryId.value
+  );
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase();
-    return codeList.filter(code =>
-        code.name.toLowerCase().includes(query) ||
-        code.codeNumber.toLowerCase().includes(query)
+    list = list.filter(code =>
+        (code.itemNm && code.itemNm.toLowerCase().includes(query)) ||
+        (code.itemCd && code.itemCd.toLowerCase().includes(query))
     );
   }
-  return codeList;
+  return list.sort((a, b) => a.sort - b.sort);
 });
 
-const currentGroupInfo = computed(() => {
-  const group = allCodeData.value[selectedGroupKey.value];
-  if (!group) return null;
-  let groupName = group.name;
-  if (group.subGroups.length > 0) {
-    const sub = group.subGroups.find(s => s.id === selectedSubGroupKey.value);
-    if (sub) groupName += ` > ${sub.subName}`;
-  }
-  return { name: groupName, count: currentCodeList.value.length };
+// 신규 코드 번호 자동 채번 로직 (뎁스 무관하게 작동)
+const newCodeNumber = computed(() => {
+  if (!selectedCategoryId.value) return '';
+  const prefix = selectedCategoryId.value;
+  const currentCodes = rawCodeList.value.filter(c => c.groupCd === prefix);
+
+  if (!currentCodes.length) return prefix + '001';
+
+  const nums = currentCodes.map(c => parseInt(c.itemCd.substring(prefix.length)) || 0);
+  const nextNum = Math.max(...nums, 0) + 1;
+
+  return prefix + String(nextNum).padStart(3, '0');
 });
 
+// 특정 코드의 하위 분류 개수 계산 (뱃지 표시용)
+const getChildCount = (itemCd) => rawCodeList.value.filter(c => c.groupCd === itemCd).length;
+
 // ==========================================
-// 5. 이벤트 핸들러
+// 3. 네비게이션 및 API 호출
 // ==========================================
-const handleMainGroupChange = () => {
-  const group = allCodeData.value[selectedGroupKey.value];
-  if (group && group.subGroups.length > 0) {
-    selectedSubGroupKey.value = group.subGroups[0].id;
-  } else {
-    selectedSubGroupKey.value = '';
+
+const fetchAllCodes = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    const targetData = (res.data.data || []).filter(item =>
+        item.groupCd === '01' || item.itemCd.startsWith('01') ||
+        item.groupCd === '02' || item.itemCd.startsWith('02')
+    );
+
+    rawCodeList.value = targetData.map(item => ({
+      ...item, option: item.tax_free || '', isEditing: false
+    }));
+
+    const queryCat = route.query.category;
+    if (queryCat && rawCodeList.value.some(c => c.itemCd === queryCat)) {
+      selectedCategoryId.value = queryCat;
+    } else if (!selectedCategoryId.value && categories.value[0]?.children.length > 0) {
+      selectedCategoryId.value = categories.value[0].children[0].id;
+    }
+  } catch (err) {
+    console.error('데이터 로드 실패:', err);
+    rawCodeList.value = [];
   }
+};
+
+const selectCategory = (id) => {
+  selectedCategoryId.value = id;
   searchQuery.value = '';
+  newCodeOption.value = isColorTarget.value ? '#000000' : '';
+  router.replace({ query: { ...route.query, category: id } });
 };
 
-const startEdit = (code) => {
-  if (code.editFl == 'N') {
-    window.customAlert('수정 권한이 없는 항목입니다.','error');
-    return;
+// 한 단계 위로 빠져나오기
+const goUpCategory = () => {
+  if (isSubCategoryLevel.value) {
+    selectCategory(selectedCategoryId.value.substring(0, selectedCategoryId.value.length - 3));
   }
-  code.isEditing = true;
 };
 
-const cancelEdit = (code) => {
-  code.isEditing = false;
+// ==========================================
+// 4. CRUD 로직 (사이드바 + 메인 테이블)
+// ==========================================
+// ... (중분류 추가/수정/삭제 로직은 기존과 동일하므로 길이상 요약, 하단 템플릿 로직에 맞춰 그대로 사용)
+
+const startCategoryAdd = (groupId) => { addingToGroupId.value = groupId; newCategoryName.value = ''; };
+
+const addCategory = async (group) => {
+  if (!newCategoryName.value.trim()) return window.customAlert('중분류명을 입력해주세요.', 'error');
+  try {
+    const currentChildren = rawCodeList.value.filter(c => c.groupCd === group.id);
+    const nums = currentChildren.map(c => parseInt(c.itemCd.slice(-3)) || 0);
+    const newId = `${group.id}${String(Math.max(...nums, 0) + 1).padStart(3, '0')}`;
+
+    await axios.post(`/api/v1/code/${cIdx}`, {
+      groupCd: group.id, itemCd: newId, itemNm: newCategoryName.value, sort: currentChildren.length + 1, useFl: 'Y', option: ''
+    });
+    addingToGroupId.value = null; newCategoryName.value = '';
+    await fetchAllCodes(); selectCategory(newId); window.alert('중분류가 추가되었습니다.');
+  } catch (err) { window.customAlert('추가에 실패했습니다.', 'error'); }
 };
+
+const startCategoryEdit = (child) => {
+  if (child.editFl === 'N') return window.customAlert('수정 권한이 없는 항목입니다.', 'error');
+  editingCategoryId.value = child.id; editingCategoryName.value = child.name;
+};
+
+const saveCategoryEdit = async (child) => {
+  if (!editingCategoryName.value.trim()) return window.customAlert('분류명을 입력해주세요.', 'error');
+  try {
+    const targetCode = rawCodeList.value.find(c => c.itemCd === child.id);
+    await axios.put(`/api/v1/code/${targetCode.itemCd}`, {
+      groupCd: targetCode.groupCd, itemCd: targetCode.itemCd, itemNm: editingCategoryName.value, sort: targetCode.sort, useFl: targetCode.useFl, option: targetCode.option
+    });
+    editingCategoryId.value = null; await fetchAllCodes();
+  } catch (err) { window.customAlert('수정에 실패했습니다.', 'error'); }
+};
+
+const cancelCategoryEdit = () => { editingCategoryId.value = null; editingCategoryName.value = ''; };
+
+const deleteCategory = async (child) => {
+  if (child.deleteFl === 'N') return window.customAlert('삭제 권한이 없는 항목입니다.', 'error');
+  const childCount = getChildCount(child.id);
+  if (childCount > 0) return window.customAlert(`하위 분류가 ${childCount}개 존재합니다. 하위 항목을 먼저 삭제해주세요.`, 'error');
+
+  if (!await window.customConfirm('이 분류를 삭제하시겠습니까?')) return;
+  try {
+    await axios.delete(`/api/v1/code/${child.id}`);
+    if (activeSidebarId.value === child.id) { selectedCategoryId.value = null; router.replace({ query: { category: undefined } }); }
+    await fetchAllCodes(); window.alert('삭제되었습니다.');
+  } catch (err) { window.customAlert('삭제에 실패했습니다.', 'error'); }
+};
+
+// --- 테이블 3차/4차 항목 CRUD ---
+const startEdit = (code) => {
+  if (code.editFl === 'N') return window.customAlert('수정 권한이 없는 항목입니다.', 'error');
+  code._original = { ...code }; code.isEditing = true;
+};
+const cancelEdit = (code) => { Object.assign(code, code._original); delete code._original; code.isEditing = false; };
 
 const saveCode = async (code) => {
-  const params = {
-    itemCd: code.itemCd, itemNm: code.name,
-    useFl: code.useFl, option: code.option, sort: code.sort
-  };
-
   try {
-    await axios.put(`/api/v1/code/${code.id}`, params);
-    window.alert('수정되었습니다.');
-    code.isEditing = false;
-    await getCode();
-  } catch (err) {
-    console.error("수정 실패", err);
-  }
+    await axios.put(`/api/v1/code/${code.itemCd}`, {
+      groupCd: selectedCategoryId.value, itemCd: code.itemCd, itemNm: code.itemNm, sort: code.sort, useFl: code.useFl, option: code.option
+    });
+    window.alert('수정되었습니다.'); code.isEditing = false; await fetchAllCodes();
+  } catch (err) { window.customAlert('수정에 실패했습니다.', 'error'); }
 };
 
-const deleteCode = async (itemCd) => {
+const deleteCode = async (code) => {
+  if (code.deleteFl === 'N') return window.customAlert('삭제 권한이 없는 항목입니다.', 'error');
+
+  // ★ 하위 분류가 존재하면 삭제 방어 로직 추가
+  const childCount = getChildCount(code.itemCd);
+  if (childCount > 0) {
+    return window.customAlert(`해당 항목 아래에 하위 분류가 ${childCount}개 존재합니다. 하위 분류를 먼저 삭제해주세요.`, 'error');
+  }
+
   if (!await window.customConfirm('정말 삭제하시겠습니까?')) return;
   try {
-    await axios.delete(`/api/v1/code/${itemCd}`);
-    window.alert('삭제되었습니다.');
-    await getCode();
-  } catch (err) {
-    console.error("삭제 실패", err);
-  }
+    await axios.delete(`/api/v1/code/${code.itemCd}`);
+    window.alert('삭제되었습니다.'); await fetchAllCodes();
+  } catch (err) { window.customAlert('삭제에 실패했습니다.', 'error'); }
 };
 
 const addCode = async () => {
-  if (!newCodeName.value) {
-    window.customAlert('항목명을 입력해주세요.', 'error');
-    // alert('항목명을 입력해주세요.');
-    return;
-  }
-  const generatedNumber = newCodeNumber.value;
-  let params = {
-    groupCd: selectedSubGroupKey.value,
-    itemCd: generatedNumber,
-    itemNm: newCodeName.value,
-    option: newCodeOption.value,
-    sort: newCodeSort.value,
-    useFl: 'Y'
-  };
+  if (!newCodeName.value.trim()) return window.customAlert('항목명을 입력해주세요.', 'error');
   try {
-    await axios.post(`/api/v1/code/${cIdx}`, params);
-    await getCode();
-    newCodeName.value = '';
-    newCodeOption.value = '';
-    newCodeSort.value = 0;
-  } catch (err) {
-    console.error("추가 실패", err);
-  }
+    await axios.post(`/api/v1/code/${cIdx}`, {
+      groupCd: selectedCategoryId.value, itemCd: newCodeNumber.value, itemNm: newCodeName.value,
+      sort: newCodeSort.value || (filteredCodeList.value.length + 1), useFl: 'Y', option: newCodeOption.value
+    });
+    window.alert('추가되었습니다.');
+    newCodeName.value = ''; newCodeSort.value = 0; newCodeOption.value = isColorTarget.value ? '#000000' : '';
+    await fetchAllCodes();
+  } catch (err) { window.customAlert('추가에 실패했습니다.', 'error'); }
 };
+
+onMounted(async () => { await fetchAllCodes(); });
 </script>
 
 <template>
-  <div class="code-settings-page">
+  <div class="payroll-settings-page">
     <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title">
-          <i class="mdi mdi-account-cog"></i>
-          인사 코드 관리
-        </h1>
-        <p class="page-subtitle">직원 구분, 직책, 직급 등 인사 관련 코드를 관리합니다</p>
+        <h1 class="page-title"><i class="mdi mdi-account-cog"></i> 인사 코드 설정</h1>
+        <p class="page-subtitle">좌측에서 중분류를 선택하고 우측에서 하위 직책 및 세부 코드를 설정하세요.</p>
       </div>
     </div>
 
-    <div class="filter-panel">
-      <div class="filter-row">
-        <div class="filter-group">
-          <label class="filter-label">
-            <i class="mdi mdi-folder-outline"></i>
-            대분류
-          </label>
-          <select
-              v-model="selectedGroupKey"
-              @change="handleMainGroupChange"
-              class="filter-select"
-          >
-            <option v-for="group in mainGroupOptions" :key="group.key" :value="group.key">
-              {{ group.name }}
-            </option>
-          </select>
-        </div>
+    <div class="layout-container">
 
-        <div class="filter-group" v-if="subGroupOptions.length > 0">
-          <label class="filter-label">
-            <i class="mdi mdi-folder-open-outline"></i>
-            상세그룹
-          </label>
-          <select
-              v-model="selectedSubGroupKey"
-              class="filter-select"
-          >
-            <option v-for="subGroup in subGroupOptions" :key="subGroup.key" :value="subGroup.key">
-              {{ subGroup.name }}
-            </option>
-          </select>
-        </div>
-
-        <!--div class="filter-spacer"></div-->
-
-        <div class="search-box">
-          <i class="mdi mdi-magnify"></i>
-          <input
-              type="text"
-              v-model="searchQuery"
-              placeholder="코드번호 또는 항목명 검색..."
-              class="search-input"
-          />
-          <button v-if="searchQuery" @click="searchQuery = ''" class="search-clear">
-            <i class="mdi mdi-close"></i>
-          </button>
-        </div>
-      </div>
-
-    </div>
-
-    <div class="table-card">
-      <div class="table-wrapper">
-        <table class="data-table">
-          <thead>
-          <tr>
-            <th style="width: 70px;">
-              <div class="th-content">
-                <i class="mdi mdi-pound"></i>
-                <span>No.</span>
-              </div>
-            </th>
-            <th style="width: 140px;">
-              <div class="th-content">
-                <i class="mdi mdi-barcode"></i>
-                <span>코드 번호</span>
-              </div>
-            </th>
-            <th>
-              <div class="th-content">
-                <i class="mdi mdi-tag-outline"></i>
-                <span>항목명</span>
-              </div>
-            </th>
-            <th style="width: 100px;">
-              <div class="th-content">
-                <i class="mdi mdi-sort-variant"></i>
-                <span>순서</span>
-              </div>
-            </th>
-            <th v-if="selectedSubGroupKey == '02002' || selectedSubGroupKey == '02004'" style="width: 150px;">
-              <div class="th-content">
-                <i class="mdi mdi-palette"></i>
-                <span>색상</span>
-              </div>
-            </th>
-            <th v-if="selectedSubGroupKey == '02003'" style="width: 150px;">
-              <div class="th-content">
-                <i class="mdi mdi-account"></i>
-                <span>연령</span>
-              </div>
-            </th>
-            <th style="width: 140px;">
-              <div class="th-content">
-                <i class="mdi mdi-check-circle-outline"></i>
-                <span>사용 여부</span>
-              </div>
-            </th>
-            <th class="text-center" style="width: 180px;">
-              <div class="th-content">
-                <i class="mdi mdi-cog"></i>
-                <span>관리</span>
-              </div>
-            </th>
-          </tr>
-          </thead>
-          <tbody>
-          <tr v-for="(code, index) in currentCodeList" :key="code.id" class="data-row">
-            <td class="text-center">
-              <span class="row-number">{{ index + 1 }}</span>
-            </td>
-
-            <td>
-              <span class="code-number">{{ code.codeNumber }}</span>
-            </td>
-
-            <td>
-              <template v-if="code.isEditing && selectedSubGroupKey !== '02003'">
-                <input
-                    type="text"
-                    v-model="code.name"
-                    class="input-edit"
-                    placeholder="항목명"
-                    disabled
-                    title="항목명은 수정할 수 없습니다."
-                />
-              </template>
-              <template v-else>
-                <span class="code-name">{{ code.name }}</span>
-              </template>
-            </td>
-
-            <td>
-              <template v-if="code.isEditing">
-                <input
-                    type="number"
-                    v-model.number="code.sort"
-                    class="input-edit text-center"
-                    min="0"
-                />
-              </template>
-              <template v-else>
-                <span class="sort-number">{{ code.sort }}</span>
-              </template>
-            </td>
-
-            <td v-if="selectedSubGroupKey == '02002' || selectedSubGroupKey == '02004'">
-              <template v-if="code.isEditing">
-                <div class="color-edit-wrapper">
-                  <input
-                      type="color"
-                      v-model="code.option"
-                      class="color-picker"
-                  />
-                  <input
-                      type="text"
-                      v-model="code.option"
-                      class="color-text-input"
-                      placeholder="#000000"
-                      maxlength="7"
-                  />
+      <aside class="sidebar-tree">
+        <div v-for="group in categories" :key="group.id" class="tree-group">
+          <div class="tree-group-title">
+            <i :class="['mdi', group.icon]"></i> {{ group.name }}
+          </div>
+          <ul class="tree-children">
+            <li v-for="child in group.children" :key="child.id">
+              <div v-if="editingCategoryId === child.id" class="tree-edit-box">
+                <input type="text" v-model="editingCategoryName" class="tree-input" @keyup.enter="saveCategoryEdit(child)" @keyup.esc="cancelCategoryEdit" />
+                <div class="tree-edit-actions">
+                  <button @click="saveCategoryEdit(child)" class="icon-btn text-success"><i class="mdi mdi-check"></i></button>
+                  <button @click="cancelCategoryEdit" class="icon-btn text-danger"><i class="mdi mdi-close"></i></button>
                 </div>
-              </template>
-              <template v-else>
-                <div class="color-display">
-                    <span
-                        class="color-swatch"
-                        :style="{ backgroundColor: code.option || '#cccccc' }"
-                    ></span>
-                  <span class="color-code">{{ code.option || '미지정' }}</span>
+              </div>
+
+              <div v-else class="tree-item-wrapper">
+                <button :class="['tree-item-btn', { active: activeSidebarId === child.id }]" @click="selectCategory(child.id)">
+                  <span class="tree-item-name">{{ child.name }}</span>
+                  <span class="tree-item-id">{{ child.id }}</span>
+                </button>
+                <div class="tree-item-hover-actions">
+                  <button @click.stop="startCategoryEdit(child)" class="icon-btn" :disabled="child.editFl === 'N'"><i class="mdi mdi-pencil-outline"></i></button>
+                  <button @click.stop="deleteCategory(child)" class="icon-btn text-danger" :disabled="child.deleteFl === 'N'"><i class="mdi mdi-trash-can-outline"></i></button>
                 </div>
-              </template>
-            </td>
+              </div>
+            </li>
+            <li v-if="addingToGroupId === group.id" class="tree-add-box">
+              <input type="text" v-model="newCategoryName" placeholder="새 중분류명 입력" class="tree-input" @keyup.enter="addCategory(group)" @keyup.esc="addingToGroupId = null" autofocus />
+              <div class="tree-edit-actions">
+                <button @click="addCategory(group)" class="icon-btn text-success"><i class="mdi mdi-check"></i></button>
+                <button @click="addingToGroupId = null" class="icon-btn text-danger"><i class="mdi mdi-close"></i></button>
+              </div>
+            </li>
+            <li v-else>
+              <button class="tree-add-btn" @click="startCategoryAdd(group.id)"><i class="mdi mdi-plus"></i> 중분류 추가</button>
+            </li>
+          </ul>
+        </div>
+      </aside>
 
-            <td v-if="selectedSubGroupKey == '02003'">
-              <span style="display: flex; gap: 16px; align-items: center">
-              만
-              <template v-if="code.isEditing">
-                <input
-                    type="text"
-                    v-model="code.option"
-                    class="input-edit text-center"
-                />
-              </template>
-              <template v-else>
-                <strong>{{code.option}}</strong>
-              </template>
-               세
+      <main class="main-content">
+        <div v-if="!selectedCategoryId" class="empty-selection-box">
+          <i class="mdi mdi-arrow-left-top-bold"></i>
+          <p>좌측에서 관리할 카테고리를 선택해주세요.</p>
+        </div>
+
+        <template v-else>
+          <div class="content-header">
+            <div class="breadcrumb">
+              <template v-for="(crumb, index) in activeBreadcrumbs" :key="crumb.id">
+                <span
+                    class="breadcrumb-crumb"
+                    :class="{ 'is-link': index < activeBreadcrumbs.length - 1 }"
+                    @click="index < activeBreadcrumbs.length - 1 ? selectCategory(crumb.id) : null"
+                >
+                  {{ crumb.name }}
                 </span>
-            </td>
-
-            <td>
-              <template v-if="code.isEditing">
-                <select v-model="code.useFl" class="status-select">
-                  <option value="Y">사용</option>
-                  <option value="N">사용안함</option>
-                </select>
+                <i v-if="index < activeBreadcrumbs.length - 1" class="mdi mdi-chevron-right"></i>
               </template>
-              <template v-else>
-                  <span :class="['status-badge', code.useFl === 'Y' ? 'status-active' : 'status-inactive']">
-                    <i :class="['mdi', code.useFl === 'Y' ? 'mdi-check-circle' : 'mdi-close-circle']"></i>
-                    {{ code.useFl === 'Y' ? '사용' : '사용안함' }}
-                  </span>
-              </template>
-            </td>
+            </div>
+            <div class="search-box">
+              <i class="mdi mdi-magnify"></i>
+              <input type="text" v-model="searchQuery" placeholder="코드 또는 항목명 검색..." class="search-input" />
+              <button v-if="searchQuery" @click="searchQuery = ''" class="search-clear"><i class="mdi mdi-close"></i></button>
+            </div>
+          </div>
 
-            <td class="text-center">
-              <div class="action-buttons">
-                <template v-if="code.isEditing">
-                  <button @click="saveCode(code)" class="btn-action btn-save">
-                    <i class="mdi mdi-content-save"></i>
-                    <span>저장</span>
-                  </button>
-                  <button @click="cancelEdit(code)" class="btn-action btn-cancel">
-                    <i class="mdi mdi-close"></i>
-                    <span>취소</span>
-                  </button>
-                </template>
-                <template v-else>
-                  <button
-                      @click="startEdit(code)"
-                      class="btn-action btn-edit"
-                      :disabled="code.editFl == 'N'"
-                  >
-                    <i class="mdi mdi-pencil"></i>
-                    <span>수정</span>
-                  </button>
-                  <button
-                      @click="deleteCode(code.id)"
-                      class="btn-action btn-delete"
-                      :disabled="Fl == 'N'"
-                  >
-                    <i class="mdi mdi-delete"></i>
-                    <span>삭제</span>
-                  </button>
-                </template>
-              </div>
-            </td>
-          </tr>
+          <div class="table-card">
 
-          <tr v-if="currentCodeList.length === 0" class="empty-row">
-            <td :colspan="selectedSubGroupKey == '02002' || selectedSubGroupKey == '02003' ? 7 : 6">
-              <div class="empty-state">
-                <i class="mdi mdi-folder-open-outline"></i>
-                <p>등록된 코드가 없습니다</p>
-                <span>아래 입력란에서 새로운 코드를 추가해주세요</span>
-              </div>
-            </td>
-          </tr>
-
-          <tr class="add-row">
-            <td class="text-center">
-              <div class="add-icon">
-                <i class="mdi mdi-plus-circle"></i>
-              </div>
-            </td>
-            <td>
-              <input
-                  type="text"
-                  v-model="newCodeNumber"
-                  disabled
-                  placeholder="자동생성"
-                  class="input-add disabled"
-              />
-            </td>
-            <td>
-              <input
-                  type="text"
-                  v-model="newCodeName"
-                  placeholder="항목명 입력"
-                  class="input-add"
-                  @keyup.enter="addCode"
-              />
-            </td>
-            <td>
-              <input
-                  type="number"
-                  v-model.number="newCodeSort"
-                  placeholder="순서"
-                  class="input-add text-center"
-                  min="0"
-              />
-            </td>
-            <td v-if="selectedSubGroupKey == '02002'">
-              <div class="color-edit-wrapper">
-                <input
-                    type="color"
-                    v-model="newCodeOption"
-                    class="color-picker"
-                />
-                <input
-                    type="text"
-                    v-model="newCodeOption"
-                    class="color-text-input"
-                    placeholder="#000000"
-                    maxlength="7"
-                />
-              </div>
-            </td>
-            <td v-if="selectedSubGroupKey == '02003'">
-              <span style="display: flex; gap: 16px; align-items: center">
-              만
-                <input
-                    type="text"
-                    v-model="newCodeOption"
-                    class="input-edit text-center"
-                />
-               세
-                </span>
-            </td>
-            <td>
-                <span class="status-badge status-new">
-                  신규
-                </span>
-            </td>
-            <td class="text-center">
-              <button @click="addCode" class="btn-add-submit">
-                <i class="mdi mdi-plus"></i>
-                <span>추가하기</span>
+            <div v-if="isSubCategoryLevel" class="go-up-bar">
+              <button @click="goUpCategory" class="btn-go-up">
+                <i class="mdi mdi-arrow-up-left"></i> 상위 분류로 이동
               </button>
-            </td>
-          </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+              <span class="current-sub-title">
+                <i class="mdi mdi-folder-open"></i>
+                [{{ activeBreadcrumbs[activeBreadcrumbs.length - 1]?.name }}] 하위 항목 리스트
+              </span>
+            </div>
 
-    <div class="info-box">
-      <i class="mdi mdi-information"></i>
-      <div class="info-content">
-        <strong>인사 코드 관리 안내</strong>
-        <ul>
-          <li>코드 번호는 자동으로 생성되며, <b>중복될 수 없습니다.</b></li>
-          <li>순서를 통해 목록에 표시되는 순서를 조정할 수 있습니다 (낮은 숫자가 먼저 표시).</li>
-          <li>현장 구분 코드의 색상은 현장 관리 화면에서 시각적 구분에 사용됩니다.</li>
-          <li>수정/삭제 권한이 없는 항목은 버튼이 비활성화됩니다.</li>
-          <li>코드 수정 후에는 반드시 '저장' 버튼을 클릭해야 변경사항이 저장됩니다.</li>
-        </ul>
-      </div>
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                <tr>
+                  <th style="width:52px;">No.</th>
+                  <th style="width:140px;">코드 번호</th>
+                  <th>항목명</th>
+                  <th style="width:100px;">하위 분류</th>
+                  <th v-if="isColorTarget" style="width:150px;">색상 지정</th>
+                  <th v-if="isAgeTarget" style="width:150px;">연령 설정</th>
+                  <th style="width:68px;">순서</th>
+                  <th style="width:90px;">사용 여부</th>
+                  <th style="width:84px;">관리</th>
+                </tr>
+                </thead>
+                <tbody>
+
+                <tr v-for="(code, index) in filteredCodeList" :key="code.itemCd" class="data-row">
+                  <td class="text-center"><span class="row-number">{{ index + 1 }}</span></td>
+                  <td><span class="code-number">{{ code.itemCd }}</span></td>
+
+                  <td>
+                    <input v-if="code.isEditing" type="text" v-model="code.itemNm" class="input-edit w-full" disabled/>
+                    <span v-else class="code-name">{{ code.itemNm }}</span>
+                  </td>
+
+                  <td class="text-center">
+                    <button :disabled="code.groupCd !== '01002'" @click="selectCategory(code.itemCd)" class="btn-manage-sub" title="이 항목의 하위 코드를 관리합니다.">
+                      <i class="mdi mdi-subdirectory-arrow-right"></i> 설정
+                      <span v-if="getChildCount(code.itemCd) > 0" class="sub-count">{{ getChildCount(code.itemCd) }}</span>
+                    </button>
+                  </td>
+
+                  <td v-if="isColorTarget">
+                    <div v-if="code.isEditing" class="color-edit-wrapper">
+                      <input type="color" v-model="code.option" class="color-picker"/>
+                      <input type="text" v-model="code.option" class="color-text-input" maxlength="7"/>
+                    </div>
+                    <div v-else class="color-display">
+                      <span class="color-swatch" :style="{ backgroundColor: code.option || '#cccccc' }"></span>
+                      <span class="color-code">{{ code.option || '미지정' }}</span>
+                    </div>
+                  </td>
+
+                  <td v-if="isAgeTarget" class="text-center">
+                    <div v-if="code.isEditing" class="age-input-wrapper">
+                      <span>만</span><input type="text" v-model="code.option" class="input-inline text-center" style="width:50px;"/><span>세</span>
+                    </div>
+                    <div v-else class="age-display">
+                      <span>만 <strong style="margin:0 4px;">{{ code.option || '-' }}</strong> 세</span>
+                    </div>
+                  </td>
+
+                  <td class="text-center">
+                    <input v-if="code.isEditing" type="number" v-model.number="code.sort" class="input-inline text-center" style="width:48px;" min="0" />
+                    <span v-else class="sort-number">{{ code.sort }}</span>
+                  </td>
+
+                  <td>
+                    <select v-if="code.isEditing" v-model="code.useFl" class="select-inline">
+                      <option value="Y">사용</option><option value="N">미사용</option>
+                    </select>
+                    <span v-else :class="['use-dot', code.useFl === 'Y' ? 'use-on' : 'use-off']">{{ code.useFl === 'Y' ? '사용' : '미사용' }}</span>
+                  </td>
+
+                  <td class="text-center">
+                    <div class="row-actions">
+                      <template v-if="code.isEditing">
+                        <button @click="saveCode(code)" class="icon-btn-row icon-btn-row--save" title="저장"><i class="mdi mdi-check"></i></button>
+                        <button @click="cancelEdit(code)" class="icon-btn-row icon-btn-row--cancel" title="취소"><i class="mdi mdi-close"></i></button>
+                      </template>
+                      <template v-else>
+                        <button @click="startEdit(code)" class="icon-btn-row icon-btn-row--edit" :disabled="code.editFl === 'N'"><i class="mdi mdi-pencil-outline"></i></button>
+                        <button @click="deleteCode(code)" class="icon-btn-row icon-btn-row--del" :disabled="code.deleteFl === 'N'"><i class="mdi mdi-trash-can-outline"></i></button>
+                      </template>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr v-if="filteredCodeList.length === 0" class="empty-row">
+                  <td :colspan="(isColorTarget || isAgeTarget) ? 8 : 7">
+                    <div class="empty-state">
+                      <div class="empty-icon-wrapper">
+                        <i class="mdi mdi-folder-outline"></i>
+                      </div>
+                      <p>등록된 항목이 없습니다.</p>
+                      <span>하단의 폼을 이용해 새로운 코드를 생성해주세요.</span>
+                    </div>
+                  </td>
+                </tr>
+
+                </tbody>
+              </table>
+            </div>
+
+            <div class="add-form-bar">
+              <div class="add-form-fields">
+                <div class="add-field">
+                  <label>코드번호</label>
+                  <input type="text" :value="newCodeNumber" disabled class="add-input add-input--disabled" style="width: 130px;"/>
+                </div>
+                <div class="add-field add-field--grow">
+                  <label>항목명 <span class="req">*</span></label>
+                  <input type="text" v-model="newCodeName" placeholder="항목명을 입력하세요" class="add-input" @keyup.enter="addCode"/>
+                </div>
+
+                <div v-if="isColorTarget" class="add-field">
+                  <label>색상 지정</label>
+                  <div class="color-edit-wrapper" style="height: 36px; padding: 0;">
+                    <input type="color" v-model="newCodeOption" class="color-picker" style="height: 100%; border:1px solid var(--border-color);" />
+                    <input type="text" v-model="newCodeOption" class="color-text-input" placeholder="#000000" maxlength="7" style="height:100%;"/>
+                  </div>
+                </div>
+
+                <div v-if="isAgeTarget" class="add-field">
+                  <label>연령 설정</label>
+                  <div class="age-input-wrapper" style="height: 36px; display: flex; align-items: center; gap:6px;">
+                    <span style="font-size:13px; color:var(--text-sub);">만</span>
+                    <input type="text" v-model="newCodeOption" class="add-input text-center" style="width: 60px;" placeholder="숫자" />
+                    <span style="font-size:13px; color:var(--text-sub);">세</span>
+                  </div>
+                </div>
+
+                <div class="add-field" style="width:64px;">
+                  <label>순서</label>
+                  <input type="number" v-model.number="newCodeSort" placeholder="0" class="add-input text-center" min="0" />
+                </div>
+              </div>
+              <button @click="addCode" class="btn-add-submit"><i class="mdi mdi-plus"></i> 추가</button>
+            </div>
+          </div>
+        </template>
+      </main>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* =========================================
-   페이지 고유 스타일 (공통 CSS 이외)
-========================================= */
-.filter-spacer { flex: 1; } /* 필터 간격 띄우기용 */
+/* ── 유틸 및 레이아웃 ── */
+.w-full { width: 100%; box-sizing: border-box; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-primary { color: var(--primary); }
+.text-success { color: var(--success) !important; }
+.text-danger { color: var(--danger) !important; }
+.layout-container { display: flex; gap: 20px; align-items: flex-start; }
 
-/* === 선택 정보 뱃지 === */
-.selection-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 16px;
+/* ═══════════════════════════
+   사이드바 트리
+═══════════════════════════ */
+.sidebar-tree {
+  width: 240px; flex-shrink: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px 12px;
+}
+.tree-group { margin-bottom: 20px; }
+.tree-group:last-child { margin-bottom: 0; }
+.tree-group-title {
+  font-weight: 700; font-size: 12px; color: var(--text-sub);
+  letter-spacing: .5px; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 6px; padding: 0 4px;
+}
+.tree-group-title i { font-size: 16px; }
+.tree-children { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.tree-item-wrapper { position: relative; display: flex; align-items: center; border-radius: 7px; overflow: hidden; }
+.tree-item-btn {
+  flex: 1; text-align: left; padding: 8px 10px 8px 18px;
+  background: transparent; border: none; color: var(--text-sub);
+  font-size: 13px; cursor: pointer; transition: all .15s;
+  display: flex; align-items: center;
+}
+.tree-item-wrapper:hover .tree-item-btn { background: var(--bg-hover); color: var(--text-main); }
+.tree-item-btn.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.tree-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 사이드바 코드 번호(ID) 뱃지 */
+.tree-item-id {
+  font-size: 11px; font-family: monospace; color: var(--text-sub);
+  background: var(--bg-canvas); padding: 2px 6px; border-radius: 4px;
+  margin-left: 8px; transition: opacity 0.15s;
+}
+.tree-item-btn.active .tree-item-id { background: #ffffff; color: var(--primary); font-weight: 600; }
+.tree-item-wrapper:hover .tree-item-id { opacity: 0; }
+
+.tree-item-hover-actions {
+  position: absolute; right: 4px; display: flex; gap: 2px;
+  opacity: 0; transition: opacity .15s;
+}
+.tree-item-wrapper:hover .tree-item-hover-actions { opacity: 1; }
+
+.tree-add-box, .tree-edit-box { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 18px; }
+.tree-input { flex: 1; padding: 5px 7px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px; }
+.tree-input:focus { outline: none; border-color: var(--primary); }
+.tree-edit-actions { display: flex; gap: 2px; }
+
+.icon-btn {
+  background: none; border: none; padding: 4px; border-radius: 4px;
+  cursor: pointer; color: var(--text-sub);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.icon-btn:hover:not(:disabled) { background: var(--bg-canvas); color: var(--text-main); }
+.icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.tree-add-btn {
+  width: 100%; text-align: left; padding: 7px 10px 7px 18px;
+  background: transparent; border: none; border-radius: 7px;
+  color: var(--primary); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .15s; opacity: .75;
+}
+.tree-add-btn:hover { background: var(--primary-soft); opacity: 1; }
+
+/* ═══════════════════════════
+   메인 콘텐츠
+═══════════════════════════ */
+.main-content { flex: 1; min-width: 0; }
+
+.empty-selection-box {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 300px; background: var(--bg-surface);
+  border: 1px dashed var(--border-color); border-radius: 12px;
+  color: var(--text-sub); font-size: 14px; gap: 12px;
+}
+.empty-selection-box i { font-size: 32px; color: var(--border-color); }
+
+/* 콘텐츠 헤더 */
+.content-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; background: var(--bg-surface);
+  padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border-color); gap: 16px;
+}
+.breadcrumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* ── Breadcrumb 링크 형태 ── */
+.breadcrumb-crumb { font-size: 14px; font-weight: 600; color: var(--text-main); }
+.breadcrumb-crumb.is-link {
+  color: var(--text-sub); font-weight: 500; cursor: pointer; transition: color 0.2s;
+}
+.breadcrumb-crumb.is-link:hover { color: var(--primary); text-decoration: underline; }
+.breadcrumb .mdi-chevron-right { font-size: 16px; color: var(--border-color); margin: 0 4px; }
+
+/* 검색 */
+.search-box {
+  display: flex; align-items: center; background: var(--bg-canvas);
+  border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; min-width: 220px;
+}
+.search-box i { color: var(--text-sub); margin-right: 8px; font-size: 15px; }
+.search-input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; }
+.search-clear { background: none; border: none; cursor: pointer; color: var(--text-sub); padding: 0; }
+
+/* ── 테이블 상단 - 상위 항목으로 이동 (Go Up Bar) ── */
+.go-up-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-color);
+}
+.btn-go-up {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; background: #fff; border: 1px solid var(--border-color);
+  border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-main);
+  cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.btn-go-up:hover { border-color: var(--text-sub); background: var(--bg-canvas); }
+.current-sub-title { font-size: 13px; font-weight: 600; color: var(--primary); }
+
+/* 테이블 카드 */
+.table-card { background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
+.table-wrapper { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+.data-table thead th {
+  background: var(--bg-canvas); padding: 10px 12px;
+  font-size: 11px; font-weight: 700; color: var(--text-sub); letter-spacing: .3px;
+  border-bottom: 1px solid var(--border-color); white-space: nowrap; text-align: left;
+}
+.data-table tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.data-row:last-child td { border-bottom: none; }
+.data-row:hover { background: var(--bg-hover); }
+
+/* 셀 요소 */
+.row-number {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; background: var(--bg-hover);
+  border-radius: 5px; font-weight: 600; color: var(--text-sub); font-size: 11px;
+}
+.code-number { font-size: 12px; font-weight: 600; color: var(--primary); background: var(--primary-soft); padding: 3px 9px; border-radius: 5px; white-space: nowrap; }
+.code-name { font-size: 13px; font-weight: 500; color: var(--text-main); }
+.sort-number { font-size: 13px; color: var(--text-sub); }
+
+/* ── 하위 분류 진입 버튼 (Drill-down) ── */
+.btn-manage-sub {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  color: var(--text-main);
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+}
+.btn-manage-sub:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.btn-manage-sub:disabled {
+  background: var(--bg-canvas);
+  color: var(--text-sub);
+  cursor: not-allowed;
+}
+.sub-count { background: var(--primary); color: #fff; padding: 1px 5px; border-radius: 10px; font-size: 10px; margin-left: 2px; }
+
+/* 색상 표시/편집 */
+.color-display { display: flex; align-items: center; gap: 8px; }
+.color-swatch { width: 24px; height: 24px; border-radius: 4px; border: 1px solid var(--border-color); display: inline-block; }
+.color-code { font-size: 12px; color: var(--text-sub); }
+.color-edit-wrapper { display: flex; align-items: center; gap: 6px; }
+.color-picker { width: 32px; height: 32px; padding: 2px; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; background: var(--bg-surface); }
+.color-text-input { width: 70px; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; text-transform: uppercase; color: var(--text-main); background: var(--bg-surface); }
+.color-text-input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px var(--primary-soft); }
+
+/* 연령 표시/편집 */
+.age-display { display: flex; align-items: center; font-size: 13px; color: var(--text-main); justify-content: center;}
+.age-input-wrapper { display: flex; align-items: center; gap: 6px; justify-content: center;}
+
+/* 사용여부 도트 */
+.use-dot::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; flex-shrink: 0; }
+.use-dot { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; }
+.use-on { color: var(--success); }
+.use-on::before { background: var(--success); }
+.use-off { color: var(--text-sub); }
+.use-off::before { background: var(--border-color); }
+
+/* 인라인 편집 */
+.input-inline { padding: 6px 9px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 13px; color: var(--text-main); background: var(--bg-surface); box-sizing: border-box; transition: border-color .15s; }
+.input-inline:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.select-inline { padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; background: var(--bg-surface); cursor: pointer; }
+
+/* 행 아이콘 버튼 */
+.row-actions { display: flex; gap: 4px; justify-content: center; }
+.icon-btn-row {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-surface);
+  cursor: pointer; transition: all .15s; font-size: 15px; color: var(--text-sub);
+}
+.icon-btn-row:disabled { opacity: .35; cursor: not-allowed; }
+.icon-btn-row--edit:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: #fff; }
+.icon-btn-row--del:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #fff; }
+.icon-btn-row--save:hover { background: var(--success); border-color: var(--success); color: #fff; }
+.icon-btn-row--cancel:hover { background: var(--text-sub); border-color: var(--text-sub); color: #fff; }
+
+/* 빈 상태 */
+.empty-row td { padding: 30px 20px !important; border-bottom: none; }
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px; background: var(--bg-canvas); border: 1px dashed var(--border-color);
+  border-radius: 10px; gap: 10px; color: var(--text-sub);
+}
+.empty-icon-wrapper {
+  display: flex; align-items: center; justify-content: center;
+  width: 64px; height: 64px; background: var(--primary-soft);
+  border-radius: 50%; margin-bottom: 8px;
+}
+.empty-icon-wrapper i { font-size: 32px; color: var(--primary); }
+.empty-state p { font-size: 15px; font-weight: 600; margin: 0; color: var(--text-main); }
+.empty-state span { font-size: 13px; opacity: 0.8; }
+
+/* ── 추가 폼 바 ── */
+.add-form-bar {
+  display: flex; align-items: flex-end; gap: 10px;
+  padding: 16px; background: var(--bg-canvas);
   border-top: 1px solid var(--border-color);
 }
+.add-form-fields { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; }
+.add-field { display: flex; flex-direction: column; gap: 4px; }
+.add-field--grow { flex: 1; min-width: 160px; }
+.add-field label { font-size: 11px; font-weight: 600; color: var(--text-sub); white-space: nowrap; }
+.add-field .req { color: var(--danger); }
 
-.info-badge, .count-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+.add-input {
+  padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px;
+  font-size: 13px; color: var(--text-main); background: var(--bg-surface);
+  box-sizing: border-box; width: 100%; transition: border-color .15s;
 }
-
-.info-badge { background: var(--primary-soft); color: var(--primary); }
-.count-badge { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.info-badge i, .count-badge i { font-size: 16px; }
-
-/* === 테이블 스크롤 및 공통 래퍼 === */
-.table-wrapper {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.table-wrapper::-webkit-scrollbar { height: 8px; }
-.table-wrapper::-webkit-scrollbar-track { background: var(--bg-hover); border-radius: 4px; }
-.table-wrapper::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
-.table-wrapper::-webkit-scrollbar-thumb:hover { background: var(--text-sub); }
-
-.th-content { display: flex; align-items: center; gap: 6px; }
-.th-content i { font-size: 14px; opacity: 0.8; }
-
-/* === 테이블 내부 커스텀 셀 === */
-.row-number {
-  display: inline-flex; justify-content: center; align-items: center;
-  width: 28px; height: 28px;
-  background: var(--bg-hover); border-radius: 6px;
-  font-weight: 600; color: var(--text-sub); font-size: 12px;
-}
-
-.code-number {
-  font-weight: 600;
-  color: var(--primary);
-  background: var(--primary-soft);
-  padding: 4px 10px; border-radius: 6px; font-size: 12px;
-}
-
-.code-name { font-weight: 500; color: var(--text-main); }
-.sort-number { color: var(--text-main); }
-
-/* === 색상 표시/편집 === */
-.color-display { display: flex; align-items: center; gap: 8px; }
-.color-swatch {
-  width: 28px; height: 28px; border-radius: 6px;
-  border: 1px solid var(--border-color); display: inline-block;
-}
-.color-code { font-size: 12px; color: var(--text-sub); }
-
-.color-edit-wrapper { display: flex; align-items: center; gap: 6px; }
-.color-picker {
-  width: 36px; height: 36px; padding: 2px;
-  border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;
-  background: var(--bg-surface);
-}
-.color-text-input {
-  width: 80px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 13px;
-  text-transform: uppercase;
-  color: var(--text-main);
-  background: var(--bg-surface);
-}
-.color-text-input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
-
-/* === 상태 배지 === */
-.status-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
-}
-.status-active { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
-.status-inactive { background-color: var(--bg-hover); color: var(--text-sub); }
-.status-new { background-color: var(--primary-soft); color: var(--primary); }
-.status-badge i { font-size: 13px; }
-
-/* === 입력 폼 (수정/추가) === */
-/*
-.input-edit, .input-add {
-  width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px;
-  font-size: 13px; color: var(--text-main); transition: all 0.2s; box-sizing: border-box;
-}
-.input-edit:focus, .input-add:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
-
-.input-edit { background: var(--bg-surface); }
-.input-add { background: var(--bg-surface); }
-.input-add.disabled { background: var(--bg-canvas); color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
-
-.status-select {
-  padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 6px;
-  font-size: 12px; color: var(--text-main); background: var(--bg-surface); cursor: pointer;
-}
-.status-select:focus { border-color: var(--primary); outline: none; }
- */
-
-/* === 액션 버튼 (테이블 내부) === */
-.action-buttons { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
-.btn-action {
-  display: flex; align-items: center; gap: 4px;
-  padding: 6px 10px; border: none; border-radius: 6px;
-  font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s;
-}
-.btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-action i { font-size: 14px; }
-
-.btn-save {height: 100% }
-/*
-.btn-cancel { background-color: var(--text-sub); color: var(--text-inverse); }
-.btn-cancel:hover { background-color: var(--text-main); }
-
-.btn-edit { background-color: var(--primary); color: var(--text-inverse); }
-.btn-edit:hover:not(:disabled) { background-color: var(--primary-hover); }
-
-.btn-delete { background-color: var(--danger); color: var(--text-inverse); }
-.btn-delete:hover:not(:disabled) { filter: brightness(0.9); }
-
- */
-
-/* === 추가 행 === */
-.add-row { background-color: rgba(16, 185, 129, 0.03); border-top: 1px solid var(--border-color); }
-.add-row:hover { background-color: rgba(16, 185, 129, 0.06) !important; }
-.add-icon { display: flex; align-items: center; justify-content: center; }
-.add-icon i { font-size: 22px; color: var(--success); }
+.add-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.add-input--disabled { background: var(--bg-hover); color: var(--text-sub); cursor: not-allowed; border-color: transparent; }
 
 .btn-add-submit {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 8px 14px; width: 100%;
-  background-color: var(--success); border: none; border-radius: 6px;
-  color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 20px; height: 36px; background: var(--primary);
+  border: none; border-radius: 7px; color: #fff;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: background .15s;
+  white-space: nowrap; flex-shrink: 0;
 }
-.btn-add-submit:hover { background-color: var(--success-hover); transform: translateY(-1px); }
-.btn-add-submit i { font-size: 16px; }
-
-/* === 하단 안내 박스 === */
-.info-box {
-  display: flex; gap: 14px; padding: 20px; margin-top: 24px;
-  background: var(--primary-soft);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 12px; color: var(--primary);
-}
-.info-box i { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
-.info-content { flex: 1; }
-.info-content strong { display: block; font-size: 14px; margin-bottom: 8px; font-weight: 700; color: var(--primary); }
-.info-content ul { margin: 0; padding-left: 20px; }
-.info-content li { font-size: 12px; line-height: 1.6; margin-bottom: 4px; color: var(--text-main); }
-
-/* === 반응형 === */
-@media (max-width: 768px) {
-  .selection-info { flex-direction: column; align-items: stretch; gap: 8px; }
-  .color-edit-wrapper { flex-direction: column; align-items: flex-start; }
-  .filter-spacer { display: none; }
-}
+.btn-add-submit:hover { background: var(--primary-hover, #2563eb); }
+.btn-add-submit .mdi { font-size: 16px; }
 
 /* === 비활성화된 입력창 스타일 === */
 .input-edit:disabled {
-  background-color: var(--bg-canvas, #f3f4f6); /* 입력창 배경을 어둡게 */
-  color: var(--text-muted, #9ca3af); /* 글씨 색상을 흐리게 */
-  cursor: not-allowed; /* 마우스 오버 시 금지 아이콘 표시 */
-  opacity: 0.7; /* 전체적으로 흐릿한 느낌 추가 */
+  background-color: var(--bg-canvas, #f3f4f6);
+  color: var(--text-muted, #9ca3af);
+  cursor: not-allowed;
+  opacity: 0.7;
 }
-
-/* 비활성화 상태에서는 호버/포커스 효과 제거 */
 .input-edit:disabled:hover,
-.input-edit:disabled:focus {
-  border-color: var(--border-color); /* 기존 테두리 색상 유지 */
-  box-shadow: none; /* 포커스 링 제거 */
-  outline: none;
-}
+.input-edit:disabled:focus { border-color: var(--border-color); box-shadow: none; outline: none; }
 </style>

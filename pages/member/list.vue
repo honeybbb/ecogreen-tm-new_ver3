@@ -841,8 +841,8 @@ onActivated(async () => {
           <tr v-for="member in pagedMembers" :key="member.idx" :class="['data-row', { 'is-resigned': member.status == 1 }]">
             <td>{{ member.id }}</td>
             <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
-            <!--td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td-->
-            <td class="member-name"
+            <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
+            <!--td class="member-name"
                 :class="[memoIndicatorClass(member, 'name') ? 'has-memo' : '']"
                 @click="goToDetail(member.id)"
                 @contextmenu="onCellContextMenu($event, member, 'name')">
@@ -850,7 +850,7 @@ onActivated(async () => {
               <span v-if="hasMemo(member, 'name')"
                     class="memo-dot" :class="memoIndicatorClass(member, 'name')"
                     :title="`메모 ${memoCount(member, 'name')}건`"></span>
-            </td>
+            </td-->
             <td>{{ member.position }}</td>
 
             <td :class="{ 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 }">
@@ -936,14 +936,14 @@ onActivated(async () => {
               </div>
               <span v-else class="text-gray">-</span>
             </td>
-            <!--td>{{member.phone}}</td-->
-            <td :class="[memoIndicatorClass(member, 'phone') ? 'has-memo' : '']"
+            <td>{{member.phone}}</td>
+            <!--td :class="[memoIndicatorClass(member, 'phone') ? 'has-memo' : '']"
                 @contextmenu="onCellContextMenu($event, member, 'phone')">
               {{member.phone}}
               <span v-if="hasMemo(member, 'phone')"
                     class="memo-dot" :class="memoIndicatorClass(member, 'phone')"
                     :title="`메모 ${memoCount(member, 'phone')}건`"></span>
-            </td>
+            </td-->
             <td>
                 <span :class="['status-badge',
                   member.status == 0 ? 'status-active' :
@@ -1181,31 +1181,6 @@ onActivated(async () => {
 
 .check-icon   { font-size: 18px; color: var(--success); }
 .uncheck-icon { font-size: 18px; color: var(--text-muted); }
-
-.badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 8px; border-radius: 6px;
-  font-size: 11px; font-weight: 600; white-space: nowrap;
-}
-.badge i { font-size: 13px; }
-.badge-foreigner { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
-
-.tooltip-container { position: relative; cursor: help; }
-.tooltip-text {
-  visibility: hidden; opacity: 0;
-  position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
-  background: var(--header-bg); color: var(--text-inverse);
-  padding: 8px 12px; border-radius: 6px;
-  font-size: 11px; line-height: 1.6; white-space: nowrap;
-  z-index: 100; box-shadow: var(--shadow-md);
-  transition: opacity 0.15s;
-  pointer-events: none;
-}
-.tooltip-text::after {
-  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-  border: 5px solid transparent; border-top-color: var(--header-bg);
-}
-.tooltip-container:hover .tooltip-text { visibility: visible; opacity: 1; }
 
 .warning-dot {
   display: inline-flex; align-items: center; justify-content: center;

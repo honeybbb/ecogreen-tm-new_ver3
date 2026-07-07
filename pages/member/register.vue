@@ -104,6 +104,40 @@ const todayDate = computed(() => {
   return `${year}-${month}-${day}`;
 });
 
+// ==========================================
+// 커스텀 트리 드롭다운 로직 (직위)
+// ==========================================
+const isPositionMenuOpen = ref(false);
+
+const positionTree = computed(() => {
+  if (!positionOptions.value || positionOptions.value.length === 0) return [];
+
+  // 5자리 루트 코드가 섞여 있을 경우를 대비해 하위 항목(8자리 이상)만 필터링
+  const validItems = positionOptions.value.filter(p => p.itemCd.length > 5);
+  if (validItems.length === 0) return [];
+
+  const minLength = Math.min(...validItems.map(p => p.itemCd.length));
+  const parents = validItems.filter(p => p.itemCd.length === minLength);
+
+  return parents.map(parent => {
+    const children = validItems.filter(
+        p => p.itemCd.startsWith(parent.itemCd) && p.itemCd.length > parent.itemCd.length
+    );
+    return { ...parent, children };
+  });
+});
+
+const selectedPositionName = computed(() => {
+  if (!employee.value.position) return '선택하세요';
+  const found = positionOptions.value.find(p => p.itemCd === employee.value.position);
+  return found ? found.itemNm : '선택됨';
+});
+
+const selectPosition = (pos) => {
+  employee.value.position = pos.itemCd;
+  isPositionMenuOpen.value = false;
+};
+
 // === 3. 폼 전체를 초기화하는 함수 ===
 const resetForm = () => {
   employee.value = getInitialEmployee();
@@ -198,6 +232,7 @@ const getWageCode = async function () {
   }
 }
 
+/*
 const getBudgetData = async function () {
   const { site, type, position } = employee.value;
   if (!site || !type || !position) return;
@@ -245,6 +280,73 @@ const getBudgetData = async function () {
     let selectedSchedule = null;
     if (staffDetail) {
       const targetStaff = staffDetail.find(s => s.code === position);
+      if (targetStaff) selectedSchedule = targetStaff.schedule;
+    }
+
+    contractDataTemp.value = {
+      ...contractDataTemp.value,
+      wageInputs: newWageInputs,
+      workSchedule: selectedSchedule,
+    };
+
+  } catch (err) {
+    console.error('데이터 로드 실패:', err);
+  }
+};
+
+ */
+// 1. 예산 데이터 가져오기 함수 (계약 직책 자동 추론 로직 적용)
+const getBudgetData = async function () {
+  const { site, type, position } = employee.value;
+  if (!site || !type || !position) return;
+
+  // ★ 핵심 마법: 코드가 8자리(예: 01002001)를 넘어가면
+  // 뒤에 붙은 꼬리를 자르고 부모 코드(8자리)만 추출해서 임금 계약의 기준으로 삼음
+  const contractPosCd = position.length > 8 ? position.substring(0, 8) : position;
+
+  try {
+    const res = await axios.get(`/api/v1/site/contract/budget`, { params: { sIdx: site, type: type } });
+    const budgetData = res.data.data[0];
+    if (!budgetData) return;
+
+    const jsonData = typeof budgetData.jsonData === 'string'
+        ? JSON.parse(budgetData.jsonData)
+        : budgetData.jsonData;
+
+    const staffDetail = typeof budgetData.staffDetail === 'string'
+        ? JSON.parse(budgetData.staffDetail)
+        : budgetData.staffDetail;
+
+    const newWageInputs = {};
+    const newItems = [];
+
+    ['directLabor', 'indirectLabor'].forEach(groupKey => {
+      (jsonData?.[groupKey] || []).forEach(item => {
+        if (!item.label) return;
+
+        const itemNm = wagesData.value.find(w => w.itemCd === item.label)?.itemNm ?? item.label;
+
+        newItems.push({
+          itemCd: item.label,
+          itemNm,
+          groupKey,
+          groupCd: item.label.substring(0, 5),
+        });
+
+        // ★ 잘라낸 부모 코드(contractPosCd)로 산출내역서의 임금을 찾음!
+        if (item.values?.[contractPosCd] !== undefined) {
+          newWageInputs[item.label] = Number(item.values[contractPosCd]) || 0;
+        }
+      });
+    });
+
+    items.value = newItems;
+    wageInputs.value = newWageInputs;
+
+    let selectedSchedule = null;
+    if (staffDetail) {
+      // ★ 스케줄 정보도 부모 코드(contractPosCd) 기준으로 가져옴
+      const targetStaff = staffDetail.find(s => s.code === contractPosCd);
       if (targetStaff) selectedSchedule = targetStaff.schedule;
     }
 
@@ -318,15 +420,26 @@ const isValidDate = (dateString) => {
   return d.toISOString().slice(0, 10) === dateString;
 };
 
+const getPositionCode = async () => {
+  const cIdx = authStore.user?.cIdx;
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    positionOptions.value = res.data.data.filter(c => c.itemCd.startsWith('01002')) || [];
+  } catch (err) {
+    console.error('항목 로드 실패', err);
+  }
+};
+
 onMounted(() => {
   resetForm();
   getCompanyData();
   fetchSiteOptions();
   fetchTypeOptions();
-  fetchPositionOptions();
+  // fetchPositionOptions();
   fetchDisabledOptions();
   fetchBankOption();
   fetchWageCode();
+  getPositionCode();
 });
 
 onActivated(() => {
@@ -782,7 +895,7 @@ onActivated(() => {
               <SiteSelect v-model="employee.site" required :allow-empty="false" width="100%"/>
             </div>
 
-            <div class="form-group">
+            <!--div class="form-group">
               <label class="form-label required">
                 <i class="mdi mdi-account-tie-outline"></i>
                 직위
@@ -793,6 +906,36 @@ onActivated(() => {
                   {{ pos.itemNm }}
                 </option>
               </select>
+            </div-->
+            <div class="form-group position-dropdown-container">
+              <label class="form-label required">
+                <i class="mdi mdi-account-tie-outline"></i>
+                직위
+              </label>
+
+              <div class="custom-select-btn" @click="isPositionMenuOpen = !isPositionMenuOpen">
+                <span>{{ selectedPositionName }}</span>
+                <i class="mdi mdi-chevron-down"></i>
+              </div>
+
+              <div v-if="isPositionMenuOpen" class="dropdown-overlay" @click="isPositionMenuOpen = false"></div>
+
+              <ul v-if="isPositionMenuOpen" class="custom-dropdown-menu">
+                <li v-for="node in positionTree" :key="node.itemCd" class="menu-item">
+
+                  <div class="menu-label" @click="selectPosition(node)">
+                    <span>{{ node.itemNm }}</span>
+                    <i v-if="node.children.length > 0" class="mdi mdi-chevron-right"></i>
+                  </div>
+
+                  <ul v-if="node.children.length > 0" class="custom-submenu">
+                    <li v-for="child in node.children" :key="child.itemCd" class="submenu-item" @click="selectPosition(child)">
+                      {{ child.itemNm }}
+                    </li>
+                  </ul>
+
+                </li>
+              </ul>
             </div>
 
             <div class="form-group">
@@ -1266,4 +1409,77 @@ onActivated(() => {
   box-sizing: border-box;
 }
 .clean-textarea:focus { outline: none; }
+/* ==========================================
+   커스텀 트리 드롭다운 메뉴 CSS (아코디언 방식)
+========================================== */
+.position-dropdown-container {
+  position: relative;
+}
+
+.dropdown-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 99; cursor: default;
+}
+
+.custom-select-btn {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-surface); font-size: 13px; color: var(--text-main);
+  cursor: pointer; transition: all 0.2s; height: 42px; box-sizing: border-box;
+}
+.custom-select-btn:hover { border-color: var(--border-focus); }
+
+/* 활성화 시 포커스 링 효과 */
+.position-dropdown-container:focus-within .custom-select-btn {
+  border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.custom-dropdown-menu {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  width: 100%; min-width: 180px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  padding: 6px 0; margin: 0; list-style: none;
+  z-index: 100; max-height: 300px; overflow-y: auto; /* 세로 스크롤 유지 */
+}
+
+/* 상위 메뉴 아이템 */
+.menu-label {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; font-size: 13px; color: var(--text-main);
+  cursor: pointer; transition: background 0.15s;
+}
+.menu-label:hover {
+  background: var(--bg-hover); color: var(--primary); font-weight: 600;
+}
+/* 화살표 회전 애니메이션 */
+.menu-item:hover .mdi-chevron-right {
+  transform: rotate(90deg);
+  transition: transform 0.2s;
+}
+
+/* 아래로 펼쳐지는 서브메뉴 스타일 */
+.custom-submenu {
+  display: none;
+  position: static;
+  width: 100%;
+  background: var(--bg-canvas);
+  padding: 4px 0; margin: 0; list-style: none;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.menu-item:hover .custom-submenu { display: block; }
+
+/* 하위 메뉴 아이템 */
+.submenu-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 16px 8px 36px; /* 좌측 여백(36px) 들여쓰기 */
+  font-size: 12px; color: var(--text-sub);
+  cursor: pointer; transition: background 0.15s;
+}
+.submenu-item:hover {
+  background: var(--primary-soft); color: var(--primary); font-weight: 700;
+}
 </style>
