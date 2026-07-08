@@ -1277,8 +1277,8 @@ onActivated(async () => {
 }
 
 .contract-warning {
-  background-color: rgba(245, 158, 11, 0.12) !important;
-  color: #b45309;
+  background-color: yellow;
+  color: var(--warning);
   font-weight: 600;
 }
 

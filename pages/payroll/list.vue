@@ -559,6 +559,16 @@ const calculateInsurances = (row, sourceItem) => {
       applyDeductionLogic(row, sourceItem, taxable, rates);
       const ltItem = deductionItems.value.find(d => d.itemCd === '04002001003');
       if (ltItem && row.deductionFlags['04002001003']) applyDeductionLogic(row, ltItem, taxable, rates);
+    } else if (sourceItem.itemCd === '04002002003') {
+      // 지방소득세는 단독 계산 불가 — 소득세 항목을 기준으로 재계산
+      const incomeTaxItem = deductionItems.value.find(d => d.itemCd === '04002002004');
+      if (incomeTaxItem) {
+        applyDeductionLogic(row, incomeTaxItem, taxable, rates);
+        // 소득세 체크가 꺼져있다면 소득세 자체는 0으로 되돌리고, 지방소득세만 유지
+        if (!row.deductionFlags['04002002004']) {
+          row.deductions['04002002004'] = 0;
+        }
+      }
     } else {
       applyDeductionLogic(row, sourceItem, taxable, rates);
     }
@@ -707,7 +717,7 @@ const getPayrollList = async () => {
     const res = await axios.get('/api/v1/member/payroll');
     payrollList.value = res.data.data?.length ? transformPayrollList(res.data.data) : [];
 
-    payrollList.value.forEach(row => calculateInsurances(row, null));
+    // payrollList.value.forEach(row => calculateInsurances(row, null));
 
     currentPage.value = 1;
   } catch {
@@ -973,23 +983,23 @@ onMounted(async () => {
             <td class="text-center text-gray sticky-col sticky-col-7" :style="getStickyStyle('birthDt')">{{ p.birthDt }}</td>
             <td class="text-center sticky-col sticky-col-8" :style="{...getStickyStyle('age'), overflow: 'visible' }">
               <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-    <span :class="['font-bold', getInsuranceWarning(p).type === 'danger' ? 'text-red' : getInsuranceWarning(p).type === 'warning' ? 'text-orange' : getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray']">
-      {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
-    </span>
+                <span :class="['font-bold', getInsuranceWarning(p).type === 'danger' ? 'text-red' : getInsuranceWarning(p).type === 'warning' ? 'text-orange' : getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray']">
+                  {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+                </span>
 
                 <i v-if="getInsuranceWarning(p).type !== 'normal'"
                    :class="[
-         'mdi',
-         getInsuranceWarning(p).type === 'danger'  ? 'mdi-alert-circle text-red' :
-         getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
-         'mdi-information text-blue'
-       ]"
+                     'mdi',
+                     getInsuranceWarning(p).type === 'danger'  ? 'mdi-alert-circle text-red' :
+                     getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
+                     'mdi-information text-blue'
+                   ]"
                    style="font-size: 14px;">
                 </i>
 
                 <span v-if="getInsuranceWarning(p).type !== 'normal'" class="tooltip-text">
-      {{ getInsuranceWarning(p).message }}
-    </span>
+                  {{ getInsuranceWarning(p).message }}
+                </span>
               </div>
             </td>
 
