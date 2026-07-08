@@ -1307,7 +1307,7 @@ const loadPayrollData = async () => {
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
-    const res = await axios.get('/api/v1/member/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
+    const res = await axios.get('/api/v1/settle/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
     const rawData = res.data?.data || [];
 
     const periodStart = new Date(yearNum, monthNum - 1, 1);
@@ -1355,7 +1355,7 @@ const loadPayrollData = async () => {
 
       const rowObj = {
         idx: item.idx,
-        empName: item.staff || '',
+        empName: item.billingName || '',
         position: item.role || '',
         personalNo: item.birthDt,
         inDate: item.inDate,
@@ -2145,24 +2145,26 @@ onMounted(async () => {
                   <template v-for="col in dynamicColumns" :key="'td-'+col.code">
                     <!-- 기존 동적 컬럼 렌더링 코드 그대로 -->
                     <td v-if="col.type === 'pay'">
-                      <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" class="cell-input text-right" />
-                      <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" class="cell-input text-right" />
-                      <input v-else-if="col.name.includes('근로자의날')" type="text" :value="formatCurrency(row.reserves.workersDay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')" class="cell-input text-right" />
-                      <input v-else type="text" :value="formatCurrency(row.payments?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.payments, col.code, row, 'salary')" class="cell-input text-right" />
+                      <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" @blur="handleFormulaBlur($event, row.reserves, 'annualLeave', row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                      <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" @blur="handleFormulaBlur($event, row.reserves, 'severance', row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                      <input v-else-if="col.name.includes('근로자의날')" type="text" :value="formatCurrency(row.reserves.workersDay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'workersDay', row, 'salary')" @blur="handleFormulaBlur($event, row.reserves, 'workersDay', row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                      <input v-else type="text" :value="formatCurrency(row.payments?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.payments, col.code, row, 'salary')" @blur="handleFormulaBlur($event, row.payments, col.code, row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                     </td>
+
                     <td v-else-if="col.type === 'gross'">
-                      <input type="text" :value="formatCurrency(row.grossPay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row, 'grossPay', row, 'salary')" class="cell-input text-right font-bold text-blue" />
+                      <input type="text" :value="formatCurrency(row.grossPay)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row, 'grossPay', row, 'salary')" @blur="handleFormulaBlur($event, row, 'grossPay', row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right font-bold text-blue" />
                     </td>
+
                     <template v-else-if="col.type === 'deduct'">
                       <template v-if="col.isEmployment">
-                        <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" /></td>
-                        <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" class="cell-input text-right" /></td>
+                        <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" /></td>
+                        <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" @blur="handleFormulaBlur($event, row.reserves, 'empInsEmployer', row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" /></td>
                       </template>
                       <td v-else-if="col.name.includes('산재')">
-                        <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" class="cell-input text-right" />
+                        <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" @blur="handleFormulaBlur($event, row.reserves, 'sanjae', row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       </td>
                       <td v-else>
-                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" class="cell-input text-right" />
+                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       </td>
                     </template>
                   </template>
