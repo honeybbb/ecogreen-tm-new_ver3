@@ -445,10 +445,30 @@ const getWageCode = async () => {
       '04003': '정산항목',
     };
 
-    items.value = leaves.map(leaf => ({
-      ...leaf,
-      tax_free: Number(leaf.tax_free) || 0,
-      groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
+    // ***임시 처리*** 화면에서 숨길 항목 코드 목록
+    const excludeCodes = [
+      '04001005',//상여금
+      '04001002002', //특별수당
+      '04001002004', //주휴수당
+      '04001002009', //교통비,
+      '04001002010', //재활용장수당
+      '04001001002', // 기타급여
+      '04002001006', // 고용보험(실업급여)
+      '04002001007', // 고용보험(고용안정)
+      '04002001008', // 산재보험
+      '04002002001', // 장애인채용부담금
+      '04002002008', // 임금채권부담금
+      '04002002009', // 석면피해구제분담금
+      '04002002010', // 장애인고용분담금
+      '04002002011'  // 근로자재해
+    ];
+
+    items.value = leaves
+        .filter(leaf => !excludeCodes.includes(leaf.itemCd))
+        .map(leaf => ({
+          ...leaf,
+          tax_free: Number(leaf.tax_free) || 0,
+          groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
     }));
 
   } catch (e) {

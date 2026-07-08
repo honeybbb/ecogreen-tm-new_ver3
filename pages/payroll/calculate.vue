@@ -265,44 +265,6 @@ const markAsDraft = (row) => {
   row.selected = true;
 };
 
-// ── 4대보험 예외(경고) 상태 계산 ───────────────────
-// ── 4대보험 예외(경고) 상태 계산 (저장 대기 상태일 때만 동작) ───────────────────
-const getInsuranceWarning = (row) => {
-  // '저장 대기' (수정 중) 상태가 아니면 경고 무시
-  if (row.status !== 2) return { type: 'normal', message: '' };
-
-  const age = calculateAge(row.birthDt);
-  if (!age) return { type: 'normal', message: '' };
-
-  const ded = row.deductionItems || {};
-
-  // 케이스 1: 국민연금 강제 해제 (위험 - 빨간색)
-  if (age < ageLimits.value.pension && (!ded['04002003'] || ded['04002003'] === 0)) {
-    return {
-      type: 'danger',
-      message: '국민연금 대상자이나 임의로 해제되었습니다.'
-    };
-  }
-
-  // 케이스 2: 고용보험 고용확대 (특이사항 - 파란색)
-  if (age >= ageLimits.value.employment && ded['04002004'] > 0) {
-    return {
-      type: 'info',
-      message: '고용보험 가입 연령이 지났으나 임의 가입(고용확대) 되었습니다.'
-    };
-  }
-
-  // 케이스 3: 건강보험 강제 해제 (주의 - 주황색)
-  if (!ded['04002001'] || ded['04002001'] === 0) {
-    return {
-      type: 'warning',
-      message: '건강보험이 임의로 해제되었습니다.'
-    };
-  }
-
-  return { type: 'normal', message: '' };
-};
-
 const onInputAmount = (row, item, group, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart;
@@ -490,6 +452,7 @@ const fetchCalculatedPay = async () => {
   if (selectedPaymentDay.value == '') { alert('지급일을 선택해주세요.'); return; }
   if (items.value.length === 0) await getWageCode();
   isLoading.value = true;
+
   try {
     const [year, month] = selectedYearMonth.value.split('-');
     const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
@@ -497,6 +460,12 @@ const fetchCalculatedPay = async () => {
       for (const row of selectedRows) {
         const calcData = res.data.data.find(c => c.idx === row.idx)
         if (!calcData) continue
+
+        // ★ 핵심 추가: 이미 저장된 데이터가 있어도 무조건 새로 계산하기 위해 내부 백업 상태를 초기화합니다.
+        if (row._originalPayItems) {
+          delete row._originalPayItems;
+        }
+        row.originalBasePay = undefined;
 
         let dbCheckedItems = {}
         if (calcData.checkedItems) {
@@ -520,7 +489,6 @@ const fetchCalculatedPay = async () => {
         row.workedDays      = calcData.workedDays
         row.scheduledDays   = calcData.scheduledDays
         row.absentDays      = calcData.absentDays
-        row.originalBasePay = undefined
 
         deductionItems.value.forEach(i => {
           row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false
@@ -1231,10 +1199,30 @@ const getWageCode = async () => {
       '04003': '정산항목',
     };
 
-    items.value = leaves.map(leaf => ({
-      ...leaf,
-      tax_free: Number(leaf.tax_free) || 0,
-      groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
+    // ***임시 처리*** 화면에서 숨길 항목 코드 목록
+    const excludeCodes = [
+      '04001005',//상여금
+      '04001002002', //특별수당
+      '04001002004', //주휴수당
+      '04001002009', //교통비,
+      '04001002010', //재활용장수당
+      '04001001002', // 기타급여
+      '04002001006', // 고용보험(실업급여)
+      '04002001007', // 고용보험(고용안정)
+      '04002001008', // 산재보험
+      '04002002001', // 장애인채용부담금
+      '04002002008', // 임금채권부담금
+      '04002002009', // 석면피해구제분담금
+      '04002002010', // 장애인고용분담금
+      '04002002011'  // 근로자재해
+    ];
+
+    items.value = leaves
+        .filter(leaf => !excludeCodes.includes(leaf.itemCd))
+        .map(leaf => ({
+          ...leaf,
+          tax_free: Number(leaf.tax_free) || 0,
+          groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
     }));
 
   } catch (e) {
@@ -1595,32 +1583,10 @@ onMounted(async () => {
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id" :style="getStickyStyle('id')">{{ p.id }}</td>
             <td class="text-center font-bold text-dark member-name sticky-col sticky-col-6" :style="getStickyStyle('staff')">{{ p.staff }}</td>
             <td class="text-center text-gray sticky-col sticky-col-7" :style="getStickyStyle('birthDt')">{{ p.birthDt }}</td>
-            <td class="text-center sticky-col sticky-col-8" :style="getStickyStyle('age', { overflow: 'visible !important' })">
-              <div class="tooltip-container" style="display: inline-flex; align-items: center; justify-content: center; gap: 4px;">
-                <span :class="[
-                  'font-bold',
-                  getInsuranceWarning(p).type === 'danger' ? 'text-red' :
-                  getInsuranceWarning(p).type === 'warning' ? 'text-orange' :
-                  getInsuranceWarning(p).type === 'info' ? 'text-blue' : 'text-gray'
-                ]">
-                  {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
-                </span>
-
-                <i v-if="getInsuranceWarning(p).type !== 'normal'"
-                   :class="[
-                     'mdi',
-                     getInsuranceWarning(p).type === 'danger' ? 'mdi-alert-circle text-red' :
-                     getInsuranceWarning(p).type === 'warning' ? 'mdi-alert text-orange' :
-                     'mdi-information text-blue'
-                   ]"
-                   style="font-size: 14px;">
-                </i>
-
-                <span v-if="getInsuranceWarning(p).type !== 'normal'" class="tooltip-text">
-                  {{ getInsuranceWarning(p).message }}
-                </span>
-
-              </div>
+            <td class="text-center sticky-col sticky-col-8" :style="getStickyStyle('age')">
+              <span class="font-bold text-gray">
+                {{ calculateAge(p.birthDt) ? calculateAge(p.birthDt) + '세' : '-' }}
+              </span>
             </td>
             <td class="text-center sticky-col sticky-col-9" :style="getStickyStyle('inDate')">{{p.inDate}}</td>
 
