@@ -275,7 +275,7 @@ const onInputAmount = (row, item, group, event) => {
 
   if (group === 'pay') {
     row.payItems[item.itemCd] = numValue;
-    if (item.itemCd === '04001001') {
+    if (item.itemCd === '04001001001') {
       row.originalBasePay = numValue;
     }
   } else {
@@ -347,38 +347,8 @@ const calculateRowSummary = (row) => {
   return { gross, ded, net: gross - ded };
 };
 
-const updatePay = (row) => {
-  backupOriginalPayItems(row)
-
-  if (row.originalBasePay === undefined) {
-    row.originalBasePay = row._originalPayItems['04001001'] || 0
-  }
-
-  const basePay   = row.originalBasePay
-  const scheduled = Number(row.scheduledDays) || 1
-  const worked    = Number(row.workedDays)    || 0
-  const absent    = Number(row.absentDays)    || 0
-
-  if (worked === 0) {
-    payItems.value.forEach(item => {
-      row.payItems[item.itemCd] = 0
-    })
-  } else {
-    payItems.value.forEach(item => {
-      row.payItems[item.itemCd] = row._originalPayItems[item.itemCd] || 0
-    })
-
-    const dailyWage = Math.floor(basePay / scheduled)
-    row.payItems['04001001'] = (worked + absent) < scheduled
-        ? dailyWage * worked
-        : basePay - (dailyWage * absent)
-  }
-
-  calculateInsurances(row)
-}
-
 const resetBasePay = (row) => {
-  row.originalBasePay = row.payItems['04001001'] || 0;
+  row.originalBasePay = row.payItems['04001001001'] || 0;
   calculateInsurances(row);
 };
 
@@ -512,7 +482,7 @@ const updatePayAsync = async (row) => {
   backupOriginalPayItems(row)
 
   if (row.originalBasePay === undefined) {
-    row.originalBasePay = row._originalPayItems['04001001'] || 0
+    row.originalBasePay = row._originalPayItems['04001001001'] || 0
   }
 
   const basePay   = row.originalBasePay
@@ -530,7 +500,7 @@ const updatePayAsync = async (row) => {
     })
 
     const dailyWage = Math.floor(basePay / scheduled)
-    row.payItems['04001001'] = (worked + absent) < scheduled
+    row.payItems['04001001001'] = (worked + absent) < scheduled
         ? dailyWage * worked
         : basePay - (dailyWage * absent)
   }
@@ -552,19 +522,29 @@ const fetchOverAgeOption = async () => {
 };
 
 const calculateInsurances = async (row) => {
-  let taxablePay = 0
+  let taxablePay = 0;
   payItems.value.forEach(item => {
-    const amt   = Number(row.payItems[item.itemCd] || 0)
-    const limit = item.taxFreeLimit
-    const taxed = limit > 0 ? Math.max(0, amt - limit) : amt
-    taxablePay += taxed
-  })
+    const amt   = Number(row.payItems[item.itemCd] || 0);
+    const limit = item.tax_free || 0;
+    const taxed = limit > 0 ? Math.max(0, amt - limit) : amt;
+    taxablePay += taxed;
+  });
 
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
+
+  // 하드코딩된 숫자 코드 대신, 불러온 항목 이름으로 정확한 코드를 동적 탐색합니다.
+  const cdHealth   = deductionItems.value.find(i => i.itemNm.includes('건강보험'))?.itemCd;
+  const cdLongTerm = deductionItems.value.find(i => i.itemNm.includes('장기요양'))?.itemCd;
+  const cdPension  = deductionItems.value.find(i => i.itemNm.includes('국민연금'))?.itemCd;
+  const cdEmploy   = deductionItems.value.find(i => i.itemNm.includes('고용보험'))?.itemCd;
+  const cdIncome   = deductionItems.value.find(i => i.itemNm.includes('소득세'))?.itemCd;
+  const cdLocal    = deductionItems.value.find(i => i.itemNm.includes('지방소득세'))?.itemCd;
+
   let incomeTax = 0, localTax = 0;
 
-  if (row.deductionFlags['04002013']) {
+  // 1. 소득세 및 지방소득세 계산
+  if (cdIncome && row.deductionFlags[cdIncome]) {
     try {
       const year = new Date().getFullYear();
       const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
@@ -576,26 +556,37 @@ const calculateInsurances = async (row) => {
   }
 
   let healthAmt = 0;
-  if (row.deductionFlags['04002001']) {
+  // 2. 건강보험 계산 (장기요양보험 기준값)
+  if (cdHealth && row.deductionFlags[cdHealth]) {
     healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
-    row.deductionItems['04002001'] = healthAmt;
-  } else {
-    row.deductionItems['04002001'] = 0;
+    row.deductionItems[cdHealth] = healthAmt;
+  } else if (cdHealth) {
+    row.deductionItems[cdHealth] = 0;
   }
 
+  // 3. 나머지 공제 항목별 계산 매핑 (찾아낸 동적 코드 사용)
   const calc = {
-    '04002002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
-    '04002003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
-    '04002004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
-    '04002013': () => incomeTax,
-    '04002014': () => localTax,
+    [cdLongTerm]: () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
+    [cdPension]:  () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
+    [cdEmploy]:   () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
+    [cdIncome]:   () => incomeTax,
+    [cdLocal]:    () => localTax,
   };
 
   deductionItems.value.forEach(i => {
-    if (i.itemCd === '04002001') return;
-    if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
+    // 건강보험은 위에서 처리했으므로 패스
+    if (i.itemCd === cdHealth) return;
+
+    // 체크 해제된 항목은 0원 처리
+    if (!row.deductionFlags[i.itemCd]) {
+      row.deductionItems[i.itemCd] = 0;
+      return;
+    }
+
     const fn = calc[i.itemCd];
-    if (fn) row.deductionItems[i.itemCd] = fn();
+    if (fn) {
+      row.deductionItems[i.itemCd] = fn();
+    }
   });
 };
 
@@ -1592,9 +1583,9 @@ onMounted(async () => {
 
             <td class="text-center sticky-col sticky-col-10" :style="getStickyStyle('workDays')">
               <div class="days-input-group">
-                <input type="number" class="inline-input days-input" v-model.number="p.workedDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="실제 일한 일수" />
+                <input type="number" class="inline-input days-input" v-model.number="p.workedDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePayAsync(p)" title="실제 일한 일수" />
                 <span class="days-separator">/</span>
-                <input type="number" class="inline-input days-input" v-model.number="p.scheduledDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePay(p)" title="한 달 기준 근무일수" />
+                <input type="number" class="inline-input days-input" v-model.number="p.scheduledDays" @focus="$event.target.select()" @input="markAsDraft(p); updatePayAsync(p)" title="한 달 기준 근무일수" />
               </div>
             </td>
 
