@@ -7,6 +7,7 @@ import Pagination from "~/components/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
 import {calculateAge} from "~/utils/formatter.js";
 import {formatCurrency} from "../../utils/formatter.js";
+import {useRoute, useRouter} from "#vue-router";
 
 const {
   siteOptions,
@@ -15,10 +16,9 @@ const {
   fetchTypeOptions
 } = useApi();
 
+// 1. 상태 관리
 const route = useRoute();
 const router = useRouter();
-
-// 1. 상태 관리
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
@@ -135,7 +135,7 @@ const loadColumnSettings = () => {
 
 const selectedYearMonth = ref(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
 const searchTerm = ref('');
-const selectedSite = ref(route.query.site || '전체'); // ★ 수정
+const selectedSite = ref(route.query.site || '전체');
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
 const selectedBilling = ref('전체');
@@ -278,10 +278,7 @@ const onInputAmount = (row, item, group, event) => {
 
   if (group === 'pay') {
     row.payItems[item.itemCd] = numValue;
-
-    //사용자가 기본급을 직접 수정했을 때, 해당 값을 갱신합니다.
-    const baseItem = payItems.value.find(i => i.itemNm.includes('기본급'));
-    if (baseItem && item.itemCd === baseItem.itemCd) {
+    if (item.itemCd === '04001001001') {
       row.originalBasePay = numValue;
     }
   } else {
@@ -487,12 +484,8 @@ const backupOriginalPayItems = (row) => {
 const updatePayAsync = async (row) => {
   backupOriginalPayItems(row)
 
-  // 기본급 코드도 동적으로 찾습니다.
-  const baseItem = payItems.value.find(i => i.itemNm.includes('기본급'));
-  const BASE_CD = baseItem ? baseItem.itemCd : '04001001001';
-
   if (row.originalBasePay === undefined) {
-    row.originalBasePay = row._originalPayItems[BASE_CD] || 0
+    row.originalBasePay = row._originalPayItems['04001001001'] || 0
   }
 
   const basePay   = row.originalBasePay
@@ -510,7 +503,7 @@ const updatePayAsync = async (row) => {
     })
 
     const dailyWage = Math.floor(basePay / scheduled)
-    row.payItems[BASE_CD] = (worked + absent) < scheduled
+    row.payItems['04001001001'] = (worked + absent) < scheduled
         ? dailyWage * worked
         : basePay - (dailyWage * absent)
   }
@@ -532,29 +525,19 @@ const fetchOverAgeOption = async () => {
 };
 
 const calculateInsurances = async (row) => {
-  let taxablePay = 0;
+  let taxablePay = 0
   payItems.value.forEach(item => {
-    const amt   = Number(row.payItems[item.itemCd] || 0);
-    const limit = item.tax_free || 0;
-    const taxed = limit > 0 ? Math.max(0, amt - limit) : amt;
-    taxablePay += taxed;
-  });
+    const amt   = Number(row.payItems[item.itemCd] || 0)
+    const limit = item.taxFreeLimit
+    const taxed = limit > 0 ? Math.max(0, amt - limit) : amt
+    taxablePay += taxed
+  })
 
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
-
-  // 하드코딩된 숫자 코드 대신, 불러온 항목 이름으로 정확한 코드를 동적 탐색합니다.
-  const cdHealth   = deductionItems.value.find(i => i.itemNm.includes('건강보험'))?.itemCd;
-  const cdLongTerm = deductionItems.value.find(i => i.itemNm.includes('장기요양'))?.itemCd;
-  const cdPension  = deductionItems.value.find(i => i.itemNm.includes('국민연금'))?.itemCd;
-  const cdEmploy   = deductionItems.value.find(i => i.itemNm.includes('고용보험'))?.itemCd;
-  const cdIncome   = deductionItems.value.find(i => i.itemNm.includes('소득세'))?.itemCd;
-  const cdLocal    = deductionItems.value.find(i => i.itemNm.includes('지방소득세'))?.itemCd;
-
   let incomeTax = 0, localTax = 0;
 
-  // 1. 소득세 및 지방소득세 계산
-  if (cdIncome && row.deductionFlags[cdIncome]) {
+  if (row.deductionFlags['04002013']) {
     try {
       const year = new Date().getFullYear();
       const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
@@ -566,37 +549,26 @@ const calculateInsurances = async (row) => {
   }
 
   let healthAmt = 0;
-  // 2. 건강보험 계산 (장기요양보험 기준값)
-  if (cdHealth && row.deductionFlags[cdHealth]) {
+  if (row.deductionFlags['04002001']) {
     healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
-    row.deductionItems[cdHealth] = healthAmt;
-  } else if (cdHealth) {
-    row.deductionItems[cdHealth] = 0;
+    row.deductionItems['04002001'] = healthAmt;
+  } else {
+    row.deductionItems['04002001'] = 0;
   }
 
-  // 3. 나머지 공제 항목별 계산 매핑 (찾아낸 동적 코드 사용)
   const calc = {
-    [cdLongTerm]: () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
-    [cdPension]:  () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
-    [cdEmploy]:   () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
-    [cdIncome]:   () => incomeTax,
-    [cdLocal]:    () => localTax,
+    '04002002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
+    '04002003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
+    '04002004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
+    '04002013': () => incomeTax,
+    '04002014': () => localTax,
   };
 
   deductionItems.value.forEach(i => {
-    // 건강보험은 위에서 처리했으므로 패스
-    if (i.itemCd === cdHealth) return;
-
-    // 체크 해제된 항목은 0원 처리
-    if (!row.deductionFlags[i.itemCd]) {
-      row.deductionItems[i.itemCd] = 0;
-      return;
-    }
-
+    if (i.itemCd === '04002001') return;
+    if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
     const fn = calc[i.itemCd];
-    if (fn) {
-      row.deductionItems[i.itemCd] = fn();
-    }
+    if (fn) row.deductionItems[i.itemCd] = fn();
   });
 };
 
@@ -1296,17 +1268,6 @@ const getPayrollMonth = async function () {
   } catch (e) { payrollList.value = []; }
 };
 
-// ── 현장 선택 시 URL 파라미터 동기화 ──────────────────────────────
-watch(selectedSite, (newSite) => {
-  router.replace({
-    query: {
-      ...route.query,
-      // '전체'를 선택했을 때는 URL 파라미터에서 site를 제거하여 깔끔하게 유지합니다.
-      site: newSite === '전체' ? undefined : newSite
-    }
-  });
-});
-
 // ── 현장 또는 귀속월 변경 시 지급일 자동 세팅 ──────────────────────────────
 watch([selectedSite, selectedYearMonth], () => {
   // 1. 현장이 '전체'이거나, 사이트 옵션 데이터가 없으면 자동 세팅 생략
@@ -1335,6 +1296,17 @@ watch([selectedSite, selectedYearMonth], () => {
     // 계산된 날짜를 입력 폼에 덮어쓰기
     selectedPaymentDay.value = `${nextY}-${nextM}-${nextD}`;
   }
+});
+
+// 현장 선택 값이 바뀔 때마다 URL Query Parameter 업데이트
+watch(selectedSite, (newSite) => {
+  router.replace({
+    query: {
+      ...route.query,
+      // '전체'를 선택했을 때는 URL 파라미터에서 site를 제거하여 깔끔하게 유지합니다.
+      site: newSite === '전체' ? undefined : newSite
+    }
+  });
 });
 
 onMounted(async () => {
