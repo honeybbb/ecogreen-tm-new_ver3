@@ -268,6 +268,7 @@ const markAsDraft = (row) => {
   row.selected = true;
 };
 
+// 3) onInputAmount 수동 입력 시 스냅샷도 같이 갱신
 const onInputAmount = (row, item, group, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart;
@@ -278,11 +279,13 @@ const onInputAmount = (row, item, group, event) => {
 
   if (group === 'pay') {
     row.payItems[item.itemCd] = numValue;
+    if (row._originalPayItems) row._originalPayItems[item.itemCd] = numValue;
     if (item.itemCd === '04001001001') {
       row.originalBasePay = numValue;
     }
   } else {
     row.deductionItems[item.itemCd] = numValue;
+    if (row._originalDeductionItems) row._originalDeductionItems[item.itemCd] = numValue;
   }
 
   const formatted = formatCurrency(numValue);
@@ -405,6 +408,9 @@ const resetCalculatedPay = async () => {
     if (row._originalPayItems) {
       delete row._originalPayItems;
     }
+    if (row._originalDeductionItems) {
+      delete row._originalDeductionItems;
+    }
 
     payItems.value.forEach(item => {
       row.payItems[item.itemCd] = 0;
@@ -434,9 +440,11 @@ const fetchCalculatedPay = async () => {
         const calcData = res.data.data.find(c => c.idx === row.idx)
         if (!calcData) continue
 
-        // ★ 핵심 추가: 이미 저장된 데이터가 있어도 무조건 새로 계산하기 위해 내부 백업 상태를 초기화합니다.
         if (row._originalPayItems) {
           delete row._originalPayItems;
+        }
+        if (row._originalDeductionItems) {
+          delete row._originalDeductionItems;
         }
         row.originalBasePay = undefined;
 
@@ -481,31 +489,52 @@ const backupOriginalPayItems = (row) => {
   }
 }
 
+const backupOriginalDeductionItems = (row) => {
+  if (!row._originalDeductionItems) {
+    row._originalDeductionItems = { ...row.deductionItems }
+  }
+}
+
+// 수식 기반으로 재계산되는 공제코드 (calculateInsurances의 calc 맵과 동일)
+const CALC_DEDUCTION_CODES = [
+  '04002001001', // 건강보험
+  '04002001002', // 장기요양보험
+  '04002001003', // 국민연금
+  '04002001004', // 고용보험
+  '04002002004', // 소득세
+  '04002002003', // 지방소득세
+]
+
+// 2) updatePayAsync 전체 교체
 const updatePayAsync = async (row) => {
   backupOriginalPayItems(row)
+  backupOriginalDeductionItems(row)
 
-  if (row.originalBasePay === undefined) {
-    row.originalBasePay = row._originalPayItems['04001001001'] || 0
-  }
-
-  const basePay   = row.originalBasePay
   const scheduled = Number(row.scheduledDays) || 1
   const worked    = Number(row.workedDays)    || 0
   const absent    = Number(row.absentDays)    || 0
 
+  const prorate = (originalAmt) => {
+    const dailyAmt = Math.floor(originalAmt / scheduled)
+    return (worked + absent) < scheduled
+        ? dailyAmt * worked
+        : originalAmt - (dailyAmt * absent)
+  }
+
   if (worked === 0) {
-    payItems.value.forEach(item => {
-      row.payItems[item.itemCd] = 0
+    payItems.value.forEach(item => { row.payItems[item.itemCd] = 0 })
+    deductionItems.value.forEach(item => {
+      if (!CALC_DEDUCTION_CODES.includes(item.itemCd)) row.deductionItems[item.itemCd] = 0
     })
   } else {
     payItems.value.forEach(item => {
-      row.payItems[item.itemCd] = row._originalPayItems[item.itemCd] || 0
+      row.payItems[item.itemCd] = prorate(row._originalPayItems[item.itemCd] || 0)
     })
-
-    const dailyWage = Math.floor(basePay / scheduled)
-    row.payItems['04001001001'] = (worked + absent) < scheduled
-        ? dailyWage * worked
-        : basePay - (dailyWage * absent)
+    deductionItems.value.forEach(item => {
+      if (!CALC_DEDUCTION_CODES.includes(item.itemCd)) {
+        row.deductionItems[item.itemCd] = prorate(row._originalDeductionItems[item.itemCd] || 0)
+      }
+    })
   }
 
   await calculateInsurances(row)
@@ -524,6 +553,7 @@ const fetchOverAgeOption = async () => {
   }
 };
 
+// calculateInsurances 전체 교체
 const calculateInsurances = async (row) => {
   let taxablePay = 0
   payItems.value.forEach(item => {
@@ -537,7 +567,7 @@ const calculateInsurances = async (row) => {
   const rates = targetCodes.value;
   let incomeTax = 0, localTax = 0;
 
-  if (row.deductionFlags['04002013']) {
+  if (row.deductionFlags['04002002004']) {
     try {
       const year = new Date().getFullYear();
       const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
@@ -549,23 +579,23 @@ const calculateInsurances = async (row) => {
   }
 
   let healthAmt = 0;
-  if (row.deductionFlags['04002001']) {
+  if (row.deductionFlags['04002001001']) {
     healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
-    row.deductionItems['04002001'] = healthAmt;
+    row.deductionItems['04002001001'] = healthAmt;
   } else {
-    row.deductionItems['04002001'] = 0;
+    row.deductionItems['04002001001'] = 0;
   }
 
   const calc = {
-    '04002002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
-    '04002003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
-    '04002004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
-    '04002013': () => incomeTax,
-    '04002014': () => localTax,
+    '04002001002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
+    '04002001003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
+    '04002001004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
+    '04002002004': () => incomeTax,
+    '04002002003': () => localTax,
   };
 
   deductionItems.value.forEach(i => {
-    if (i.itemCd === '04002001') return;
+    if (i.itemCd === '04002001001') return;
     if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
     const fn = calc[i.itemCd];
     if (fn) row.deductionItems[i.itemCd] = fn();
