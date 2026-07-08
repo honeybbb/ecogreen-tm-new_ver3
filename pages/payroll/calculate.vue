@@ -135,7 +135,7 @@ const loadColumnSettings = () => {
 
 const selectedYearMonth = ref(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
 const searchTerm = ref('');
-const selectedSite = ref(route.query.site || '전체');
+const selectedSite = ref(route.query.site || '전체'); // ★ 수정
 const selectedType = ref('전체');
 const selectedStatus = ref('전체');
 const selectedBilling = ref('전체');
@@ -279,19 +279,13 @@ const onInputAmount = (row, item, group, event) => {
   if (group === 'pay') {
     row.payItems[item.itemCd] = numValue;
 
+    //사용자가 기본급을 직접 수정했을 때, 해당 값을 갱신합니다.
     const baseItem = payItems.value.find(i => i.itemNm.includes('기본급'));
     if (baseItem && item.itemCd === baseItem.itemCd) {
       row.originalBasePay = numValue;
     }
   } else {
     row.deductionItems[item.itemCd] = numValue;
-
-    // 사용자가 표에서 직접 지워서 '0원'으로 만들면 자동 계산에서 제외시킵니다.
-    if (numValue === 0) {
-      row.deductionFlags[item.itemCd] = false;
-    } else {
-      row.deductionFlags[item.itemCd] = true;
-    }
   }
 
   const formatted = formatCurrency(numValue);
@@ -443,6 +437,7 @@ const fetchCalculatedPay = async () => {
         const calcData = res.data.data.find(c => c.idx === row.idx)
         if (!calcData) continue
 
+        // ★ 핵심 추가: 이미 저장된 데이터가 있어도 무조건 새로 계산하기 위해 내부 백업 상태를 초기화합니다.
         if (row._originalPayItems) {
           delete row._originalPayItems;
         }
@@ -471,17 +466,8 @@ const fetchCalculatedPay = async () => {
         row.scheduledDays   = calcData.scheduledDays
         row.absentDays      = calcData.absentDays
 
-        // 계산된 결과에 대해서도 동일한 논리 적용
         deductionItems.value.forEach(i => {
-          if (dbCheckedItems[i.itemCd] !== undefined) {
-            row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd];
-          } else {
-            if (row.deductionItems[i.itemCd] === 0 || row.deductionItems[i.itemCd] === '0') {
-              row.deductionFlags[i.itemCd] = false;
-            } else {
-              row.deductionFlags[i.itemCd] = true;
-            }
-          }
+          row.deductionFlags[i.itemCd] = dbCheckedItems[i.itemCd] !== false
         })
 
         row.status = 2
@@ -549,8 +535,7 @@ const calculateInsurances = async (row) => {
   let taxablePay = 0;
   payItems.value.forEach(item => {
     const amt   = Number(row.payItems[item.itemCd] || 0);
-    // tax_free 혹은 taxFreeLimit 속성이 있는지 안전하게 확인
-    const limit = item.tax_free || item.taxFreeLimit || 0;
+    const limit = item.tax_free || 0;
     const taxed = limit > 0 ? Math.max(0, amt - limit) : amt;
     taxablePay += taxed;
   });
@@ -558,37 +543,38 @@ const calculateInsurances = async (row) => {
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
 
-  // 지정해주신 정확한 11자리 코드 하드코딩
-  const cdHealth   = '04002001001'; // 건강보험
-  const cdLongTerm = '04002001002'; // 장기요양보험
-  const cdPension  = '04002001003'; // 국민연금
-  const cdEmploy   = '04002001004'; // 고용보험
-  const cdIncome   = '04002002004'; // 소득세
-  const cdLocal    = '04002002003'; // 지방소득세
-
-  // 법정 4대보험 + 소득세 (사용자가 끄거나 0원이어도 급여에 따라 무조건 재계산 되어야 하는 항목들)
-  const coreTaxes = [cdHealth, cdLongTerm, cdPension, cdEmploy, cdIncome, cdLocal];
+  // 하드코딩된 숫자 코드 대신, 불러온 항목 이름으로 정확한 코드를 동적 탐색합니다.
+  const cdHealth   = deductionItems.value.find(i => i.itemNm.includes('건강보험'))?.itemCd;
+  const cdLongTerm = deductionItems.value.find(i => i.itemNm.includes('장기요양'))?.itemCd;
+  const cdPension  = deductionItems.value.find(i => i.itemNm.includes('국민연금'))?.itemCd;
+  const cdEmploy   = deductionItems.value.find(i => i.itemNm.includes('고용보험'))?.itemCd;
+  const cdIncome   = deductionItems.value.find(i => i.itemNm.includes('소득세'))?.itemCd;
+  const cdLocal    = deductionItems.value.find(i => i.itemNm.includes('지방소득세'))?.itemCd;
 
   let incomeTax = 0, localTax = 0;
 
-  // 1. 소득세 및 지방소득세 계산 (필수 항목이므로 스위치 여부와 무관하게 조회 진행)
-  try {
-    const year = new Date().getFullYear();
-    const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
-      params: { salary: taxablePay, familyCnt: row.familyCnt || 1, year }
-    });
-    incomeTax = taxRes.data?.incomeTax || 0;
-    localTax  = taxRes.data?.localTax  || 0;
-  } catch (e) {
-    console.error('소득세 조회 실패', e);
+  // 1. 소득세 및 지방소득세 계산
+  if (cdIncome && row.deductionFlags[cdIncome]) {
+    try {
+      const year = new Date().getFullYear();
+      const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
+        params: { salary: taxablePay, familyCnt: row.familyCnt || 1, year }
+      });
+      incomeTax = taxRes.data?.incomeTax || 0;
+      localTax  = taxRes.data?.localTax  || 0;
+    } catch (e) { console.error('소득세 조회 실패', e); }
   }
 
   let healthAmt = 0;
-  // 2. 건강보험 계산 (장기요양보험 계산의 기준이 되므로 먼저 처리)
-  healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
-  row.deductionItems[cdHealth] = healthAmt;
+  // 2. 건강보험 계산 (장기요양보험 기준값)
+  if (cdHealth && row.deductionFlags[cdHealth]) {
+    healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
+    row.deductionItems[cdHealth] = healthAmt;
+  } else if (cdHealth) {
+    row.deductionItems[cdHealth] = 0;
+  }
 
-  // 3. 나머지 항목별 계산 공식 세팅
+  // 3. 나머지 공제 항목별 계산 매핑 (찾아낸 동적 코드 사용)
   const calc = {
     [cdLongTerm]: () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
     [cdPension]:  () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
@@ -601,12 +587,7 @@ const calculateInsurances = async (row) => {
     // 건강보험은 위에서 처리했으므로 패스
     if (i.itemCd === cdHealth) return;
 
-    // ★ 4대보험/소득세 등 법정 필수 항목은 스위치 강제 ON (0원 락 방지)
-    if (coreTaxes.includes(i.itemCd)) {
-      row.deductionFlags[i.itemCd] = true;
-    }
-
-    // ★ 기타 공제(사용자가 명시적으로 끈 항목)는 0원 처리
+    // 체크 해제된 항목은 0원 처리
     if (!row.deductionFlags[i.itemCd]) {
       row.deductionItems[i.itemCd] = 0;
       return;
@@ -1292,47 +1273,24 @@ const getPayrollMonth = async function () {
   try {
     const res = await axios.get(`/api/v1/member/payroll/month`, { params: { year, month } });
     payrollList.value = res.data.data
-        ? res.data.data.map(item => {
-          let parsedPay = {};
-          let parsedDed = {};
-          let parsedFlags = {};
-
-          try { parsedPay = typeof item.payItems === 'string' ? JSON.parse(item.payItems) : (item.payItems || {}); } catch(e) {}
-          try { parsedDed = typeof item.deductionItems === 'string' ? JSON.parse(item.deductionItems) : (item.deductionItems || {}); } catch(e) {}
-          try { parsedFlags = typeof item.checkedItems === 'string' ? JSON.parse(item.checkedItems) : (item.checkedItems || {}); } catch(e) {}
-
-          // 체크 상태 강제 복원 및 "이미 0원인 항목" 재계산 방지
-          deductionItems.value.forEach(d => {
-            if (parsedFlags[d.itemCd] !== undefined) {
-              // DB에 상태가 명시되어 있으면 유지
-            } else {
-              // 명시된 상태가 없을 때, 저장된 금액이 0원이면 체크를 해제(false)하여 재계산 방지
-              if (parsedDed[d.itemCd] === 0 || parsedDed[d.itemCd] === '0') {
-                parsedFlags[d.itemCd] = false;
-              } else {
-                // 그 외의 경우(금액이 있거나, 아직 한 번도 계산안된 초기상태) 무조건 켜둠
-                parsedFlags[d.itemCd] = true;
-              }
-            }
-          });
-
-          return {
-            ...item,
-            selected:        false,
-            status:          item.status ?? 0,
-            payItems:        parsedPay,
-            deductionItems:  parsedDed,
-            deductionFlags:  parsedFlags,
-            originalBasePay: undefined,
-          };
-        })
+        ? res.data.data.map(item => ({
+          ...item,
+          selected:        false,
+          status:          item.status ?? 0,
+          payItems:        item.payItems       || {},
+          deductionItems:  item.deductionItems || {},
+          deductionFlags:  item.checkedItems   || {},
+          originalBasePay: undefined,
+        }))
         : [];
 
     const allBillingManagers = payrollList.value
         .map(p => p.billingManager)
-        .filter(name => name && name.trim() !== '');
+        .filter(name => name && name.trim() !== ''); // 빈 값이나 null 제거
 
-    const uniqueManagers = [...new Set(allBillingManagers)];
+    const uniqueManagers = [...new Set(allBillingManagers)]; // 중복 제거
+
+    // 드롭다운에서 사용할 수 있도록 배열 형태({ value: '이름' })로 변환
     billingManager.value = uniqueManagers.map(name => ({ value: name }));
     currentPage.value = 1;
   } catch (e) { payrollList.value = []; }
