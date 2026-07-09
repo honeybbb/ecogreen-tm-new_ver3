@@ -591,7 +591,7 @@ const calculateInsurances = async (row) => {
   let taxablePay = 0
   payItems.value.forEach(item => {
     const amt   = Number(row.payItems[item.itemCd] || 0)
-    const limit = item.taxFreeLimit
+    const limit = item.tax_free || 0
     const taxed = limit > 0 ? Math.max(0, amt - limit) : amt
     taxablePay += taxed
   })
