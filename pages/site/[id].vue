@@ -848,14 +848,28 @@ const fetchAssignedStaff = async () => {
   }
 };
 
-const totalArea = computed(() => {
-  const under = Number(site.value.areaUnder) || 0;
-  const over = Number(site.value.areaOver) || 0;
-  const sum = under + over;
+// [기존 코드]
+// const totalArea = computed(() => {
+//   const under = Number(site.value.areaUnder) || 0;
+//   const over = Number(site.value.areaOver) || 0;
+//   const sum = under + over;
+//   return Math.round(sum * 10000) / 10000;
+// });
 
-  // 1. 소수점 4자리까지 반올림하여 오차 제거
-  // 2. 결과는 Number 타입이므로, 10.2200 대신 10.22가 됨
-  return Math.round(sum * 10000) / 10000;
+// [변경 후 코드]
+const totalArea = computed(() => {
+  const strUnder = String(site.value.areaUnder || '0').replace(/,/g, '');
+  const strOver = String(site.value.areaOver || '0').replace(/,/g, '');
+
+  // 소수점 몇 자리까지 있는지 파악
+  const dec1 = strUnder.includes('.') ? strUnder.split('.')[1].length : 0;
+  const dec2 = strOver.includes('.') ? strOver.split('.')[1].length : 0;
+
+  // 둘 중 더 긴 쪽 자릿수 선택 (최소 0)
+  const maxDec = Math.max(dec1, dec2);
+
+  // 덧셈 오차를 방지하고 문자열로 고정
+  return (Number(strUnder) + Number(strOver)).toFixed(maxDec);
 });
 
 const isVatSite = computed(() => Number(site.value.areaOver) > 0);
@@ -1805,6 +1819,7 @@ onMounted(async () => {
                 <div class="header-texts">
                   <div class="title-row">
                     <h3>{{ group.category }} 용역 계약</h3>
+                    <span>ID : {{group.scIdx}}</span>
                     <span v-if="isEffectiveContract(group)" class="status-chip active">진행중</span>
                     <span v-else-if="group.contractStart && new Date(group.contractStart) > new Date()" class="status-chip upcoming">예정</span>
                     <span v-else class="status-chip expired">종료됨</span>

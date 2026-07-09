@@ -109,10 +109,10 @@ const hasInvalidChars = (str) => {
 };
 
 // 시행일자 선택 시 구분값 선택 여부 체크
-const handleDateClick = (e) => {
+const handleDateClick = async (e) => {
   if (!formData.value.type) {
     e.preventDefault(); // 기본 클릭 동작(달력 열기) 방지 시도
-    alert('구분값을 먼저 선택해주세요.');
+    await window.customAlert('구분값을 먼저 선택해주세요.','error');
     e.target.blur();    // 강제로 포커스를 해제하여 달력 팝업이 열리는 것을 차단
   }
 };
@@ -940,6 +940,7 @@ watch([
   if (formData.value.sIdx) {
     syncBillingItems();
   }
+  formData.value.target_month =  formData.value.billingDt
 }, { deep: true });
 
 const getDynamicTotal = (col) => {
@@ -1077,6 +1078,8 @@ const payrollLedgerTotals = computed(() => {
 
 const calculateAreaSupply = () => {
   const vb = formData.value.billingData.vatBreakdown;
+  if (vb.isManual) return;
+
   const totalArea = (Number(vb.under135.area) || 0) + (Number(vb.over135.area) || 0);
   let topSum = formData.value.billingData.items.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   topSum = Math.floor(topSum / 10) * 10;
@@ -1108,7 +1111,16 @@ const calculateBillingTotal = () => {
 };
 
 const handleManualBreakdownUpdate = () => {
+  // 1. 수동 입력 플래그 활성화 (자동 계산 덮어쓰기 방지용)
+  formData.value.billingData.vatBreakdown.isManual = true;
+
+  // 2. 수동으로 입력된 각 항목의 값을 가져옴
+  const underSupply = Number(formData.value.billingData.vatBreakdown.under135.supply) || 0;
+  const overSupply = Number(formData.value.billingData.vatBreakdown.over135.supply) || 0;
   const overVat = Number(formData.value.billingData.vatBreakdown.over135.vat) || 0;
+
+  // 3. 총계 재계산 적용
+  formData.value.subTotal = underSupply + overSupply;
   formData.value.vatAmount = overVat;
   formData.value.grandTotal = formData.value.subTotal + overVat;
 };
@@ -1499,14 +1511,28 @@ const handleSiteChange = () => {
     }
 
     const vb = formData.value.billingData.vatBreakdown;
-    const dbAreaUnder = Number(selectedSite.areaUnder || selectedSite.area_under) || 0;
-    const dbAreaOver  = Number(selectedSite.areaOver || selectedSite.area_over) || 0;
-    const dbAreaTotal = Number(selectedSite.areaUnder) + Number(selectedSite.areaOver) || 0;
+    // 1. Number()를 빼서 DB의 '32020.9600' 문자열 원본을 그대로 유지
+    const rawUnder = String(selectedSite.areaUnder || selectedSite.area_under || '0').replace(/,/g, '');
+    const rawOver  = String(selectedSite.areaOver || selectedSite.area_over || '0').replace(/,/g, '');
+
+    const dbAreaUnder = rawUnder;
+    const dbAreaOver  = rawOver;
+    // 2. 총계는 덧셈 오차를 막기 위해 toFixed(4) 적용
+    const dbAreaTotal = (Number(rawUnder) + Number(rawOver)).toFixed(4);
 
     if (formData.value.is_vat === 'Y') {
-      if (dbAreaUnder > 0 || dbAreaOver > 0) { vb.under135.area = dbAreaUnder; vb.over135.area = dbAreaOver; }
-      else { vb.under135.area = 0; vb.over135.area = dbAreaTotal; }
-    } else { vb.under135.area = dbAreaUnder > 0 ? dbAreaUnder : dbAreaTotal; vb.over135.area = 0; }
+      if (Number(dbAreaUnder) > 0 || Number(dbAreaOver) > 0) {
+        vb.under135.area = dbAreaUnder; // 문자열 그대로 할당
+        vb.over135.area = dbAreaOver;   // 문자열 그대로 할당
+      } else {
+        vb.under135.area = '0';
+        vb.over135.area = dbAreaTotal;
+      }
+    } else {
+      vb.under135.area = Number(dbAreaUnder) > 0 ? dbAreaUnder : dbAreaTotal;
+      vb.over135.area = '0';
+    }
+
     calculateAreaSupply();
   } else { formData.value.siteName = ''; formData.value.is_vat = 'N'; }
   calculateBillingTotal();
@@ -1971,8 +1997,24 @@ onMounted(async () => {
                           class="cell-input text-right"
                       />
                     </td>
-                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.under135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
-                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.under135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'supply', null, 'billing')" class="cell-input text-right font-bold text-blue" /></td>
+                    <td>
+                      <input
+                          type="text"
+                          :value="formatDecimal(formData.billingData.vatBreakdown.under135.unitPrice)"
+                          @focus="$event.target.select()"
+                          @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'unitPrice', null, 'area')"
+                          class="cell-input text-right"
+                      />
+                    </td>
+                    <td>
+                      <input
+                          type="text"
+                          :value="formatDecimal(formData.billingData.vatBreakdown.under135.supply)"
+                          @focus="$event.target.select()"
+                          @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.under135, 'supply', null, 'manual')"
+                          class="cell-input text-right font-bold text-blue"
+                      />
+                    </td>
                     <td class="text-right bg-gray-50 text-gray-400">0</td>
                     <td class="text-right font-bold text-blue bg-blue-light">{{ formatDecimal(formData.billingData.vatBreakdown.under135.supply) }}</td>
                   </tr>
@@ -1980,8 +2022,24 @@ onMounted(async () => {
                     <td class="text-center font-bold bg-gray-50">135㎡ 초과 (과세)</td>
                     <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'area', null, 'area')" class="cell-input text-right" /></td>
                     <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
-                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.supply)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'supply', null, 'manual')" class="cell-input text-right font-bold text-blue" /></td>
-                    <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.vat)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'vat', null, 'manual')" class="cell-input text-right font-bold text-red" /></td>
+                    <td>
+                      <input
+                          type="text"
+                          :value="formatDecimal(formData.billingData.vatBreakdown.over135.supply)"
+                          @focus="$event.target.select()"
+                          @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'supply', null, 'manual')"
+                          class="cell-input text-right font-bold text-blue"
+                      />
+                    </td>
+                    <td>
+                      <input
+                          type="text"
+                          :value="formatDecimal(formData.billingData.vatBreakdown.over135.vat)"
+                          @focus="$event.target.select()"
+                          @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'vat', null, 'manual')"
+                          class="cell-input text-right font-bold text-red"
+                      />
+                    </td>
                     <td class="text-right font-bold text-blue bg-blue-light">{{ formatCurrency(Number(formData.billingData.vatBreakdown.over135.supply) + Number(formData.billingData.vatBreakdown.over135.vat)) }}</td>
                   </tr>
                   </tbody>
@@ -1991,10 +2049,11 @@ onMounted(async () => {
                     <td class="text-right">
                       {{
                         formatDecimal(
-                            Number(formData.billingData.vatBreakdown.under135.area) +
-                            Number(formData.billingData.vatBreakdown.over135.area)
+                            (Number(formData.billingData.vatBreakdown.under135.area) +
+                                Number(formData.billingData.vatBreakdown.over135.area)).toFixed(4)
                         )
-                      }}</td>
+                      }}
+                    </td>
                     <td class="text-center">-</td>
                     <td class="text-right text-blue">{{ formatCurrency(formData.subTotal) }}</td>
                     <td class="text-right text-red">{{ formatCurrency(formData.vatAmount) }}</td>
