@@ -503,6 +503,7 @@ const CALC_DEDUCTION_CODES = [
   '04002001004', // 고용보험
   '04002002004', // 소득세
   '04002002003', // 지방소득세
+  '04002002006', // 기타보험료
 ]
 
 // 2) updatePayAsync 전체 교체
@@ -553,6 +554,38 @@ const fetchOverAgeOption = async () => {
   }
 };
 
+// 기타보험료 부과 대상월 판별
+// 입사일 1일 → 입사월 기준 / 입사일 2일~말일 → 입사월 다음달 기준
+// 이후 매년 해당 월마다 반복 부과
+const isOtherInsuranceMonth = (row) => {
+  if (!row.inDate) return false;
+
+  const [inYearStr, inMonthStr, inDayStr] = String(row.inDate).split('-');
+  let firstYear   = Number(inYearStr);
+  let targetMonth = Number(inMonthStr);
+  const inDay     = Number(inDayStr);
+
+  if (inDay > 1) {
+    targetMonth += 1;
+    if (targetMonth > 12) {
+      targetMonth = 1;
+      firstYear += 1;
+    }
+  }
+
+  const [selYear, selMonth] = selectedYearMonth.value.split('-').map(Number);
+
+  return selMonth === targetMonth && selYear >= firstYear;
+};
+
+// type별 기타보험료 금액
+const getOtherInsuranceAmount = (row) => {
+  console.log(row.type, 'ee')
+  if (row.type === '01001001') return 19500; // 경비
+  if (row.type === '01001002') return 14000; // 미화
+  return 0;
+};
+
 // calculateInsurances 전체 교체
 const calculateInsurances = async (row) => {
   let taxablePay = 0
@@ -567,7 +600,8 @@ const calculateInsurances = async (row) => {
   const rates = targetCodes.value;
   let incomeTax = 0, localTax = 0;
 
-  if (row.deductionFlags['04002002004']) {
+  //if (row.deductionFlags['04002002004']) {
+  if (row.deductionFlags['04002002004'] !== false) {
     try {
       const year = new Date().getFullYear();
       const taxRes = await axios.get(`/api/v1/config/tax/income/${year}`, {
@@ -579,7 +613,8 @@ const calculateInsurances = async (row) => {
   }
 
   let healthAmt = 0;
-  if (row.deductionFlags['04002001001']) {
+  // if (row.deductionFlags['04002001001']) {
+if (row.deductionFlags['04002001001'] !== false) {
     healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
     row.deductionItems['04002001001'] = healthAmt;
   } else {
@@ -592,11 +627,13 @@ const calculateInsurances = async (row) => {
     '04002001004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
     '04002002004': () => incomeTax,
     '04002002003': () => localTax,
+    '04002002006': () => isOtherInsuranceMonth(row) ? getOtherInsuranceAmount(row) : 0,
   };
 
   deductionItems.value.forEach(i => {
     if (i.itemCd === '04002001001') return;
-    if (!row.deductionFlags[i.itemCd]) { row.deductionItems[i.itemCd] = 0; return; }
+    if (i.itemCd === '04002002006') { row.deductionItems[i.itemCd] = isOtherInsuranceMonth(row) ? getOtherInsuranceAmount(row) : 0; return; }
+    if (row.deductionFlags[i.itemCd] === false) { row.deductionItems[i.itemCd] = 0; return; }
     const fn = calc[i.itemCd];
     if (fn) row.deductionItems[i.itemCd] = fn();
   });
