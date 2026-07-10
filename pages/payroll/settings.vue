@@ -252,7 +252,7 @@ const saveCode = async (code) => {
       itemNm: code.itemNm,
       sort: code.sort,
       useFl: code.useFl,
-      tax_free: currentCategoryInfo.value?.hasTaxFree ? code.tax_free : 0
+      option: currentCategoryInfo.value?.hasTaxFree ? code.tax_free : 0
     };
 
     await axios.post(`/api/v1/code/${cIdx}`, payload);
