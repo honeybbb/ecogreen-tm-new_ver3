@@ -28,6 +28,11 @@ const selectedType = ref('전체');
 const selectedStatus = ref('전체');
 const selectedDisability = ref('전체');
 
+// ── 빠른 필터 (저장 상태) ──────────────────────────
+const filterSaveNone  = ref(false); // 저장 전 (status: 0)
+const filterSaveDraft = ref(false); // 저장 대기 (status: 2)
+const filterSaveDone  = ref(false); // 저장 완료 (status: 1)
+
 const items = ref([]);
 const isLoading = ref(false);
 const error = ref(null);
@@ -266,37 +271,57 @@ const getInsuranceWarning = (row) => {
   return { type: 'normal', message: '' };
 };
 
-// 입력 시 숫자만 추출하여 저장하는 함수
+// 입력 시 마이너스(-) 부호와 숫자를 추출하여 저장하는 함수
 const onInputAmount = (row, item, group, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart;
   const oldLength = el.value.length;
 
-  const rawValue = el.value.replace(/[^\d]/g, '');
-  const numValue = Number(rawValue) || 0;
+  let currentValue = el.value.trim();
 
+  // 1. 음수 여부 판별
+  const isNegative = currentValue.startsWith('-');
+
+  // 2. 부호 제외하고 숫자만 추출
+  const rawValue = currentValue.replace(/[^\d]/g, '');
+
+  // 3. 실제 저장할 Number 값 계산
+  const numValue = Number(rawValue) || 0;
+  const finalNumValue = isNegative ? -numValue : numValue;
+
+  // 4. 상태 및 데이터 업데이트
   if (group === 'pay') {
-    row.payments[item.itemCd] = numValue;
+    row.payments[item.itemCd] = finalNumValue;
   } else {
-    row.deductions[item.itemCd] = numValue;
+    row.deductions[item.itemCd] = finalNumValue;
   }
 
-  const formatted = formatCurrency(numValue);
+  // 5. 화면 표시용 텍스트 분기 처리 (★ 이 부분이 핵심)
+  let formatted;
+  if (currentValue === '-') {
+    formatted = '-';
+  } else if (currentValue === '-0') {
+    formatted = '-0';
+  } else {
+    // 1단계에서 수정한 formatCurrency 호출
+    formatted = formatCurrency(finalNumValue);
+  }
+
+  // 6. DOM에 직접 값 주입 (Vue 반응형 타이밍 이슈 방지)
   el.value = formatted;
 
+  // 7. 커서 위치 유지
   const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 
   markAsDraft(row);
 
-  // 지급 항목 변경 시 항상 재계산 (sourceItem 없이 전체 재계산)
   if (group === 'pay') {
     calculateInsurances(row, null);
   }
 };
 
-// ── 행 합계 계산 ──────────────────────────────────
 // ── 행 합계 계산 ──────────────────────────────────
 const calculateRow = (row) => {
   let gross = 0, ded = 0;
@@ -321,16 +346,30 @@ const onFilterChange = () => { currentPage.value = 1; };
 
 // ── 필터링 + 정렬 ─────────────────────────────────
 const filteredPayrollList = computed(() => {
-  const filtered = payrollList.value.filter(p =>
-      (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
-      p.staff.toLowerCase().includes(searchTerm.value.toLowerCase()) &&
-      (selectedType.value === '전체' || p.type === selectedType.value) &&
-      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
-      (selectedDisability.value === '전체' || p.disability == selectedDisability.value)
-  );
+  const isQuickFilterActive = filterSaveNone.value || filterSaveDraft.value || filterSaveDone.value;
+
+  const filtered = payrollList.value.filter(p => {
+    // 기존 조건들
+    const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
+    const searchMatch = p.staff.toLowerCase().includes(searchTerm.value.toLowerCase());
+    const typeMatch = selectedType.value === '전체' || p.type === selectedType.value;
+    const empStatusMatch = selectedStatus.value === '전체' || p.mStatus == selectedStatus.value;
+    const disabilityMatch = selectedDisability.value === '전체' || p.disability == selectedDisability.value;
+
+    // 저장 상태 필터 매칭 로직
+    let saveStatusMatch = true;
+    if (isQuickFilterActive) {
+      if (p.status === 0 && filterSaveNone.value) saveStatusMatch = true;
+      else if (p.status === 2 && filterSaveDraft.value) saveStatusMatch = true;
+      else if (p.status === 1 && filterSaveDone.value) saveStatusMatch = true;
+      else saveStatusMatch = false; // 켜져있는 필터와 일치하지 않으면 제외
+    }
+
+    return siteMatch && searchMatch && typeMatch && empStatusMatch && disabilityMatch && saveStatusMatch;
+  });
 
   filtered.sort((a, b) => {
-    // ★ 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
+    // 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
     if (sortKey.value) {
       const mod = sortOrder.value === 'asc' ? 1 : -1;
       const valA = a[sortKey.value] ?? '';
@@ -364,7 +403,6 @@ const filteredPayrollList = computed(() => {
   return filtered;
 });
 
-// ── 전체 합계 (필터된 전체 목록 기준) ─────────────
 // ── 전체 합계 (필터된 전체 목록 기준) ─────────────
 const totalSummary = computed(() => {
   const s = { gross: 0, ded: 0, net: 0, pay: {}, deduct: {} };
@@ -722,10 +760,15 @@ const toggleSort = (key) => {
 
 const resetFilters = () => {
   searchTerm.value         = '';
-  selectedSite.value       = '전체'; // 위에서 작성한 watch가 감지하여 URL 파라미터도 자동으로 지워줍니다.
+  selectedSite.value       = '전체';
   selectedType.value       = '전체';
   selectedStatus.value     = '전체';
-  selectedDisability.value = '전체'; // (장애 여부 필터도 초기화에 추가하시는 것을 권장합니다)
+  selectedDisability.value = '전체';
+
+  filterSaveNone.value  = false;
+  filterSaveDraft.value = false;
+  filterSaveDone.value  = false;
+
   currentPage.value        = 1;
   sortKey.value            = 'id';
   sortOrder.value          = 'asc';
@@ -788,9 +831,9 @@ onMounted(async () => {
         <p class="page-subtitle">지급·공제 항목 관리 및 4대보험 자동 계산</p>
       </div>
       <div class="header-actions">
-        <button @click="showColumnSetting = true" class="btn-search">
+        <!--button @click="showColumnSetting = true" class="btn-search">
           <i class="mdi mdi-view-column"></i><span>보기 설정</span>
-        </button>
+        </button-->
         <button @click="savePayroll" class="btn-save">
           <i class="mdi mdi-content-save-outline"></i><span>선택 급여 저장</span>
         </button>
@@ -896,6 +939,29 @@ onMounted(async () => {
           </button>
         </div>
       </div>
+
+      <div class="filter-toggles-row">
+        <span class="toggles-label"><i class="mdi mdi-filter-variant"></i> 상태 필터:</span>
+        <div class="filter-toggles">
+          <label class="toggle-chip" :class="{ active: filterSaveNone }">
+            <input type="checkbox" v-model="filterSaveNone" @change="onFilterChange">
+            <span class="legend-color calculate-inactive" style="width:12px; height:12px;"></span>
+            <span>저장 전</span>
+          </label>
+
+          <label class="toggle-chip" :class="{ active: filterSaveDraft }">
+            <input type="checkbox" v-model="filterSaveDraft" @change="onFilterChange">
+            <span class="legend-color calculate-draft" style="width:12px; height:12px;"></span>
+            <span>저장 대기</span>
+          </label>
+
+          <label class="toggle-chip" :class="{ active: filterSaveDone }">
+            <input type="checkbox" v-model="filterSaveDone" @change="onFilterChange">
+            <span class="legend-color calculate-active" style="width:12px; height:12px;"></span>
+            <span>저장 완료</span>
+          </label>
+        </div>
+      </div>
     </div>
 
     <!-- ─── 로딩 ──────────────────────────────────── -->
@@ -994,8 +1060,16 @@ onMounted(async () => {
 
           <tbody>
           <tr v-for="(p, i) in pagedPayrollList" :key="p.idx" class="data-row">
-            <td class="text-center calculate-status transition-colors sticky-col sticky-col-1" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0}">
-              <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
+            <td
+                class="text-center calculate-status transition-colors sticky-col sticky-col-1"
+                :class="{
+                  'calculate-active': p.status == 1,
+                  'calculate-draft': p.status == 2,
+                  'calculate-inactive': p.status == 0
+                }"
+            >
+              <label class="checkbox-wrapper">
+                <input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
             <td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
             <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :style="getStickyStyle('siteName')" :title="p.siteName">{{ p.siteName }}</td>
@@ -1038,7 +1112,14 @@ onMounted(async () => {
             <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11 sticky-divider" :style="getStickyStyle('ded')">{{ formatCurrency(calculateRow(p).ded) }}</td>
 
             <td v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
-              <input v-if="p.payments" @focus="$event.target.select()" type="text" :value="formatCurrency(p.payments[item.itemCd])" @input="onInputAmount(p, item, 'pay', $event)" class="inline-input" />
+              <input
+                  v-if="p.payments"
+                  @focus="$event.target.select()"
+                  type="text"
+                  :value="formatCurrency(p.payments[item.itemCd])"
+                  @input="onInputAmount(p, item, 'pay', $event)"
+                  class="inline-input"
+              />
             </td>
             <td v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
               <div class="deduction-combo-box">
