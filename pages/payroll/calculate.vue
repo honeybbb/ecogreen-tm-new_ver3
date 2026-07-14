@@ -142,6 +142,11 @@ const selectedBilling = ref('전체');
 const selectedPaymentDay = ref('');
 const selectedPayHistory = ref(''); // "2025-04-10" 형태
 
+// ── 빠른 필터 (저장 상태) ──────────────────────────
+const filterSaveNone  = ref(false); // 계산/저장 전 (status: 0)
+const filterSaveDraft = ref(false); // 저장 대기 (status: 2)
+const filterSaveDone  = ref(false); // 저장 완료 (status: 1)
+
 const items = ref([]);
 const payrollList = ref([]);
 const isLoading = ref(false);
@@ -179,20 +184,33 @@ const deductionItems = computed(() => items.value.filter(i => i.groupNm === '공
 
 // 3. 필터링 및 정렬
 const filteredPayrollList = computed(() => {
-  const filtered = payrollList.value.filter(p =>
-      (selectedSite.value === '전체' || p.sIdx == selectedSite.value) &&
-      (selectedType.value === '전체' || p.type === selectedType.value) &&
-      (selectedStatus.value === '전체' || p.mStatus == selectedStatus.value) &&
-      // (selectedPaymentDay.value === '' || String(p.payment_day) === String(Number(selectedPaymentDay.value.split('-')[2]))) &&
-      (selectedPayHistory.value === '' || (() => {
-        const [y, m, d] = selectedPayHistory.value.split('-');
-        return String(p.year) === y
-            && String(p.month) === String(Number(m))
-            && String(p.payment_day) === String(Number(d));
-      })()) &&
-      (selectedBilling.value === '전체' || p.billingManager === selectedBilling.value) &&
-      p.staff.toLowerCase().includes(searchTerm.value.toLowerCase())
-  );
+  const isQuickFilterActive = filterSaveNone.value || filterSaveDraft.value || filterSaveDone.value;
+
+  const filtered = payrollList.value.filter(p => {
+    // 기본 필터 매칭 조건
+    const siteMatch = selectedSite.value === '전체' || p.sIdx == selectedSite.value;
+    const typeMatch = selectedType.value === '전체' || p.type === selectedType.value;
+    const statusMatch = selectedStatus.value === '전체' || p.mStatus == selectedStatus.value;
+    const historyMatch = selectedPayHistory.value === '' || (() => {
+      const [y, m, d] = selectedPayHistory.value.split('-');
+      return String(p.year) === y
+          && String(p.month) === String(Number(m))
+          && String(p.payment_day) === String(Number(d));
+    })();
+    const billingMatch = selectedBilling.value === '전체' || p.billingManager === selectedBilling.value;
+    const searchMatch = p.staff.toLowerCase().includes(searchTerm.value.toLowerCase());
+
+    // 저장 상태 빠른 필터 매칭 로직
+    let saveStatusMatch = true;
+    if (isQuickFilterActive) {
+      if (p.status === 0 && filterSaveNone.value) saveStatusMatch = true;
+      else if (p.status === 2 && filterSaveDraft.value) saveStatusMatch = true;
+      else if (p.status === 1 && filterSaveDone.value) saveStatusMatch = true;
+      else saveStatusMatch = false; // 선택된 상태가 아니면 제외
+    }
+
+    return siteMatch && typeMatch && statusMatch && historyMatch && billingMatch && searchMatch && saveStatusMatch;
+  });
 
   filtered.sort((a, b) => {
     // 사용자 클릭 정렬 (직책 컬럼 클릭 시 문자열 정렬 등)
@@ -268,29 +286,48 @@ const markAsDraft = (row) => {
   row.selected = true;
 };
 
-// 3) onInputAmount 수동 입력 시 스냅샷도 같이 갱신
+// 수동 입력 시 마이너스(-) 및 정규식 처리
 const onInputAmount = (row, item, group, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart;
   const oldLength = el.value.length;
 
-  const rawValue = el.value.replace(/[^\d]/g, '');
-  const numValue = Number(rawValue) || 0;
+  let currentValue = el.value.trim();
 
+  // 1. 음수 여부 판별 및 중간 입력 상태 제어
+  const isNegative = currentValue.startsWith('-');
+  const isJustMinus = currentValue === '-';
+  const isMinusZero = currentValue === '-0';
+
+  // 2. 부호 제외하고 숫자만 파싱
+  const rawValue = currentValue.replace(/[^\d]/g, '');
+  const numValue = Number(rawValue) || 0;
+  const finalNumValue = isNegative ? -numValue : numValue;
+
+  // 3. 내부 상태 업데이트 및 스냅샷 보존
   if (group === 'pay') {
-    row.payItems[item.itemCd] = numValue;
-    if (row._originalPayItems) row._originalPayItems[item.itemCd] = numValue;
+    row.payItems[item.itemCd] = finalNumValue;
+    if (row._originalPayItems) row._originalPayItems[item.itemCd] = finalNumValue;
     if (item.itemCd === '04001001001') {
-      row.originalBasePay = numValue;
+      row.originalBasePay = finalNumValue;
     }
   } else {
-    row.deductionItems[item.itemCd] = numValue;
-    if (row._originalDeductionItems) row._originalDeductionItems[item.itemCd] = numValue;
+    row.deductionItems[item.itemCd] = finalNumValue;
+    if (row._originalDeductionItems) row._originalDeductionItems[item.itemCd] = finalNumValue;
   }
 
-  const formatted = formatCurrency(numValue);
-  el.value = formatted;
+  // 4. 화면 포맷팅 분기 처리
+  let formatted;
+  if (isJustMinus) {
+    formatted = '-';
+  } else if (isMinusZero) {
+    formatted = '-0';
+  } else {
+    formatted = formatCurrency(finalNumValue);
+  }
 
+  // 5. DOM에 직접 값 주입 및 커서 위치 제어
+  el.value = formatted;
   const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
@@ -1542,6 +1579,27 @@ onMounted(async () => {
             <i class="mdi mdi-filter-off"></i>
             <span>초기화</span>
           </button>
+        </div>
+      </div>
+
+      <div class="filter-toggles-row">
+        <span class="toggles-label"><i class="mdi mdi-filter-variant"></i> 상태 필터:</span>
+        <div class="filter-toggles">
+          <label class="toggle-chip" :class="{ active: filterSaveNone }">
+            <input type="checkbox" v-model="filterSaveNone" @change="currentPage = 1">
+            <span class="legend-color calculate-inactive" style="width:12px; height:12px;"></span>
+            <span>계산 전</span>
+          </label>
+          <label class="toggle-chip" :class="{ active: filterSaveDraft }">
+            <input type="checkbox" v-model="filterSaveDraft" @change="currentPage = 1">
+            <span class="legend-color calculate-draft" style="width:12px; height:12px;"></span>
+            <span>저장 대기</span>
+          </label>
+          <label class="toggle-chip" :class="{ active: filterSaveDone }">
+            <input type="checkbox" v-model="filterSaveDone" @change="currentPage = 1">
+            <span class="legend-color calculate-active" style="width:12px; height:12px;"></span>
+            <span>저장 완료</span>
+          </label>
         </div>
       </div>
     </div>

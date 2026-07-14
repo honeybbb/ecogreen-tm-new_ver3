@@ -43,11 +43,32 @@ export const getMonthsDiff = (dateStr) => {
     return diff;
 };
 
+/*
 export const formatCurrency = (amount) => {
     if (amount === null || amount === undefined || amount == '') return '0';
     // 금액은 정수로 처리합니다.
     const numberAmount = typeof amount === 'string' ? parseInt(amount.replace(/,/g, ''), 10) : amount;
     return new Intl.NumberFormat('ko-KR').format(numberAmount);
+};
+
+ */
+export const formatCurrency = (val) => {
+    // 1. 값이 없거나 빈 문자열일 경우 '0'을 반환 (기존 동작 복구)
+    if (val === null || val === undefined || val === '') return '0';
+
+    // 2. 사용자가 입력 중인 마이너스 기호 상태 보존
+    if (val === '-') return '-';
+    if (val === '-0') return '-0';
+
+    // 3. 콤마가 포함된 문자열이 들어와도 안전하게 처리 (음수 기호는 유지됨)
+    const rawVal = typeof val === 'string' ? val.replace(/,/g, '') : val;
+    const num = Number(rawVal);
+
+    // 4. 숫자로 변환할 수 없는 값이라면 원본 반환 방어 코드
+    if (isNaN(num)) return val;
+
+    // 5. 음수(-) 기호와 천 단위 콤마(,) 완벽 보존
+    return num.toLocaleString('ko-KR');
 };
 
 export const formatDecimal = (amount) => {
