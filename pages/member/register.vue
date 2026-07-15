@@ -92,6 +92,30 @@ const contractYear = computed(() => {
 });
 
 const wageInputs = ref({});
+const periodsData = ref([]); // 입/퇴사일, 일용직,대근 근무시작/종료일, 휴직시작/종료일 등
+// 기간 추가 함수
+const addPeriod = () => {
+  periodsData.value.push({ startDate: '', endDate: '', outReason: '' });
+};
+
+// 기간 삭제 함수
+const removePeriod = (index) => {
+  periodsData.value.splice(index, 1);
+};
+
+// 상태(status)가 변경될 때마다 처리
+watch(() => employee.value.status, (newStatus) => {
+  // 일용직(2) 이나 대근(3)일 경우
+  if (newStatus === '2' || newStatus === '3') {
+    if(periodsData.value.length === 0) {
+      addPeriod(); // 최초 1개의 입력 칸 생성
+    }
+  } else {
+    // 그 외의 상태(재직, 퇴사, 휴직)면 periodsData 초기화
+    periodsData.value = [];
+  }
+});
+
 const contractBlob = ref(null);
 const contractDataTemp = ref(null);
 const isContractSaved = ref(false);
@@ -104,10 +128,10 @@ const todayDate = computed(() => {
   return `${year}-${month}-${day}`;
 });
 
-// [추가] 현재 펼쳐진 부모 메뉴 코드를 저장
+// 현재 펼쳐진 부모 메뉴 코드를 저장
 const expandedNodeCd = ref(null);
 
-// [추가] 하위 메뉴 토글 함수
+// 하위 메뉴 토글 함수
 const toggleNode = (itemCd) => {
   if (expandedNodeCd.value === itemCd) {
     expandedNodeCd.value = null; // 이미 열려있으면 닫기
@@ -196,6 +220,7 @@ const handleSubmit = async () => {
     dayWorkTime: contractDataTemp.value?.dayWorkTime || 0,
     monthWorkTime: contractDataTemp.value?.monthWorkTime || 0,
     contractData: contractDataTemp.value,
+    periodsData : periodsData.value,
     // wageInputs: wageInputs.value,
   };
 
@@ -998,28 +1023,91 @@ onActivated(() => {
                   <input type="radio" v-model="employee.status" value="3" required />
                   <span class="radio-text">대근</span>
                 </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="employee.status" value="4" required />
+                  <span class="radio-text">휴직</span>
+                </label>
               </div>
             </div>
 
-            <div v-if="employee.status == 1" class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-calendar-end-outline"></i>
-                퇴사일
-              </label>
-              <input
-                  type="date"
-                  v-model="employee.outDate"
-                  required
-                  class="form-input"
-                  max="9999-12-31"
-              />
-            </div>
+            <template v-if="employee.status == 1">
+              <div class="form-group">
+                <label class="form-label required">
+                  <i class="mdi mdi-calendar-end-outline"></i>
+                  퇴사일
+                </label>
+                <input
+                    type="date"
+                    v-model="employee.outDate"
+                    required
+                    class="form-input"
+                    max="9999-12-31"
+                />
+              </div>
 
-            <div v-if="employee.status == 1" class="form-group">
-              <label class="form-label required">퇴사 사유</label>
-              <input type="text" v-model="employee.outReason" class="form-input" placeholder="퇴사 사유를 입력하세요" />
+              <div class="form-group">
+                <label class="form-label required">퇴사 사유</label>
+                <input type="text" v-model="employee.outReason" class="form-input" placeholder="퇴사 사유를 입력하세요" />
+              </div>
+            </template>
 
-            </div>
+            <template v-if="employee.status == 2 || employee.status == 3">
+              <div class="form-group full-width">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <label class="form-label required">
+                    <i class="mdi mdi-calendar-multiselect"></i>
+                    근무 기간 설정
+                  </label>
+                  <button type="button" @click="addPeriod" class="btn-cancel" style="padding: 4px 10px;">
+                    <i class="mdi mdi-plus"></i> 기간 추가
+                  </button>
+                </div>
+
+                <div v-for="(period, index) in periodsData" :key="index" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                  <input type="date" v-model="period.startDate" class="form-input" required placeholder="시작일" />
+                  <span>~</span>
+                  <input type="date" v-model="period.endDate" class="form-input" required placeholder="종료일" />
+                  <input type="text" v-model="period.outReason" class="form-input" placeholder="비고 (선택)" style="flex: 1;" />
+                  <button type="button" @click="removePeriod(index)" v-if="periodsData.length > 1" class="btn-cancel" style="border: none; color: var(--danger); background: transparent; padding: 4px;">
+                    <i class="mdi mdi-minus-circle-outline" style="font-size: 20px;"></i>
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <template v-if="employee.status == 4">
+              <div class="form-group">
+                <label class="form-label required">
+                  <i class="mdi mdi-calendar-end-outline"></i>
+                  휴직 시작일
+                </label>
+                <input
+                    type="date"
+                    v-model="employee.joinDate"
+                    required
+                    class="form-input"
+                    max="9999-12-31"
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label required">
+                  <i class="mdi mdi-calendar-end-outline"></i>
+                  휴직 종료일
+                </label>
+                <input
+                    type="date"
+                    v-model="employee.outDate"
+                    required
+                    class="form-input"
+                    max="9999-12-31"
+                />
+              </div>
+
+              <div class="form-group">
+                <label class="form-label required">휴직 사유</label>
+                <textarea v-model="employee.outReason" class="form-input" placeholder="휴직 사유를 입력하세요" />
+              </div>
+            </template>
 
             <div class="form-group">
               <label class="form-label">
