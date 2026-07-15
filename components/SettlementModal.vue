@@ -1315,7 +1315,7 @@ const loadPayrollData1 = async () => {
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
-    const res = await axios.get('/api/v1/settle/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
+    const res = await axios.get('/api/v1/member/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
     const rawData = res.data?.data || [];
 
     const periodStart = new Date(yearNum, monthNum - 1, 1);
