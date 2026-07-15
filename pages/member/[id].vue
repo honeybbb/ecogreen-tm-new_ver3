@@ -81,6 +81,22 @@ const items = ref([]);
 const wageInputs = ref({});
 const contractDataTemp = ref(null);
 
+const periodsData = ref([]);
+const addPeriod = () => {
+  periodsData.value.push({ startDate: '', endDate: '', outReason: '' });
+};
+
+const removePeriod = (index) => {
+  periodsData.value.splice(index, 1);
+};
+
+// 재직상태 변경 시 UI 대응
+watch(() => employee.value.status, (newStatus) => {
+  if (newStatus === '2' || newStatus === '3') {
+    if(periodsData.value.length === 0) addPeriod();
+  }
+});
+
 // 근무 이력
 const workHistory = ref([
   { period: '2023.01 ~ 2024.12', site: 'LH 위례 6단지', position: '경비원', status: '재직' },
@@ -273,6 +289,44 @@ const loadEmployeeData = async () => {
     // 타입에 맞게 데이터 분배 (1: 기본, 2: 급여관련)
     basicBigoHistory.value = parsedBigoHistory.filter(log => String(log.type) === '1');
     payrollBigoHistory.value = parsedBigoHistory.filter(log => String(log.type) === '2');
+
+    let parsedHistory = [];
+    try {
+      if (rawData.historyList) {
+        parsedHistory = JSON.parse(rawData.historyList).filter(Boolean); // null 방지
+        parsedHistory.sort((a, b) => new Date(a.startDate) - new Date(b.startDate)); // 과거순 정렬
+      }
+    } catch (e) {
+      console.error('이력 파싱 에러:', e);
+    }
+
+    //퇴사(1)인 경우, historyList에서 퇴사일과 사유 가져오기
+    if (rawData.status == '1') {
+      const outHistory = parsedHistory.filter(h => h.status == '1').pop(); // 최신 퇴사 이력 가져오기
+      if (outHistory) {
+        rawData.outDate = outHistory.endDate;
+        rawData.outReason = outHistory.outReason;
+      }
+    }
+
+    // 일용직(2) 또는 대근(3) 데이터는 배열로 따로 분리
+    periodsData.value = parsedHistory
+        .filter(h => rawData.status == '2' || rawData.status == '3')
+        .map(h => ({
+          startDate: h.startDate,
+          endDate: h.endDate,
+          outReason: h.outReason
+        }));
+
+    // 휴직(4)인 경우, 가장 최근의 휴직 기록 1건을 가져와서 폼에 바인딩
+    if (rawData.status == '4') {
+      const leaveHistory = parsedHistory.filter(h => String(h.status) === '4').pop(); // 배열의 맨 마지막(최신)
+      if (leaveHistory) {
+        rawData.startDate = leaveHistory.startDate;
+        rawData.endDate = leaveHistory.endDate;
+        rawData.outReason = leaveHistory.outReason;
+      }
+    }
 
     // 3. 직원 정보 세팅
     employee.value = {
@@ -542,8 +596,10 @@ const saveEmployee = async () => {
       bankName: employee.value.bank,
       address: employee.value.address,
       joinDate: employee.value.inDate,
-      endDate: employee.value.outDate,
-      endReason: employee.value.outReason,
+      outDate: employee.value.outDate,
+      outReason: employee.value.outReason,
+      startDate: employee.value.startDate,
+      endDate: employee.value.endDate,
       transferDate: employee.value.transferDate,
 
       sIdx: employee.value.sIdx,
@@ -560,6 +616,7 @@ const saveEmployee = async () => {
       bigo: employee.value.bigo,
       payrollBigo: employee.value.payrollBigo,
       adminId: authStore.user?.managerId || employee.value.id, // 세션/스토어의 로그인 아이디
+      periodsData: periodsData.value,
 
       contractData: contractDataTemp.value || {
         wageInputs: employee.value.contract?.contractData || {},
@@ -677,9 +734,23 @@ onMounted(async () => {
           <div class="profile-info">
             <div class="profile-main">
               <h2 class="profile-name">{{ employee.name }}</h2>
-              <span :class="['status-badge', employee.status == 0 ? 'status-active' : 'status-inactive']">
-                <i :class="['mdi', employee.status == '0' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
-                {{ employee.status == 0 ? '재직' : '퇴사' }}
+              <span :class="[
+                  'status-badge',
+                  employee.status == 0 ? 'status-active' :
+                  employee.status == 1 ? 'status-inactive' :
+                  'status-preparing']">
+                <i :class="[
+                    'mdi',
+                    employee.status == '0' ? 'mdi-check-circle-outline' :
+                    employee.status == 1 ? 'mdi-close-circle-outline' :
+                    employee.status == 2 || employee.status == 3 ? 'mdi-calendar-check' :
+                    'mdi-swap-horizontal']"></i>
+                {{
+                  employee.status == 0 ? '재직' :
+                  employee.status == 1 ? '퇴사' :
+                  employee.status == 2 ? '일용직' :
+                  employee.status == 3 ? '대근' : '휴직'
+                }}
               </span>
             </div>
 
@@ -846,9 +917,9 @@ onMounted(async () => {
                     <li v-for="node in positionTree" :key="node.itemCd" class="menu-item">
 
                       <div class="menu-label">
-      <span class="menu-text" @click.stop="selectPosition(node)">
-        {{ node.itemNm }}
-      </span>
+                        <span class="menu-text" @click.stop="selectPosition(node)">
+                          {{ node.itemNm }}
+                        </span>
 
                         <div
                             v-if="node.children.length > 0"
@@ -892,6 +963,10 @@ onMounted(async () => {
                       <input type="radio" v-model="employee.status" value="3" />
                       <span>대근</span>
                     </label>
+                    <label class="radio-label">
+                      <input type="radio" v-model="employee.status" value="4" />
+                      <span>휴직</span>
+                    </label>
                   </div>
                 </div>
                 <div class="info-item">
@@ -908,6 +983,44 @@ onMounted(async () => {
                     <input type="text" v-model="employee.outReason" class="info-input border-red" placeholder="퇴사 사유를 입력하세요" />
                   </div>
                 </template>
+                <template v-if="employee.status == 2 || employee.status == 3">
+                  <div class="info-item full-width">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <label class="text-primary">
+                        <i class="mdi mdi-calendar-multiselect"></i> 근무 기간 설정
+                      </label>
+                      <button type="button" @click="addPeriod" class="btn-cancel" style="padding: 4px 10px;">
+                        <i class="mdi mdi-plus"></i> 기간 추가
+                      </button>
+                    </div>
+
+                    <div v-for="(period, index) in periodsData" :key="index" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
+                      <input type="date" v-model="period.startDate" class="info-input" required placeholder="시작일" />
+                      <span>~</span>
+                      <input type="date" v-model="period.endDate" class="info-input" required placeholder="종료일" />
+                      <input type="text" v-model="period.outReason" class="info-input" placeholder="사유 (선택)" style="flex: 1;" />
+                      <button type="button" @click="removePeriod(index)" v-if="periodsData.length > 1" class="btn-cancel" style="border: none; color: var(--danger); background: transparent; padding: 4px;">
+                        <i class="mdi mdi-minus-circle-outline" style="font-size: 20px;"></i>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+                <template v-if="employee.status == 4">
+                <div class="info-item">
+                  <label class="text-red">휴직 시작일</label>
+                  <input type="date" v-model="employee.startDate" class="info-input border-red" max="9999-12-31" />
+                </div>
+
+                <div class="info-item">
+                  <label class="text-red">휴직 종료일</label>
+                  <input type="date" v-model="employee.endDate" class="info-input border-red" max="9999-12-31" />
+                </div>
+                  <div class="info-item">
+                    <label class="text-red">휴직 사유</label>
+                    <textarea v-model="employee.outReason" class="info-input border-red" placeholder="사유를 입력하세요" />
+                  </div>
+                </template>
+
                 <div class="info-item">
                   <label>고용승계일</label>
                   <input type="date" v-model="employee.transferDate" class="info-input" max="9999-12-31" />
