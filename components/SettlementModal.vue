@@ -1293,7 +1293,7 @@ const resetAll = async () => {
   }, 100);
 };
 
-const loadPayrollData1 = async () => {
+const loadPayrollData = async () => {
   if (!formData.value.sIdx) { alert('현장을 먼저 선택해주세요.'); return; }
   if (
       formData.value.payrollData.length > 0
@@ -1315,7 +1315,7 @@ const loadPayrollData1 = async () => {
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
-    const res = await axios.get('/api/v1/member/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
+    const res = await axios.get('/api/v1/settle/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
     const rawData = res.data?.data || [];
 
     const periodStart = new Date(yearNum, monthNum - 1, 1);
@@ -1451,7 +1451,7 @@ const loadPayrollData1 = async () => {
   }
 };
 
-const loadPayrollData = async () => {
+const loadPayrollData2 = async () => {
   if (!formData.value.sIdx) {
     await window.customAlert('현장을 먼저 선택해주세요.', 'error');
     return;
