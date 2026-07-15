@@ -1,13 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onActivated, reactive, watch } from 'vue'
+import { useRouter } from 'nuxt/app'
 import axios from 'axios'
 
-import SettlementModal      from '@/components/SettlementModal.vue'
 import SettlementPrintModal from '@/components/SettlementPrintModal.vue'
-import EstimateModal        from '~/components/estimateModal.vue'
 import EstimatePrintModal   from '~/components/estimatePrintModal.vue'
 import Pagination           from '~/components/Pagination.vue'
 
+const router = useRouter()
 const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi()
 
 // ────────────────────────────────────────────────────────────
@@ -321,18 +321,26 @@ const statsInfo = computed(() => {
 // 모달 제어
 // ────────────────────────────────────────────────────────────
 function openCreateModal(docType = 'SERVICE') {
-  selectedId.value          = null
-  initialDataForModal.value = {}
-  editModalType.value       = docType
-  isModalOpen.value         = true
-  isCreateMenuOpen.value    = false
+  const initialData = {}
+  localStorage.setItem('settlement_edit_new', JSON.stringify(initialData))
+
+  if (docType === 'SERVICE') {
+    window.open(router.resolve(`/settlement/service/new`).href, "_blank", "width=1400,height=900")
+  } else {
+    window.open(router.resolve(`/settlement/retire/new`).href, "_blank", "width=1400,height=900")
+  }
+  isCreateMenuOpen.value = false
 }
 
 function openEditModal(item, tabType = 'statement') {
-  selectedId.value          = item.id
-  initialDataForModal.value = { ...item, defaultTab: tabType }
-  editModalType.value       = item.docType === 'RETIRE_ANNUAL' ? 'RETIRE_ANNUAL' : 'SERVICE'
-  isModalOpen.value         = true
+  const initialData = { ...item, defaultTab: tabType }
+  localStorage.setItem(`settlement_edit_${item.id}`, JSON.stringify(initialData))
+
+  if (item.docType === 'RETIRE_ANNUAL') {
+    window.open(router.resolve(`/settlement/retire/${item.id}`).href, "_blank", "width=1400,height=900")
+  } else {
+    window.open(router.resolve(`/settlement/service/${item.id}`).href, "_blank", "width=1400,height=900")
+  }
 }
 
 onMounted(async () => {
@@ -341,6 +349,12 @@ onMounted(async () => {
     fetchSiteOptions()
   ])
   await fetchList()
+
+  window.addEventListener('message', (event) => {
+    if (event.data === 'refresh_settlement_list') {
+      fetchList()
+    }
+  })
 })
 
 onActivated(async () => {
@@ -737,24 +751,6 @@ onActivated(async () => {
         </div>
       </div>
     </div>
-
-    <SettlementModal
-        v-if="isModalOpen && editModalType === 'SERVICE'"
-        :is-open="isModalOpen"
-        :settlement-id="selectedId"
-        :initial-data="initialDataForModal"
-        @close="isModalOpen = false"
-        @save="fetchList"
-    />
-
-    <EstimateModal
-        v-if="isModalOpen && editModalType === 'RETIRE_ANNUAL'"
-        :is-open="isModalOpen"
-        :settlement-id="selectedId"
-        :initial-data="initialDataForModal"
-        @close="isModalOpen = false"
-        @save="fetchList"
-    />
 
     <SettlementPrintModal
         v-if="isPrintModalOpen && printModalType === 'SERVICE'"

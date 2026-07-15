@@ -376,10 +376,15 @@ onMounted(async () => {
             <div class="form-group">
               <label>현장 선택 <span class="text-red">*</span>'
               </label>
-              <select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
+              <!--select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
                 <option value="" disabled>현장을 선택해주세요</option>
                 <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-              </select>
+              </select-->
+              <SiteSelect
+                  v-model="formData.sIdx"
+                  @update:modelValue="handleSiteChange"
+                  :width="'100%'">
+              </SiteSelect>
             </div>
             <div class="form-group">
               <label>구분 (직종)</label>
@@ -625,7 +630,7 @@ onMounted(async () => {
 <style scoped>
 /* ── [완벽 복구] 사용자님의 원본 CSS 스타일 100% 유지 ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
-.modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; height: 90vh; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
+.modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; /*height: 90vh;*/ height: 100%; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-shrink: 0; }
 .header-title { display: flex; align-items: center; gap: 10px; }
 .header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); }
