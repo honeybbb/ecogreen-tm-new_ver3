@@ -639,6 +639,7 @@ onActivated(async () => {
             <option value="1">퇴사</option>
             <option value="2">일용직</option>
             <option value="3">대근</option>
+            <option value="4">휴직</option>
           </select>
         </div>
         <div class="filter-group">
@@ -763,7 +764,7 @@ onActivated(async () => {
           <thead>
           <tr>
             <th @click="toggleSort('id')" class="sortable resizable">
-              <div class="th-content">ID <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="th-content">사번 <i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('siteName')" class="sortable resizable col-site">
@@ -918,7 +919,7 @@ onActivated(async () => {
             </td>
             <td class="cursor-pointer"
                 :class="member.outYn == 'N' ? 'contract-warning': ''" @click="updateFourInsStatus(member, 'outYn')">
-              {{ formatDate(member.outDate) }}
+              {{ formatDate(member.endDate) }}
             </td>
             <td>{{member.outReason}}</td>
             <td class="text-center">
@@ -952,9 +953,15 @@ onActivated(async () => {
                       'mdi',
                       member.status == 0 ? 'mdi-check-circle' :
                       member.status == 1 ? 'mdi-close-circle' :
-                      member.status == 2 ? 'mdi-calendar-check' : 'mdi-swap-horizontal'
+                      member.status == 2 || member.status == 3 ? 'mdi-calendar-check' :
+                      'mdi-swap-horizontal'
                   ]"></i>
-                  {{ member.status == 0 ? '재직': member.status == 1 ? '퇴사' : member.status == 2 ? '일용직': '대근' }}
+                  {{
+                    member.status == 0 ? '재직':
+                    member.status == 1 ? '퇴사' :
+                    member.status == 2 ? '일용직' :
+                    member.status == 3 ? '대근' : '휴직'
+                  }}
                 </span>
             </td>
             <td class="text-center">
