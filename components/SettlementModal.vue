@@ -2385,7 +2385,9 @@ onMounted(async () => {
                     <td class="text-right">{{ formatCurrency(getDynamicTotal(col)) }}</td>
                     <td class="text-right">{{ formatCurrency(payrollTotals.empInsEmployer) }}</td>
                   </template>
-                  <td v-else :class="['text-right', col.type === 'pay' ? 'bg-yellow-light text-yellow-700' : (col.type === 'gross' ? 'bg-blue-light text-blue' : '')]" style="color: inherit;">
+                  <td v-else
+                      :class="['text-right', col.type === 'pay' ? 'bg-yellow-light text-yellow-700' : (col.type === 'gross' ? 'bg-blue-light text-blue' : '')]"
+                      style="color: inherit;">
                     {{ formatCurrency(getDynamicTotal(col)) }}
                   </td>
                 </template>
