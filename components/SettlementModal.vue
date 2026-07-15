@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '~/stores/auth.js';
 import RichTextEditor from '@/components/RichTextEditor.vue';
+import SunTextEditor from '@/components/SunEditor.vue';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
 const authStore = useAuthStore();
@@ -2402,7 +2403,10 @@ onMounted(async () => {
                   <i class="mdi mdi-note-edit-outline"></i>
                   <span>정산 특이사항 및 메모</span>
                 </div>
-                <RichTextEditor v-model="formData.billingData.memo" />
+                <!--RichTextEditor v-model="formData.billingData.memo" /-->
+                <ClientOnly>
+                  <SunTextEditor v-model="formData.billingData.memo" />
+                </ClientOnly>
               </div>
             </div>
 
