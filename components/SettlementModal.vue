@@ -219,7 +219,6 @@ const fetchContractData = async () => {
 
   try {
     const res = await axios.get(`/api/v2/site/data/${sIdx}`);
-    console.log(res.data.data, 'dd')
     const siteData = res.data.data?.[0];
 
     if (!siteData) return;
@@ -350,6 +349,8 @@ const fetchContractData = async () => {
           workersDay: contractMeltOptions.workersDay ?? false,
         });
       }
+
+      console.log('contractDirectLabor: ', contractDirectLabor.value, 'contractIndirectLabor :', contractIndirectLabor.value)
     } else {
       // 조건에 맞는 계약이 하나도 없을 때 이전 값 잔존 방지
       contractIndirectLabor.value = [];
@@ -1344,15 +1345,17 @@ const loadPayrollData = async () => {
     const yearNum = parseInt(yearStr);
     const monthNum = parseInt(monthStr);
     const sIdx = formData.value.sIdx;
-
-    await fetchTaxRates();
-    await fetchContractData();
+    // mount되는 함수인데 한번 더 호출 불필요해서 주석 처리 2026-07-16
+    // await fetchTaxRates();
+    // await fetchContractData();
     await nextTick();
 
     const validItemCds = [
       ...contractDirectLabor.value.map(d => String(d.code)),
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
+
+    console.log(validItemCds, 'validItemCds');
 
     const res = await axios.get('/api/v1/settle/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
     const rawData = res.data?.data || [];
@@ -1421,7 +1424,7 @@ const loadPayrollData = async () => {
       };
 
       applyContractReserves(rowObj);
-      recalculateInsurances(rowObj); // isMidMonthJoiner면 내부 첫 줄에서 return
+      recalculateInsurances(rowObj); // 중간 입사자면 내부 첫 줄에서 return
 
       // 당월 중간 입사자: 4대보험 전부 0으로 덮어쓰기
       if (isMidMonthJoiner) {
@@ -1548,7 +1551,7 @@ const loadPayrollData2 = async () => {
 
       // (선택사항) 특정 지급 항목 코드로 분배해야 한다면 로직 추가
       const calculatedPayItems = {
-        '04001001': calculatedGrossPay // 예: 기본급 코드에 일할 계산된 총액 부여
+        '04001001001': calculatedGrossPay // 예: 기본급 코드에 일할 계산된 총액 부여
       };
 
       const rowObj = {
