@@ -650,7 +650,7 @@ const deleteEmployee = async () => {
 
   try {
     const memberId = route.params.id;
-    await axios.delete(`/api/v1/member/${memberId}`);
+    await axios.put(`/api/v1/member/${memberId}`);
     window.alert('삭제되었습니다.');
     window.close()
     window.opener.location.reload()
