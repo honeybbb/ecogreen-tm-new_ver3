@@ -500,7 +500,7 @@ const goRemove = async (id) => {
   if (!await window.customConfirm('정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
 
   try {
-    await axios.delete(`/api/v1/member/${id}`);
+    await axios.put(`/api/v1/member/${id}`);
     window.alert('삭제되었습니다.')//alert('삭제되었습니다.');
     await fetchMembers()
   } catch (error) {
@@ -919,7 +919,7 @@ onActivated(async () => {
             </td>
             <td class="cursor-pointer"
                 :class="member.outYn == 'N' ? 'contract-warning': ''" @click="updateFourInsStatus(member, 'outYn')">
-              {{ formatDate(member.endDate) }}
+              {{ formatDate(member.outDate) }}
             </td>
             <td>{{member.outReason}}</td>
             <td class="text-center">
