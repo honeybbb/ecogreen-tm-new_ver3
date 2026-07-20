@@ -1208,17 +1208,28 @@ const initForm = () => {
     if (!data.billingData.memo) data.billingData.memo = '';
     if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = {
       under135: {
+        label: '135㎡ 이하 (면세)',
         area: '',
         unitPrice: '',
         supply: 0
       },
       over135: {
+        label: '135㎡ 초과 (과세)',
         area: '',
         unitPrice: '',
         supply: 0,
         vat: 0
       }
     };
+
+    // DB에 저장된 기존 데이터에 label이 없는 경우를 위한 호환성 처리 추가
+    if (data.billingData.vatBreakdown.under135 && !data.billingData.vatBreakdown.under135.label) {
+      data.billingData.vatBreakdown.under135.label = '135㎡ 이하 (면세)';
+    }
+    if (data.billingData.vatBreakdown.over135 && !data.billingData.vatBreakdown.over135.label) {
+      data.billingData.vatBreakdown.over135.label = '135㎡ 초과 (과세)';
+    }
+
     data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
 
     data.payrollData.forEach((row, idx) => {
@@ -1327,8 +1338,8 @@ const initForm = () => {
         customSummaryItems: [],
         memo: '',
         vatBreakdown: {
-          under135: { area: '', unitPrice: '', supply: 0 },
-          over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
+          under135: { label: '135㎡ 이하 (면세)', area: '', unitPrice: '', supply: 0 }, // label 추가
+          over135: { label: '135㎡ 초과 (과세)', area: '', unitPrice: '', supply: 0, vat: 0 }  // label 추가
         },
         insuranceDiff: 0
       },
@@ -1374,8 +1385,8 @@ const resetAll = async () => {
       customSummaryItems: [],
       memo: '',
       vatBreakdown: {
-        under135: { area: '', unitPrice: '', supply: 0 },
-        over135:  { area: '', unitPrice: '', supply: 0, vat: 0 }
+        under135: { label: '135㎡ 이하 (면세)', area: '', unitPrice: '', supply: 0 }, // label 추가
+        over135:  { label: '135㎡ 초과 (과세)', area: '', unitPrice: '', supply: 0, vat: 0 }  // label 추가
       },
       insuranceDiff: 0
     },
@@ -2228,7 +2239,7 @@ onMounted(async () => {
                   <tbody>
                   <tr>
                     <td class="text-center font-bold bg-gray-50">
-                      <input type="text" class="cell-input text-center" value="135㎡ 이하 (면세)">
+                      <input type="text" class="cell-input text-center" v-model="formData.billingData.vatBreakdown.under135.label" placeholder="구분 입력">
                     </td>
                     <td>
                       <input
@@ -2262,7 +2273,7 @@ onMounted(async () => {
                   </tr>
                   <tr>
                     <td class="text-center font-bold bg-gray-50">
-                      <input type="text" class="cell-input text-center" value="135㎡ 초과 (과세)">
+                      <input type="text" class="cell-input text-center" v-model="formData.billingData.vatBreakdown.over135.label" placeholder="구분 입력">
                     </td>
                     <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'area', null, 'area')" class="cell-input text-right" /></td>
                     <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
