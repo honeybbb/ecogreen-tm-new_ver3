@@ -2079,7 +2079,7 @@ onMounted(async () => {
       <!--div class="modal-tabs">
         <button :class="['tab-btn', { active: activeTab === 'statement' }]" @click="activeTab = 'statement'">
           <i class="mdi mdi-file-document-outline"></i>
-          <span class="tab-text">청구 공문 (표지)</span>
+          <span class="tab-text">청구 공문</span>
         </button>
         <button :class="['tab-btn', { active: activeTab === 'details' }]" @click="activeTab = 'details'">
           <i class="mdi mdi-table-account"></i>
@@ -2093,7 +2093,7 @@ onMounted(async () => {
 
       <div class="modal-tabs">
         <button v-if="currentConfig.exportConfig.includeStatement" :class="['tab-btn', { active: activeTab === 'statement' }]" @click="activeTab = 'statement'">
-          <span class="tab-text">청구 공문 (표지)</span>
+          <span class="tab-text">청구 공문</span>
         </button>
 
         <button v-if="currentConfig.exportConfig.includeDetails" :class="['tab-btn', { active: activeTab === 'details' }]" @click="activeTab = 'details'">
