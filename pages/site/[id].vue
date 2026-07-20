@@ -770,8 +770,26 @@ const allAvailableItems = computed(() => {
 });
 
 // 지급/공제 판별기 수정 (코드로 판별하도록 고정)
+/*
 const isPayItem = (cd) => {
   return dynamicSettlementItems.value.payCds.includes(cd);
+};
+
+ */
+// 지급/공제 판별기 — groupNm(04001=지급항목) 기준으로 판별
+const isPayItem = (cd) => {
+  if (!cd) return false;
+
+  // 1) wagesData에 이미 계산된 groupNm을 우선 사용 (가장 정확함)
+  const found = wagesData.value.find(w => w.itemCd === cd);
+  if (found) return found.groupNm === '지급항목';
+
+  // 2) wagesData에 없는 코드(레거시 라벨 fallback) → 현재 계약에 쓰인 위치로 판별
+  if (dynamicSettlementItems.value.payCds.includes(cd)) return true;
+  if (dynamicSettlementItems.value.deductionCds.includes(cd)) return false;
+
+  // 3) 최후 fallback: 코드 접두어
+  return String(cd).startsWith('04001');
 };
 
 // 현재 선택 설정된 항목

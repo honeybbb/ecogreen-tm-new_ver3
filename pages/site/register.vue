@@ -219,6 +219,7 @@ const toggleRight = (item) => {
   else selectedRightItems.value.push(item.cd);
 };
 
+/*
 const isPayItem = (cd) => {
   // 배열에 코드가 들어있으므로, 파라미터로 넘어온 코드(cd)가 있는지 바로 확인
   if (dynamicSettlementItems.value.payItems.includes(cd)) return true;
@@ -226,6 +227,19 @@ const isPayItem = (cd) => {
   const found = wagesData.value.find(w => w.itemCd === cd);
   const nm = found ? found.itemNm : cd;
   return PAY_CONTROL_KEYWORDS.some(kw => nm.includes(kw));
+};
+
+ */
+const isPayItem = (cd) => {
+  if (!cd) return false;
+
+  // wagesData에 이미 계산된 groupNm(지급항목/공제항목/정산항목)을 우선 사용
+  const found = wagesData.value.find(w => w.itemCd === cd);
+  if (found) return found.groupNm === '지급항목';
+
+  // wagesData에 없는 코드(레거시 라벨 등) 대비: 코드 접두어로 직접 판별
+  // 04001 = 지급항목, 04002 = 공제항목, 04003 = 정산(제경비)항목
+  return cd.startsWith('04001');
 };
 
 const moveToRight = () => {
@@ -258,7 +272,7 @@ const getItemName = (code) => {
 };
 
 // =============================================
-// ★ 정산 설정 — 산출내역서 기반 동적 항목
+// 정산 설정 — 산출내역서 기반 동적 항목
 // =============================================
 
 /**
