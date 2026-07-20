@@ -36,6 +36,11 @@ const currentConfig = reactive({
     estimatedIns: -1,
     actualIns: -1,
     insuranceDiff: -1
+  },
+  exportConfig: { //출력 및 내보내기 설정
+    includeStatement: true,
+    includeDetails: true,
+    includePayroll: true
   }
 });
 
@@ -325,9 +330,30 @@ const fetchContractData = async () => {
             currentConfig.activeDeductionLabels = contractConfig.activeDeductionLabels;
             currentConfig.activeDeductionCodes = contractConfig.activeDeductionLabels;
           }
+
         } catch (e) {
           console.error('계약 viewConfig 파싱 에러:', e);
         }
+      }
+
+      if (targetContract.exportConfig) {
+        try {
+          const parsedExportConfig = typeof targetContract.exportConfig === 'string'
+              ? JSON.parse(targetContract.exportConfig)
+              : targetContract.exportConfig;
+
+          Object.assign(currentConfig.exportConfig, parsedExportConfig);
+        } catch (e) {
+          console.error('계약 exportConfig 파싱 에러:', e);
+        }
+      }
+
+      if (activeTab.value === 'statement' && !currentConfig.exportConfig.includeStatement) {
+        activeTab.value = currentConfig.exportConfig.includeDetails ? 'details' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'statement');
+      } else if (activeTab.value === 'details' && !currentConfig.exportConfig.includeDetails) {
+        activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'details');
+      } else if (activeTab.value === 'payroll' && !currentConfig.exportConfig.includePayroll) {
+        activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includeDetails ? 'details' : 'payroll');
       }
 
       if (!props.settlementId || !isInitializing.value) {
@@ -1170,11 +1196,40 @@ const initForm = () => {
 
     const data = JSON.parse(JSON.stringify(props.initialData));
     if (!data.payrollData) data.payrollData = [];
-    if (!data.billingData) data.billingData = { items: [], bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)', insuranceDiff: 0, customSummaryItems: [], memo: '' };
+    if (!data.billingData) data.billingData = {
+      items: [],
+      bankInfo: '기업은행 301-051564-01-017 (예금주: 에코그린티엠)',
+      insuranceDiff: 0,
+      customSummaryItems: [],
+      memo: ''
+    };
     if (!data.billingData.items) data.billingData.items = [];
     if (!data.billingData.customSummaryItems) data.billingData.customSummaryItems = [];
     if (!data.billingData.memo) data.billingData.memo = '';
-    if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = { under135: { area: '', unitPrice: '', supply: 0 }, over135: { area: '', unitPrice: '', supply: 0, vat: 0 } };
+    if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = {
+      under135: {
+        label: '135㎡ 이하 (면세)',
+        area: '',
+        unitPrice: '',
+        supply: 0
+      },
+      over135: {
+        label: '135㎡ 초과 (과세)',
+        area: '',
+        unitPrice: '',
+        supply: 0,
+        vat: 0
+      }
+    };
+
+    // DB에 저장된 기존 데이터에 label이 없는 경우를 위한 호환성 처리 추가
+    if (data.billingData.vatBreakdown.under135 && !data.billingData.vatBreakdown.under135.label) {
+      data.billingData.vatBreakdown.under135.label = '135㎡ 이하 (면세)';
+    }
+    if (data.billingData.vatBreakdown.over135 && !data.billingData.vatBreakdown.over135.label) {
+      data.billingData.vatBreakdown.over135.label = '135㎡ 초과 (과세)';
+    }
+
     data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
 
     data.payrollData.forEach((row, idx) => {
@@ -1203,28 +1258,55 @@ const initForm = () => {
     data.is_vat = selectedSite ? selectedSite.is_vat : (data.vatAmount > 0 ? 'Y' : 'N');
 
     if (data.viewConfig) {
-      const savedConfig = data.viewConfig.site || data.viewConfig;
-      Object.assign(currentConfig, savedConfig);
-      if (savedConfig.meltOptions) {
-        Object.assign(meltOptions, savedConfig.meltOptions);
-      }
+      try {
+        const parsedConfig = typeof data.viewConfig === 'string' ? JSON.parse(data.viewConfig) : data.viewConfig;
+        const savedConfig = parsedConfig.site || parsedConfig;
 
-      if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
-      if (!currentConfig.summarySigns) {
-        currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+        if (savedConfig.activePayLabels) currentConfig.activePayLabels = savedConfig.activePayLabels;
+        if (savedConfig.activeDeductionLabels) currentConfig.activeDeductionLabels = savedConfig.activeDeductionLabels;
+        if (savedConfig.activeDeductionCodes) currentConfig.activeDeductionCodes = savedConfig.activeDeductionCodes;
+        if (savedConfig.showGrossPay !== undefined) currentConfig.showGrossPay = savedConfig.showGrossPay;
+
+        if (savedConfig.meltOptions) Object.assign(meltOptions, savedConfig.meltOptions);
+
+        // exportConfig 복원
+        if (savedConfig.exportConfig) {
+          Object.assign(currentConfig.exportConfig, savedConfig.exportConfig);
+        } else {
+          Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
+        }
+
+        if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
+        if (!currentConfig.summarySigns) {
+          currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+        }
+        if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
+      } catch (e) {
+        console.error('viewConfig 파싱 에러:', e);
       }
-      if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
     } else {
       currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
       currentConfig.hiddenSummaryKeys = [];
       meltOptions.annualLeave = false;
       meltOptions.severance = false;
       meltOptions.workersDay = false;
+      Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
     }
 
     delete data.viewConfig;
+    delete data.exportConfig; // 혹시 찌꺼기가 남아있을 경우 제거
 
     if (data.defaultTab) activeTab.value = data.defaultTab;
+
+    // 현재 탭 강제 이동 로직
+    if (activeTab.value === 'statement' && !currentConfig.exportConfig.includeStatement) {
+      activeTab.value = currentConfig.exportConfig.includeDetails ? 'details' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'statement');
+    } else if (activeTab.value === 'details' && !currentConfig.exportConfig.includeDetails) {
+      activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'details');
+    } else if (activeTab.value === 'payroll' && !currentConfig.exportConfig.includePayroll) {
+      activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includeDetails ? 'details' : 'payroll');
+    }
+
     formData.value = data;
     formData.value.payrollData.forEach(row => {
       calculateRow(row);
@@ -1256,8 +1338,8 @@ const initForm = () => {
         customSummaryItems: [],
         memo: '',
         vatBreakdown: {
-          under135: { area: '', unitPrice: '', supply: 0 },
-          over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
+          under135: { label: '135㎡ 이하 (면세)', area: '', unitPrice: '', supply: 0 }, // label 추가
+          over135: { label: '135㎡ 초과 (과세)', area: '', unitPrice: '', supply: 0, vat: 0 }  // label 추가
         },
         insuranceDiff: 0
       },
@@ -1273,6 +1355,8 @@ const initForm = () => {
     meltOptions.annualLeave = false;
     meltOptions.severance = false;
     meltOptions.workersDay = false;
+
+    Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
   }
 };
 
@@ -1301,8 +1385,8 @@ const resetAll = async () => {
       customSummaryItems: [],
       memo: '',
       vatBreakdown: {
-        under135: { area: '', unitPrice: '', supply: 0 },
-        over135:  { area: '', unitPrice: '', supply: 0, vat: 0 }
+        under135: { label: '135㎡ 이하 (면세)', area: '', unitPrice: '', supply: 0 }, // label 추가
+        over135:  { label: '135㎡ 초과 (과세)', area: '', unitPrice: '', supply: 0, vat: 0 }  // label 추가
       },
       insuranceDiff: 0
     },
@@ -1319,6 +1403,7 @@ const resetAll = async () => {
   currentConfig.showSanjae      = true;
   currentConfig.summarySigns    = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
   currentConfig.hiddenSummaryKeys = [];
+  Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
   if (deductionItems.value.length > 0) {
     currentConfig.activeDeductionCodes = deductionItems.value.map(i => i.itemCd);
   }
@@ -1991,17 +2076,31 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="modal-tabs">
+      <!--div class="modal-tabs">
         <button :class="['tab-btn', { active: activeTab === 'statement' }]" @click="activeTab = 'statement'">
-          <!--i class="mdi mdi-file-document-outline"></i-->
+          <i class="mdi mdi-file-document-outline"></i>
           <span class="tab-text">청구 공문 (표지)</span>
         </button>
         <button :class="['tab-btn', { active: activeTab === 'details' }]" @click="activeTab = 'details'">
-          <!--i class="mdi mdi-table-account"></i-->
+          <i class="mdi mdi-table-account"></i>
           <span class="tab-text">급여 세부 내역서</span>
         </button>
         <button :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
-          <!--i class="mdi mdi-text-account"></i-->
+          <i class="mdi mdi-text-account"></i>
+          <span class="tab-text">급여 대장</span>
+        </button>
+      </div-->
+
+      <div class="modal-tabs">
+        <button v-if="currentConfig.exportConfig.includeStatement" :class="['tab-btn', { active: activeTab === 'statement' }]" @click="activeTab = 'statement'">
+          <span class="tab-text">청구 공문 (표지)</span>
+        </button>
+
+        <button v-if="currentConfig.exportConfig.includeDetails" :class="['tab-btn', { active: activeTab === 'details' }]" @click="activeTab = 'details'">
+          <span class="tab-text">급여 세부 내역서</span>
+        </button>
+
+        <button v-if="currentConfig.exportConfig.includePayroll" :class="['tab-btn', { active: activeTab === 'payroll' }]" @click="activeTab = 'payroll'">
           <span class="tab-text">급여 대장</span>
         </button>
       </div>
@@ -2139,7 +2238,9 @@ onMounted(async () => {
                   </thead>
                   <tbody>
                   <tr>
-                    <td class="text-center font-bold bg-gray-50">135㎡ 이하 (면세)</td>
+                    <td class="text-center font-bold bg-gray-50">
+                      <input type="text" class="cell-input text-center" v-model="formData.billingData.vatBreakdown.under135.label" placeholder="구분 입력">
+                    </td>
                     <td>
                       <input
                           type="text"
@@ -2171,7 +2272,9 @@ onMounted(async () => {
                     <td class="text-right font-bold text-blue bg-blue-light">{{ formatDecimal(formData.billingData.vatBreakdown.under135.supply) }}</td>
                   </tr>
                   <tr>
-                    <td class="text-center font-bold bg-gray-50">135㎡ 초과 (과세)</td>
+                    <td class="text-center font-bold bg-gray-50">
+                      <input type="text" class="cell-input text-center" v-model="formData.billingData.vatBreakdown.over135.label" placeholder="구분 입력">
+                    </td>
                     <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.area)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'area', null, 'area')" class="cell-input text-right" /></td>
                     <td><input type="text" :value="formatDecimal(formData.billingData.vatBreakdown.over135.unitPrice)" @focus="$event.target.select()" @input="handleCurrencyInput($event, formData.billingData.vatBreakdown.over135, 'unitPrice', null, 'area')" class="cell-input text-right" /></td>
                     <td>
