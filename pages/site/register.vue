@@ -312,8 +312,14 @@ const settlementConfig = ref({
   }
 });
 
+const exportConfig = ref({
+  includeStatement: true, // 청구 공문
+  includeDetails: true,   // 급여 세부 내역서
+  includePayroll: false   // 급여 대장
+});
+
+
 // 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
-// 산출내역서 항목이 바뀌면 새로운 항목(코드)은 자동으로 체크 추가
 watch(dynamicSettlementItems, (newItems) => {
   // 지급항목: 새로 추가된 항목 자동 체크
   newItems.payItems.forEach(code => {
@@ -746,6 +752,7 @@ const handleSubmit = async () => {
       activePayLabels:       settlementConfig.value.activePayLabels,
       activeDeductionLabels: settlementConfig.value.activeDeductionLabels,
     });
+    const exportConfigJson = JSON.stringify(exportConfig.value);
 
     const params = {
       cIdx: authStore.user?.cIdx,
@@ -783,7 +790,8 @@ const handleSubmit = async () => {
       accountNumber: site.value.accountNumber,
       accountName: site.value.accountName,
       contract_details: contractsJson,
-      viewConfig: viewConfigJson
+      viewConfig: viewConfigJson,
+      exportConfig: exportConfigJson
     };
 
     // 💡 STEP 1: 텍스트 및 계약 데이터 먼저 등록!
@@ -854,6 +862,7 @@ const getSiteData = async () => {
         workersDay: false
       }
     };
+    exportConfig.value = { includeStatement: true, includeDetails: true, includePayroll: false };
 
     searchAvailable.value = '';
     searchSelected.value = '';
@@ -981,6 +990,17 @@ const getSiteData = async () => {
           }
         };
       } catch(e) { console.error('viewConfig 파싱 에러:', e); }
+    }
+
+    if (result.exportConfig) {
+      try {
+        const parsedExport = typeof result.exportConfig === 'string'
+            ? JSON.parse(result.exportConfig)
+            : result.exportConfig;
+        exportConfig.value = { ...exportConfig.value, ...parsedExport };
+      } catch (e) {
+        console.error('exportConfig 파싱 에러:', e);
+      }
     }
 
     site.value.bigo = '';
@@ -2091,6 +2111,33 @@ onMounted(() => {
                 </div>
 
               </div>
+            </div>
+          </div>
+
+          <div class="settlement-sub-section">
+            <div class="sub-header">
+              <i class="mdi mdi-microsoft-excel"></i>
+              <h3>출력 및 내보내기 설정</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom:16px;">
+              * 월간 정산 내역 엑셀 다운로드 시 기본으로 포함할 시트(문서)를 선택하세요.
+            </p>
+
+            <div class="export-simple-options">
+              <label class="simple-checkbox-label">
+                <input type="checkbox" v-model="exportConfig.includeStatement" />
+                <span class="checkbox-text">청구 공문 (표지)</span>
+              </label>
+
+              <label class="simple-checkbox-label">
+                <input type="checkbox" v-model="exportConfig.includeDetails" />
+                <span class="checkbox-text">급여 세부 내역서</span>
+              </label>
+
+              <label class="simple-checkbox-label">
+                <input type="checkbox" v-model="exportConfig.includePayroll" />
+                <span class="checkbox-text">급여 대장</span>
+              </label>
             </div>
           </div>
 
@@ -3511,5 +3558,46 @@ input:checked + .slider-sm:before { transform: translateX(14px); }
   color: var(--text-main);
   line-height: 1.5;
   white-space: pre-line;
+}
+
+/* =============================================
+   출력 및 내보내기 설정 (심플 체크박스)
+============================================= */
+.export-simple-options {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.simple-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.simple-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  margin: 0;
+}
+
+.checkbox-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.simple-checkbox-label:hover .checkbox-text {
+  color: var(--primary);
 }
 </style>
