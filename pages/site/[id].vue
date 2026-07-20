@@ -712,10 +712,14 @@ const dynamicSettlementItems = computed(() => {
 });
 
 const settlementConfig = ref({
-  // 직접노무비 특수 지급항목 표시 여부 (label 배열)
-  activePayLabels: [],
-  // 간접노무비(공제항목) 표시 여부 (label 배열)
-  activeDeductionLabels: [],
+  activePayLabels: [],// 직접노무비 특수 지급항목 표시 여부 (label 배열)
+  activeDeductionLabels: [], // 간접노무비(공제항목) 표시 여부 (label 배열)
+});
+
+const exportConfig = ref({
+  includeStatement: true, // 청구 공문
+  includeDetails: true,   // 급여 세부 내역서
+  includePayroll: false   // 급여 대장
 });
 
 // =============================================
@@ -1012,6 +1016,7 @@ const getSiteData = async () => {
           meltOptions: item.meltOptions || { annualLeave: false, severance: false, workersDay: false },
           salarySource: item.salarySource || 'contract',
           viewConfig: item.viewConfig,
+          exportConfig: item.exportConfig,
           cleaningTasks: item.cleaningConfig || [],
           tempCleaningCode: '',
           tempCleaningCount: 1,
@@ -1022,21 +1027,40 @@ const getSiteData = async () => {
       });
     }
 
-    if (contractGroups.value.length > 0 && contractGroups.value[0].viewConfig) {
-      try {
-        const targetViewConfig = contractGroups.value[0].viewConfig;
-        const parsed = typeof targetViewConfig === 'string' ? JSON.parse(targetViewConfig) : targetViewConfig;
+    if (contractGroups.value.length > 0) {
 
-        // 구버전 한글 데이터("연차적립금" 등)를 코드("04001003")로 변환
-        const convertLabelToCode = (val) => {
-          const found = wagesData.value.find(w => w.itemNm === val || w.itemCd === val);
-          return found ? found.itemCd : val;
-        };
+      // 1. viewConfig 파싱 (화면 설정)
+      if (contractGroups.value[0].viewConfig) {
+        try {
+          const targetViewConfig = contractGroups.value[0].viewConfig;
+          const parsed = typeof targetViewConfig === 'string' ? JSON.parse(targetViewConfig) : targetViewConfig;
 
-        settlementConfig.value.activePayLabels = (parsed.activePayLabels || []).map(convertLabelToCode);
-        settlementConfig.value.activeDeductionLabels = (parsed.activeDeductionLabels || []).map(convertLabelToCode);
-      } catch (e) {
-        console.error('viewConfig 파싱 에러:', e);
+          // 구버전 한글 데이터("연차적립금" 등)를 코드("04001003")로 변환
+          const convertLabelToCode = (val) => {
+            const found = wagesData.value.find(w => w.itemNm === val || w.itemCd === val);
+            return found ? found.itemCd : val;
+          };
+
+          settlementConfig.value.activePayLabels = (parsed.activePayLabels || []).map(convertLabelToCode);
+          settlementConfig.value.activeDeductionLabels = (parsed.activeDeductionLabels || []).map(convertLabelToCode);
+        } catch (e) {
+          console.error('viewConfig 파싱 에러:', e);
+        }
+      }
+
+      // 2. exportConfig 파싱 (엑셀 다운로드 설정 - 완전히 분리)
+      if (contractGroups.value[0].exportConfig) {
+        try {
+          const targetExportConfig = contractGroups.value[0].exportConfig;
+          const parsedExport = typeof targetExportConfig === 'string' ? JSON.parse(targetExportConfig) : targetExportConfig;
+
+          exportConfig.value = {
+            ...exportConfig.value,
+            ...parsedExport
+          };
+        } catch (e) {
+          console.error('exportConfig 파싱 에러:', e);
+        }
       }
     }
 
@@ -1319,6 +1343,7 @@ const saveSiteData = async () => {
         activePayLabels:       settlementConfig.value.activePayLabels,
         activeDeductionLabels: settlementConfig.value.activeDeductionLabels,
       }),
+      exportConfig: JSON.stringify(exportConfig.value),
     };
     if (isStaffLoaded.value) params.assigned_staff = JSON.stringify(assignedStaff.value);
 
@@ -2487,7 +2512,6 @@ onMounted(async () => {
       <!-- 정산정보 탭 -->
       <div v-show="activeTab === 'settlement'" class="tab-panel">
         <div class="info-sections">
-
           <div class="info-section">
             <div class="section-header">
               <i class="mdi mdi-cash-sync"></i>
@@ -2561,6 +2585,37 @@ onMounted(async () => {
 
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- 출력 및 내보내기 설정 섹션 -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="mdi mdi-microsoft-excel"></i>
+              <h3>출력 및 내보내기 설정</h3>
+            </div>
+            <p class="info-helper-text" style="margin-bottom:16px;">
+              * 월간 정산 내역 엑셀 다운로드 시 기본으로 포함할 시트(문서)를 선택하세요.
+            </p>
+
+            <div class="export-simple-options">
+              <label class="simple-checkbox-label">
+                <!-- ★ v-model 수정 -->
+                <input type="checkbox" v-model="exportConfig.includeStatement" />
+                <span class="checkbox-text">청구 공문 (표지)</span>
+              </label>
+
+              <label class="simple-checkbox-label">
+                <!-- ★ v-model 수정 -->
+                <input type="checkbox" v-model="exportConfig.includeDetails" />
+                <span class="checkbox-text">급여 세부 내역서</span>
+              </label>
+
+              <label class="simple-checkbox-label">
+                <!-- ★ v-model 수정 -->
+                <input type="checkbox" v-model="exportConfig.includePayroll" />
+                <span class="checkbox-text">급여 대장</span>
+              </label>
             </div>
           </div>
 
@@ -5269,5 +5324,46 @@ input:checked + .slider:before { transform: translateX(18px); }
   .accordion-body {
     padding: 16px;
   }
+}
+
+/* =============================================
+   출력 및 내보내기 설정 (심플 체크박스)
+============================================= */
+.export-simple-options {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.simple-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.simple-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  margin: 0;
+}
+
+.checkbox-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.simple-checkbox-label:hover .checkbox-text {
+  color: var(--primary);
 }
 </style>
