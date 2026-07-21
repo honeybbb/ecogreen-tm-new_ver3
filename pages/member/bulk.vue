@@ -11,12 +11,12 @@ const selectedType = ref('');
 const columns = [
   { key: 'empNo', label: '사번', width: '100px', type: 'text' },
   { key: 'name', label: '이름', width: '100px', type: 'text' },
-  { key: 'position', label: '직책', width: '100px', type: 'select', src: 'positionOptions' },
+  { key: 'position', label: '직책', width: '100px', type: 'text', /*src: 'positionOptions'*/ },
   { key: 'contractEndDate', label: '근로계약서', width: '100px', type: 'text' },
   { key: 'retirementPension', label: '퇴직연금', width: '80px', type: 'text' },
   { key: 'gender', label: '성별', width: '60px', type: 'text' },
   { key: 'rrn', label: '주민등록번호', width: '140px', type: 'text' },
-  { key: 'bankName', label: '은행', width: '120px', type: 'select', src: 'bankOptions' },
+  { key: 'bankName', label: '은행', width: '120px', type: 'text', /*src: 'bankOptions'*/ },
   { key: 'accountNumber', label: '계좌번호', width: '160px', type: 'text' },
   { key: 'accountNm', label: '예금주', width: '100px', type: 'text' },
   { key: 'joinDate', label: '입사일', width: '100px', type: 'text' },
@@ -36,7 +36,9 @@ const columns = [
   { key: 'disability', label: '장애여부', width: '80px', type: 'text' },
   { key: 'disability_grade', label: '장애등급', width: '120px', type: 'select', src: 'disabledOptions' },
   { key: 'disability_date', label: '장애등록일', width: '100px', type: 'text' },
-  { key: 'note', label: '비고', width: '150px', type: 'text' }
+  { key: 'note', label: '비고', width: '150px', type: 'text' },
+  { key: 'payrollBigo', label: '급여 비고', width: '150px', type: 'text' },
+  { key: 'extraPeriods', label: '추가 근무기간(시작~종료)', width: '220px', type: 'text' }
 ];
 
 const items = ref([]);
@@ -223,7 +225,6 @@ const deleteRow = (index) => {
 }
 
 const saveData = async () => {
-  // 이름이 입력된 행만 필터링
   const validItems = items.value.filter(item => item.name && item.name.trim() !== '');
 
   if(!selectedSite.value) {
@@ -235,14 +236,63 @@ const saveData = async () => {
     return;
   }
 
+  // 👇 백엔드 구조에 맞춰 데이터 재가공 (map 활용)
+  const processedMembers = validItems.map(item => {
+
+    // 1. 비고 데이터 객체화
+    const bigoLogs = {
+      bigo: item.note || null,
+      payrollBigo: item.payrollBigo || null
+    };
+
+    // 2. 이력 데이터(periodsData) 배열화
+    const periodsData = [];
+
+    // 2-1. 기본 입사/퇴사일 (첫 번째 기간)
+    if (item.joinDate) {
+      periodsData.push({
+        status: item.outDate ? '1' : '0', // 퇴사일 있으면 1(퇴사), 없으면 0(재직)
+        startDate: item.joinDate.trim(),
+        endDate: item.outDate ? item.outDate.trim() : null,
+        outReason: item.outReason || null
+      });
+    }
+
+    // 2-2. 추가 근무기간 파싱 (쉼표와 물결로 쪼개기)
+    if (item.extraPeriods) {
+      // 쉼표로 1차 분리 (예: ["2023-01-01~2023-01-05", "2023-02-01~2023-02-10"])
+      const extraArray = item.extraPeriods.split(',');
+
+      extraArray.forEach(periodStr => {
+        // 물결로 2차 분리 (예: start="2023-01-01", end="2023-01-05")
+        const [start, end] = periodStr.split('~');
+
+        if (start && start.trim()) {
+          periodsData.push({
+            status: '1', // 과거 이력은 보통 퇴사(완료) 상태로 간주
+            startDate: start.trim(),
+            endDate: end ? end.trim() : null,
+            outReason: '일괄등록 추가이력'
+          });
+        }
+      });
+    }
+
+    return {
+      ...item, // 기존에 입력된 이름, 사번 등의 데이터는 그대로 유지
+      bigoLogs,
+      periodsData
+    };
+  });
+
   try {
-    const payload = { sIdx: selectedSite.value, type: selectedType.value, members: validItems };
+    // 가공된 데이터(processedMembers)를 서버로 전송
+    const payload = { sIdx: selectedSite.value, type: selectedType.value, members: processedMembers };
     await axios.post('/api/v1/member/bulk', payload);
 
-    console.log("저장 대상 데이터:", validItems);
-    alert(`${validItems.length}명의 직원이 일괄 등록 처리되었습니다! (임시)`);
+    console.log("저장 대상 데이터:", processedMembers);
+    alert(`${processedMembers.length}명의 직원이 일괄 등록 처리되었습니다!`);
 
-    // 저장이 완료되면 목록으로 이동하거나 초기화
     // router.push('/member/list');
   } catch(e) {
     console.error(e);

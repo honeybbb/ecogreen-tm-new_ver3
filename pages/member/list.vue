@@ -432,19 +432,22 @@ const filteredMembers = computed(() => {
     return Number(a.idx) - Number(b.idx);
   });
 
-  if (sortKey.value !== 'id') {
-    result.sort((a, b) => {
-      const mod = sortOrder.value === 'asc' ? 1 : -1;
-      const valA = a[sortKey.value];
-      const valB = b[sortKey.value];
-      if (typeof valA === 'string' && typeof valB === 'string') {
-        return valA.localeCompare(valB, 'ko') * mod;
-      }
-      if (valA < valB) return -1 * mod;
-      if (valA > valB) return  1 * mod;
-      return 0;
-    });
-  }
+  result.sort((a, b) => {
+    const mod = sortOrder.value === 'asc' ? 1 : -1;
+    const valA = a[sortKey.value];
+    const valB = b[sortKey.value];
+
+    // undefined 방어 로직 (데이터가 없을 경우 대비)
+    if (valA === undefined || valA === null) return 1 * mod;
+    if (valB === undefined || valB === null) return -1 * mod;
+
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return valA.localeCompare(valB, 'ko') * mod;
+    }
+    if (valA < valB) return -1 * mod;
+    if (valA > valB) return  1 * mod;
+    return 0;
+  });
 
   return result;
 });
@@ -912,7 +915,7 @@ onActivated(async () => {
                 :class="member.inYn == 'N' ? 'contract-warning':''"
                 @click="updateFourInsStatus(member, 'inYn')"
             >
-              <template v-if="member.transferDate !== member.inDate">
+              <template v-if="member.transferDate !== null">
                 {{ member.transferDate }}<br>
               </template>
               {{ formatDate(member.inDate) }}
