@@ -287,10 +287,13 @@ const fetchContractData = async () => {
       const lastDay = new Date(y, m, 0).getDate();
       const monthEndStr = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
+      // ★ 추가: Date 문자열을 YYYY-MM-DD 형식으로 안전하게 자르는 헬퍼 함수
+      const getSafeDate = (d) => d ? String(d).substring(0, 10) : null;
+
       const candidates = parsedContractList.filter(c => {
         if (c.type !== type) return false;
-        const cStart = c.startDt || null;
-        const cEnd   = c.endDt   || null;
+        const cStart = getSafeDate(c.startDt);
+        const cEnd   = getSafeDate(c.endDt);
 
         // 계약 시작일이 대상월 말일보다 늦으면 제외
         if (cStart && cStart > monthEndStr) return false;
@@ -300,7 +303,11 @@ const fetchContractData = async () => {
       });
 
       // 여러 개 겹치면 startDt가 가장 늦은(=가장 최신) 계약 우선 선택
-      targetContract = candidates.sort((a, b) => (b.startDt || '').localeCompare(a.startDt || ''))[0] || null;
+      targetContract = candidates.sort((a, b) => {
+        const aStart = getSafeDate(a.startDt) || '';
+        const bStart = getSafeDate(b.startDt) || '';
+        return bStart.localeCompare(aStart);
+      })[0] || null;
     }
 
     // 날짜 정보가 없을 때(초기 상태 등) 폴백: 기존처럼 type만으로 매칭
@@ -1709,11 +1716,8 @@ const updateDocNo = () => {
     }
   }
 };
-watch(() => formData.value.sIdx, updateDocNo);
-watch(() => formData.value.target_month, updateDocNo);
-watch(() => formData.value.billingDt, updateDocNo);
-watch(() => formData.value.type, (newType) => {
-  if (newType && formData.value.sIdx) {
+const handleContractUpdate = () => {
+  if (formData.value.type && formData.value.sIdx) {
     fetchContractData().then(() => {
       if (formData.value.payrollData.length > 0) {
         nextTick(() => {
@@ -1725,6 +1729,20 @@ watch(() => formData.value.type, (newType) => {
       }
     });
   }
+};
+
+watch(() => formData.value.sIdx, updateDocNo);
+
+watch(() => formData.value.sIdx, updateDocNo);
+watch([() => formData.value.target_month, () => formData.value.billingDt], () => {
+  updateDocNo();
+  if (!isInitializing.value) {
+    handleContractUpdate();
+  }
+});
+
+watch(() => formData.value.type, (newType) => {
+  if (newType) handleContractUpdate();
 });
 
 const handleSiteChange = () => {
