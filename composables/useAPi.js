@@ -13,6 +13,7 @@ export const useApi = () => {
     // const categoryOptions = ref([]);
     const wagesData  = ref([]);
     const overAgeOption = ref([]);
+    const memoTypeOptions = ref([]);
 
     //company 정보 가져오기
     const getCompanyData = async () => {
@@ -106,6 +107,16 @@ export const useApi = () => {
         }
     }
 
+    const fetchMemoTypeOption = async (groupCd = '02004') => {
+        try {
+            axios.get(`/api/v1/code/group/${groupCd}`).then(res => {
+                memoTypeOptions.value = res.data.data
+            })
+        } catch (e) {
+            console.error("법정 기준 연령 로드 실패:", e);
+        }
+    }
+
     return {
         companyData,
         bankOptions,
@@ -116,6 +127,7 @@ export const useApi = () => {
         disabledOptions,
         wagesData,
         overAgeOption,
+        memoTypeOptions,
         getCompanyData,
         fetchBankOption,
         fetchSiteOptions,
@@ -125,5 +137,6 @@ export const useApi = () => {
         fetchDisabledOptions,
         fetchWageCode,
         fetchOverAgeOption,
+        fetchMemoTypeOption,
     };
 };
