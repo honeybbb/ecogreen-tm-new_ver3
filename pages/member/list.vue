@@ -401,7 +401,7 @@ const filteredMembers = computed(() => {
 
 const statsInfo = computed(() => ({
   total:      filteredMembers.value.length,
-  active:     filteredMembers.value.filter(m => m.status === '재직').length,
+  active:     filteredMembers.value.filter(m => m.status == 0).length,
   noPension:    filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 60).length,
   noEmployment: filteredMembers.value.filter(m => calculateAge(m.birthDt) >= 65).length,
   disability: filteredMembers.value.filter(m => m.disability === 'Y' || m.disability === true).length,
