@@ -257,7 +257,7 @@ function toggleSort(key) {
   sortKey.value     = key
   currentPage.value = 1
 }
-
+/*
 const baseFilteredSettlements = computed(() => {
   const { start, end } = selectedPeriod
   let list = settlements.value.filter(item => {
@@ -277,6 +277,20 @@ const baseFilteredSettlements = computed(() => {
   })
 
   return [...seen.values()]
+})
+
+ */
+const baseFilteredSettlements = computed(() => {
+  const { start, end } = selectedPeriod
+  return settlements.value.filter(item => {
+    // 기간 필터링 적용 (YYYY-MM 문자열 비교)
+    if (item.target_month < start || item.target_month > end)                return false
+    if (selectedSite.value !== '전체' && item.sIdx !== selectedSite.value)   return false
+    if (selectedType.value !== '전체' && item.type !== selectedType.value)   return false
+    if (!item.siteName.toLowerCase().includes(searchTerm.value.toLowerCase())) return false
+
+    return true // 조건에 맞으면 모두 통과시킴
+  })
 })
 
 // 상태 필터와 정렬을 추가 적용
