@@ -471,7 +471,9 @@ const fetchCalculatedPay = async () => {
 
   try {
     const [year, month] = selectedYearMonth.value.split('-');
-    const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month } });
+    const sIdx = (selectedSite.value !== '전체') ? selectedSite.value: '';
+
+    const res = await axios.get('/api/v1/member/payroll/calculate', { params: { year, month, sIdx } });
     if (res.data.result && res.data.data?.length > 0) {
       for (const row of selectedRows) {
         const calcData = res.data.data.find(c => c.idx === row.idx)
