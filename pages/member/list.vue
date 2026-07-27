@@ -11,7 +11,7 @@ import { useCellMemo } from '@/composables/useCellMemo';
 import CellMemoPanel from '@/components/CellMemoPanel.vue';
 
 const router = useRouter();
-const route = useRoute(); // ★ URL 쿼리를 읽기 위해 추가
+const route = useRoute();
 const {
   siteOptions,
   typeOptions,
@@ -38,7 +38,7 @@ const filterDisability   = ref(false);
 const filterForeigner    = ref(false);
 const filterActive       = ref(false); // 재직중 필터
 
-const sortKey   = ref('id');
+const sortKey   = ref('');
 const sortOrder = ref('asc');
 
 const members   = ref([]);
@@ -349,28 +349,51 @@ const filteredMembers = computed(() => {
   });
 
   result.sort((a, b) => {
+    // 사용자 클릭 정렬
+    if (sortKey.value) {
+      const mod = sortOrder.value === 'asc' ? 1 : -1;
+      const valA = a[sortKey.value] ?? '';
+      const valB = b[sortKey.value] ?? '';
+
+      if (sortKey.value === 'birthDt') {
+        return valB.localeCompare(valA) * mod; // 생년월일은 역순 처리 유지
+      }
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        const cmp = valA.localeCompare(valB, 'ko');
+        if (cmp !== 0) return cmp * mod;
+      } else {
+        if (valA < valB) return -1 * mod;
+        if (valA > valB) return 1 * mod;
+      }
+      return 0;
+    }
+
+    // 1. 퇴사자 분류 (퇴사자는 재직자보다 무조건 아래로)
+    const isRetireA = a.status == 1;
+    const isRetireB = b.status == 1;
+
+    if (isRetireA && !isRetireB) return 1;
+    if (!isRetireA && isRetireB) return -1;
+
+    // 2. 둘 다 퇴사자인 경우 퇴사일 기준 내림차순
+    if (isRetireA && isRetireB) {
+      const dateA = a.outDate || '';
+      const dateB = b.outDate || '';
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA); // 내림차순 (최근 퇴사자가 위로)
+      }
+    }
+
+    // 3. 현장 내림차순 (s.idx)
     if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
+
+    // 4. 직책 sort 오름차순 → NULL은 가장 뒤로
     const sortA = a.sort != null ? Number(a.sort) : 999999;
     const sortB = b.sort != null ? Number(b.sort) : 999999;
     if (sortA !== sortB) return sortA - sortB;
+
+    // 5. 직원 idx 오름차순
     return Number(a.idx) - Number(b.idx);
-  });
-
-  result.sort((a, b) => {
-    const mod = sortOrder.value === 'asc' ? 1 : -1;
-    const valA = a[sortKey.value];
-    const valB = b[sortKey.value];
-
-    // undefined 방어 로직 (데이터가 없을 경우 대비)
-    if (valA === undefined || valA === null) return 1 * mod;
-    if (valB === undefined || valB === null) return -1 * mod;
-
-    if (typeof valA === 'string' && typeof valB === 'string') {
-      return valA.localeCompare(valB, 'ko') * mod;
-    }
-    if (valA < valB) return -1 * mod;
-    if (valA > valB) return  1 * mod;
-    return 0;
   });
 
   return result;
