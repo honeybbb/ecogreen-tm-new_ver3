@@ -995,9 +995,9 @@ onMounted(async () => {
                     </div>
 
                     <div v-for="(period, index) in periodsData" :key="index" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
-                      <input type="date" v-model="period.startDate" class="info-input" required placeholder="시작일" />
+                      <input type="date" v-model="period.startDate" class="info-input" required placeholder="시작일" max="9999-12-31" />
                       <span>~</span>
-                      <input type="date" v-model="period.endDate" class="info-input" required placeholder="종료일" />
+                      <input type="date" v-model="period.endDate" class="info-input" required placeholder="종료일" max="9999-12-31" />
                       <input type="text" v-model="period.outReason" class="info-input" placeholder="사유 (선택)" style="flex: 1;" />
                       <button type="button" @click="removePeriod(index)" v-if="periodsData.length > 1" class="btn-cancel" style="border: none; color: var(--danger); background: transparent; padding: 4px;">
                         <i class="mdi mdi-minus-circle-outline" style="font-size: 20px;"></i>

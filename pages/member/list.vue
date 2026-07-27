@@ -7,6 +7,8 @@ import SiteSelect from "~/components/SiteSelect.vue";
 import { useTableResize } from '@/composables/useTableResize';
 const { startResize } = useTableResize();
 // import ExcelDownloadModal from '@/components/ExcelDownloadModal.vue';
+import { useCellMemo } from '@/composables/useCellMemo';
+import CellMemoPanel from '@/components/CellMemoPanel.vue';
 
 const router = useRouter();
 const route = useRoute(); // ★ URL 쿼리를 읽기 위해 추가
@@ -40,12 +42,6 @@ const sortKey   = ref('id');
 const sortOrder = ref('asc');
 
 const members   = ref([]);
-const adminMemoArray = ref([
-  'cIdx','name','position','contract','gender',
-  'foreigner','disability','inDate','outDate','outReason',
-  'four_ins','retire_pension','accountNumber','phone'
-]);
-// ── 컬럼명 → 한글 라벨 매핑 ──────────────────────────
 const memoColLabelMap = {
   cIdx: '계약번호', name: '이름', position: '직책', contract: '근로계약일',
   gender: '성별', foreigner: '내/외국인', disability: '장애여부',
@@ -54,83 +50,14 @@ const memoColLabelMap = {
   accountNumber: '계좌번호', phone: '연락처'
 };
 
-// ── 메모 타입 옵션 (02004: 중요/일반) ────────────────
-const memoTypeOptions = [
-  { itemCd: '02004001', itemNm: '중요', color: 'var(--danger)' },
-  { itemCd: '02004002', itemNm: '일반', color: 'var(--text-sub)' },
-];
-const getMemoTypeInfo = (type) => memoTypeOptions.find(o => o.itemCd === type) || memoTypeOptions[1];
+const {
+  panel: memoPanel, getMemo, hasMemo, dotClass, label: memoLabel,
+  openPanel: onCellContextMenu, closePanel: closeMemoPanel, save: addMemo, remove: removeMemo,
+} = useCellMemo('member', memoColLabelMap);
 
-// ── 셀 메모 상태 ──────────────────────────────────────
-const contextMenu = ref({ visible: false, x: 0, y: 0, member: null, colName: null });
-const memoPanel    = ref({ visible: false, x: 0, y: 0, member: null, colName: null, newText: '', newType: '02004002' });
-
-const parseMemo = (member) => {
-  if (!member.memo) return {};
-  if (typeof member.memo === 'string') {
-    try { return JSON.parse(member.memo); } catch { return {}; }
-  }
-  return member.memo;
+const handleGlobalClick = () => {
+  if (memoPanel.value.visible) closeMemoPanel();
 };
-const getMemoList = (member, colName) => parseMemo(member)[colName] || [];
-const hasMemo = (member, colName) => getMemoList(member, colName).length > 0;
-const memoCount = (member, colName) => getMemoList(member, colName).length;
-// 셀 인디케이터 색상: 중요 메모가 하나라도 있으면 빨강, 없으면 회색
-const memoIndicatorClass = (member, colName) => {
-  const list = getMemoList(member, colName);
-  if (!list.length) return '';
-  return list.some(m => m.type === '02004001') ? 'memo-dot-important' : 'memo-dot-normal';
-};
-
-const onCellContextMenu = (e, member, colName) => {
-  if (!adminMemoArray.value.includes(colName)) return;
-  e.preventDefault();
-  contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, member, colName };
-  memoPanel.value.visible = false;
-};
-const closeContextMenu = () => { contextMenu.value.visible = false; };
-
-const openMemoPanel = () => {
-  const { x, y, member, colName } = contextMenu.value;
-  memoPanel.value = {
-    visible: true,
-    x: Math.min(x, window.innerWidth - 300),
-    y: Math.min(y, window.innerHeight - 260),
-    member, colName,
-    newText: '', newType: '02004002'
-  };
-  closeContextMenu();
-};
-const closeMemoPanel = () => { memoPanel.value.visible = false; };
-
-const addMemo = async () => {
-  const { member, colName, newText, newType } = memoPanel.value;
-  const text = newText.trim();
-  if (!text) return;
-  try {
-    const res = await axios.put(`/api/v1/member/memo/${member.idx}`, { colName, type: newType, text });
-    if (res.data.result) {
-      member.memo = res.data.data; // 화면 즉시 반영
-      memoPanel.value.newText = '';
-    }
-  } catch (e) {
-    console.error('메모 저장 실패:', e);
-    window.customAlert('메모 저장에 실패했습니다.', 'error');
-  }
-};
-
-const removeMemo = async (member, colName, memoId) => {
-  if (!await window.customConfirm('이 메모를 삭제하시겠습니까?')) return;
-  try {
-    const res = await axios.delete(`/api/v1/member/memo/${member.idx}`, { data: { colName, memoId } });
-    if (res.data.result) member.memo = res.data.data;
-  } catch (e) {
-    console.error('메모 삭제 실패:', e);
-    window.customAlert('메모 삭제에 실패했습니다.', 'error');
-  }
-};
-
-const handleGlobalClick = () => { if (contextMenu.value.visible) closeContextMenu(); };
 
 const isLoading = ref(false);
 const error     = ref(null);
@@ -164,10 +91,7 @@ const paymentDayOptions = computed(() => {
 });
 
 // =============================================
-// 선택된 현장의 계약 인원(staffCount) 계산
-// =============================================
-// =============================================
-// [수정] 선택된 현장의 계약 인원 및 공백 인원 계산
+// 선택된 현장의 계약 인원 및 공백 인원 계산
 // =============================================
 const currentSiteContractCount = computed(() => {
   if (selectedSite.value === '전체' || !selectedSite.value) return null;
@@ -843,130 +767,208 @@ onActivated(async () => {
           </thead>
           <tbody>
           <tr v-for="member in pagedMembers" :key="member.idx" :class="['data-row', { 'is-resigned': member.status == 1 }]">
-            <td>{{ member.id }}</td>
-            <td class="cell-ellipsis" :title="member.siteName">{{ member.siteName }}</td>
-            <td class="member-name" @click="goToDetail(member.id)">{{ member.name }}</td>
-            <!--td class="member-name"
-                :class="[memoIndicatorClass(member, 'name') ? 'has-memo' : '']"
+
+            <!-- 1. 사번 -->
+            <td :class="[dotClass(member, 'id') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'id')">
+              {{ member.id }}
+              <span v-if="hasMemo(member, 'id')" class="memo-dot" :class="dotClass(member, 'id')"></span>
+            </td>
+
+            <!-- 2. 현장 -->
+            <td class="cell-ellipsis" :title="member.siteName"
+                :class="[dotClass(member, 'siteName') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'siteName')">
+              {{ member.siteName }}
+              <span v-if="hasMemo(member, 'siteName')" class="memo-dot" :class="dotClass(member, 'siteName')"></span>
+            </td>
+
+            <!-- 3. 이름 (클릭시 상세이동 포함) -->
+            <td class="member-name"
+                :class="[dotClass(member, 'name') ? 'has-memo' : '']"
                 @click="goToDetail(member.id)"
                 @contextmenu="onCellContextMenu($event, member, 'name')">
               {{ member.name }}
-              <span v-if="hasMemo(member, 'name')"
-                    class="memo-dot" :class="memoIndicatorClass(member, 'name')"
-                    :title="`메모 ${memoCount(member, 'name')}건`"></span>
-            </td-->
-            <td>{{ member.position }}</td>
+              <span v-if="hasMemo(member, 'name')" class="memo-dot" :class="dotClass(member, 'name')"></span>
+            </td>
 
-            <td :class="{ 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 }">
-              <span v-if="member.contract" class="tooltip-container">
-                {{ member.contract }}
-                <span
-                    v-if="
-                      getContractDaysLeft(member.contract) !== null
-                      && getContractDaysLeft(member.contract) < 60"
-                    class="tooltip-text"
-                >
-                  {{ getContractDaysLeft(member.contract) < 0
-                    ? `계약 만료 (${Math.abs(getContractDaysLeft(member.contract))}일 경과)`
-                    : `만료 ${getContractDaysLeft(member.contract)}일 전` }}
-                </span>
-              </span>
-              <span v-else class="text-gray">-</span>
+            <!-- 4. 직책 -->
+            <td :class="[dotClass(member, 'position') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'position')">
+              {{ member.position }}
+              <span v-if="hasMemo(member, 'position')" class="memo-dot" :class="dotClass(member, 'position')"></span>
             </td>
-            <td>{{ member.gender === 'M' ? '남' : '여' }}</td>
-            <td
-                :class="{ 'age-warning': calculateAge(member.birthDt) >= ageLimits.employment }"
-                :title="calculateAge(member.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+
+            <!-- 5. 근로계약일 -->
+            <td :class="[
+        { 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 },
+        dotClass(member, 'contract') ? 'has-memo' : ''
+      ]"
+                @contextmenu="onCellContextMenu($event, member, 'contract')">
+    <span v-if="member.contract" class="tooltip-container">
+      {{ member.contract }}
+      <span v-if="getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60" class="tooltip-text">
+        {{ getContractDaysLeft(member.contract) < 0
+          ? `계약 만료 (${Math.abs(getContractDaysLeft(member.contract))}일 경과)`
+          : `만료 ${getContractDaysLeft(member.contract)}일 전` }}
+      </span>
+    </span>
+              <span v-else class="text-gray">-</span>
+              <span v-if="hasMemo(member, 'contract')" class="memo-dot" :class="dotClass(member, 'contract')"></span>
+            </td>
+
+            <!-- 6. 성별 -->
+            <td :class="[dotClass(member, 'gender') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'gender')">
+              {{ member.gender === 'M' ? '남' : '여' }}
+              <span v-if="hasMemo(member, 'gender')" class="memo-dot" :class="dotClass(member, 'gender')"></span>
+            </td>
+
+            <!-- 7. 나이 -->
+            <td :class="[
+        { 'age-warning': calculateAge(member.birthDt) >= ageLimits.employment },
+        dotClass(member, 'birthDt') ? 'has-memo' : ''
+      ]"
+                :title="calculateAge(member.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''"
+                @contextmenu="onCellContextMenu($event, member, 'birthDt')">
               {{ calculateAge(member.birthDt) ? calculateAge(member.birthDt) + '세' : '-' }}
+              <span v-if="hasMemo(member, 'birthDt')" class="memo-dot" :class="dotClass(member, 'birthDt')"></span>
             </td>
-            <td>{{ displayRRN(member) }}</td>
-            <td>
-                <span v-if="member.foreigner === 'Y' || member.foreigner === true"
-                      class="badge badge-foreigner tooltip-container">
-                  <i class="mdi mdi-earth"></i> 외국인
-                  <span v-if="getMonthsDiff(member.visa_date) <= 5" class="warning-dot">
-                    <i class="mdi mdi-alert"></i>
-                  </span>
-                  <span class="tooltip-text">
-                    <strong>국적:</strong> {{ member.nationality || '-' }}<br>
-                    <strong>비자:</strong> {{ member.visa_code || '-' }}<br>
-                    <span :class="{ 'text-warning-red': getMonthsDiff(member.visa_date) <= 5 }">
-                      <strong>만료일:</strong> {{ member.visa_date || '-' }}
-                      <em v-if="getMonthsDiff(member.visa_date) <= 5"> (임박!)</em>
-                    </span>
-                  </span>
-                </span>
+
+            <!-- 8. 주민번호 -->
+            <td :class="[dotClass(member, 'rrn') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'rrn')">
+              {{ displayRRN(member) }}
+              <span v-if="hasMemo(member, 'rrn')" class="memo-dot" :class="dotClass(member, 'rrn')"></span>
+            </td>
+
+            <!-- 9. 내/외국인 -->
+            <td :class="[dotClass(member, 'foreigner') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'foreigner')">
+    <span v-if="member.foreigner === 'Y' || member.foreigner === true" class="badge badge-foreigner tooltip-container">
+      <i class="mdi mdi-earth"></i> 외국인
+      <span v-if="getMonthsDiff(member.visa_date) <= 5" class="warning-dot"><i class="mdi mdi-alert"></i></span>
+      <span class="tooltip-text">
+        <strong>국적:</strong> {{ member.nationality || '-' }}<br>
+        <strong>비자:</strong> {{ member.visa_code || '-' }}<br>
+        <span :class="{ 'text-warning-red': getMonthsDiff(member.visa_date) <= 5 }">
+          <strong>만료일:</strong> {{ member.visa_date || '-' }}
+          <em v-if="getMonthsDiff(member.visa_date) <= 5"> (임박!)</em>
+        </span>
+      </span>
+    </span>
               <span v-else class="text-gray">내국인</span>
+              <span v-if="hasMemo(member, 'foreigner')" class="memo-dot" :class="dotClass(member, 'foreigner')"></span>
             </td>
-            <td>
-                <span v-if="member.disability === 'Y' || member.disability === true"
-                      class="badge tooltip-container"
-                      :style="getDisabilityStyle(member.disability_grade)">
-                  <i class="mdi mdi-wheelchair-accessibility"></i> 장애
-                  <span class="tooltip-text">
-                    <strong>등급:</strong> {{ member.disability_grade || '-' }}<br>
-                    <strong>판정일:</strong> {{ member.disability_date || '-' }}
-                  </span>
-                </span>
+
+            <!-- 10. 장애여부 -->
+            <td :class="[dotClass(member, 'disability') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'disability')">
+    <span v-if="member.disability === 'Y' || member.disability === true" class="badge tooltip-container" :style="getDisabilityStyle(member.disability_grade)">
+      <i class="mdi mdi-wheelchair-accessibility"></i> 장애
+      <span class="tooltip-text">
+        <strong>등급:</strong> {{ member.disability_grade || '-' }}<br>
+        <strong>판정일:</strong> {{ member.disability_date || '-' }}
+      </span>
+    </span>
               <span v-else class="text-gray">-</span>
+              <span v-if="hasMemo(member, 'disability')" class="memo-dot" :class="dotClass(member, 'disability')"></span>
             </td>
-            <td
-                class="cursor-pointer"
-                :class="member.inYn == 'N' ? 'contract-warning':''"
+
+            <!-- 11. 입사일 (4대보험 취득 연동) -->
+            <td class="cursor-pointer"
+                :class="[
+        member.inYn == 'N' ? 'contract-warning':'',
+        dotClass(member, 'inDate') ? 'has-memo' : ''
+      ]"
                 @click="updateFourInsStatus(member, 'inYn')"
-            >
+                @contextmenu.prevent="onCellContextMenu($event, member, 'inDate')">
               <template v-if="member.transferDate !== null">
                 {{ member.transferDate }}<br>
               </template>
               {{ formatDate(member.inDate) }}
+              <span v-if="hasMemo(member, 'inDate')" class="memo-dot" :class="dotClass(member, 'inDate')"></span>
             </td>
+
+            <!-- 12. 퇴사일 (4대보험 상실 연동) -->
             <td class="cursor-pointer"
-                :class="member.outYn == 'N' ? 'contract-warning': ''" @click="updateFourInsStatus(member, 'outYn')">
+                :class="[
+        member.outYn == 'N' ? 'contract-warning': '',
+        dotClass(member, 'outDate') ? 'has-memo' : ''
+      ]"
+                @click="updateFourInsStatus(member, 'outYn')"
+                @contextmenu.prevent="onCellContextMenu($event, member, 'outDate')">
               {{ formatDate(member.outDate) }}
+              <span v-if="hasMemo(member, 'outDate')" class="memo-dot" :class="dotClass(member, 'outDate')"></span>
             </td>
-            <td>{{member.outReason}}</td>
-            <td class="text-center">
+
+            <!-- 13. 퇴직사유 -->
+            <td :class="[dotClass(member, 'outReason') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'outReason')">
+              {{ member.outReason }}
+              <span v-if="hasMemo(member, 'outReason')" class="memo-dot" :class="dotClass(member, 'outReason')"></span>
+            </td>
+
+            <!-- 14. 4대보험 -->
+            <td class="text-center"
+                :class="[dotClass(member, 'four_ins') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'four_ins')">
               <i v-if="member.four_ins === 'Y' || member.four_ins === true" class="mdi mdi-check-circle check-icon"></i>
               <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
+              <span v-if="hasMemo(member, 'four_ins')" class="memo-dot" :class="dotClass(member, 'four_ins')"></span>
             </td>
-            <td class="text-center">
+
+            <!-- 15. 퇴직연금 -->
+            <td class="text-center"
+                :class="[dotClass(member, 'retire_pension') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'retire_pension')">
               <i v-if="member.retire_pension === 'Y' || member.retire_pension === true" class="mdi mdi-check-circle check-icon"></i>
               <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
+              <span v-if="hasMemo(member, 'retire_pension')" class="memo-dot" :class="dotClass(member, 'retire_pension')"></span>
             </td>
-            <td>
+
+            <!-- 16. 계좌번호 -->
+            <td :class="[dotClass(member, 'accountNumber') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'accountNumber')">
               <div v-if="member.accountNumber" class="account-info">
                 <span class="bank-badge">{{ member.bank }}</span>
                 <span class="account-number">{{ member.accountNumber }}</span>
               </div>
               <span v-else class="text-gray">-</span>
+              <span v-if="hasMemo(member, 'accountNumber')" class="memo-dot" :class="dotClass(member, 'accountNumber')"></span>
             </td>
-            <td>{{member.phone}}</td>
-            <!--td :class="[memoIndicatorClass(member, 'phone') ? 'has-memo' : '']"
+
+            <!-- 17. 연락처 -->
+            <td :class="[dotClass(member, 'phone') ? 'has-memo' : '']"
                 @contextmenu="onCellContextMenu($event, member, 'phone')">
-              {{member.phone}}
-              <span v-if="hasMemo(member, 'phone')"
-                    class="memo-dot" :class="memoIndicatorClass(member, 'phone')"
-                    :title="`메모 ${memoCount(member, 'phone')}건`"></span>
-            </td-->
-            <td>
-                <span :class="['status-badge',
-                  member.status == 0 ? 'status-active' :
-                  member.status == 1 ? 'status-inactive':'status-preparing']">
-                  <i :class="[
-                      'mdi',
-                      member.status == 0 ? 'mdi-check-circle' :
-                      member.status == 1 ? 'mdi-close-circle' :
-                      member.status == 2 || member.status == 3 ? 'mdi-calendar-check' :
-                      'mdi-swap-horizontal'
-                  ]"></i>
-                  {{
-                    member.status == 0 ? '재직':
-                    member.status == 1 ? '퇴사' :
-                    member.status == 2 ? '일용직' :
-                    member.status == 3 ? '대근' : '휴직'
-                  }}
-                </span>
+              {{ member.phone }}
+              <span v-if="hasMemo(member, 'phone')" class="memo-dot" :class="dotClass(member, 'phone')"></span>
             </td>
+
+            <!-- 18. 상태 -->
+            <td :class="[dotClass(member, 'status') ? 'has-memo' : '']"
+                @contextmenu="onCellContextMenu($event, member, 'status')">
+    <span :class="['status-badge',
+      member.status == 0 ? 'status-active' :
+      member.status == 1 ? 'status-inactive':'status-preparing']">
+      <i :class="[
+          'mdi',
+          member.status == 0 ? 'mdi-check-circle' :
+          member.status == 1 ? 'mdi-close-circle' :
+          member.status == 2 || member.status == 3 ? 'mdi-calendar-check' :
+          'mdi-swap-horizontal'
+      ]"></i>
+      {{
+        member.status == 0 ? '재직':
+            member.status == 1 ? '퇴사' :
+                member.status == 2 ? '일용직' :
+                    member.status == 3 ? '대근' : '휴직'
+      }}
+    </span>
+              <span v-if="hasMemo(member, 'status')" class="memo-dot" :class="dotClass(member, 'status')"></span>
+            </td>
+
+            <!-- 19. 관리 (메모 미적용) -->
             <td class="text-center">
               <div style="display: flex;gap:4px;">
                 <button @click="goToDetail(member.id)" class="btn-detail">
@@ -992,55 +994,18 @@ onActivated(async () => {
         </table>
       </div>
 
-      <div v-if="contextMenu.visible" class="cell-context-menu"
-           :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
-        <div class="context-menu-title">{{ memoColLabelMap[contextMenu.colName] }}</div>
-        <button @click="openMemoPanel">
-          <i class="mdi mdi-note-plus-outline"></i>
-          메모 {{ hasMemo(contextMenu.member, contextMenu.colName) ? `보기/추가 (${memoCount(contextMenu.member, contextMenu.colName)})` : '추가' }}
-        </button>
-      </div>
-
-      <!-- 메모 리스트 + 입력 패널 -->
-      <div v-if="memoPanel.visible" class="memo-panel"
-           :style="{ top: memoPanel.y + 'px', left: memoPanel.x + 'px' }" @click.stop>
-        <div class="memo-panel-header">
-          <span>{{ memoColLabelMap[memoPanel.colName] }} 메모</span>
-          <i class="mdi mdi-close" @click="closeMemoPanel"></i>
-        </div>
-
-        <div class="memo-list" v-if="getMemoList(memoPanel.member, memoPanel.colName).length">
-          <div v-for="m in getMemoList(memoPanel.member, memoPanel.colName)" :key="m.id" class="memo-item">
-            <span class="memo-type-badge" :style="{ color: getMemoTypeInfo(m.type).color, borderColor: getMemoTypeInfo(m.type).color }">
-              {{ getMemoTypeInfo(m.type).itemNm }}
-            </span>
-            <div class="memo-item-body">
-              <p>{{ m.text }}</p>
-              <span class="memo-date">{{ m.date }}</span>
-            </div>
-            <i class="mdi mdi-close memo-item-remove" @click="removeMemo(memoPanel.member, memoPanel.colName, m.id)"></i>
-          </div>
-        </div>
-        <div v-else class="memo-empty">등록된 메모가 없습니다</div>
-
-        <div class="memo-add-row">
-          <div class="memo-type-select">
-            <label v-for="opt in memoTypeOptions" :key="opt.itemCd"
-                   class="memo-type-radio" :class="{ active: memoPanel.newType === opt.itemCd }"
-                   :style="memoPanel.newType === opt.itemCd ? { borderColor: opt.color, color: opt.color } : {}">
-              <input type="radio" :value="opt.itemCd" v-model="memoPanel.newType" style="display:none;">
-              {{ opt.itemNm }}
-            </label>
-          </div>
-          <textarea
-              v-model="memoPanel.newText"
-              rows="2"
-              placeholder="메모 입력 후 추가"
-              @keydown.enter.exact.prevent="addMemo"
-          ></textarea>
-          <button class="btn-memo-add" @click="addMemo"><i class="mdi mdi-plus"></i> 추가</button>
-        </div>
-      </div>
+      <!-- 패널은 테이블 밖에 딱 한 번 -->
+      <CellMemoPanel
+          v-bind="memoPanel"
+          :title="memoLabel(memoPanel.colName)"
+          :has-existing="hasMemo(memoPanel.row, memoPanel.colName)"
+          :updated-at="hasMemo(memoPanel.row, memoPanel.colName) ? getMemo(memoPanel.row, memoPanel.colName).regDt : ''"
+          @update:text="memoPanel.text = $event"
+          @update:type="memoPanel.type = $event"
+          @close="closeMemoPanel"
+          @save="addMemo"
+          @remove="removeMemo"
+      />
 
       <Pagination
           v-model:currentPage="currentPage"
@@ -1337,72 +1302,5 @@ onActivated(async () => {
 .data-table tbody tr.is-resigned td {
   color: var(--text-sub);
 }
-/* 메모 인디케이터 */
-.has-memo { position: relative; }
-.memo-dot {
-  position: absolute; top: 2px; right: 2px;
-  width: 0; height: 0; border-style: solid; border-width: 0 7px 7px 0;
-  cursor: help;
-}
-.memo-dot-important { border-color: transparent var(--danger, #ef4444) transparent transparent; }
-.memo-dot-normal    { border-color: transparent var(--text-sub, #94a3b8) transparent transparent; }
 
-/* 컨텍스트 메뉴 */
-.cell-context-menu {
-  position: fixed; z-index: 1000;
-  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px;
-  box-shadow: var(--shadow-md); min-width: 170px; padding: 6px;
-}
-.context-menu-title {
-  padding: 6px 10px 4px; font-size: 11px; color: var(--text-sub); font-weight: 600;
-  border-bottom: 1px solid var(--border-color); margin-bottom: 4px;
-}
-.cell-context-menu button {
-  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px;
-  background: none; border: none; border-radius: 6px; font-size: 13px; color: var(--text-main);
-  cursor: pointer; text-align: left;
-}
-.cell-context-menu button:hover { background: var(--bg-hover); }
-
-/* 메모 패널 */
-.memo-panel {
-  position: fixed; z-index: 1001; width: 280px;
-  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
-  box-shadow: var(--shadow-md); padding: 12px;
-}
-.memo-panel-header {
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 12px; font-weight: 700; color: var(--text-main); margin-bottom: 8px;
-}
-.memo-panel-header i { cursor: pointer; color: var(--text-sub); }
-
-.memo-list { max-height: 160px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
-.memo-item { display: flex; align-items: flex-start; gap: 6px; padding: 6px; background: var(--bg-canvas); border-radius: 6px; }
-.memo-type-badge {
-  flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 2px 6px;
-  border: 1px solid; border-radius: 4px; white-space: nowrap;
-}
-.memo-item-body { flex: 1; min-width: 0; }
-.memo-item-body p { margin: 0; font-size: 12px; color: var(--text-main); word-break: break-word; }
-.memo-date { font-size: 10px; color: var(--text-sub); }
-.memo-item-remove { font-size: 14px; color: var(--text-sub); cursor: pointer; flex-shrink: 0; }
-.memo-item-remove:hover { color: var(--danger); }
-.memo-empty { font-size: 12px; color: var(--text-sub); text-align: center; padding: 12px 0; }
-
-.memo-add-row { border-top: 1px solid var(--border-color); padding-top: 8px; }
-.memo-type-select { display: flex; gap: 6px; margin-bottom: 6px; }
-.memo-type-radio {
-  font-size: 11px; font-weight: 600; padding: 3px 10px; border: 1px solid var(--border-color);
-  border-radius: 12px; cursor: pointer; color: var(--text-sub);
-}
-.memo-add-row textarea {
-  width: 100%; box-sizing: border-box; resize: vertical;
-  border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px;
-  font-size: 12px; outline: none; margin-bottom: 6px;
-}
-.memo-add-row textarea:focus { border-color: var(--primary); }
-.btn-memo-add {
-  width: 100%; padding: 6px; border-radius: 6px; border: none;
-  background: var(--primary); color: var(--text-inverse); font-size: 12px; font-weight: 600; cursor: pointer;
-}
 </style>

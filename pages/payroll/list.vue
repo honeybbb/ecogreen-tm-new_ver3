@@ -22,16 +22,18 @@ const router = useRouter();
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
 
-const searchTerm = ref('');
+// URL 파라미터에서 초기값을 가져오도록 수정
+const searchTerm = ref(route.query.search || '');
 const selectedSite = ref(route.query.site || '전체');
-const selectedType = ref('전체');
-const selectedStatus = ref('전체');
-const selectedDisability = ref('전체');
+const selectedType = ref(route.query.type || '전체');
+const selectedStatus = ref(route.query.status || '전체');
+const selectedDisability = ref(route.query.disability || '전체');
 
 // ── 빠른 필터 (저장 상태) ──────────────────────────
-const filterSaveNone  = ref(false); // 저장 전 (status: 0)
-const filterSaveDraft = ref(false); // 저장 대기 (status: 2)
-const filterSaveDone  = ref(false); // 저장 완료 (status: 1)
+// 문자열 'true'와 비교하여 boolean으로 변환
+const filterSaveNone  = ref(route.query.saveNone === 'true'); // 저장 전 (status: 0)
+const filterSaveDraft = ref(route.query.saveDraft === 'true'); // 저장 대기 (status: 2)
+const filterSaveDone  = ref(route.query.saveDone === 'true'); // 저장 완료 (status: 1)
 
 const items = ref([]);
 const isLoading = ref(false);
@@ -386,6 +388,22 @@ const filteredPayrollList = computed(() => {
         if (valA > valB) return 1 * mod;
       }
       return 0;
+    }
+
+    // 1. 퇴사자 분류 (퇴사자는 입사자보다 무조건 아래로)
+    const isRetireA = a.mStatus == 1; // 1: 퇴사
+    const isRetireB = b.mStatus == 1;
+
+    if (isRetireA && !isRetireB) return 1;  // a가 퇴사자면 뒤로 보냄
+    if (!isRetireA && isRetireB) return -1; // b가 퇴사자면 a를 앞으로 보냄
+
+    // 2. 둘 다 퇴사자인 경우 퇴사일 기준 내림차순
+    if (isRetireA && isRetireB) {
+      const dateA = a.outDate || '';
+      const dateB = b.outDate || '';
+      if (dateA !== dateB) {
+        return dateB.localeCompare(dateA); // 내림차순 (최근 퇴사자가 위로)
+      }
     }
 
     // 1. 현장 내림차순 (s.idx)
@@ -797,11 +815,41 @@ watch(selectedSite, (newSite) => {
   router.replace({
     query: {
       ...route.query,
-      // '전체'를 선택했을 때는 URL 파라미터에서 site를 제거하여 깔끔하게 유지합니다.
       site: newSite === '전체' ? undefined : newSite
     }
   });
 });
+
+// ── 필터 상태 URL 동기화 (새로고침 시 유지) ────────────
+watch(
+    [
+      searchTerm, selectedSite, selectedType, selectedStatus, selectedDisability,
+      filterSaveNone, filterSaveDraft, filterSaveDone,
+      currentPage, pageSize, sortKey, sortOrder
+    ],
+    () => {
+      const query = {};
+
+      // 기본값이 아닌 경우에만 URL 파라미터에 추가 (URL을 깔끔하게 유지)
+      if (searchTerm.value)                query.search = searchTerm.value;
+      if (selectedSite.value !== '전체')   query.site = selectedSite.value;
+      if (selectedType.value !== '전체')   query.type = selectedType.value;
+      if (selectedStatus.value !== '전체') query.status = selectedStatus.value;
+      if (selectedDisability.value !== '전체') query.disability = selectedDisability.value;
+
+      if (filterSaveNone.value)  query.saveNone = 'true';
+      if (filterSaveDraft.value) query.saveDraft = 'true';
+      if (filterSaveDone.value)  query.saveDone = 'true';
+
+      if (currentPage.value !== 1)   query.page = currentPage.value;
+      if (pageSize.value !== 50)     query.size = pageSize.value;
+      if (sortKey.value)             query.sort = sortKey.value;
+      if (sortOrder.value !== 'asc') query.order = sortOrder.value;
+
+      router.replace({ query });
+    },
+    { deep: true }
+);
 
 // ── 초기 로드 ─────────────────────────────────────
 onMounted(async () => {
