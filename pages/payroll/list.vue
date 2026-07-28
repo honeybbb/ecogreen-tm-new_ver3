@@ -452,12 +452,16 @@ const filteredPayrollList = computed(() => {
 
     // 1. 현장 내림차순 (s.idx)
     if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
-
+    /*
+    const cdA = String(a.itemCd || '');
+    const cdB = String(b.itemCd || '');
+    if (cdA !== cdB) return cdA.localeCompare(cdB);
+    /*
     // 2. 직책 sort 오름차순 (c.sort ASC) → NULL은 가장 뒤로
     const sortA = a.sort != null ? Number(a.sort) : 999999;
     const sortB = b.sort != null ? Number(b.sort) : 999999;
     if (sortA !== sortB) return sortA - sortB;
-
+    */
     // 3. 직원 idx 오름차순
     return Number(a.idx) - Number(b.idx);
   });
@@ -835,7 +839,7 @@ const resetFilters = () => {
   filterSaveDone.value  = false;
 
   currentPage.value        = 1;
-  sortKey.value            = 'id';
+  sortKey.value            = '';
   sortOrder.value          = 'asc';
   pageSize.value           = 50;
 };
