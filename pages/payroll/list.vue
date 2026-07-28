@@ -169,11 +169,18 @@ const { startResize } = useTableResize();
 // ── 데이터 변환 ───────────────────────────────────
 const transformPayrollList = (rows) => {
   return rows.map(row => {
-    let payments = {}, deductions = {}, flags = {};
+    let payments = {}, deductions = {}, flags = {}, pFlags = {};
 
     try { payments = typeof row.payItems === 'string' ? JSON.parse(row.payItems) : row.payItems || {}; } catch {}
     try { deductions = typeof row.deductionItems === 'string' ? JSON.parse(row.deductionItems) : row.deductionItems || {}; } catch {}
     try { flags = typeof row.checkedItems === 'string' ? JSON.parse(row.checkedItems) : (row.checkedItems || {}); } catch {}
+
+    if (payItems.value.length) {
+      payItems.value.forEach(item => {
+        const amount = Number(payments[item.itemCd]) || 0;
+        pFlags[item.itemCd] = amount > 0; // 금액이 있으면 초기 체크 상태
+      });
+    }
 
     if (Object.keys(flags).length === 0 && deductionItems.value.length) {
       deductionItems.value.forEach(item => {
@@ -193,6 +200,8 @@ const transformPayrollList = (rows) => {
       payments,
       deductions,
       deductionFlags: flags,
+      payFlags: pFlags,
+      originalPayments: { ...payments }, //체크 복구용(지급)
       selected: false,
       status: row.status ?? 0,
     };
@@ -230,6 +239,39 @@ const toggleAllDeduction = (itemCd, event) => {
       calculateInsurances(p, targetItem); // 개별 행 요율 재계산
     }
   });
+};
+
+// ── 지급 항목 일괄 선택/해제 컨트롤 (추가) ────────────────────
+const isAllPayChecked = (itemCd) => {
+  if (pagedPayrollList.value.length === 0) return false;
+  return pagedPayrollList.value.every(p => p.payFlags?.[itemCd]);
+};
+
+const toggleAllPay = (itemCd, event) => {
+  const isChecked = event.target.checked;
+  pagedPayrollList.value.forEach(p => {
+    if (!p.payFlags) p.payFlags = {};
+    if (p.payFlags[itemCd] !== isChecked) {
+      p.payFlags[itemCd] = isChecked;
+      handlePayFlagChange(p, itemCd);
+    }
+  });
+};
+
+const handlePayFlagChange = (row, itemCd) => {
+  markAsDraft(row);
+
+  if (row.payFlags[itemCd]) {
+    // 체크 시: 백업해둔 원본 금액 복구
+    row.payments[itemCd] = row.originalPayments[itemCd] || 0;
+  } else {
+    // 해제 시: 혹시 수정한 금액일 수 있으니 현재 금액 백업 후 0으로 변경
+    row.originalPayments[itemCd] = row.payments[itemCd] || 0;
+    row.payments[itemCd] = 0;
+  }
+
+  // 지급액 변동이 일어났으므로 4대보험/소득세 재계산 (동일한 로직 트리거)
+  calculateInsurances(row, { itemCd: itemCd });
 };
 
 // ── 값 변경 시 '저장 대기'로 상태 변경 ─────────────
@@ -294,6 +336,8 @@ const onInputAmount = (row, item, group, event) => {
   // 4. 상태 및 데이터 업데이트
   if (group === 'pay') {
     row.payments[item.itemCd] = finalNumValue;
+    row.originalPayments[item.itemCd] = finalNumValue; // 입력 시 백업 데이터 동기화
+    if (finalNumValue > 0) row.payFlags[item.itemCd] = true; // 금액이 입력되면 자동으로 체크 켜기
   } else {
     row.deductions[item.itemCd] = finalNumValue;
   }
@@ -1089,7 +1133,17 @@ onMounted(async () => {
             <th class="text-right sub-header sticky-col sticky-col-11 sticky-divider" :style="getStickyStyle('ded')" data-col-key="ded">공제합계</th>
 
             <th v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-pay-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'pay-' + item.itemCd">
-              {{ item.itemNm }}<span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
+              <!-- 체크박스와 이름 묶음 -->
+              <div style="display: flex;gap: 6px;">
+                <label class="checkbox-wrapper-sm" style="margin: 0; padding: 0;">
+                  <input type="checkbox"
+                         :checked="isAllPayChecked(item.itemCd)"
+                         @change="toggleAllPay(item.itemCd, $event)"
+                         class="custom-checkbox custom-checkbox-sm" />
+                </label>
+                <span>{{ item.itemNm }}</span>
+              </div>
+              <span class="resize-handle" @mousedown.prevent="startResize($event)"></span>
             </th>
             <th v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['text-right sub-header amount-header theme-deduct-sub resizable', { 'group-divider': index === 0 }]" :data-col-key="'ded-' + item.itemCd">
               <div style="display: flex;gap: 6px;">
@@ -1160,14 +1214,20 @@ onMounted(async () => {
             <td class="text-right bg-light-gray font-bold text-red amount-cell sticky-col sticky-col-11 sticky-divider" :style="getStickyStyle('ded')">{{ formatCurrency(calculateRow(p).ded) }}</td>
 
             <td v-for="(item, index) in visiblePayItems" :key="item.itemCd" :class="['amount-cell theme-pay-cell', { 'group-divider': index === 0 }]">
-              <input
-                  v-if="p.payments"
-                  @focus="$event.target.select()"
-                  type="text"
-                  :value="formatCurrency(p.payments[item.itemCd])"
-                  @input="onInputAmount(p, item, 'pay', $event)"
-                  class="inline-input"
-              />
+              <!-- 공제항목과 같은 deduction-combo-box 클래스 활용 -->
+              <div class="deduction-combo-box">
+                <label class="checkbox-wrapper-sm">
+                  <input type="checkbox" v-model="p.payFlags[item.itemCd]" @change="handlePayFlagChange(p, item.itemCd)" class="custom-checkbox custom-checkbox-sm" />
+                </label>
+                <input
+                    v-if="p.payments"
+                    @focus="$event.target.select()"
+                    type="text"
+                    :value="formatCurrency(p.payments[item.itemCd])"
+                    @input="onInputAmount(p, item, 'pay', $event)"
+                    class="inline-input"
+                />
+              </div>
             </td>
             <td v-for="(item, index) in visibleDeductionItems" :key="item.itemCd" :class="['amount-cell theme-deduct-cell', { 'group-divider': index === 0 }]">
               <div class="deduction-combo-box">
