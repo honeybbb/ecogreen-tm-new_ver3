@@ -305,9 +305,9 @@ onMounted(async () => { await fetchAllCodes(); });
                 <button @click="addingToGroupId = null" class="icon-btn text-danger"><i class="mdi mdi-close"></i></button>
               </div>
             </li>
-            <li v-else>
+            <!--li v-else>
               <button class="tree-add-btn" @click="startCategoryAdd(group.id)"><i class="mdi mdi-plus"></i> 중분류 추가</button>
-            </li>
+            </li-->
           </ul>
         </div>
       </aside>
