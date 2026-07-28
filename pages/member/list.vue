@@ -245,7 +245,7 @@ const resetFilters = () => {
   selectedType.value       = '전체';
   selectedStatus.value     = '전체';
   selectedGender.value     = '전체';
-  selectedPaymentDay.value = '전체'; // ★ 급여일 초기화 추가
+  selectedPaymentDay.value = '전체';
   filterContractDate.value = false;
   filterStartDate.value    = '';
   filterEndDate.value      = '';
@@ -255,7 +255,7 @@ const resetFilters = () => {
   filterForeigner.value    = false;
   filterActive.value       = false;
   currentPage.value        = 1;
-  sortKey.value            = 'id';
+  sortKey.value            = '';
   sortOrder.value          = 'asc';
   pageSize.value           = 50;
 };
@@ -387,11 +387,15 @@ const filteredMembers = computed(() => {
     // 3. 현장 내림차순 (s.idx)
     if (a.sIdx !== b.sIdx) return Number(b.sIdx) - Number(a.sIdx);
 
+    const cdA = String(a.itemCd || '');
+    const cdB = String(b.itemCd || '');
+    if (cdA !== cdB) return cdA.localeCompare(cdB);
+    /*
     // 4. 직책 sort 오름차순 → NULL은 가장 뒤로
     const sortA = a.sort != null ? Number(a.sort) : 999999;
     const sortB = b.sort != null ? Number(b.sort) : 999999;
     if (sortA !== sortB) return sortA - sortB;
-
+    */
     // 5. 직원 idx 오름차순
     return Number(a.idx) - Number(b.idx);
   });
