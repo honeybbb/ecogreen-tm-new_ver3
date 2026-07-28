@@ -32,7 +32,9 @@ const isLoading = ref(false);
 const employee = ref({
   id: '',
   name: '',
+  billingName: '',//정산서용이름
   type: '',
+  typeCd: '',
   site: '',
   siteName: '',
   positionCd: '',
@@ -813,6 +815,10 @@ onMounted(async () => {
                 <div class="info-item">
                   <label>이름</label>
                   <input type="text" v-model="employee.name" class="info-input" />
+                </div>
+                <div class="info-item">
+                  <label>정산서용 이름</label>
+                  <input type="text" v-model="employee.billingName" class="info-input" />
                 </div>
                 <div class="info-item">
                   <label>성별</label>
