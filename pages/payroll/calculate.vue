@@ -49,7 +49,7 @@ const visibleDeductionItems = computed(() => {
 const getStickyStyle = (colId, extraStyle = {}) => {
   const baseOrder = [
     { id: 'check', width: 40, show: true },
-    { id: 'no', width: 40, show: true },
+    // { id: 'no', width: 40, show: true },
     ...staticCols.value
   ];
 
@@ -73,7 +73,7 @@ const getStickyStyle = (colId, extraStyle = {}) => {
 const getSummaryGroupStyle = () => {
   const baseOrder = [
     { id: 'check', width: 40, show: true },
-    { id: 'no', width: 40, show: true },
+    // { id: 'no', width: 40, show: true },
     ...staticCols.value.slice(0, 8)
   ];
   let left = 0;
@@ -96,7 +96,7 @@ const getSummaryGroupColspan = () => {
 }
 
 const getFooterColspan = () => {
-  let span = 2; // check and no
+  let span = 1; // check and no
   for (let i = 0; i < 8; i++) {
     if (staticCols.value[i].show) span++;
   }
@@ -1642,7 +1642,7 @@ onMounted(async () => {
                 <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
               </label>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" data-col-key="no" :style="getStickyStyle('no')">No.</th>
+            <!--th rowspan="2" class="text-center sortable sticky-col sticky-col-2" data-col-key="no" :style="getStickyStyle('no')">No.</th-->
             <th rowspan="2" class="text-center sortable col-site sticky-col sticky-col-3" data-col-key="siteName" @click="toggleSort('siteName')" :style="getStickyStyle('siteName')">
               <div class="th-content">현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
@@ -1690,7 +1690,7 @@ onMounted(async () => {
             <td class="text-center calculate-status transition-colors sticky-col sticky-col-1" :class="{'calculate-active': p.status == 1, 'calculate-draft': p.status == 2, 'calculate-inactive': p.status == 0}" :style="getStickyStyle('check')">
               <label class="checkbox-wrapper"><input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
-            <td class="text-center text-gray sticky-col sticky-col-2" :style="getStickyStyle('no')">{{ (currentPage - 1) * pageSize + index + 1 }}</td>
+            <!--td class="text-center text-gray sticky-col sticky-col-2" :style="getStickyStyle('no')">{{ (currentPage - 1) * pageSize + index + 1 }}</td-->
             <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :title="p.siteName" :style="getStickyStyle('siteName')">{{ p.siteName }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :title="p.role" :style="getStickyStyle('role')">{{ p.role }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :title="p.id" :style="getStickyStyle('id')">{{ p.id }}</td>
