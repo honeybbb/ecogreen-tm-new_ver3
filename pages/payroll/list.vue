@@ -626,14 +626,19 @@ const getTaxableBase = (row) => {
   let taxable = 0;
   if (row.payments) {
     Object.keys(row.payments).forEach(k => {
-      const amount = Number(row.payments[k] || 0);
+      // 1. 해당 코드가 현재 활성화된 지급 항목(payItems)에 존재하는지 찾기
       const payItem = payItems.value.find(i => i.itemCd === k);
-      const taxFreeLimit = payItem?.tax_free ? Number(payItem.tax_free) : 0;
 
-      if (taxFreeLimit > 0) {
-        taxable += Math.max(0, amount - taxFreeLimit);
-      } else {
-        taxable += amount;
+      // 2. excludeCodes로 숨겨진 항목은 payItem이 없으므로 계산에서 패스됨
+      if (payItem) {
+        const amount = Number(row.payments[k] || 0);
+        const taxFreeLimit = payItem.tax_free ? Number(payItem.tax_free) : 0;
+
+        if (taxFreeLimit > 0) {
+          taxable += Math.max(0, amount - taxFreeLimit);
+        } else {
+          taxable += amount;
+        }
       }
     });
   }
@@ -642,7 +647,7 @@ const getTaxableBase = (row) => {
 
 // ── 보험료 계산 ───────────────────────────────────
 const calculateInsurances = (row, sourceItem) => {
-  const taxable = getTaxableBase(row); // getTaxableBase 헬퍼는 재사용 목적으로 유지해도 무방
+  const taxable = getTaxableBase(row);
   const rates = targetCodes.value;
 
   if (!sourceItem) {
@@ -657,36 +662,35 @@ const calculateInsurances = (row, sourceItem) => {
   const isPay = payItems.value.some(p => p.itemCd === sourceItem.itemCd);
 
   if (isPay) {
-    // 지급 항목 변경 → 항상 요율로 재계산
-    const healthItem = deductionItems.value.find(d => d.itemCd === '04002001002');
-    if (healthItem && row.deductionFlags['04002001002']) {
+    // [수정] 건강보험(04002001001) 먼저 계산
+    const healthItem = deductionItems.value.find(d => d.itemCd === '04002001001');
+    if (healthItem && row.deductionFlags['04002001001']) {
       applyDeductionLogic(row, healthItem, taxable, rates);
     }
     deductionItems.value.forEach(d => {
-      if (d.itemCd === '04002001002') return;
+      if (d.itemCd === '04002001001') return; // 건강보험은 이미 위에서 계산했으므로 패스
       if (row.deductionFlags[d.itemCd]) applyDeductionLogic(row, d, taxable, rates);
     });
 
   } else {
-    // 공제 항목 체크박스 변경
+    // 공제 항목 체크박스 변경 시
     if (!row.deductionFlags[sourceItem.itemCd]) {
-      // 체크 해제 → 0
       row.deductions[sourceItem.itemCd] = 0;
-      if (sourceItem.itemCd === '04002001002') row.deductions['04002001003'] = 0;
+      // [수정] 건강보험(04002001001)이 꺼지면 장기요양(04002001002)도 0으로 연동
+      if (sourceItem.itemCd === '04002001001') row.deductions['04002001002'] = 0;
       return;
     }
 
-    // 체크 재활성 → 항상 요율로 재계산
-    if (sourceItem.itemCd === '04002001002') {
+    // [수정] 건강보험(04002001001) 체크 시
+    if (sourceItem.itemCd === '04002001001') {
       applyDeductionLogic(row, sourceItem, taxable, rates);
-      const ltItem = deductionItems.value.find(d => d.itemCd === '04002001003');
-      if (ltItem && row.deductionFlags['04002001003']) applyDeductionLogic(row, ltItem, taxable, rates);
+      // [수정] 건강보험에 종속된 장기요양(04002001002) 연쇄 계산
+      const ltItem = deductionItems.value.find(d => d.itemCd === '04002001002');
+      if (ltItem && row.deductionFlags['04002001002']) applyDeductionLogic(row, ltItem, taxable, rates);
     } else if (sourceItem.itemCd === '04002002003') {
-      // 지방소득세는 단독 계산 불가 — 소득세 항목을 기준으로 재계산
       const incomeTaxItem = deductionItems.value.find(d => d.itemCd === '04002002004');
       if (incomeTaxItem) {
         applyDeductionLogic(row, incomeTaxItem, taxable, rates);
-        // 소득세 체크가 꺼져있다면 소득세 자체는 0으로 되돌리고, 지방소득세만 유지
         if (!row.deductionFlags['04002002004']) {
           row.deductions['04002002004'] = 0;
         }
@@ -698,7 +702,7 @@ const calculateInsurances = (row, sourceItem) => {
 };
 
 const applyDeductionLogic = (row, item, base, rates) => {
-  // 소득세: 미리 로드한 구간표에서 클라이언트 계산
+  // 소득세/지방소득세 (DB 코드 일치 - 정상)
   if (item.itemCd === '04002002004') {
     const { incomeTax, localTax } = calcIncomeTaxLocal(base, row.familyCnt || 1);
     row.deductions['04002002004'] = incomeTax;
@@ -708,21 +712,20 @@ const applyDeductionLogic = (row, item, base, rates) => {
   if (item.itemCd === '04002002003') return;
 
   let amt = 0;
-  // const currentAge = calculateAge(row.birthDt); // 연령 체크가 필요 없다면 이 변수도 생략 가능합니다.
 
-  if (item.itemCd === '04002001001') {        // 국민연금
-    // 기존의 연령 체크 및 deductionFlags = false 로직 삭제
-    amt = base * (rates.pension / 100);
-  } else if (item.itemCd === '04002001002') { // 건강보험
+  // DB 구조에 맞춰 4대보험 코드 전면 수정
+  if (item.itemCd === '04002001001') {        // 건강보험 (수정됨)
     amt = base * (rates.health / 100);
-  } else if (item.itemCd === '04002001003') { // 장기요양
-    const healthAmt = row.deductions['04002001002'] || 0;
+  } else if (item.itemCd === '04002001002') { // 장기요양보험 (수정됨: 건강보험료 기준)
+    const healthAmt = row.deductions['04002001001'] || 0; // 건강보험 코드 참조 변경
     amt = healthAmt * (rates.longTerm / 100);
-  } else if (item.itemCd === '04002001004') { // 고용보험
-    // 기존의 연령 체크 및 deductionFlags = false 로직 삭제
+  } else if (item.itemCd === '04002001003') { // 국민연금 (수정됨)
+    amt = base * (rates.pension / 100);
+  } else if (item.itemCd === '04002001004') { // 고용보험 (그대로)
     amt = base * (rates.employment / 100);
   } else return;
 
+  // 원단위 절사 (혹은 10원 단위 절사 등 기존 로직 유지)
   row.deductions[item.itemCd] = Math.floor(amt / 10) * 10;
 };
 
