@@ -74,7 +74,7 @@ const visibleDeductionItems = computed(() => {
 const getStickyStyle = (colId) => {
   const baseOrder = [
     { id: 'check', width: 40, show: true },
-    { id: 'no', width: 40, show: true },
+    // { id: 'no', width: 40, show: true },
     ...staticCols.value
   ];
 
@@ -92,7 +92,7 @@ const getStickyStyle = (colId) => {
 const getSummaryGroupStyle = () => {
   const baseOrder = [
     { id: 'check', width: 40, show: true },
-    { id: 'no', width: 40, show: true },
+    // { id: 'no', width: 40, show: true },
     ...staticCols.value.slice(0, 7)
   ];
   let left = 0;
@@ -113,7 +113,7 @@ const getSummaryGroupColspan = () => {
 }
 
 const getFooterColspan = () => {
-  let span = 2; // check and no
+  let span = 1; // check and no
   for (let i = 0; i < 7; i++) {
     if (staticCols.value[i].show) span++;
   }
@@ -1105,7 +1105,7 @@ onMounted(async () => {
             <th rowspan="2" class="text-center sortable sticky-col sticky-col-1" style="min-width:30px; max-width:30px;">
               <label class="checkbox-wrapper"><input type="checkbox" v-model="selectAll" class="custom-checkbox" /></label>
             </th>
-            <th rowspan="2" class="text-center sortable sticky-col sticky-col-2" style="min-width:40px; max-width:40px;" data-col-key="no">No.</th>
+            <!--th rowspan="2" class="text-center sortable sticky-col sticky-col-2" style="min-width:40px; max-width:40px;" data-col-key="no">No.</th-->
             <th rowspan="2" class="text-center sortable sticky-col sticky-col-3" :style="getStickyStyle('siteName')" data-col-key="siteName" @click="toggleSort('siteName')">
               <div class="th-content">현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
             </th>
@@ -1176,7 +1176,7 @@ onMounted(async () => {
               <label class="checkbox-wrapper">
                 <input type="checkbox" v-model="p.selected" class="custom-checkbox" /></label>
             </td>
-            <td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + i + 1 }}</td>
+            <!--td class="text-center text-gray sticky-col sticky-col-2">{{ (currentPage - 1) * pageSize + i + 1 }}</td-->
             <td class="text-center text-dark compact-text cell-ellipsis sticky-col sticky-col-3" :style="getStickyStyle('siteName')" :title="p.siteName">{{ p.siteName }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-4" :style="getStickyStyle('role')" :title="p.role">{{ p.role }}</td>
             <td class="text-center text-gray compact-text cell-ellipsis sticky-col sticky-col-5" :style="getStickyStyle('id')" :title="p.id">{{ p.id }}</td>
