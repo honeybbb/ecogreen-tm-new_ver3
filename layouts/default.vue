@@ -100,6 +100,7 @@ const logout = () => {
 
 const toggleSidebar = () => {
   miniVariant.value = !miniVariant.value;
+  localStorage.setItem('navMini', miniVariant.value);
 };
 
 const buildMenuTree = (flatList) => {
@@ -176,6 +177,11 @@ onMounted(() => {
   // 토큰이 있고 타이머가 아직 안 돌고 있을 때만 시작
   if (authStore.token && authStore.remainingSeconds === 60 * 60) {
     authStore.startTimer();
+  }
+
+  const savedMini = localStorage.getItem('navMini');
+  if (savedMini !== null) {
+    miniVariant.value = savedMini === 'true';
   }
 });
 </script>
