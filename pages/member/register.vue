@@ -33,6 +33,7 @@ const cIdx = authStore.user?.cIdx;
 const getInitialEmployee = () => ({
   type: '',
   name: '',
+  billingName: '', //정산서용 이름
   id: '',
   password: '',
   phone: '',
@@ -447,6 +448,17 @@ watch(
     }
 );
 
+// 이름 입력 시 정산서용 이름 자동 동기화
+watch(
+    () => employee.value.name,
+    (newName, oldName) => {
+      // 정산서용 이름이 비어있거나, 기존 이름과 똑같을 때만 값을 업데이트
+      if (!employee.value.billingName || employee.value.billingName === oldName) {
+        employee.value.billingName = newName;
+      }
+    }
+);
+
 const isValidDate = (dateString) => {
   const regEx = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateString.match(regEx)) return false;
@@ -540,6 +552,19 @@ onActivated(() => {
                   required
                   class="form-input"
                   placeholder="홍길동"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <i class="mdi mdi-file-document-edit-outline"></i>
+                정산서용 이름
+              </label>
+              <input
+                  type="text"
+                  v-model="employee.billingName"
+                  class="form-input"
+                  placeholder="정산서 표시용"
               />
             </div>
 
