@@ -43,7 +43,7 @@ const sortOrder = ref('asc');
 
 const members   = ref([]);
 const memoColLabelMap = {
-  cIdx: '계약번호', name: '이름', position: '직책', contract: '근로계약일',
+  cIdx: '계약번호', name: '이름', position: '직책', contract: '근로계약 만료일',
   gender: '성별', foreigner: '내/외국인', disability: '장애여부',
   inDate: '입사일', outDate: '퇴사일', outReason: '퇴직사유',
   four_ins: '4대보험', retire_pension: '퇴직연금',
@@ -652,7 +652,7 @@ onActivated(async () => {
           </label>
           <label class="toggle-chip" :class="{ active: filterContractDate }">
             <input type="checkbox" v-model="filterContractDate" @change="onFilterChange">
-            <i class="mdi mdi-account-alert"></i><span>근로계약일 공백</span>
+            <i class="mdi mdi-account-alert"></i><span>근로계약 만료일 공백</span>
           </label>
         </div>
       </div>
@@ -730,7 +730,7 @@ onActivated(async () => {
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th class="sortable resizable">
-              <div class="th-content">근로계약일 <i v-if="sortKey==='contract'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="th-content">근로계약 만료일 <i v-if="sortKey==='contract'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('gender')" class="sortable resizable">
@@ -822,7 +822,7 @@ onActivated(async () => {
               <span v-if="hasMemo(member, 'position')" class="memo-dot" :class="dotClass(member, 'position')"></span>
             </td>
 
-            <!-- 5. 근로계약일 -->
+            <!-- 5. 근로계약 만료일 -->
             <td :class="[
         { 'contract-danger': getContractDaysLeft(member.contract) !== null && getContractDaysLeft(member.contract) < 60 },
         dotClass(member, 'contract') ? 'has-memo' : ''
