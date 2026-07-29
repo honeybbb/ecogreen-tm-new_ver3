@@ -276,36 +276,39 @@ onMounted(() => {
           <!-- 컬럼 너비 지정 부분 (기존 유지) -->
           <colgroup>
             <col width="2%">
-            <col width="3%">
+            <col width="5%">
             <col width="*%">
             <col width="5%">
             <col width="8%">
             <col width="8%">
             <col width="8%">
             <col width="10%">
-            <col width="5%">
-            <col width="5%">
-            <col width="5%">
-            <col width="5%">
+            <col width="8%">
+            <col width="8%">
+            <col width="8%">
+            <col width="8%">
             <!--col width="8%">
             <col width="8%"-->
           </colgroup>
           <thead>
           <tr>
-            <th class="text-center">No</th>
+            <th class="text-center">
+              <div class="th-content">No</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <th @click="toggleSort('type')" class="sortable resizable">
-              <div class="th-content">
+              <div class="th-content text-center">
                 구분 <i v-if="sortKey === 'type'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
                 <div class="resize-handle" @mousedown.stop="startResize"></div>
               </div>
             </th>
-            <th @click="toggleSort('siteName')" class="sortable resizable">
+            <th @click="toggleSort('siteName')" class="sortable resizable col-site">
               <div class="th-content">
                 <span class="font-bold">현장명</span> <i v-if="sortKey === 'siteName'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
               </div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('docType')" class="sortable resizable">
+            <th @click="toggleSort('docType')" class="sortable resizable text-center">
               <div class="th-content">비고 <i v-if="sortKey==='docType'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
@@ -315,17 +318,33 @@ onMounted(() => {
             </th>
             <th @click="toggleSort('vatAmount')" class="sortable resizable">
               <div class="th-content">부가세 <i v-if="sortKey==='vatAmount'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('grandTotal')" class="sortable resizable">
               <div class="th-content">합계금액 <i v-if="sortKey==='grandTotal'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="col-date text-center">청구일자</th>
-            <th class="col-status text-center">상태</th>
-            <th class="col-manager text-center">담당자</th>
-            <th class="col-billingManager text-center">청구 담당자</th>
+            <th @click="toggleSort('billingDt')" class="sortable resizable text-center">
+              <div class="th-content">청구일자 <i v-if="sortKey==='billingDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('status')" class="sortable resizable text-center">
+              <div class="th-content">상태 <i v-if="sortKey==='status'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable text-center">
+              <div class="th-content">담당자</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable text-center">
+              <div class="th-content">청구 담당자</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <!--th class="col-bankName text-center">은행명</th-->
-            <th class="col-depositDt text-center">입금일</th>
+            <th class="resizable text-center">
+              <div class="th-content">입금일</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <!--th class="col-price text-center">비고(금액)</th-->
           </tr>
           </thead>
@@ -420,7 +439,11 @@ onMounted(() => {
 .data-row:hover td { background: #f8fafc; }
 
 .col-idx { width: 50px; }
-.col-site { min-width: 180px; }
+.col-site {
+  min-width: 80px;
+  max-width: 160px;
+  width: 120px;
+}
 .col-month { width: 90px; }
 .col-money { width: 120px; }
 .col-date { width: 100px; }
