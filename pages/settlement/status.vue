@@ -401,13 +401,13 @@ onMounted(() => {
           </tbody>
           <tfoot>
             <tr class="table-footer sticky-footer">
-              <td colspan="5" class="text-center">
+              <td colspan="9" class="text-center">
                 <span class="font-bold">합계</span>
               </td>
               <td class="text-right font-bold">{{ formatCurrency(summary.totalSupply) }}</td>
               <td class="text-right font-bold">{{ formatCurrency(summary.totalVat) }}</td>
               <td class="text-right font-bold">{{ formatCurrency(summary.grandTotal) }}</td>
-              <td colspan="7"></td>
+              <td colspan="4"></td>
             </tr>
           </tfoot>
         </table>
