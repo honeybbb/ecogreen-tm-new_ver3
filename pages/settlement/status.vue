@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useTableResize } from "~/composables/useTableResize.js";
 import Pagination from "~/components/Pagination.vue";
 const { startResize } = useTableResize();
+const { typeOptions, fetchTypeOptions } = useApi();
 
 // ── 1. 상태 관리 (필터 분리) ─────────────────────────────
 const todayMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
@@ -11,6 +12,7 @@ const todayMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
 const startMonth = ref(todayMonth);
 const endMonth = ref(todayMonth);
 const searchTerm = ref(''); // 현장명 등 검색어
+const selectedType = ref('');
 const selectedSite = ref('전체')
 const filterStatus = ref('전체'); // 청구 상태
 
@@ -97,6 +99,11 @@ const filteredBillingList = computed(() => {
       return false;
     }
 
+    // 4. 직원 구분(type) 필터
+    if (selectedType.value !== '' && item.type !== selectedType.value) {
+      return false;
+    }
+
     currentPage.value = 1;
 
     // 위 조건들을 모두 통과한 데이터만 남김
@@ -109,9 +116,11 @@ const filteredBillingList = computed(() => {
     const vA = a[sortKey.value] || '';
     const vB = b[sortKey.value] || '';
 
+    // 문자열일 경우 숫자 크기를 인식하도록 { numeric: true } 옵션 추가
     if (typeof vA === 'string' && typeof vB === 'string') {
-      return vA.localeCompare(vB) * mod;
+      return vA.localeCompare(vB, undefined, { numeric: true }) * mod;
     }
+
     return (vA < vB ? -1 : vA > vB ? 1 : 0) * mod;
   });
 
@@ -124,9 +133,10 @@ const pagedBillingList = computed(() => {
   return filteredBillingList.value.slice(s, s + pageSize.value);
 });
 
-// ── 7. 요약 데이터 계산 ─────────────────────────────────────
+// ── 7. 요약 데이터 계산 (현재 페이지 기준) ─────────────────────────────────────
 const summary = computed(() => {
-  return filteredBillingList.value.reduce((acc, cur) => {
+  // filteredBillingList -> pagedBillingList 로 변경
+  return pagedBillingList.value.reduce((acc, cur) => {
     acc.totalSupply += Number(cur.subTotal) || 0;
     acc.totalVat += Number(cur.vatAmount) || 0;
     acc.grandTotal += Number(cur.grandTotal) || 0;
@@ -164,8 +174,9 @@ const toggleSort = (key) => {
 // 시작/종료월이 바뀌면 자동으로 데이터 재조회
 watch([startMonth, endMonth], fetchBillingData);
 
-onMounted(() => {
-  fetchBillingData();
+onMounted(async () => {
+  await fetchTypeOptions();
+  await fetchBillingData();
 });
 </script>
 
@@ -220,6 +231,16 @@ onMounted(() => {
           <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
+          <label class="filter-label">구분</label>
+          <select v-model="selectedType" required class="filter-select">
+            <option value="">선택하세요</option>
+            <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+              {{ type.itemNm }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
           <label class="filter-label">청구 상태</label>
           <select v-model="filterStatus" class="filter-select" @change="handleSearch">
             <option value="전체">전체</option>
@@ -245,7 +266,7 @@ onMounted(() => {
             </button>
           </div-->
           <button @click="resetFilters" class="btn-search">
-            <i class="mdi mdi-filter-off"></i><span>초기화</span>
+            <i class="mdi mdi-filter-off"></i><span>검색필터 초기화</span>
           </button>
         </div>
       </div>
@@ -273,22 +294,23 @@ onMounted(() => {
 
       <div class="table-scroll-container">
         <table class="data-table">
-          <!-- 컬럼 너비 지정 부분 (기존 유지) -->
           <colgroup>
             <col width="2%">
             <col width="5%">
             <col width="*%">
             <col width="5%">
-            <col width="8%">
-            <col width="8%">
+            <col width="3%">
+            <col width="5%">
+            <col width="5%">
+            <col width="3%">
             <col width="8%">
             <col width="10%">
+            <col width="10%">
+            <col width="10%">
             <col width="8%">
+            <col width="5%">
             <col width="8%">
-            <col width="8%">
-            <col width="8%">
-            <!--col width="8%">
-            <col width="8%"-->
+            <col width="10%">
           </colgroup>
           <thead>
           <tr>
@@ -312,6 +334,27 @@ onMounted(() => {
               <div class="th-content">비고 <i v-if="sortKey==='docType'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
+            <th @click="toggleSort('payment_day')" class="sortable resizable text-center">
+              <div class="th-content">급여일 <i v-if="sortKey==='payment_day'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable text-center">
+              <div class="th-content">담당자</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable text-center">
+              <div class="th-content">청구 담당자</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th>
+              <div @click="toggleSort('staffCount')" class="th-content text-center">
+                <div class="th-content">근무인원 <i v-if="sortKey==='staffCount'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div></div>
+                <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('billingDt')" class="sortable resizable text-center">
+              <div class="th-content">청구일자 <i v-if="sortKey==='billingDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <th @click="toggleSort('subTotal')" class="sortable resizable">
               <div class="th-content"> 공급가액 <i v-if="sortKey==='subTotal'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
@@ -324,28 +367,22 @@ onMounted(() => {
               <div class="th-content">합계금액 <i v-if="sortKey==='grandTotal'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('billingDt')" class="sortable resizable text-center">
-              <div class="th-content">청구일자 <i v-if="sortKey==='billingDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
-              <div class="resize-handle" @mousedown.stop="startResize"></div>
-            </th>
             <th @click="toggleSort('status')" class="sortable resizable text-center">
               <div class="th-content">상태 <i v-if="sortKey==='status'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="resizable text-center">
-              <div class="th-content">담당자</div>
+            <th @click="toggleSort('bankName')" class="resizable text-center">
+              <div class="th-content">은행명 <i v-if="sortKey==='bankName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="resizable text-center">
-              <div class="th-content">청구 담당자</div>
-              <div class="resize-handle" @mousedown.stop="startResize"></div>
-            </th>
-            <!--th class="col-bankName text-center">은행명</th-->
             <th class="resizable text-center">
               <div class="th-content">입금일</div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <!--th class="col-price text-center">비고(금액)</th-->
+            <th class="resizable text-center">
+              <div class="th-content">금액</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
           </tr>
           </thead>
           <tbody>
@@ -364,31 +401,33 @@ onMounted(() => {
               </td>
               <td class="font-bold">{{ item.siteName }}</td>
               <td class="text-center">{{ item.docType === 'SERVICE' ? '용역비' : (item.docType || '-') }}</td>
+              <td class="text-center">{{ item.payment_day }}</td>
+              <td class="text-center">{{ item.manager }}</td>
+              <td class="text-center">{{ item.billingManager }}</td>
+              <td class="text-center">{{item.staffCount}}</td>
+              <td class="text-center">{{ item.billingDt }}</td>
               <td class="text-right">{{ formatCurrency(item.subTotal) }}</td>
               <td class="text-right">{{ formatCurrency(item.vatAmount) }}</td>
               <td class="text-right font-bold text-primary">{{ formatCurrency(item.grandTotal) }}</td>
-              <td class="text-center">{{ item.billingDt }}</td>
               <td class="text-center">
                     <span class="status-badge" :class="getStatusBadgeClass(item.status)">
                       {{ getStatusText(item.status) }}
                     </span>
               </td>
-              <td class="text-center">{{ item.manager }}</td>
-              <td class="text-center">{{ item.billingManager }}</td>
-              <!--td class="text-center">{{ item.bankName }}</td-->
+              <td class="text-center">{{ item.bankName }}</td>
               <td class="text-center">{{ item.depositDt }}</td>
-              <!--td class="text-center"></td-->
+              <td class="text-center">{{ item.depositAmount }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr class="table-footer sticky-footer">
-              <td colspan="4" class="text-center">
-                <span class="font-bold">검색결과 합계</span>
+              <td colspan="9" class="text-center">
+                <span class="font-bold">합계</span>
               </td>
               <td class="text-right font-bold">{{ formatCurrency(summary.totalSupply) }}</td>
               <td class="text-right font-bold">{{ formatCurrency(summary.totalVat) }}</td>
               <td class="text-right font-bold">{{ formatCurrency(summary.grandTotal) }}</td>
-              <td colspan="7"></td>
+              <td colspan="4"></td>
             </tr>
           </tfoot>
         </table>
