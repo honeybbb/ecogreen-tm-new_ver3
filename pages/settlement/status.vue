@@ -307,10 +307,10 @@ onMounted(async () => {
             <col width="10%">
             <col width="10%">
             <col width="10%">
-            <col width="5%">
+            <col width="8%">
             <col width="5%">
             <col width="8%">
-            <col width="8%">
+            <col width="10%">
           </colgroup>
           <thead>
           <tr>
@@ -347,8 +347,9 @@ onMounted(async () => {
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th>
-              <div class="th-content text-center">근무인원</div>
-              <div class="resize-handle" @mousedown.stop="startResize"></div>
+              <div @click="toggleSort('staffCount')" class="th-content text-center">
+                <div class="th-content">근무인원 <i v-if="sortKey==='staffCount'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div></div>
+                <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
             <th @click="toggleSort('billingDt')" class="sortable resizable text-center">
               <div class="th-content">청구일자 <i v-if="sortKey==='billingDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
