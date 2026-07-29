@@ -109,9 +109,11 @@ const filteredBillingList = computed(() => {
     const vA = a[sortKey.value] || '';
     const vB = b[sortKey.value] || '';
 
+    // 문자열일 경우 숫자 크기를 인식하도록 { numeric: true } 옵션 추가
     if (typeof vA === 'string' && typeof vB === 'string') {
-      return vA.localeCompare(vB) * mod;
+      return vA.localeCompare(vB, undefined, { numeric: true }) * mod;
     }
+
     return (vA < vB ? -1 : vA > vB ? 1 : 0) * mod;
   });
 
@@ -273,22 +275,23 @@ onMounted(() => {
 
       <div class="table-scroll-container">
         <table class="data-table">
-          <!-- 컬럼 너비 지정 부분 (기존 유지) -->
           <colgroup>
             <col width="2%">
             <col width="5%">
             <col width="*%">
             <col width="5%">
-            <col width="8%">
-            <col width="8%">
+            <col width="3%">
+            <col width="5%">
+            <col width="5%">
+            <col width="3%">
             <col width="8%">
             <col width="10%">
+            <col width="10%">
+            <col width="10%">
+            <col width="5%">
+            <col width="5%">
             <col width="8%">
             <col width="8%">
-            <col width="8%">
-            <col width="8%">
-            <!--col width="8%">
-            <col width="8%"-->
           </colgroup>
           <thead>
           <tr>
@@ -312,6 +315,26 @@ onMounted(() => {
               <div class="th-content">비고 <i v-if="sortKey==='docType'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
+            <th @click="toggleSort('payment_day')" class="sortable resizable text-center">
+              <div class="th-content">급여일 <i v-if="sortKey==='payment_day'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable text-center">
+              <div class="th-content">담당자</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th class="resizable text-center">
+              <div class="th-content">청구 담당자</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th>
+              <div class="th-content text-center">근무인원</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
+            <th @click="toggleSort('billingDt')" class="sortable resizable text-center">
+              <div class="th-content">청구일자 <i v-if="sortKey==='billingDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
             <th @click="toggleSort('subTotal')" class="sortable resizable">
               <div class="th-content"> 공급가액 <i v-if="sortKey==='subTotal'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
@@ -324,28 +347,22 @@ onMounted(() => {
               <div class="th-content">합계금액 <i v-if="sortKey==='grandTotal'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th @click="toggleSort('billingDt')" class="sortable resizable text-center">
-              <div class="th-content">청구일자 <i v-if="sortKey==='billingDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
-              <div class="resize-handle" @mousedown.stop="startResize"></div>
-            </th>
             <th @click="toggleSort('status')" class="sortable resizable text-center">
               <div class="th-content">상태 <i v-if="sortKey==='status'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="resizable text-center">
-              <div class="th-content">담당자</div>
+            <th @click="toggleSort('bankName')" class="resizable text-center">
+              <div class="th-content">은행명 <i v-if="sortKey==='bankName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i></div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <th class="resizable text-center">
-              <div class="th-content">청구 담당자</div>
-              <div class="resize-handle" @mousedown.stop="startResize"></div>
-            </th>
-            <!--th class="col-bankName text-center">은행명</th-->
             <th class="resizable text-center">
               <div class="th-content">입금일</div>
               <div class="resize-handle" @mousedown.stop="startResize"></div>
             </th>
-            <!--th class="col-price text-center">비고(금액)</th-->
+            <th class="resizable text-center">
+              <div class="th-content">금액</div>
+              <div class="resize-handle" @mousedown.stop="startResize"></div>
+            </th>
           </tr>
           </thead>
           <tbody>
@@ -364,26 +381,28 @@ onMounted(() => {
               </td>
               <td class="font-bold">{{ item.siteName }}</td>
               <td class="text-center">{{ item.docType === 'SERVICE' ? '용역비' : (item.docType || '-') }}</td>
+              <td class="text-center">{{ item.payment_day }}</td>
+              <td class="text-center">{{ item.manager }}</td>
+              <td class="text-center">{{ item.billingManager }}</td>
+              <td class="text-center">{{item.staffCount}}</td>
+              <td class="text-center">{{ item.billingDt }}</td>
               <td class="text-right">{{ formatCurrency(item.subTotal) }}</td>
               <td class="text-right">{{ formatCurrency(item.vatAmount) }}</td>
               <td class="text-right font-bold text-primary">{{ formatCurrency(item.grandTotal) }}</td>
-              <td class="text-center">{{ item.billingDt }}</td>
               <td class="text-center">
                     <span class="status-badge" :class="getStatusBadgeClass(item.status)">
                       {{ getStatusText(item.status) }}
                     </span>
               </td>
-              <td class="text-center">{{ item.manager }}</td>
-              <td class="text-center">{{ item.billingManager }}</td>
-              <!--td class="text-center">{{ item.bankName }}</td-->
+              <td class="text-center">{{ item.bankName }}</td>
               <td class="text-center">{{ item.depositDt }}</td>
-              <!--td class="text-center"></td-->
+              <td class="text-center">{{ item.depositAmount }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr class="table-footer sticky-footer">
-              <td colspan="4" class="text-center">
-                <span class="font-bold">검색결과 합계</span>
+              <td colspan="5" class="text-center">
+                <span class="font-bold">합계</span>
               </td>
               <td class="text-right font-bold">{{ formatCurrency(summary.totalSupply) }}</td>
               <td class="text-right font-bold">{{ formatCurrency(summary.totalVat) }}</td>
