@@ -126,9 +126,10 @@ const pagedBillingList = computed(() => {
   return filteredBillingList.value.slice(s, s + pageSize.value);
 });
 
-// ── 7. 요약 데이터 계산 ─────────────────────────────────────
+// ── 7. 요약 데이터 계산 (현재 페이지 기준) ─────────────────────────────────────
 const summary = computed(() => {
-  return filteredBillingList.value.reduce((acc, cur) => {
+  // filteredBillingList -> pagedBillingList 로 변경
+  return pagedBillingList.value.reduce((acc, cur) => {
     acc.totalSupply += Number(cur.subTotal) || 0;
     acc.totalVat += Number(cur.vatAmount) || 0;
     acc.grandTotal += Number(cur.grandTotal) || 0;
