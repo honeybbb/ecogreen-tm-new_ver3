@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useTableResize } from "~/composables/useTableResize.js";
 import Pagination from "~/components/Pagination.vue";
 const { startResize } = useTableResize();
+const { typeOptions, fetchTypeOptions } = useApi();
 
 // ── 1. 상태 관리 (필터 분리) ─────────────────────────────
 const todayMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
@@ -11,6 +12,7 @@ const todayMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
 const startMonth = ref(todayMonth);
 const endMonth = ref(todayMonth);
 const searchTerm = ref(''); // 현장명 등 검색어
+const selectedType = ref('');
 const selectedSite = ref('전체')
 const filterStatus = ref('전체'); // 청구 상태
 
@@ -97,6 +99,11 @@ const filteredBillingList = computed(() => {
       return false;
     }
 
+    // 4. 직원 구분(type) 필터
+    if (selectedType.value !== '' && item.type !== selectedType.value) {
+      return false;
+    }
+
     currentPage.value = 1;
 
     // 위 조건들을 모두 통과한 데이터만 남김
@@ -167,8 +174,9 @@ const toggleSort = (key) => {
 // 시작/종료월이 바뀌면 자동으로 데이터 재조회
 watch([startMonth, endMonth], fetchBillingData);
 
-onMounted(() => {
-  fetchBillingData();
+onMounted(async () => {
+  await fetchTypeOptions();
+  await fetchBillingData();
 });
 </script>
 
@@ -223,6 +231,16 @@ onMounted(() => {
           <SiteSelect v-model="selectedSite" />
         </div>
         <div class="filter-group">
+          <label class="filter-label">구분</label>
+          <select v-model="selectedType" required class="filter-select">
+            <option value="">선택하세요</option>
+            <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+              {{ type.itemNm }}
+            </option>
+          </select>
+        </div>
+
+        <div class="filter-group">
           <label class="filter-label">청구 상태</label>
           <select v-model="filterStatus" class="filter-select" @change="handleSearch">
             <option value="전체">전체</option>
@@ -248,7 +266,7 @@ onMounted(() => {
             </button>
           </div-->
           <button @click="resetFilters" class="btn-search">
-            <i class="mdi mdi-filter-off"></i><span>초기화</span>
+            <i class="mdi mdi-filter-off"></i><span>검색필터 초기화</span>
           </button>
         </div>
       </div>
