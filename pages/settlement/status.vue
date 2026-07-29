@@ -78,7 +78,6 @@ const fetchBillingData = async () => {
 };
 
 // ── 데이터 필터링 & 정렬 ────────────────────────
-// ── 데이터 필터링 & 정렬 ────────────────────────
 const filteredBillingList = computed(() => {
   // 1) 필터 적용 (백엔드에서도 필터링하지만 클라이언트에서도 이중 체크)
   let list = billingList.value.filter(item => {
@@ -94,10 +93,11 @@ const filteredBillingList = computed(() => {
 
     // 3. 현장 콤보박스(Select) 필터
     // 선택된 값이 '전체'가 아닌데, 아이템의 현장명과 다르면 필터링(제외)
-    console.log(selectedSite.value, 'd')
     if (selectedSite.value !== '전체' && item.sIdx !== selectedSite.value) {
       return false;
     }
+
+    currentPage.value = 1;
 
     // 위 조건들을 모두 통과한 데이터만 남김
     return true;
