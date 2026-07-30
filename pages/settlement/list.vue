@@ -6,10 +6,11 @@ import axios from 'axios'
 import SettlementPrintModal from '@/components/SettlementPrintModal.vue'
 import EstimatePrintModal   from '~/components/estimatePrintModal.vue'
 import Pagination           from '~/components/Pagination.vue'
+import {useTableResize} from "~/composables/useTableResize.js";
 
 const router = useRouter()
 const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi()
-
+const { startResize } = useTableResize();
 // ────────────────────────────────────────────────────────────
 // 상태 정의 (status 코드 → 표시 정보)
 // ────────────────────────────────────────────────────────────
@@ -110,10 +111,10 @@ async function fetchList() {
   // 시작일이 종료일보다 늦으면 예외처리
   if (selectedPeriod.start > selectedPeriod.end) {
     alert('시작 연월이 종료 연월보다 클 수 없습니다.')
-    return
+    return;
   }
 
-  isLoading.value = true
+  isLoading.value = true;
   try {
     // 'YYYY-MM' -> 'YYYYMM' 변환하여 백엔드로 전송
     const startStr = selectedPeriod.start.replace('-', '')
@@ -241,7 +242,7 @@ watch([selectedSite, selectedType, searchTerm, filterStatus], () => {
   currentPage.value = 1
 })
 
-// ★ 기간이 변경되면 fetchList 재호출
+// 기간이 변경되면 fetchList 재호출
 watch(() => [selectedPeriod.start, selectedPeriod.end], fetchList)
 
 function resetFilters() {
@@ -476,7 +477,7 @@ onActivated(async () => {
           </select>
         </div>
         <div class="search-group">
-          <div class="search-box">
+          <!--div class="search-box">
             <i class="mdi mdi-magnify"></i>
             <input
                 v-model="searchTerm" type="text"
@@ -487,7 +488,7 @@ onActivated(async () => {
             <button v-if="searchTerm" @click="searchTerm = ''" class="search-clear">
               <i class="mdi mdi-close"></i>
             </button>
-          </div>
+          </div-->
           <button @click="resetFilters" class="btn-search">
             <i class="mdi mdi-filter-off"></i><span>초기화</span>
           </button>
@@ -551,45 +552,47 @@ onActivated(async () => {
             <th class="text-center" style="width:40px">
               <input type="checkbox" v-model="selectAll" class="custom-checkbox" />
             </th>
-            <th class="sortable text-center" style="width:70px" @click="toggleSort('id')">
+            <th class="sortable resizable text-center" style="width:70px" @click="toggleSort('id')">
               <div class="th-content justify-center">
                 No.<i v-if="sortKey==='id'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
               </div>
             </th>
             <th style="width:110px;">문서 종류</th>
-            <th class="sortable" @click="toggleSort('siteName')">
+            <th class="sortable resizable" @click="toggleSort('siteName')">
               <div class="th-content">
-                현장명<i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+                현장명 <i v-if="sortKey==='siteName'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+                <div class="resize-handle" @mousedown.stop="startResize"></div>
               </div>
             </th>
-            <th class="sortable text-center" style="width:80px" @click="toggleSort('type')">
+            <th class="sortable resizable text-center" style="width:80px" @click="toggleSort('type')">
               <div class="th-content justify-center">
                 구분<i v-if="sortKey==='type'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
+                <div class="resize-handle" @mousedown.stop="startResize"></div>
               </div>
             </th>
-            <th class="sortable text-center" style="width:100px" @click="toggleSort('target_month')">
+            <th class="sortable resizable text-center" style="width:100px" @click="toggleSort('target_month')">
               <div class="th-content justify-center">
                 청구연월<i v-if="sortKey==='target_month'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th class="sortable text-right" style="width:120px" @click="toggleSort('total_amount')">
+            <th class="sortable resizable text-right" style="width:120px" @click="toggleSort('total_amount')">
               <div class="th-content justify-end">
                 청구금액<i v-if="sortKey==='total_amount'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th class="text-center" style="width:100px">상태</th>
-            <th class="text-center" style="width:150px">미수 사유</th>
-            <th class="sortable text-center" style="width:90px" @click="toggleSort('regDt')">
+            <th class="text-center resizable" style="width:100px">상태</th>
+            <th class="text-center resizable" style="width:150px">미수 사유</th>
+            <th class="sortable resizable text-center" style="width:90px" @click="toggleSort('regDt')">
               <div class="th-content justify-center">
                 작성일<i v-if="sortKey==='regDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th class="sortable text-center" style="width:90px" @click="toggleSort('modDt')">
+            <th class="sortable resizable text-center" style="width:90px" @click="toggleSort('modDt')">
               <div class="th-content justify-center">
                 수정일<i v-if="sortKey==='modDt'" :class="['mdi', sortOrder==='asc'?'mdi-arrow-up':'mdi-arrow-down']"></i>
               </div>
             </th>
-            <th class="text-center" style="width:150px">관리</th>
+            <th class="text-center resizable" style="width:150px">관리</th>
           </tr>
           </thead>
           <tbody>
