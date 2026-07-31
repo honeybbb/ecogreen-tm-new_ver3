@@ -3,6 +3,8 @@ import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useTableResize } from "~/composables/useTableResize.js";
 import Pagination from "~/components/Pagination.vue";
+import * as XLSX from 'xlsx';
+
 const { startResize } = useTableResize();
 const { typeOptions, fetchTypeOptions } = useApi();
 
@@ -171,6 +173,63 @@ const toggleSort = (key) => {
   }
 };
 
+const downloadExcel = () => {
+  if (filteredBillingList.value.length === 0) {
+    alert('다운로드할 데이터가 없습니다.');
+    return;
+  }
+
+  // 1. 엑셀에 들어갈 데이터 매핑 (화면에 보이는 필터링된 데이터 기준)
+  const excelData = filteredBillingList.value.map((item, index) => ({
+    'No': index + 1,
+    '구분': item.typeNm || '-',
+    '현장명': item.siteName,
+    '비고': item.docType === 'SERVICE' ? '용역비' : (item.docType || '-'),
+    '급여일': item.payment_day,
+    '담당자': item.manager,
+    '청구 담당자': item.billingManager,
+    '근무인원': item.staffCount,
+    '청구일자': item.billingDt,
+    '공급가액': item.subTotal,
+    '부가세': item.vatAmount,
+    '합계금액': item.grandTotal,
+    '상태': getStatusText(item.status),
+    '은행명': item.bankName,
+    '입금일': item.depositDt,
+    '금액': item.depositAmount
+  }));
+
+  // 2. 워크시트 및 워크북 생성
+  const worksheet = XLSX.utils.json_to_sheet(excelData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "청구목록");
+
+  // 3. 컬럼 너비(옵션) 자동 지정
+  const wscols = [
+    { wch: 5 },  // No
+    { wch: 10 }, // 구분
+    { wch: 25 }, // 현장명
+    { wch: 10 }, // 비고
+    { wch: 12 }, // 급여일
+    { wch: 10 }, // 담당자
+    { wch: 12 }, // 청구 담당자
+    { wch: 10 }, // 근무인원
+    { wch: 12 }, // 청구일자
+    { wch: 15 }, // 공급가액
+    { wch: 12 }, // 부가세
+    { wch: 15 }, // 합계금액
+    { wch: 10 }, // 상태
+    { wch: 15 }, // 은행명
+    { wch: 12 }, // 입금일
+    { wch: 15 }  // 금액
+  ];
+  worksheet['!cols'] = wscols;
+
+  // 4. 파일 다운로드 트리거
+  const fileName = `월별_청구현황_${startMonth.value}_${endMonth.value}.xlsx`;
+  XLSX.writeFile(workbook, fileName);
+};
+
 // 시작/종료월이 바뀌면 자동으로 데이터 재조회
 watch([startMonth, endMonth], fetchBillingData);
 
@@ -186,6 +245,15 @@ onMounted(async () => {
       <div class="header-left">
         <h1 class="page-title"><i class="mdi mdi-receipt-text-outline"></i> 월별 청구 현황</h1>
         <p class="page-subtitle">현장별 청구 금액 및 수금 상태를 조회합니다.</p>
+      </div>
+      <div class="header-actions">
+        <button
+            @click="downloadExcel"
+            class="btn-excel"
+            :disabled="isLoading || filteredBillingList.length === 0"
+        >
+          <i class="mdi mdi-file-excel-outline"></i> 엑셀 다운로드
+        </button>
       </div>
     </div>
 
