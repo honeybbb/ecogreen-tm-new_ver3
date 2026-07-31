@@ -9,7 +9,7 @@ import SunTextEditor from '@/components/SunEditor.vue';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
 const authStore = useAuthStore();
-const cIdx = authStore.user?.cIdx || 1;
+const cIdx = authStore.user?.cIdx;
 
 const props = defineProps({
   isOpen: Boolean,
@@ -1951,31 +1951,47 @@ const exportToExcel = async () => {
       if (rowNum <= 19 && periodStr) {
         sheet.getCell(`B${rowNum}`).value = periodStr;
       }
+      /*
       if (billingItems[idx] !== undefined) {
         sheet.getCell(`J${rowNum}`).value  = Number(billingItems[idx].amount) || 0;
         sheet.getCell(`J${rowNum}`).numFmt = '#,##0';
       }
+
+       */
     });
 
     sheet.getCell('B27').value = `2) 입금계좌 : ${formData.value.billingData.bankInfo || ''}`;
 
+    const findSummary = (key) => totalSummary.value.find(s => s.key === key);
+    const monthlyFeeVal   = findSummary('monthlyFee')?.value || 0;
+    const annualLeaveVal  = (findSummary('annualLeave')?.value || 0) * (findSummary('annualLeave')?.sign || -1);
+    const severanceVal    = (findSummary('severance')?.value || 0) * (findSummary('severance')?.sign || -1);
+    const insuranceDiffVal= (findSummary('insuranceDiff')?.value || 0) * (findSummary('insuranceDiff')?.sign || -1);
+
+    sheet.getCell('J16').value = monthlyFeeVal;
+    sheet.getCell('J17').value = annualLeaveVal;
+    sheet.getCell('J18').value = severanceVal;
+    sheet.getCell('J19').value = insuranceDiffVal;
+    ['J16','J17','J18','J19'].forEach(addr => sheet.getCell(addr).numFmt = '#,##0');
+
+
     const payrollData = formData.value.payrollData || [];
 
-    sheet.getCell('A47').value = `■ ${yearStrFull}년 ${monthNum}월 ${categoryName} 정산내역서`;
+    // sheet.getCell('A47').value = `■ ${yearStrFull}년 ${monthNum}월 ${categoryName} 정산내역서`;
 
     const workerCount = payrollData.length;
     sheet.getCell('N49').value = `${formData.value.siteName || '현장 미지정'} - ${workerCount}명`;
 
-    sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;
-    sheet.getColumn(9).hidden  = !currentConfig.showSeverance;
-    sheet.getColumn(10).hidden  = !currentConfig.showWorkersDay;
-    const activeCodes = currentConfig.activeDeductionCodes;
-    sheet.getColumn(11).hidden = !activeCodes.includes('04002003');
-    sheet.getColumn(12).hidden = !activeCodes.includes('04002001');
-    sheet.getColumn(13).hidden = !activeCodes.includes('04002002');
-    sheet.getColumn(14).hidden = !activeCodes.includes('04002004');
-    sheet.getColumn(15).hidden = !activeCodes.includes('04002004');
-    sheet.getColumn(16).hidden = !currentConfig.showSanjae;
+    // sheet.getColumn(8).hidden  = !currentConfig.showAnnualLeave;
+    // sheet.getColumn(9).hidden  = !currentConfig.showSeverance;
+    // sheet.getColumn(10).hidden  = !currentConfig.showWorkersDay;
+    // const activeCodes = currentConfig.activeDeductionCodes;
+    // sheet.getColumn(11).hidden = !activeCodes.includes('04002003');
+    // sheet.getColumn(12).hidden = !activeCodes.includes('04002001');
+    // sheet.getColumn(13).hidden = !activeCodes.includes('04002002');
+    // sheet.getColumn(14).hidden = !activeCodes.includes('04002004');
+    // sheet.getColumn(15).hidden = !activeCodes.includes('04002004');
+    // sheet.getColumn(16).hidden = !currentConfig.showSanjae;
 
     const maxRows = 10;
 
@@ -1994,7 +2010,7 @@ const exportToExcel = async () => {
       row.getCell(7).value  = data.outDate    || '';
       row.getCell(8).value  = Number(data.reserves?.annualLeave)        || 0;
       row.getCell(9).value  = Number(data.reserves?.severance)          || 0;
-      row.getCell(9).value  = Number(data.reserves?.workersDay)          || 0;
+      // row.getCell(9).value  = Number(data.reserves?.workersDay)          || 0;
       row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0;
       row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0;
       row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0;
