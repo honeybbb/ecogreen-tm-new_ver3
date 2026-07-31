@@ -15,11 +15,14 @@
         style="display: none"
         @change="handleAttachSelect"
     />
-    <div class="attach-bar">
+    <!--div class="attach-bar">
       <button type="button" class="btn-attach" @click="attachInputEl?.click()" :disabled="isUploading">
         <i class="mdi mdi-paperclip"></i> 파일 첨부
       </button>
       <span v-if="isUploading" class="upload-status">업로드 중...</span>
+    </div-->
+    <div v-if="isUploading" class="upload-status-floating">
+      <i class="mdi mdi-loading mdi-spin"></i> 파일 업로드 중...
     </div>
   </div>
 </template>
@@ -50,8 +53,27 @@ onMounted(async () => {
   const koModule = await import("suneditor/src/lang/ko");
   const ko = koModule.default || koModule;
 
+  // ── 파일 첨부 커스텀 플러그인 정의 ──────────────
+  const attachPlugin = {
+    name: 'fileAttach',
+    display: 'command',
+    title: '파일 첨부',
+    buttonClass: '',
+    innerHTML: '<i class="mdi mdi-paperclip" style="font-size:16px;"></i>',
+    add(core, targetElement) {
+      core.context.fileAttach = { targetButton: targetElement };
+    },
+    active(element) {
+      return false;
+    },
+    action() {
+      attachInputEl.value?.click();
+    }
+  };
+
   instance = suneditor.create(editorEl.value, {
-    plugins,
+    // plugins,
+    plugins: { ...plugins, fileAttach: attachPlugin },
     lang: ko,
     width: '100%',
     height: 'auto',        // 내용에 따라 늘어나되
@@ -63,7 +85,7 @@ onMounted(async () => {
       ['bold', 'underline', 'italic', 'strike'],
       ['fontColor'],
       ['outdent', 'indent'],
-      ['image'],
+      ['image'],['fileAttach']
     ],
     resizingBar: false,
   });
@@ -156,6 +178,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-color, #ccc);
   border-radius: 6px;
   background: white;
+  position: relative;
   /* overflow: hidden 제거 */
 }
 

@@ -54,6 +54,7 @@ const isInitializing = ref(false);
 const dragIndex = ref(null);
 const draggableRowIdx = ref(null);//마우스를 누른 특정 행만 드래그 활성화
 const lastBigoAlertSIdx = ref(null);//비고alert
+const siteBigoList = ref([]);
 
 // ──────────────────────────────────────────────
 // 2. 폼 데이터 상태
@@ -228,27 +229,26 @@ const fetchContractData = async () => {
 
     if (!siteData) return;
 
-    // ── 현장 특이사항(bigoList) 알림 ──────────────
-    if (siteData.bigoList && sIdx !== lastBigoAlertSIdx.value) {
+    // ── 현장 특이사항(bigoList) 파싱 & 저장 (버튼에서도 재사용) ──────────────
+    if (siteData.bigoList) {
       try {
         const bigoArr = typeof siteData.bigoList === 'string'
             ? JSON.parse(siteData.bigoList)
             : siteData.bigoList;
 
-        if (Array.isArray(bigoArr)) {
-          const settlementBigoList = bigoArr.filter(b => b.type == 2);
+        siteBigoList.value = Array.isArray(bigoArr) ? bigoArr.filter(b => b.type == 2) : [];
 
-          if (settlementBigoList.length > 0) {
-            const msg = settlementBigoList
-                .map(b => `${b.bigo || ''}`)
-                .join('\n\n');
-            window.customAlert(`${msg}`, 'special');
-          }
+        if (siteBigoList.value.length > 0 && sIdx !== lastBigoAlertSIdx.value) {
+          const msg = siteBigoList.value.map(b => `${b.bigo || ''}`).join('\n\n');
+          window.customAlert(`${msg}`, 'special');
         }
       } catch (e) {
         console.error('bigoList 파싱 에러:', e);
+        siteBigoList.value = [];
       }
       lastBigoAlertSIdx.value = sIdx;
+    } else {
+      siteBigoList.value = [];
     }
 
     if ((!props.settlementId || !isInitializing.value) && siteData.viewConfig) {
@@ -1437,9 +1437,7 @@ const loadPayrollData = async () => {
     const yearNum = parseInt(yearStr);
     const monthNum = parseInt(monthStr);
     const sIdx = formData.value.sIdx;
-    // mount되는 함수인데 한번 더 호출 불필요해서 주석 처리 2026-07-16
-    // await fetchTaxRates();
-    // await fetchContractData();
+
     await nextTick();
 
     const validItemCds = [
@@ -1447,9 +1445,13 @@ const loadPayrollData = async () => {
       ...contractIndirectLabor.value.map(i => String(i.code))
     ];
 
-    console.log(validItemCds, 'validItemCds');
-
-    const res = await axios.get('/api/v1/settle/payroll', { params: { year: yearNum, month: monthNum, sIdx } });
+    const res = await axios.get('/api/v1/settle/payroll', {
+      params: {
+        year: yearNum,
+        month: monthNum,
+        sIdx
+      }
+    });
     const rawData = res.data?.data || [];
 
     const periodStart = new Date(yearNum, monthNum - 1, 1);
@@ -1499,6 +1501,8 @@ const loadPayrollData = async () => {
         idx: item.idx,
         empName: item.billingName || '',
         position: item.role || '',
+        itemCd: item.itemCd || '', // 직책 코드 추가
+        sort: item.sort || null,   // 정렬 설정 추가
         personalNo: item.birthDt,
         inDate: item.inDate,
         outDate: item.outDate ?? '',
@@ -1516,7 +1520,7 @@ const loadPayrollData = async () => {
       };
 
       applyContractReserves(rowObj);
-      recalculateInsurances(rowObj); // 중간 입사자면 내부 첫 줄에서 return
+      recalculateInsurances(rowObj);
 
       // 당월 중간 입사자: 4대보험 전부 0으로 덮어쓰기
       if (isMidMonthJoiner) {
@@ -1533,18 +1537,35 @@ const loadPayrollData = async () => {
       return rowObj;
     });
 
-    // ── groupNo 할당: 같은 직책에서 당월 퇴사 → 당월 중간입사 쌍을 같은 번호로 묶기 ──
-    // inDate 오름차순 정렬로 퇴사자가 먼저 처리되도록 함
-    const sortedForGroup = [...formData.value.payrollData].sort((a, b) => {
-      const aIn = a.inDate ? new Date(a.inDate) : new Date(0);
-      const bIn = b.inDate ? new Date(b.inDate) : new Date(0);
-      return aIn - bIn;
+    // 정렬 (직책코드 -> 설정순서 -> 중간입사여부 -> 사번순)
+    formData.value.payrollData.sort((a, b) => {
+      // 1) 직책 코드 오름차순
+      const cdA = String(a.itemCd || '');
+      const cdB = String(b.itemCd || '');
+      if (cdA !== cdB) return cdA.localeCompare(cdB, 'ko', { numeric: true });
+
+
+      // 2) DB 설정순서 오름차순
+      /*
+      const sortA = a.sort != null ? Number(a.sort) : 999999;
+      const sortB = b.sort != null ? Number(b.sort) : 999999;
+      if (sortA !== sortB) return sortA - sortB;
+       */
+
+      // 3) 당월 중간 입사자는 기존 직원들 바로 밑에 붙도록
+      if (a.isMidMonthJoiner !== b.isMidMonthJoiner) {
+        return a.isMidMonthJoiner ? 1 : -1;
+      }
+
+      // 4) 사번(idx) 오름차순
+      return Number(a.idx) - Number(b.idx);
     });
 
+    // 정렬된 순서대로 그룹 번호(groupNo) 부여
     let groupCounter = 0;
-    const posToGroup = new Map(); // position → groupNo (당월 퇴사자 추적용)
+    const posToGroup = new Map();
 
-    sortedForGroup.forEach(row => {
+    formData.value.payrollData.forEach(row => {
       const pos = row.position || '';
       const outDateObj = row.outDate ? new Date(row.outDate) : null;
       const isCurrentMonthLeaver = !!(outDateObj &&
@@ -1552,31 +1573,20 @@ const loadPayrollData = async () => {
           outDateObj.getMonth() + 1 === monthNum);
 
       if (row.isMidMonthJoiner && posToGroup.has(pos)) {
-        // 같은 직책의 당월 퇴사자가 있으면 같은 그룹으로 묶기
+        // 같은 직책 당월 퇴사자 그룹에 편입
         row.groupNo = posToGroup.get(pos);
-        posToGroup.delete(pos); // 한 번 매칭되면 제거
+        posToGroup.delete(pos);
       } else {
+        // 새 그룹 생성
         groupCounter++;
         row.groupNo = groupCounter;
         if (isCurrentMonthLeaver) {
-          // 당월 퇴사자는 같은 직책의 중간입사자를 기다림
           posToGroup.set(pos, groupCounter);
         }
       }
     });
 
-    // 중간 입사자를 맨 뒤로, 나머지는 기존 순서 유지
-    formData.value.payrollData.sort((a, b) => {
-      if (a.isMidMonthJoiner === b.isMidMonthJoiner) return 0;
-      return a.isMidMonthJoiner ? 1 : -1;
-    });
-
-    // 순차 groupNo 부여 (자동 그룹핑 없음 — 사용자가 직접 조작)
-    formData.value.payrollData.forEach((row, idx) => {
-      row.groupNo = idx + 1;
-    });
-
-    if (formData.value.payrollData.length === 0) alert('조건에 맞는 직원 데이터가 없습니다.');
+    if (formData.value.payrollData.length === 0) customAlert('조건에 맞는 직원 데이터가 없습니다.', 'error');
     else alert('직원 급여 데이터를 성공적으로 불러왔습니다.');
 
   } catch (error) {
@@ -2062,6 +2072,19 @@ const handleSave = async () => {
   } catch (error) { console.error('정산서 저장 중 오류 발생:', error); alert('서버 통신 중 오류가 발생했습니다.'); }
 };
 
+const showSiteBigo = async () => {
+  if (!formData.value.sIdx) {
+    await window.customAlert('현장을 먼저 선택해주세요.', 'error');
+    return;
+  }
+  if (siteBigoList.value.length === 0) {
+    await window.customAlert('등록된 특이사항이 없습니다.', 'info');
+    return;
+  }
+  const msg = siteBigoList.value.map(b => `${b.bigo || ''}`).join('\n\n');
+  window.customAlert(`${msg}`, 'special');
+};
+
 const closeModal = () => emit('close');
 
 onMounted(async () => {
@@ -2082,6 +2105,10 @@ onMounted(async () => {
         <div class="header-title">
           <h2>{{ settlementId ? '정산 내역 수정' : '새 정산서 작성' }}</h2>
           <span class="badge">{{ formData.siteName || '현장 미지정' }} ({{ formData.target_month || '연월 미지정' }})</span>
+          <button class="btn-bigo" :class="{ 'has-bigo': siteBigoList.length > 0 }" @click="showSiteBigo">
+            <i class="mdi mdi-alert-circle-outline"></i>
+            <span class="btn-text">특이사항</span>
+          </button>
         </div>
         <div class="header-actions">
           <button class="btn-refresh" @click="resetAll">
@@ -3182,5 +3209,25 @@ input:checked + .slider:before { transform: translateX(14px); }
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
 }
 
-
+.btn-bigo {
+  background: var(--bg-surface);
+  color: var(--text-sub);
+  border: 1px solid var(--border-color);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.btn-bigo:hover { background: var(--bg-hover); }
+.btn-bigo.has-bigo {
+  background: rgba(245, 158, 11, .1);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, .4);
+}
 </style>
