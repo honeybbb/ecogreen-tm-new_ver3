@@ -640,8 +640,14 @@ const applyContractReserves = (row) => {
   console.log(row.reserves.workersDay, staffCode);
 
   const sanjaeAmt = findContractValue('산재', '04002001008', staffCode);
-  row.reserves.sanjae  = sanjaeAmt;
-  row.originalSanjae   = sanjaeAmt;
+  // 당월 중간 입사자는 산재보험도 0원으로 고정
+  if (row.isMidMonthJoiner) {
+    row.reserves.sanjae = 0;
+    row.originalSanjae  = 0;
+  } else {
+    row.reserves.sanjae  = sanjaeAmt;
+    row.originalSanjae   = sanjaeAmt;
+  }
 
   finalize();
 };
@@ -1197,9 +1203,11 @@ const handleManualBreakdownUpdate = () => {
 // ──────────────────────────────────────────────
 // 7. 폼 세팅 및 이벤트 핸들러
 // ──────────────────────────────────────────────
-const initForm = () => {
+const initForm = async () => {
   if (props.initialData && Object.keys(props.initialData).length > 0) {
     isInitializing.value = true;
+
+    await fetchTaxRates(); // 보험 요율부터 최우선으로 확실하게 로드
 
     const data = JSON.parse(JSON.stringify(props.initialData));
     if (!data.payrollData) data.payrollData = [];
@@ -1247,7 +1255,19 @@ const initForm = () => {
       row.reserves.annualLeave = row.reserves.annualLeave || 0;
       row.reserves.severance = row.reserves.severance || 0;
       row.reserves.empInsEmployer = row.reserves.empInsEmployer || 0;
-      row.reserves.sanjae = row.reserves.sanjae || 0;
+
+      let savedSanjae = Number(row.reserves.sanjae) || 0;
+      if (savedSanjae === 0) {
+        if (Number(row.originalSanjae) > 0) savedSanjae = Number(row.originalSanjae);
+        else if (row.deductionItems && Number(row.deductionItems['04002001008']) > 0) savedSanjae = Number(row.deductionItems['04002001008']);
+        else if (row.originalDeductions && Number(row.originalDeductions['04002001008']) > 0) savedSanjae = Number(row.originalDeductions['04002001008']);
+      }
+
+      row.reserves.sanjae = savedSanjae;
+      row.originalSanjae = savedSanjae;
+
+      // 공제항목에서는 확실하게 제거 (실수령액 차감 오류 방지)
+      if (row.deductionItems) row.deductionItems['04002001008'] = 0;
 
       if (!row.originalDeductions || Object.keys(row.originalDeductions).length === 0) {
         row.originalDeductions = JSON.parse(JSON.stringify(row.deductionItems));
@@ -1315,11 +1335,11 @@ const initForm = () => {
     }
 
     formData.value = data;
-    formData.value.payrollData.forEach(row => {
-      calculateRow(row);
-    });
+    if (formData.value.sIdx && formData.value.type) {
+      await fetchContractData();
+    }
 
-    if (formData.value.sIdx && formData.value.type) fetchContractData();
+    if (formData.value.sIdx && formData.value.type) await fetchContractData();
 
     nextTick(() => {
       isInitializing.value = false;
