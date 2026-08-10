@@ -796,6 +796,45 @@ const payrollTotals = computed(() => {
   return totals;
 });
 
+const daysInTargetMonth = computed(() => {
+  const dateStr = formData.value.target_month || formData.value.billingDt;
+  if (!dateStr) return 30;
+  const [y, m] = dateStr.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+});
+
+const vacancyDeduction = computed(() => {
+  let totalAmount = 0, totalDays = 0;
+  formData.value.payrollData.forEach(row => {
+    const gapDays = Number(row.gapDays) || 0;
+    if (gapDays > 0) {
+      const dailyRate = (Number(row.grossPay) || 0) / daysInTargetMonth.value;
+      totalAmount += Math.floor((dailyRate * gapDays) / 10) * 10;
+      totalDays += gapDays;
+    }
+  });
+  return { totalAmount, totalDays };
+});
+
+watch(vacancyDeduction, (val) => {
+  if (isInitializing.value) return;
+  const items = formData.value.billingData.customSummaryItems;
+  const idx = items.findIndex(i => i._auto === 'vacancy');
+
+  if (val.totalDays > 0) {
+    const label = `공백(${val.totalDays}일)공제`;
+    if (idx > -1) {
+      items[idx].label = label;
+      items[idx].amount = val.totalAmount;
+      items[idx].sign = -1;
+    } else {
+      items.push({ label, amount: val.totalAmount, sign: -1, _auto: 'vacancy' });
+    }
+  } else if (idx > -1) {
+    items.splice(idx, 1);
+  }
+}, { deep: true, immediate: true });
+
 const contractAnnualLeaveTotal = computed(() => {
   let target = contractDirectLabor.value.find(d => String(d.label).includes('연차'));
   if (!target && contractIndirectLabor.value) {
@@ -1536,6 +1575,7 @@ const loadPayrollData = async () => {
         reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
         netPay: 0,
         isMidMonthJoiner,
+        gapDays: Number(item.gapDays) || 0,
         groupNo: 0,
       };
 
@@ -1586,7 +1626,7 @@ const loadPayrollData = async () => {
     const posToGroup = new Map();
 
     formData.value.payrollData.forEach(row => {
-      const pos = row.position || '';
+      const pos = row.positionCd || row.position || '';
       const outDateObj = row.outDate ? new Date(row.outDate) : null;
       const isCurrentMonthLeaver = !!(outDateObj &&
           outDateObj.getFullYear() === yearNum &&
@@ -1680,6 +1720,7 @@ const loadPayrollData2 = async () => {
         idx: item.idx,
         empName: item.name || '',
         position: item.roleNm || '',
+        positionCd: item.positionCd || item.itemCd || '', // 원본 직책 코드
         inDate: item.inDate,
         outDate: item.outDate ?? '',
         workersDay: actualWorkDays, // 근무일수 표시용
