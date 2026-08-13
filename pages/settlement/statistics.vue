@@ -78,7 +78,23 @@ const fetchSummaryData = async () => {
       month: yearMonth.value.split('-')[1],
     };
     const res = await axios.get('/api/v1/settle/payroll/summary', { params });
-    rawData.value = res.data.data || [];
+    const fetchedData = res.data.data || [];
+
+    rawData.value = fetchedData.map((row) => {
+      const contract = Number(row.contractCnt) || 0;
+      const current = Number(row.currentCnt) || 0;
+      const payroll = Number(row.payrollCnt) || 0;
+
+      return {
+        ...row,
+        gap: payroll - contract, //공백인원 계산 공식 (급여작업인원 - 계약인원)
+        estBilledAmount: Number(row.estBilledAmount) || Number(row.billingAmt) || 0,
+        estNetPay: Number(row.estNetPay) || Number(row.netPay) || 0,
+        billingAmt: Number(row.billingAmt) || 0,
+        netPay: Number(row.netPay) || 0,
+        payrollData: safeParse(row.payrollData, [])
+      };
+    });
   } catch (error) {
     console.error('청구·급여 통합 데이터 조회 실패:', error);
     alert('데이터를 불러오는 중 오류가 발생했습니다.');
@@ -94,23 +110,7 @@ const filteredRawData = computed(() => {
     if (selectedType.value && row.type !== selectedType.value) return false;
     if (searchTerm.value && !row.siteName?.toLowerCase().includes(searchTerm.value.toLowerCase())) return false;
     return true;
-  }).map((row) => {
-    const contract = Number(row.contractCnt) || 0;
-    const current = Number(row.currentCnt) || 0;
-    return {
-      ...row,
-      gap: contract - current,
-
-      // ✅ 기준 청구액/지급액이 백엔드에서 온다고 가정 (없으면 0 처리)
-      estBilledAmount: Number(row.estBilledAmount) || Number(row.billingAmt) || 0,
-      estNetPay: Number(row.estNetPay) || Number(row.netPay) || 0,
-      billingAmt: Number(row.billingAmt) || 0,
-      netPay: Number(row.netPay) || 0,
-
-      // ✅ 입퇴사자 모달을 위한 JSON 데이터 파싱
-      payrollData: safeParse(row.payrollData, [])
-    };
-  });
+  })
 });
 
 // ── 6. 정렬 ────────────────────────────────────────────────
@@ -209,7 +209,7 @@ const closeJoinLeaveModal = () => {
 // ── 9. 일반 액션 (초기화, 엑셀) ──────────────────────────────
 const handleSearch = () => { fetchSummaryData(); };
 
-function resetFilters() {
+const resetFilters = () => {
   selectedSite.value = '전체';
   yearMonth.value = todayMonth;
   selectedType.value = '';
@@ -218,8 +218,43 @@ function resetFilters() {
   fetchSummaryData();
 }
 
+const saveStatisticsData = async () => {
+  console.log(filteredRawData);
+  const payload = filteredRawData.value.map((row) => ({
+    ssIdx: row.idx, //정산서 인덱스
+    invoiceDt: row.invoiceDt || null,
+    invoiceAmount: row.invoiceAmount || null,
+    bankName: row.bankName || null,
+    bigo: row.bigo || ''
+  }));
+
+  if (payload.length === 0) {
+    window.customAlert('저장할 데이터가 없습니다.','error');
+    return;
+  }
+
+  try {
+    isLoading.value = true;
+
+    const response = await axios.put('/api/v1/settle/payroll/summary', {
+      data: payload
+    });
+
+    if (response.status === 200) {
+      window.customAlert('데이터가 성공적으로 저장되었습니다.');
+      // 3. 저장 성공 시 최신 데이터로 다시 갱신
+      await fetchSummaryData();
+    }
+  } catch (error) {
+    console.error('통계 데이터 저장 실패:', error);
+    window.customAlert('데이터 저장 중 오류가 발생했습니다.','error');
+  } finally {
+    isLoading.value = false;
+  }
+}
+
 const downloadExcel = () => {
-  if (!filteredRawData.value.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+  if (!filteredRawData.value.length) { window.customAlert('다운로드할 데이터가 없습니다.','error'); return; }
 
   const excelData = filteredRawData.value.map((row, index) => {
     return {
@@ -268,8 +303,8 @@ onMounted(async () => {
         <button @click="downloadExcel" class="btn-excel" :disabled="isLoading || filteredRawData.length === 0">
           <i class="mdi mdi-microsoft-excel"></i> 엑셀 다운로드
         </button>
-        <button @click="downloadExcel" class="btn-save" :disabled="isLoading || filteredRawData.length === 0">
-          <i class="mdi mdi-microsoft-excel"></i> 데이터 저장
+        <button @click="saveStatisticsData" class="btn-add" :disabled="isLoading || filteredRawData.length === 0">
+          데이터 저장
         </button>
       </div>
     </div>
@@ -310,6 +345,13 @@ onMounted(async () => {
             <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">{{ type.itemNm }}</option>
           </select>
         </div>
+        <!--div class="filter-group">
+          <label class="filter-label">청구 담당</label>
+          <select v-model="selectedType" class="filter-select">
+            <option value="">전체</option>
+            <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">{{ type.itemNm }}</option>
+          </select>
+        </div-->
         <div class="search-group">
           <button @click="resetFilters" class="btn-search">
             <i class="mdi mdi-filter-off"></i><span>검색필터 초기화</span>
@@ -348,18 +390,18 @@ onMounted(async () => {
             <th rowspan="2" style="width: 2%;" @click="toggleSort('payment_day')" class="sortable">
               급여일 <i v-if="sortKey === 'payment_day'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
             </th>
-            <th rowspan="2" style="width: 14%;" @click="toggleSort('siteName')" class="sortable">
+            <th rowspan="2" style="width: 8%;" @click="toggleSort('siteName')" class="sortable">
               단지 <i v-if="sortKey === 'siteName'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
             </th>
             <th rowspan="2" style="width: 4%;">비고</th>
             <th v-if="showPersonnelCols" :colspan="PERSONNEL_COL_COUNT" style="width: 20%;">인원</th>
-            <th rowspan="2" style="width: 16%;" @click="toggleSort('billingAmt')" class="sortable">
+            <th rowspan="2" style="width: 12%;" @click="toggleSort('billingAmt')" class="sortable">
               청구액 (기준 / 실청구) <i v-if="sortKey === 'billingAmt'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
             </th>
-            <th rowspan="2" style="width: 4%;">급여<br>인원</th>
+            <th rowspan="2" style="width: 2%;">급여<br>인원</th>
             <th rowspan="2" style="width: 6%;">계산서 작성일</th>
             <th rowspan="2" style="width: 2%;">매수</th>
-            <th rowspan="2" style="width: 16%;" @click="toggleSort('netPay')" class="sortable">
+            <th rowspan="2" style="width: 12%;" @click="toggleSort('netPay')" class="sortable">
               급여총액 <i v-if="sortKey === 'netPay'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
             </th>
             <th rowspan="2" style="width: 5%;">은행</th>
