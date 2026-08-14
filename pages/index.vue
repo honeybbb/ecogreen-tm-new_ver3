@@ -109,15 +109,18 @@ const siteStatus = ref([
 
 // 대청소 관련
 const cleaningStats = ref({
-  total: 5,
-  completed: 2,
-  upcoming: 3
+  total: 0,
+  completed: 0,
+  upcoming: 0
 });
 
 const cleaningSchedules = ref([
+    /*
   { id: 1, site: 'LH 위례 6단지', type: '계단 대청소', date: '2025-05-10', status: '예정', worker: '김반장 외 3명' },
   { id: 2, site: '강서 대명 강동', type: '지하주차장 물청소', date: '2025-05-12', status: '예정', worker: '청소팀 A' },
   { id: 3, site: '판교 테크노밸리', type: '외벽 유리창 청소', date: '2025-05-01', status: '완료', worker: '외부 용역' },
+
+     */
 ]);
 
 // 유틸리티 함수 (테마 컬러와 연동)

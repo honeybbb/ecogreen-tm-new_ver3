@@ -33,7 +33,7 @@ watch(
 );
 
 // ── 1-1. 인원 컬럼(계약/현재/여/남/입사/퇴사/공백) 통째로 표시/숨김 토글 ──
-const showPersonnelCols = ref(true);
+const showPersonnelCols = ref(false);
 const PERSONNEL_COL_COUNT = 7;
 
 // 인원 그룹 제외 고정 컬럼 수 (No, 급여일, 단지, 비고, 청구액, 급여인원, 계산서작성일, 매수, 지급액, 은행, 입금일, 입금액, 비고)
@@ -165,13 +165,24 @@ const addRow = (acc, cur) => ({
 
 const processedGroups = computed(() => {
   if (!sortedRawData.value.length) return [];
+
+  // 1. 급여일 기준으로 데이터 그룹핑 (여기 안의 row 순서는 sortedRawData의 정렬을 따름)
   const grouped = sortedRawData.value.reduce((acc, row) => {
     const day = row.payment_day || '미지정';
     (acc[day] ||= []).push(row);
     return acc;
   }, {});
 
-  return Object.keys(grouped).sort().map((day) => {
+  // 2. 그룹 키(급여일) 추출 및 기본 오름차순 정렬
+  let groupKeys = Object.keys(grouped).sort();
+
+  // 3. 만약 사용자가 누른 정렬 기준이 '급여일'이고 '내림차순(desc)'이라면 그룹 순서를 뒤집음
+  if (sortKey.value === 'payment_day' && sortOrder.value === 'desc') {
+    groupKeys.reverse();
+  }
+
+  // 4. 최종 배열 매핑
+  return groupKeys.map((day) => {
     const rows = grouped[day];
     const subTotal = rows.reduce(addRow, emptyTotal());
     return { paymentDay: day, rows, subTotal };
