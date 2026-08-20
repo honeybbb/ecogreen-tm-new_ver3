@@ -98,14 +98,7 @@ const pendingApprovals = computed(() => {
 });
 
 // 4. 현장별 계약/이슈 현황
-const siteStatus = ref([
-  /*
-{ name: 'LH 위례 6단지', issueCount: 0, contractEnd: '2025-12-31', progress: 80, contract: '2025-01-01 ~ 2025-12-31' },
-{ name: '강서 대명 강동', issueCount: 2, contractEnd: '2025-06-30', progress: 40, contract: '2025-01-01 ~ 2025-06-30' },
-{ name: '판교 테크노밸리', issueCount: 0, contractEnd: '2026-02-28', progress: 95, contract: '2025-01-01 ~ 2026-02-28' },
-
-   */
-]);
+const siteStatus = ref([]);
 
 // 대청소 관련
 const cleaningStats = ref({
@@ -114,14 +107,7 @@ const cleaningStats = ref({
   upcoming: 0
 });
 
-const cleaningSchedules = ref([
-    /*
-  { id: 1, site: 'LH 위례 6단지', type: '계단 대청소', date: '2025-05-10', status: '예정', worker: '김반장 외 3명' },
-  { id: 2, site: '강서 대명 강동', type: '지하주차장 물청소', date: '2025-05-12', status: '예정', worker: '청소팀 A' },
-  { id: 3, site: '판교 테크노밸리', type: '외벽 유리창 청소', date: '2025-05-01', status: '완료', worker: '외부 용역' },
-
-     */
-]);
+const cleaningSchedules = ref([]);
 
 // 유틸리티 함수 (테마 컬러와 연동)
 const getCleaningStatusClass = (status) => {
@@ -155,12 +141,6 @@ const getProgressColor = (progress) => {
   return 'var(--success)';
 };
 
-const getStatusIconInfo = (status) => {
-  if (status == 0) return { icon: 'mdi-clock-outline', class: 'status-pending-icon' };
-  if (status == 1) return { icon: 'mdi-check-circle-outline', class: 'status-complete-icon' };
-  return { icon: 'mdi-close-circle-outline', class: 'status-delayed-icon' };
-};
-
 // 데이터 가공 로직
 const calculateProcessed = (data) => {
   if (!data || !Array.isArray(data)) return [];
@@ -187,8 +167,8 @@ const calculateProcessed = (data) => {
 
       // 2. ⭐ 최근 차수 계약 시작일(startDt)과 종료일(endDt)을 기준으로 진행률 계산
       if (targetContract.startDt && targetContract.endDt) {
-        const startDate = new Date(targetContract.startDt); // 최근 갱신일 (예: 2025년 또는 2026년)
-        const endDate = new Date(targetContract.endDt);     // 계약 종료일
+        const startDate = new Date(targetContract.startDt);
+        const endDate = new Date(targetContract.endDt);
 
         const totalDuration = endDate.getTime() - startDate.getTime();
         const elapsedDuration = today.getTime() - startDate.getTime();
@@ -218,15 +198,13 @@ const getSiteData = async () => {
     const res = await axios.get(`/api/v1/site/list`);
     const result = res.data.data;
 
-    // 1. 전체 데이터를 먼저 가공하여 각 현장별 contractEnd(가장 빠른 만료일)를 계산
+    // 1. 전체 데이터를 먼저 가공하여 각 현장별 contractEnd 계산
     const processedData = calculateProcessed(result);
 
     // 2. 계약 만료일이 빠른 순(오름차순)으로 현장 정렬
     processedData.sort((a, b) => {
-      // 계약 종료일 정보가 없는 현장은 리스트 최하단(뒤쪽)으로 보냄
       if (!a.contractEnd) return 1;
       if (!b.contractEnd) return -1;
-
       return new Date(a.contractEnd).getTime() - new Date(b.contractEnd).getTime();
     });
 
@@ -235,13 +213,6 @@ const getSiteData = async () => {
   } catch (err) {
     console.error('현장 로드 실패:', err);
   }
-}
-
-const getMemberData = async () => {
-  try {
-    const res = await axios.get(`/api/v1/member/list`);
-    if (stats.value[1]) stats.value[1].value = res.data.data.length;
-  } catch (err) { console.error(err); }
 }
 
 const getPayrollMonth = async () => {
@@ -276,36 +247,6 @@ const fetchNotices = () => {
       .catch(err => console.error(err));
 };
 
-const fetchOrders = async () => {
-  try {
-    const res = await axios.get('/api/v1/code/item/order');
-    if (res.data.result) {
-      rawOrders.value = res.data.data;
-      orderCount.value = res.data.data.length;
-      updateRequestStat();
-    }
-  } catch (err) { console.error(err); }
-};
-
-const getMemberOff = async () => {
-  try {
-    let params = { startDt: startDate.value, endDt: endDate.value };
-    const res = await axios.get(`/api/v1/member/off/${cIdx}`, { params });
-    rawOffs.value = res.data.data;
-    offCount.value = res.data.data.length;
-    updateRequestStat();
-  } catch (err) { console.error(err); }
-};
-
-const updateRequestStat = () => {
-  const total = orderCount.value + offCount.value;
-  const statObj = stats.value.find(s => s.id === 'request');
-  if (statObj) {
-    statObj.value = total;
-    statObj.changeText = `연차 신청 ${offCount.value} / 용품 신청 ${orderCount.value}`;
-  }
-};
-
 const setDefaultDate = () => {
   const today = new Date();
   const end = today.toISOString().slice(0, 10);
@@ -317,7 +258,6 @@ const setDefaultDate = () => {
 // API 호출 통합 및 데이터 매핑
 const fetchDashboardData = async () => {
   try {
-    // 백엔드에서 만든 통합 API 호출
     const res = await axios.get(`/api/v1/dashboard`);
 
     if (res.data) {
@@ -334,9 +274,18 @@ const fetchDashboardData = async () => {
           };
         }
         if (stat.id === 'member') {
+          const activeCount = mStatus.totalCount || 0;             // 재직
+          const contractCount = mStatus.contractCount || 0;        // 계약
+          const emptyCount = Math.max(0, contractCount - activeCount); // 공백 (음수 방지용 처리)
+
           return {
             ...stat,
-            value: mStatus.totalCount,
+            value: activeCount, // 메인에는 재직 인원 노출
+            details: {          // 상세 데이터
+              contract: contractCount,
+              active: activeCount,
+              empty: emptyCount
+            },
             change: mStatus.increaseCount > 0 ? `+${mStatus.increaseCount}` : mStatus.increaseCount,
             changeText: '지난달 대비 신규'
           };
@@ -352,16 +301,16 @@ const fetchDashboardData = async () => {
         return stat;
       });
 
-      // 2. 승인 대기 목록용 데이터는 기존 fetchOrders, getMemberOff를 유지하거나
+      // 2. 승인 대기 목록용 데이터
       pendingList.value = pending.map(item => ({
         id: `${item.type}-${item.idx}`,
-        type: item.type === 'order' ? '용품신청' : '연차신청', // 타입 한글화
+        type: item.type === 'order' ? '용품신청' : '연차신청',
         site: item.site,
         applicant: item.applicant,
         summary: item.summary,
         date: item.date,
         status: item.status,
-        priority: item.type === 'off' ? 'high' : 'normal' // 연차인 경우 우선순위 높음 표시 예시
+        priority: item.type === 'off' ? 'high' : 'normal'
       }));
     }
   } catch (err) {
@@ -379,12 +328,11 @@ const goDetail = async (type) => {
 
 onMounted(async () => {
   setDefaultDate();
-  // 모든 API를 병렬로 호출. 하나가 실패해도 나머지는 실행되도록 처리
   await Promise.allSettled([
-    fetchDashboardData(), // 통계 및 승인대기
-    getSiteData(),        // 계약 현황 리스트
-    fetchNotices(),       // 공지사항
-    getPayrollMonth()     // 급여 총액
+    fetchDashboardData(),
+    getSiteData(),
+    fetchNotices(),
+    getPayrollMonth()
   ]);
 });
 
@@ -418,13 +366,23 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
         <div class="stat-icon">
           <i :class="['mdi', stat.icon]"></i>
         </div>
+
         <div class="stat-content">
           <span class="stat-label">{{ stat.title }}</span>
           <div class="stat-value-group">
             <span class="stat-value">{{ stat.value }}</span>
             <small class="stat-unit">{{ stat.unit }}</small>
           </div>
-          <div class="stat-footer">
+
+          <div class="stat-details-row" v-if="stat.details">
+            <div class="detail-item">계약 <strong>{{ stat.details.contract }}</strong></div>
+            <div class="divider"></div>
+            <div class="detail-item">재직 <strong>{{ stat.details.active }}</strong></div>
+            <div class="divider"></div>
+            <div class="detail-item text-danger">공백 <strong>{{ stat.details.empty }}</strong></div>
+          </div>
+
+          <div class="stat-footer" v-else>
             <span class="stat-change" v-if="stat.change">{{ stat.change }}</span>
             <span class="stat-footer-text">{{ stat.changeText }}</span>
           </div>
@@ -491,7 +449,6 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
       <div class="grid-column">
         <div class="table-card">
-          <!-- 수정된 헤더 부분 -->
           <div class="table-header" style="display: flex; justify-content: space-between; align-items: center;">
             <h3 class="table-title">주요 현장 계약 현황</h3>
             <button class="btn-more" @click="router.push('/site/list')">
@@ -591,6 +548,40 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   color: var(--text-sub);
 }
 
+/* --- 총 근무 인원 상세 정보(details) 스타일 추가 --- */
+.stat-details-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-sub);
+  background: var(--bg-hover);
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.detail-item strong {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.detail-item.text-danger strong {
+  color: var(--danger);
+}
+
+.divider {
+  width: 1px;
+  height: 10px;
+  background-color: var(--border-color);
+}
+
 /* 3. 메인 그리드 설정 */
 .main-grid {
   display: grid;
@@ -664,7 +655,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   gap: 4px;
 }
 
-/* 6. 태그 및 배지 디자인 (다크/라이트 테마 변수 활용) */
+/* 6. 태그 및 배지 디자인 */
 .type-tag {
   display: inline-flex;
   align-items: center;
@@ -677,13 +668,11 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   white-space: nowrap;
 }
 
-/* 촌스러운 보라색 제거 -> ERP 테마 컬러 활용 */
 .type-tag-orange { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
 .type-tag-blue { background-color: var(--primary-soft); color: var(--primary); }
 .type-tag-green { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .type-tag-gray { background-color: var(--bg-hover); color: var(--text-sub); }
 
-/* 더보기 버튼 스타일 */
 .btn-more {
   background: transparent;
   border: none;
@@ -705,7 +694,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
 .btn-more:hover {
   background-color: var(--bg-hover);
-  color: var(--primary); /* 호버 시 메인 테마 색상으로 강조 */
+  color: var(--primary);
 }
 
 .badge-count {
@@ -900,9 +889,6 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   }
   .item-action button {
     width: 100%;
-  }
-  .stats-grid {
-    /*grid-template-columns: 1fr 1fr;*/
   }
 }
 </style>

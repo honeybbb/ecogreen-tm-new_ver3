@@ -14,23 +14,25 @@ const {
   typeOptions,
   wagesData,
   bankOptions,
+  disabledOptions,
   fetchPositionOptions,
   fetchTypeOptions,
   fetchWageCode,
-  fetchBankOption
+  fetchBankOption,
+  fetchDisabledOptions
 } = useApi();
 
 // =============================================
 // UI 상태
 // =============================================
-const activeTab     = ref(route.query.tab || 'info');
+const activeTab     = ref(route.query.tab || 'staff');
 const isStaffLoaded = ref(false);
 
 const tabs = [
+  { id: 'staff',     name: '직원명부',    icon: 'mdi-account-group-outline' },
   { id: 'info',      name: '기본정보',    icon: 'mdi-information-outline' },
   { id: 'contract',  name: '계약정보',    icon: 'mdi-file-document-outline' },
   { id: 'settlement',name: '정산설정',   icon: 'mdi-calculator-variant' },
-  { id: 'staff',     name: '배치인원',    icon: 'mdi-account-group-outline' },
   { id: 'equipment', name: '장비현황',    icon: 'mdi-wrench-outline' },
   { id: 'memo',      name: '특이사항',    icon: 'mdi-note-text-outline' },
 ];
@@ -100,11 +102,55 @@ const getItemName = (code) => {
 // 배치 인원
 // =============================================
 const assignedStaff = ref([]);
-
 const totalAssignedStaff = computed(() => assignedStaff.value.length);
+const getAssignedByGroup = (contractType) => assignedStaff.value.filter(s => s.type == contractType);
 
-const getAssignedByGroup = (contractType) =>
-    assignedStaff.value.filter(s => s.type == contractType);
+const getStaffCategory = (type) => {
+  const group = contractGroups.value.find(g => String(g.type) === String(type));
+  return group ? group.category : '기타';
+};
+
+//배치인원 필터 상태 ('전체' 또는 '경비', '미화' 등)
+const selectedStaffFilter = ref('전체');
+
+//선택된 탭(카드)에 따라 필터링된 배열 반환
+const filteredAssignedStaff = computed(() => {
+  if (selectedStaffFilter.value === '전체') {
+    return assignedStaff.value;
+  }
+  return assignedStaff.value.filter(staff => getStaffCategory(staff.type) === selectedStaffFilter.value);
+});
+
+const staffTableRows = computed(() =>
+    filteredAssignedStaff.value.map(s => {
+      const category = getStaffCategory(s.type);
+      return {
+        id: s.id,              // 직원 PK (향후 상세보기 대비, 지금은 미사용)
+        assignIdx: s.assignIdx,  // 배치 PK (배치 해제용)
+        name: s.name,
+        // 구분(경비/미화)을 직책 앞에 표기 — 배지 컬럼이 없어 텍스트로 대체
+        position: `[${category}] ${s.positionName || s.position || ''}`,
+        gender: s.gender,
+        birthDt: s.birthDt,
+        foreigner: s.foreigner,
+        disability: s.disability,
+        disability_grade: s.disability_grade,
+        inDate: s.inDate,
+        outDate: s.outDate,
+        outReason: s.outReason,
+        four_ins: s.four_ins,
+        retire_pension: s.retire_pension,
+        phone: s.phone,
+        status: s.mStatus,
+      };
+    })
+);
+
+const handleStaffRemove = (id) => {
+  const target = filteredAssignedStaff.value.find(s => s.mIdx === id || s.assignIdx === id);
+  removeAssignedStaff(target?.assignIdx ?? id);
+};
+const goToDetail = (id) => window.open(router.resolve(`/member/${id}`).href, "_blank", "width=1200,height=800");
 
 // =============================================
 // 장비 관리
@@ -1516,7 +1562,8 @@ onMounted(async () => {
     // fetchWageCode(),
     fetchBankOption(),
     getWageCode(),
-    fetchAccounts()
+    fetchAccounts(),
+    fetchDisabledOptions()
   ]);
   await getSiteData();
 
@@ -2712,15 +2759,23 @@ onMounted(async () => {
 
       <!-- ── 배치인원 탭 ── -->
       <div v-show="activeTab === 'staff'" class="tab-panel">
+
+        <!-- 상단 요약 카드 (클릭 필터 적용) -->
         <div class="staff-overview">
-          <div class="overview-card">
+          <div class="overview-card clickable-card"
+               :class="{ 'is-selected': selectedStaffFilter === '전체' }"
+               @click="selectedStaffFilter = '전체'">
             <div class="overview-icon-wrap oc-blue"><i class="mdi mdi-account-group-outline"></i></div>
             <div class="overview-content">
               <span class="overview-label">총 배치인원</span>
               <span class="overview-value">{{ totalAssignedStaff }}명</span>
             </div>
           </div>
-          <div v-for="group in contractGroups" :key="group.type" class="overview-card">
+
+          <div v-for="group in contractGroups" :key="group.type"
+               class="overview-card clickable-card"
+               :class="{ 'is-selected': selectedStaffFilter === group.category }"
+               @click="selectedStaffFilter = group.category">
             <div :class="['overview-icon-wrap', `oc-badge-${group.category}`]"><i class="mdi mdi-briefcase-outline"></i></div>
             <div class="overview-content">
               <span class="overview-label">{{ group.category }}</span>
@@ -2729,47 +2784,27 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="staff-tab-actions">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <!--h3 style="font-size: 15px; font-weight: 700; color: var(--text-main); margin: 0;">
+            <i class="mdi mdi-table" style="color: var(--primary); margin-right: 4px;"></i> 배치 인원 목록
+            <span v-if="selectedStaffFilter !== '전체'" style="color:var(--primary); font-size: 13px; margin-left: 6px;">
+              [{{ selectedStaffFilter }} 필터링 중]
+            </span>
+          </h3-->
+          <div class="spacer"></div>
           <button type="button" class="btn-assign-staff" @click="openStaffSearchModal">
             <i class="mdi mdi-account-plus-outline"></i> 직원 배치
           </button>
         </div>
 
-        <div v-if="assignedStaff.length === 0" class="empty-state">
-          <i class="mdi mdi-account-off-outline"></i>
-          <p>배치된 직원이 없습니다</p>
-          <span>직원 배치 버튼을 눌러 직원을 추가해주세요</span>
-        </div>
-
-        <div v-else class="assigned-staff-sections">
-          <template v-for="group in contractGroups" :key="group.type">
-            <div v-if="getAssignedByGroup(group.type).length > 0" class="assigned-group-section">
-              <div class="assigned-group-header">
-                <span :class="['contract-badge', `badge-${group.category}`]"><i class="mdi mdi-briefcase-outline"></i>{{ group.category }}</span>
-                <span class="staff-count-badge">{{ getAssignedByGroup(group.type).length }}명</span>
-                <span class="contract-period">{{ group.contractStart }} ~ {{ group.contractEnd }}</span>
-              </div>
-              <div class="assigned-staff-grid">
-                <div v-for="staff in getAssignedByGroup(group.type)" :key="staff.mIdx" class="assigned-staff-card">
-                  <div class="staff-card-header">
-                    <div class="staff-avatar"><i class="mdi mdi-account"></i></div>
-                    <div class="staff-card-info">
-                      <span class="staff-card-name">{{ staff.name }}</span>
-                      <span class="staff-card-position">{{ staff.positionName }}</span>
-                    </div>
-                    <button type="button" class="btn-remove-assigned" @click="removeAssignedStaff(staff.assignIdx)">
-                      <i class="mdi mdi-close"></i>
-                    </button>
-                  </div>
-                  <div class="staff-card-details">
-                    <div class="staff-card-detail-item"><i class="mdi mdi-phone-outline"></i><span>{{ staff.phone }}</span></div>
-                    <div class="staff-card-detail-item"><i class="mdi mdi-calendar-check-outline"></i><span>{{ staff.assignDate }} 배치</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-        </div>
+        <!-- 리스트 형태 테이블 -->
+        <StaffDataTable
+            :members="staffTableRows"
+            :disabled-options="disabledOptions"
+            :columns="['id', 'name', 'position', 'gender', 'birthDt', 'foreigner', 'disability', 'inDate', 'outDate', 'outReason', 'four_ins', 'retire_pension', 'phone', 'status']"
+            @remove="handleStaffRemove"
+            @detail="goToDetail"
+        />
       </div>
 
       <!-- ── 장비현황 탭 ── -->
@@ -5383,5 +5418,26 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 .simple-checkbox-label:hover .checkbox-text {
   color: var(--primary);
+}
+
+/* =============================================
+   배치 인원 요약 카드 (클릭 필터링용)
+============================================= */
+.clickable-card {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--border-color);
+}
+
+.clickable-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-color: var(--border-focus);
+}
+
+/* 선택된 카드 강조 (푸른색 테두리와 옅은 배경) */
+.clickable-card.is-selected {
+  border: 2px solid var(--primary);
+  background-color: var(--primary-soft);
 }
 </style>

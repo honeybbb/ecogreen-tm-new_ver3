@@ -19,6 +19,39 @@ const {
   fetchBankOption
 } = useApi();
 
+// 숫자 콤마 포맷용 헬퍼 함수
+const formatCurrency = (val) => {
+  if (!val || isNaN(val)) return '0';
+  return Number(val).toLocaleString();
+};
+
+// =============================================
+// [수정] 퀵 네비게이션(스크롤 이동) 로직 - content-area 기준
+// =============================================
+const activeSection = ref('sec-basic');
+const navItems = [
+  { id: 'sec-basic', title: '기본 정보', icon: 'mdi-office-building-outline' },
+  { id: 'sec-biz', title: '주소 및 사업자', icon: 'mdi-card-account-details-outline' },
+  { id: 'sec-contract', title: '계약 및 인원', icon: 'mdi-file-document-outline' },
+  { id: 'sec-cleaning', title: '특수과업 (대청소)', icon: 'mdi-spray-bottle' },
+  { id: 'sec-settle', title: '정산 및 출력', icon: 'mdi-calculator-variant' },
+  { id: 'sec-manager', title: '담당자 정보', icon: 'mdi-account-tie-outline' },
+  { id: 'sec-memo', title: '특이사항 및 메모', icon: 'mdi-text-box-edit-outline' },
+];
+
+const scrollToSection = (id) => {
+  activeSection.value = id;
+  const el = document.getElementById(id);
+  const container = document.querySelector('.content-area'); // 전체 창이 아닌 콘텐츠 영역 지정
+
+  if (el && container) {
+    // 컨테이너 내부의 스크롤 위치 계산 (상단 여백 24px 보정)
+    const topPos = el.offsetTop - 24;
+    container.scrollTo({ top: topPos, behavior: 'smooth' });
+  }
+};
+// =============================================
+
 const DEFAULT_DIRECT_LABOR_COMMON = [
   { code: '04001001001', label: '기본급' },
   { code: '04001002001', label: '직책수당' },
@@ -80,48 +113,12 @@ const getInitSiteData = () => ({
 
 const site = ref(getInitSiteData());
 
-/*
-const site = ref({
-  siteName: '',
-  siteId: '',
-  siteType: '',
-  businessNumber: '',
-  representative: '',
-  businessType: '',
-  businessItem: '',
-  email: '',
-  postalCode: '',
-  addressMain: '',
-  addressDetail: '',
-  areaUnder: '',
-  areaOver: '',
-  areaGross: '',
-  is_vat: false,
-  building_su: '',
-  unit_su: '',
-  managerName: '',
-  managerContact: '',
-  director: '',
-  directorContact: '',
-  billingManager: '',
-  payrollManager: '',
-  memo: '',
-  status: '운영 중',
-  payment_day: '',
-  bigo: '',
-  bankName: '기업',
-  accountNumber: '',
-  accountName: '',
-});
-
- */
-
-const accountList = ref([]); //회사계좌list
+const accountList = ref([]);
 const contractGroups = ref([]);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const statusOptions  = ref(['운영 중', '계약 종료']);
-const bigoHistory    = ref([]);   // 현장 특이사항 (type: 1)
-const settlementHistory = ref([]);     // 정산 특이사항 (type: 2)
+const bigoHistory    = ref([]);
+const settlementHistory = ref([]);
 const detailInput    = ref(null);
 
 const searchAvailable = ref('');
@@ -168,16 +165,15 @@ const updateCleaningCount = (task, delta) => {
 const allAvailableItems = computed(() => {
   const map = new Map();
 
-  // dynamicSettlementItems는 이제 '코드'를 가지고 있습니다.
   dynamicSettlementItems.value.payItems.forEach(code => {
     const found = wagesData.value.find(w => w.itemCd === code);
     if (found) map.set(found.itemCd, found.itemNm);
-    else map.set(code, code); // fallback
+    else map.set(code, code);
   });
   dynamicSettlementItems.value.deductionItems.forEach(code => {
     const found = wagesData.value.find(w => w.itemCd === code);
     if (found) map.set(found.itemCd, found.itemNm);
-    else map.set(code, code); // fallback
+    else map.set(code, code);
   });
 
   (wagesData.value || []).forEach(w => {
@@ -219,27 +215,11 @@ const toggleRight = (item) => {
   else selectedRightItems.value.push(item.cd);
 };
 
-/*
-const isPayItem = (cd) => {
-  // 배열에 코드가 들어있으므로, 파라미터로 넘어온 코드(cd)가 있는지 바로 확인
-  if (dynamicSettlementItems.value.payItems.includes(cd)) return true;
-
-  const found = wagesData.value.find(w => w.itemCd === cd);
-  const nm = found ? found.itemNm : cd;
-  return PAY_CONTROL_KEYWORDS.some(kw => nm.includes(kw));
-};
-
- */
 const isPayItem = (cd) => {
   if (!cd) return false;
-
-  // wagesData에 이미 계산된 groupNm(지급항목/공제항목/정산항목)을 우선 사용
   const found = wagesData.value.find(w => w.itemCd === cd);
   if (found) return found.groupNm === '지급항목';
-
-  // wagesData에 없는 코드(레거시 라벨 등) 대비: 코드 접두어로 직접 판별
-  // 04001 = 지급항목, 04002 = 공제항목, 04003 = 정산(제경비)항목
-  return cd.startsWith('04001');
+  return String(cd).startsWith('04001');
 };
 
 const moveToRight = () => {
@@ -265,29 +245,11 @@ const moveToLeft = () => {
   selectedRightItems.value = [];
 };
 
-const getItemName = (code) => {
-  if (!code) return '-';
-  const found = wagesData.value.find(w => w.itemCd === code);
-  return found ? found.itemNm : code;
-};
-
 // =============================================
 // 정산 설정 — 산출내역서 기반 동적 항목
 // =============================================
-
-/**
- * 산출내역서의 실제 입력 항목들을 읽어서 정산 설정 체크박스로 구성합니다.
- *
- * - payItems      : 직접노무비 중 '연차적립금', '퇴직적립금', '근로자의날수당' 등 특수 지급항목
- * - deductionItems: 간접노무비 전체 항목 (건강보험, 국민연금 등 공제항목)
- *
- * 각 항목은 label(표시명)을 key로 사용합니다.
- */
-
-// 직접노무비 중 정산 설정에서 개별 제어할 특수 지급항목 키워드
 const PAY_CONTROL_KEYWORDS = ['연차', '퇴직', '근로자의날'];
 
-// 산출내역서에서 동적으로 수집된 항목들
 const dynamicSettlementItems = computed(() => {
   const paySet = new Map();
   const deductionSet = new Map();
@@ -298,11 +260,11 @@ const dynamicSettlementItems = computed(() => {
     (group.costBreakdown.directLabor || []).forEach(item => {
       if (!item.code) return;
       const isSpecial = PAY_CONTROL_KEYWORDS.some(kw => item.label?.includes(kw));
-      if (isSpecial) paySet.set(item.code, true); // ← label → code
+      if (isSpecial) paySet.set(item.code, true);
     });
 
     (group.costBreakdown.indirectLabor || []).forEach(item => {
-      if (item.code) deductionSet.set(item.code, true); // ← label → code
+      if (item.code) deductionSet.set(item.code, true);
     });
   });
 
@@ -313,29 +275,23 @@ const dynamicSettlementItems = computed(() => {
 });
 
 const settlementConfig = ref({
-  // 직접노무비 특수 지급항목 표시 여부 (label 배열)
   activePayLabels: [],
-  // 간접노무비(공제항목) 표시 여부 (label 배열)
   activeDeductionLabels: [],
   isAutoCalcDefault: true,
-  // Melt Options — 공제 계산 베이스에 포함 여부
   meltOptions: {
     annualLeave: false,
     severance: false,
-    workersDay: false // 근로자의 날 수당 포함 옵션
+    workersDay: false
   }
 });
 
 const exportConfig = ref({
-  includeStatement: true, // 청구 공문
-  includeDetails: true,   // 급여 세부 내역서
-  includePayroll: false   // 급여 대장
+  includeStatement: true,
+  includeDetails: true,
+  includePayroll: false
 });
 
-
-// 산출내역서 항목이 바뀌면 새로운 항목은 자동으로 체크 추가
 watch(dynamicSettlementItems, (newItems) => {
-  // 지급항목: 새로 추가된 항목 자동 체크
   newItems.payItems.forEach(code => {
     if (!settlementConfig.value.activePayLabels.includes(code)) {
       settlementConfig.value.activePayLabels.push(code);
@@ -344,7 +300,6 @@ watch(dynamicSettlementItems, (newItems) => {
   settlementConfig.value.activePayLabels =
       settlementConfig.value.activePayLabels.filter(c => newItems.payItems.includes(c));
 
-  // 공제항목
   newItems.deductionItems.forEach(code => {
     if (!settlementConfig.value.activeDeductionLabels.includes(code)) {
       settlementConfig.value.activeDeductionLabels.push(code);
@@ -368,17 +323,10 @@ const createDefaultCostBreakdown = (staffList = []) => ({
   monthlyWorkHours: makeValuesObj(staffList, ''),
   directLabor: [],
   indirectLabor: [],
-  expenses: [
-      /*
-    { label: '피복비 및 장구비', values: makeValuesObj(staffList) },
-    { label: '교육훈련비',       values: makeValuesObj(staffList) },
-    { label: '소모품비',         values: makeValuesObj(staffList) },
-    { label: '복리후생비',       values: makeValuesObj(staffList) },
-       */
-  ],
+  expenses: [],
   managementFee: makeValuesObj(staffList),
   profit: makeValuesObj(staffList),
-  contractTotalFee:  '',   // 계약기간 총액 (수동 입력)
+  contractTotalFee:  '',
   contractTotalBigo: '',
   specialNote: '',
 });
@@ -410,7 +358,6 @@ const syncCostBreakdownToStaff = (group) => {
   });
 };
 
-// 계약 시작일 입력 시, 최초 계약일이 비어있으면 자동 채움
 const syncFirstContractDate = (group) => {
   if (!group.firstContractDt && group.contractStart) {
     group.firstContractDt = group.contractStart;
@@ -419,21 +366,16 @@ const syncFirstContractDate = (group) => {
 
 const onInputCost = (item, code, event) => {
   const el = event.target;
-  const selectionStart = el.selectionStart; // 현재 커서 위치 저장
+  const selectionStart = el.selectionStart;
   const oldLength = el.value.length;
 
-  // 숫자만 추출
   const rawValue = el.value.replace(/[^\d]/g, '');
-
-  // 데이터 업데이트: 빈 문자열이면 데이터도 빈 값으로, 아니면 숫자로 저장
   const numValue = rawValue === '' ? '' : Number(rawValue);
   item.values[code] = numValue;
 
-  // 화면 표시값 즉시 포맷팅
   const formatted = formatCurrency(numValue);
   el.value = formatted;
 
-  // 커서 위치 보정: 콤마 추가로 인한 길이 변화 계산
   const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
@@ -452,38 +394,31 @@ const onInputSingleCost = (obj, code, event) => {
   const formatted = formatCurrency(numValue);
   el.value = formatted;
 
+  const newLength = formatted.length;
   const nextPos = selectionStart + (newLength - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 };
 
-// 자동 계산된 총계와 수동 입력된 총계를 제어하는 함수
 const getDisplayMonthlyTotal = (group) => {
-  // 수동으로 입력한 값이 존재하면 그 값을 반환
   if (group.manualMonthlyTotal !== undefined && group.manualMonthlyTotal !== null && group.manualMonthlyTotal !== '') {
     return group.manualMonthlyTotal;
   }
-  // 수동 입력값이 없으면 자동 계산된 값 반환
   return getTotalMonthlyFee(group);
 };
 
-// 월간 용역비 총계 입력 핸들러 (콤마 및 커서 유지)
 const onInputMonthlyTotal = (group, event) => {
   const el = event.target;
   const selectionStart = el.selectionStart;
   const oldLength = el.value.length;
 
-  // 숫자만 추출
   const rawValue = el.value.replace(/[^\d]/g, '');
   const numValue = rawValue === '' ? '' : Number(rawValue);
 
-  // 수동 입력값 저장 (빈 값이면 다시 자동계산으로 돌아감)
   group.manualMonthlyTotal = numValue;
 
-  // 화면 포맷팅
   const formatted = formatCurrency(numValue === '' ? getTotalMonthlyFee(group) : numValue);
   el.value = formatted;
 
-  // 커서 위치 보정
   const nextPos = selectionStart + (formatted.length - oldLength);
   el.setSelectionRange(nextPos, nextPos);
 };
@@ -510,9 +445,8 @@ const onInputSingleRaw = (obj, key, event) => {
 // 계약 그룹 CRUD
 // =============================================
 const addContractGroup = (category) => {
-  // 타입에 따라 직접노무비 항목 결정
-  const isGuard = category.itemCd === '01001001';   // 경비
-  const isCleaning = category.itemCd === '01001002'; // 미화
+  const isGuard = category.itemCd === '01001001';
+  const isCleaning = category.itemCd === '01001002';
 
   const directLaborTemplate = isGuard
       ? DEFAULT_DIRECT_LABOR_GUARD
@@ -520,7 +454,6 @@ const addContractGroup = (category) => {
 
   const defaultBreakdown = createDefaultCostBreakdown([]);
 
-  // 직접노무비 기본 항목 주입
   defaultBreakdown.directLabor = directLaborTemplate.map(item => ({
     code:   item.code,
     label:  item.label,
@@ -528,7 +461,6 @@ const addContractGroup = (category) => {
     bigo:   '',
   }));
 
-  // 간접노무비 기본 항목 주입 (경비/미화 공통)
   if (isGuard || isCleaning) {
     defaultBreakdown.indirectLabor = DEFAULT_INDIRECT_LABOR.map(item => ({
       code:   item.code,
@@ -543,9 +475,9 @@ const addContractGroup = (category) => {
     type: category.itemCd,
     files: [],
     isDragging: false,
-    firstContractDt: '', // 최초 계약일
-    contractStart: '', //계약 시작일
-    contractEnd: '',  //계약 종료일
+    firstContractDt: '',
+    contractStart: '',
+    contractEnd: '',
     totalCost: 0,
     workDays: '',
     workSchedule: '',
@@ -566,6 +498,9 @@ const addContractGroup = (category) => {
     tempCleaningCode: '',
     tempCleaningCount: 1,
   });
+
+  // 방금 추가된 섹션으로 스크롤 이동
+  setTimeout(() => { scrollToSection('sec-contract'); }, 100);
 };
 
 const removeContractGroup = (index) => {
@@ -623,7 +558,7 @@ const addStaffToGroup = (groupIndex) => {
       name: jobInfo.itemNm,
       count: Number(group.tempCount),
       schedule: createDefaultSchedule(),
-      showSchedule: true   // 추가 시 바로 펼침
+      showSchedule: true
     });
   }
 
@@ -724,7 +659,7 @@ const handleFileChangeGroup = (group, event) => {
   if (!group.files) group.files = [];
   group.files = [...group.files, ...pdfFiles];
 
-  event.target.value = ''; // 초기화
+  event.target.value = '';
 };
 
 const removeFileGroup = (group, index) => {
@@ -740,16 +675,15 @@ const totalArea = computed(() => {
 const isVatSite = computed(() => Number(site.value.areaOver) > 0);
 
 const handleSubmit = async () => {
-  // 단계 구분이 없어졌으므로 return만 처리합니다.
-  if (!site.value.siteName) { alert('현장명을 입력해주세요.'); return; }
-  if (!site.value.siteType) { alert('현장 형태를 선택해주세요.'); return; }
-  if (!site.value.postalCode) { alert('주소를 입력해주세요.'); return; }
-  if (!site.value.building_su) { alert('건물 수를 입력해주세요.'); return; }
-  if (!site.value.unit_su) { alert('세대 수를 입력해주세요.'); return; }
-  if (!site.value.payment_day) { alert('급여지급일을 선택해주세요.'); return; }
-  if (!site.value.billing_day) { alert('청구예정일을 선택해주세요.'); return; }
-  if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); return; }
-  if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); return; }
+  if (!site.value.siteName) { alert('현장명을 입력해주세요.'); scrollToSection('sec-basic'); return; }
+  if (!site.value.siteType) { alert('현장 형태를 선택해주세요.'); scrollToSection('sec-basic'); return; }
+  if (!site.value.postalCode) { alert('주소를 입력해주세요.'); scrollToSection('sec-biz'); return; }
+  if (!site.value.building_su) { alert('건물 수를 입력해주세요.'); scrollToSection('sec-basic'); return; }
+  if (!site.value.unit_su) { alert('세대 수를 입력해주세요.'); scrollToSection('sec-basic'); return; }
+  if (!site.value.payment_day) { alert('급여지급일을 선택해주세요.'); scrollToSection('sec-basic'); return; }
+  if (!site.value.billing_day) { alert('청구예정일을 선택해주세요.'); scrollToSection('sec-basic'); return; }
+  if (!site.value.director) { alert('관리 소장 이름을 입력해주세요.'); scrollToSection('sec-manager'); return; }
+  if (!site.value.directorContact) { alert('관리 소장 연락처를 입력해주세요.'); scrollToSection('sec-manager'); return; }
 
   try {
     const finalContractGroups = contractGroups.value.map(group => {
@@ -808,40 +742,33 @@ const handleSubmit = async () => {
       exportConfig: exportConfigJson
     };
 
-    // 💡 STEP 1: 텍스트 및 계약 데이터 먼저 등록!
     const res = await axios.post(`/api/v1/site/register`, params);
     const savedSIdx = res.data.data || route.query.idx;
     if (!savedSIdx) throw new Error('sIdx를 찾을 수 없습니다.');
 
-    // 💡 STEP 2: 파일이 하나라도 있는지 검사
     const hasFiles = contractGroups.value.some(g => g.files && g.files.length > 0);
 
     if (hasFiles) {
-      // 💡 STEP 3: 새로 생성된 scIdx를 알아내기 위해 현장 데이터를 재조회합니다. (기존 존재하는 API 활용)
       const siteDataRes = await axios.get(`/api/v1/site/data/${savedSIdx}`);
       const siteData = siteDataRes.data.data[0];
 
       if (siteData && siteData.contractList) {
-        // 백엔드에서 계약 정보를 'order by idx asc' 로 가져오기 때문에 프론트의 배열 순서와 완벽히 일치합니다.
         const fetchedContracts = JSON.parse(siteData.contractList);
         const formData = new FormData();
         let uploadCount = 0;
 
         contractGroups.value.forEach((group, index) => {
-          // 기존에 있던 계약이면 group.scIdx, 방금 만든 새 계약이면 재조회한 DB 데이터의 idx 사용
           const dbContract = fetchedContracts[index];
           const targetScIdx = group.scIdx || (dbContract ? (dbContract.scIdx || dbContract.idx) : null);
 
           if (targetScIdx && group.files && group.files.length > 0) {
             group.files.forEach(file => {
-              // 백엔드가 요구하는 /file_contract_(\d+)/ 정규식에 정확히 맞는 이름 생성
               formData.append(`file_contract_${targetScIdx}`, file);
               uploadCount++;
             });
           }
         });
 
-        // 💡 STEP 4: 맵핑된 파일들 전송
         if (uploadCount > 0) {
           await axios.post(`/api/v1/upload/file/${savedSIdx}`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
@@ -854,19 +781,17 @@ const handleSubmit = async () => {
     await router.push('/site/list');
   } catch (err) {
     console.error('등록 에러:', err);
-    // alert('저장 중 오류가 발생했습니다.');
     window.customAlert('저장 중 오류가 발생했습니다.', 'error');
   }
 };
 
-// 수정 모드일 때 기존 데이터 불러오기
 const getSiteData = async () => {
   const sIdx = route.query.idx;
   if (!sIdx) {
-    site.value = getInitSiteData(); // 현장정보 초기화
-    contractGroups.value = [];      // 계약정보 초기화
-    bigoHistory.value = [];         // 히스토리 초기화
-    settlementConfig.value = {      // 정산설정 초기화
+    site.value = getInitSiteData();
+    contractGroups.value = [];
+    bigoHistory.value = [];
+    settlementConfig.value = {
       activePayLabels: [],
       activeDeductionLabels: [],
       isAutoCalcDefault: true,
@@ -882,14 +807,13 @@ const getSiteData = async () => {
     searchSelected.value = '';
     selectedAvailItems.value = [];
     selectedRightItems.value = [];
-    return; // 비운 뒤 함수 종료
+    return;
   }
 
   axios.get(`/api/v1/site/data/${sIdx}`).then(res => {
     const result = res.data.data[0];
     if (!result) return;
 
-    // 1. 현장 기본 정보 세팅
     site.value.siteName       = result.name;
     site.value.siteId         = result.site_id;
     site.value.siteType       = result.sType;
@@ -912,18 +836,15 @@ const getSiteData = async () => {
     site.value.accountNumber  = result.accountNumber || '';
     site.value.accountName    = result.accountName || '';
 
-    // 2. 계약 그룹 및 직책별 근로시간 세팅 (방어 코드 포함)
     if (result.contractList) {
       const contract = JSON.parse(result.contractList);
       contractGroups.value = contract.map(item => {
-        // 직책 및 스케줄 먼저 빌드
         const staffListMapped = (item.staffList || []).map(staff => ({
           ...staff,
           schedule: staff.schedule || createDefaultSchedule(),
           showSchedule: false
         }));
 
-        // 근로시간 데이터가 없는 구버전 마스터 대응용 방어 코드
         const costBreakdownData = item.costBreakdown || createDefaultCostBreakdown(staffListMapped);
         if (!costBreakdownData.dailyWorkHours) {
           costBreakdownData.dailyWorkHours = makeValuesObj(staffListMapped, '');
@@ -946,7 +867,7 @@ const getSiteData = async () => {
           staffList: staffListMapped,
           tempJobCode: '',
           tempCount: 1,
-          costBreakdown: costBreakdownData, // 보완된 객체 주입
+          costBreakdown: costBreakdownData,
           showCostBreakdown: false,
           meltOptions: item.meltOptions || {
             annualLeave: false,
@@ -960,17 +881,13 @@ const getSiteData = async () => {
       });
     }
 
-    // 3. 특이사항 히스토리 세팅
     if (result.bigoList) {
       try {
         const allLog = JSON.parse(result.bigoList);
-
-        // type 1: 현장 특이사항
         bigoHistory.value = allLog
             .filter(item => String(item.type) === '1')
             .sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
 
-        // type 2: 정산 특이사항
         settlementHistory.value = allLog
             .filter(item => String(item.type) === '2')
             .sort((a, b) => new Date(b.regDt) - new Date(a.regDt));
@@ -980,21 +897,18 @@ const getSiteData = async () => {
       }
     }
 
-    // 4. 정산 세부 노출 설정 세팅
     if (result.viewConfig) {
       try {
         const parsed = typeof result.viewConfig === 'string'
             ? JSON.parse(result.viewConfig)
             : result.viewConfig;
 
-        // 기존 한글 데이터(연차적립금 등)를 코드로 매핑해주는 방어 코드 추가
         const convertLabelToCode = (val) => {
           const found = wagesData.value.find(w => w.itemNm === val || w.itemCd === val);
           return found ? found.itemCd : val;
         };
 
         settlementConfig.value = {
-          // 불러올 때 한글이면 코드로 변환하여 저장
           activePayLabels:       (parsed.activePayLabels ?? []).map(convertLabelToCode),
           activeDeductionLabels: (parsed.activeDeductionLabels ?? []).map(convertLabelToCode),
           meltOptions: {
@@ -1018,7 +932,7 @@ const getSiteData = async () => {
     }
 
     site.value.bigo = '';
-    site.value.settlementBigo = ''; // 초기화 추가
+    site.value.settlementBigo = '';
   });
 };
 
@@ -1084,7 +998,6 @@ const getWageCode = async () => {
       groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
     }));
 
-    // groupCd가 04003001인 leaf만 cleaningTaskOptions로 세팅
     cleaningTaskOptions.value = leaves
         .filter(leaf => leaf.groupCd === '04003001')
         .map(leaf => ({ itemCd: leaf.itemCd, itemNm: leaf.itemNm }));
@@ -1106,11 +1019,8 @@ const fetchAccounts = async () => {
 };
 
 const setCompanyAccount = () => {
-  // 선택한 은행명과 일치하는 계좌 정보를 accountList에서 찾습니다.
   const selectedBank = accountList.value.find(b => b.bank === site.value.bankName);
-  console.log(selectedBank , 'selectedBank')
   if (selectedBank) {
-    // API 데이터 구조에 맞춰 account와 accountNm 값을 넣어줍니다.
     site.value.accountNumber = selectedBank.accountNumber || '';
     site.value.accountName = selectedBank.accountName || '';
   }
@@ -1127,2491 +1037,869 @@ onActivated(() => {
 onMounted(() => {
   fetchPositionOptions();
   fetchTypeOptions();
-  //fetchWageCode();
   fetchBankOption();
   getSiteData();
   getWageCode();
   fetchAccounts();
+
+  // ★ 스크롤 위치 감지 로직 - window 대신 content-area 내부 감지로 변경
+  const container = document.querySelector('.content-area');
+  if (container) {
+    container.addEventListener('scroll', () => {
+      const sections = navItems.map(item => document.getElementById(item.id));
+      let current = 'sec-basic';
+      sections.forEach(section => {
+        if (section && container.scrollTop >= (section.offsetTop - 150)) {
+          current = section.getAttribute('id');
+        }
+      });
+      activeSection.value = current;
+    });
+  }
 });
 </script>
 
 <template>
+  <!-- 100vh 고정 스크롤 방지 래퍼 -->
   <div class="site-register-page">
 
-    <div class="page-header">
+    <!-- 상단 고정(Sticky) 헤더 -->
+    <div class="page-header sticky-header">
       <div class="header-left">
-        <button @click="handleCancel" class="btn-back">
+        <button type="button" @click="handleCancel" class="btn-back">
           <i class="mdi mdi-arrow-left"></i>
         </button>
         <div>
-          <h1 class="page-title"><i class="mdi mdi-office-building-plus-outline"></i> 현장 등록</h1>
-          <p class="page-subtitle">새로운 현장 정보를 등록합니다</p>
+          <h1 class="page-title"><i class="mdi mdi-office-building-plus-outline text-primary"></i> 현장 등록</h1>
+          <p class="page-subtitle">새로운 현장 정보를 카테고리별로 입력합니다.</p>
         </div>
       </div>
-      <button @click="handleCancel" class="btn-cancel">
-        <i class="mdi mdi-close"></i><span>취소</span>
-      </button>
+      <div class="header-right">
+        <button type="button" @click="handleCancel" class="btn-cancel">취소</button>
+        <button type="button" @click="handleSubmit" class="btn-submit">
+          <i class="mdi mdi-check"></i> 현장 등록 완료
+        </button>
+      </div>
     </div>
 
-    <form @submit.prevent="handleSubmit">
-      <div class="form-container">
+    <!-- 메인 레이아웃: 좌측 네비 + 우측 스크롤 폼 -->
+    <div class="register-layout">
 
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-office-building-outline"></i>
-            <h2>현장 기본 정보</h2>
-          </div>
-
-          <div class="form-grid">
-            <div class="form-group full-width">
-              <label class="form-label required"><i class="mdi mdi-office-building-marker-outline"></i>현장명</label>
-              <input type="text" v-model="site.siteName" required class="form-input" placeholder="예: LH 위례 6단지" />
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-barcode"></i>현장 코드</label>
-              <input type="text" v-model="site.siteId" class="form-input" placeholder="선택사항" />
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-tag-outline"></i>현장 형태</label>
-              <select v-model="site.siteType" required class="form-select">
-                <option value="">선택하세요</option>
-                <option v-for="t in siteTypeOptions" :key="t" :value="t">{{ t }}</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-flag-outline"></i>현장 상태</label>
-              <div class="radio-group">
-                <label v-for="s in statusOptions" :key="s" class="radio-label">
-                  <input type="radio" v-model="site.status" :value="s" /><span>{{ s }}</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-domain"></i>연면적 (건축물 총면적)</label>
-              <div style="position: relative;">
-                <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
-                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 이하 (면세 면적)</label>
-              <div style="position: relative;">
-                <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
-                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-ruler-square"></i>135㎡ 초과 (과세 면적)</label>
-              <div style="position: relative;">
-                <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="any" style="padding-right: 32px;" />
-                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted);">㎡</span>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-calculator"></i>총 관리면적 (자동계산)</label>
-              <div style="position: relative;">
-                <input type="text" :value="totalArea" class="form-input text-right font-bold" readonly style="padding-right: 32px; background: var(--bg-hover); color: var(--primary); border-color: var(--primary);" />
-                <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: bold; color: var(--primary);">㎡</span>
-              </div>
-              <p style="margin: 6px 0 0; font-size: 11px; color: var(--text-muted); line-height: 1.4;">
-                * 135㎡ 초과 면적 입력 시 <strong :style="{ color: isVatSite ? 'var(--primary)' : 'inherit' }">과세 사업장({{ isVatSite ? 'Y' : 'N' }})</strong>으로 자동 설정.
-              </p>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-domain"></i>건물 수</label>
-              <input type="number" v-model="site.building_su" required class="form-input text-right" placeholder="0" />
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-home-group"></i>세대 수</label>
-              <input type="number" v-model="site.unit_su" required class="form-input text-right" placeholder="0" />
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-calendar-clock-outline"></i>급여지급일</label>
-              <select v-model="site.payment_day" required class="form-select">
-                <option value="">선택</option>
-                <option v-for="d in 31" :key="d" :value="d">{{ d }}일</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-calendar-clock-outline"></i>청구예정일</label>
-              <select v-model="site.billing_day" required class="form-select">
-                <option value="">선택</option>
-                <option v-for="d in 31" :key="d" :value="d">{{ d }}일</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="sub-header mt-4">
-            <i class="mdi mdi-map-marker-outline"></i><h3>주소 정보</h3>
-          </div>
-          <div class="form-grid">
-            <div class="form-group full-width">
-              <label class="form-label required"><i class="mdi mdi-map-marker-radius-outline"></i>주소</label>
-              <div class="address-search-group">
-                <input type="text" v-model="site.postalCode" placeholder="우편번호" required class="form-input postal-input" readonly />
-                <button type="button" @click="searchAddress" class="btn-search-address">
-                  <i class="mdi mdi-magnify"></i>주소 검색
-                </button>
-              </div>
-            </div>
-            <div class="form-group full-width">
-              <input type="text" v-model="site.addressMain" placeholder="기본 주소" required class="form-input" readonly />
-            </div>
-          </div>
-
-          <div class="sub-header mt-4">
-            <i class="mdi mdi-card-account-details-outline"></i><h3>사업자 정보</h3>
-          </div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-identifier"></i>사업자등록번호</label>
-              <input type="text" v-model="site.businessNumber" class="form-input" placeholder="예: 123-45-67890" />
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-identifier"></i>상호명</label>
-              <input type="text" v-model="site.businessName" class="form-input" placeholder="예: 상호명" />
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-account-tie"></i>대표자명</label>
-              <input type="text" v-model="site.representative" class="form-input" placeholder="대표자명 입력" />
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-store-outline"></i>업태</label>
-              <input type="text" v-model="site.businessType" class="form-input" placeholder="예: 서비스, 도매" />
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-shape-outline"></i>종목</label>
-              <input type="text" v-model="site.businessItem" class="form-input" placeholder="예: 건물(시설)관리, 경비" />
-            </div>
-            <div class="form-group full-width">
-              <label class="form-label"><i class="mdi mdi-email-outline"></i>이메일(세금계산서/공문 수신용)</label>
-              <input type="email" v-model="site.email" class="form-input" placeholder="예: example@email.com" />
-            </div>
-          </div>
-
-          <div class="sub-header mt-4">
-            <i class="mdi mdi-bank-outline"></i><h3>계좌 정보</h3>
-          </div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-bank"></i>은행명
-              </label>
-              <select v-model="site.bankName" class="form-select" @change="setCompanyAccount">
-                <option value="">은행 선택</option>
-                <option v-for="bank in accountList" :key="bank.bank" :value="bank.bank">
-                  {{ bank.bank }}
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-numeric"></i>계좌번호
-              </label>
-              <input type="text" v-model="site.accountNumber" class="form-input" placeholder="예: 123-456-789012 (- 포함)" />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-numeric"></i>계좌예금주
-              </label>
-              <input type="text" v-model="site.accountName" class="form-input" />
-            </div>
-          </div>
+      <!-- 좌측 퀵 네비게이션 -->
+      <aside class="quick-nav-sidebar">
+        <div class="nav-wrapper">
+          <h3 class="nav-title">입력 항목</h3>
+          <ul class="nav-list">
+            <li v-for="nav in navItems" :key="nav.id"
+                :class="['nav-item', { active: activeSection === nav.id }]"
+                @click="scrollToSection(nav.id)">
+              <i :class="['mdi', nav.icon]"></i>
+              <span>{{ nav.title }}</span>
+            </li>
+          </ul>
         </div>
+      </aside>
 
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-file-document-outline"></i>
-            <h2>계약 및 인원 정보</h2>
-          </div>
+      <!-- ★ 우측 메인 폼 영역 (이곳만 스크롤됨) ★ -->
+      <main class="content-area">
+        <form @submit.prevent="handleSubmit" id="registerForm">
 
-          <div class="contract-header">
-            <p class="contract-description">현장의 계약 정보를 추가합니다. 경비, 미화 등 구분별로 계약을 등록할 수 있습니다.</p>
-            <div class="contract-actions">
-              <button v-for="cat in typeOptions" :key="cat.itemCd" type="button"
-                      @click="addContractGroup(cat)" class="btn-add-contract">
-                <i class="mdi mdi-plus"></i>{{ cat.itemNm }} 추가
-              </button>
+          <!-- 카드 1: 기본 정보 -->
+          <section id="sec-basic" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-office-building-outline text-primary"></i>
+              <h2>기본 정보</h2>
             </div>
-          </div>
-
-          <div v-if="contractGroups.length === 0" class="empty-contracts">
-            <i class="mdi mdi-file-document-multiple-outline"></i>
-            <p>등록된 계약이 없습니다</p>
-            <span>상단 버튼을 눌러 계약 정보를 추가해주세요</span>
-          </div>
-
-          <div v-for="(group, idx) in contractGroups" :key="idx" class="contract-card">
-            <div class="contract-card-header">
-              <div class="contract-title">
-                <span :class="['contract-badge', `badge-${group.category}`]">
-                  <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
-                </span>
-                <span v-if="getContractDuration(group)" class="contract-duration">
-                  <i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}
-                </span>
-              </div>
-              <div class="spacer"></div>
-              <button type="button" @click="removeContractGroup(idx)" class="btn-remove-contract">
-                <i class="mdi mdi-trash-can-outline"></i>
-              </button>
-            </div>
-
-            <div class="contract-card-body">
-              <div class="file-upload-section" style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px dashed var(--border-color);">
-                <label class="section-label"><i class="mdi mdi-file-pdf-box"></i>{{ group.category }} 계약서 원본 파일 업로드 (PDF)</label>
-
-                <div
-                    class="file-upload-box"
-                    :class="{ 'is-dragging': group.isDragging }"
-                    @dragover="onDragOverGroup(group, $event)"
-                    @dragleave="onDragLeaveGroup(group)"
-                    @drop="onDropGroup(group, $event)"
-                >
-                  <input
-                      type="file"
-                      :id="'contract-file-' + idx"
-                      accept=".pdf"
-                      multiple
-                      @change="handleFileChangeGroup(group, $event)"
-                      class="hidden-file-input"
-                  />
-                  <label :for="'contract-file-' + idx" class="file-upload-label">
-                    <div class="upload-placeholder">
-                      <i :class="group.isDragging ? 'mdi mdi-tray-arrow-down' : 'mdi mdi-cloud-upload-outline'"></i>
-                      <p>{{ group.isDragging ? '여기에 놓으세요!' : '클릭하여 PDF 파일을 선택하거나 여기로 드래그하세요' }}</p>
-                      <span>(여러 개의 파일을 동시에 선택할 수 있습니다)</span>
-                    </div>
-                  </label>
-                </div>
-
-                <div v-if="group.files && group.files.length > 0" class="file-list-container">
-                  <div v-for="(file, fIndex) in group.files" :key="fIndex" class="file-item-card">
-                    <div class="file-info">
-                      <i class="mdi mdi-file-pdf-box"></i>
-                      <div class="file-name-group">
-                        <span class="file-name">{{ file.name }}</span>
-                        <span class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
-                      </div>
-                    </div>
-                    <button type="button" @click="removeFileGroup(group, fIndex)" class="btn-remove-file">
-                      <i class="mdi mdi-close"></i>
-                    </button>
-                  </div>
-                  <p class="file-success-msg">
-                    <i class="mdi mdi-check-circle"></i> 총 <strong>{{ group.files.length }}개</strong>의 파일이 등록 대기 중입니다.
-                  </p>
-                </div>
-              </div>
-
+            <div class="card-body">
               <div class="form-grid">
-                <div class="form-group">
-                  <label class="form-label"><i class="mdi mdi-calendar-check-outline"></i>최초 계약일</label>
-                  <input type="date" v-model="group.firstContractDt" class="form-input" max="9999-12-31" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label required"><i class="mdi mdi-calendar-start-outline"></i>계약 시작일</label>
-                  <input type="date"
-                         v-model="group.contractStart"
-                         @change="syncFirstContractDate(group)"
-                         required
-                         class="form-input" max="9999-12-31" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label required"><i class="mdi mdi-calendar-end-outline"></i>계약 종료일</label>
-                  <input type="date" v-model="group.contractEnd" required class="form-input" max="9999-12-31" />
-                </div>
                 <div class="form-group full-width">
-                  <label class="form-label required"><i class="mdi mdi-clock-outline"></i>근무 시간 및 형태</label>
-                  <textarea v-model="group.workSchedule" rows="2" class="form-textarea"
-                            placeholder="예: 격일제 교대 근무 (09:00 ~ 익일 09:00)"></textarea>
+                  <label class="form-label required">현장명</label>
+                  <input type="text" v-model="site.siteName" required class="form-input" placeholder="예: AAA 1단지" />
                 </div>
-                <div class="form-group full-width">
-                  <label class="form-label"><i class="mdi mdi-coffee-outline"></i>휴게 시간</label>
-                  <input type="text" v-model="group.breakTime" class="form-input"
-                         placeholder="예: 주간 2시간, 야간 4시간" />
+                <div class="form-group">
+                  <label class="form-label">현장 코드</label>
+                  <input type="text" v-model="site.siteId" class="form-input" placeholder="선택사항" />
                 </div>
-              </div>
-
-              <div class="staff-section">
-                <label class="section-label"><i class="mdi mdi-account-group-outline"></i>인원 구성</label>
-                <div class="staff-input-group">
-                  <select v-model="group.tempJobCode" class="form-select staff-position">
-                    <option value="">직책 선택</option>
-                    <option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
+                <div class="form-group">
+                  <label class="form-label required">현장 형태</label>
+                  <select v-model="site.siteType" required class="form-select">
+                    <option value="">선택하세요</option>
+                    <option v-for="t in siteTypeOptions" :key="t" :value="t">{{ t }}</option>
                   </select>
-                  <input type="number" v-model="group.tempCount" min="1"
-                         class="form-input staff-count text-right" placeholder="인원" />
-                  <button type="button" @click="addStaffToGroup(idx)" class="btn-add-staff">
-                    <i class="mdi mdi-plus"></i>추가
-                  </button>
                 </div>
-
-                <div v-if="group.staffList && group.staffList.length > 0" class="staff-list">
-                  <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
-
-                    <div class="staff-item">
-                      <div class="staff-info">
-                        <i class="mdi mdi-account-outline"></i>
-                        <span class="staff-position-name">{{ staff.name }}</span>
-                        <div class="staff-count-stepper" style="margin-left: 8px;">
-                          <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, -1)">
-                            <i class="mdi mdi-minus"></i>
-                          </button>
-                          <input type="number" v-model.number="staff.count" class="input-stepper" min="1" />
-                          <span class="stepper-text">명</span>
-                          <button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, 1)">
-                            <i class="mdi mdi-plus"></i>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="staff-actions">
-                        <button type="button"
-                                @click="staff.showSchedule = !staff.showSchedule"
-                                class="btn-toggle-schedule"
-                                :class="{ 'active': staff.showSchedule }">
-                          <i class="mdi"
-                             :class="staff.showSchedule
-                               ? 'mdi-calendar-collapse-horizontal'
-                               : 'mdi-calendar-expand-horizontal'"></i>
-                          근무 설정
-                        </button>
-                        <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff">
-                          <i class="mdi mdi-close"></i>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div v-show="staff.showSchedule" class="schedule-panel">
-                      <div class="schedule-header">
-                        <span><i class="mdi mdi-clock-outline"></i> 요일별 근무시간 설정</span>
-                        <button type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">
-                          <i class="mdi mdi-layers-outline"></i> 평일(월~금) 일괄 적용
-                        </button>
-                      </div>
-                      <div class="schedule-table-wrap">
-                        <table class="schedule-table">
-                          <thead>
-                          <tr>
-                            <th class="col-day">요일</th>
-                            <th class="col-time">출근 ~ 퇴근</th>
-                            <th class="col-break">휴게(분)</th>
-                            <th class="col-opt">옵션</th>
-                          </tr>
-                          </thead>
-                          <tbody>
-                          <tr v-for="day in weekDays" :key="day.val"
-                              :class="{'inactive-row': !staff.schedule[day.val].isActive}">
-                            <td>
-                              <label class="day-checkbox">
-                                <input type="checkbox" v-model="staff.schedule[day.val].isActive" />
-                                <span :class="{'text-red': day.val === 0, 'text-blue': day.val === 6}">{{ day.label }}</span>
-                              </label>
-                            </td>
-                            <td>
-                              <div v-if="staff.schedule[day.val].isActive" class="time-inputs">
-                                <input type="time" v-model="staff.schedule[day.val].startTime"
-                                       class="form-input time-input" />
-                                <span>~</span>
-                                <input type="time" v-model="staff.schedule[day.val].endTime"
-                                       class="form-input time-input" />
-                              </div>
-                              <span v-else class="text-muted" style="font-size:12px;">휴무</span>
-                            </td>
-                            <td>
-                              <input v-if="staff.schedule[day.val].isActive"
-                                     type="number"
-                                     step="any"
-                                     v-model="staff.schedule[day.val].breakTime"
-                                     class="form-input break-input"
-                                     min="0" placeholder="0" />
-                              <span v-else class="text-muted">-</span>
-                            </td>
-                            <td>
-                              <label v-if="staff.schedule[day.val].isActive" class="biweekly-checkbox">
-                                <input type="checkbox" v-model="staff.schedule[day.val].isBiweekly" />
-                                <span>격주</span>
-                              </label>
-                              <span v-else class="text-muted">-</span>
-                            </td>
-                          </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                  </div><div class="staff-total">
-                  <i class="mdi mdi-sigma"></i>
-                  <span>합계: <strong>{{ getGroupStaffTotal(group) }}명</strong></span>
-                </div>
-                </div>
-              </div>
-
-              <!-- 대청소 및 특수과업 -->
-              <div class="staff-section" style="margin-top: 16px;">
-                <label class="section-label">
-                  <i class="mdi mdi-spray-bottle"></i>대청소 및 특수과업
-                </label>
-
-                <div class="staff-input-group">
-                  <select v-model="group.tempCleaningCode" class="form-select staff-position">
-                    <option value="">특수과업 항목 선택</option>
-                    <option v-for="opt in cleaningTaskOptions" :key="opt.itemCd" :value="opt.itemCd">
-                      {{ opt.itemNm }}
-                    </option>
-                  </select>
-                  <span style="font-size:13px; color:var(--text-sub); white-space:nowrap;">/ 연</span>
-                  <input
-                      type="number"
-                      v-model="group.tempCleaningCount"
-                      min="1"
-                      class="form-input staff-count text-right"
-                      placeholder="횟수"
-                  />
-                  <span style="font-size:13px; color:var(--text-sub);">회</span>
-                  <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-add-staff">
-                    <i class="mdi mdi-plus"></i>추가
-                  </button>
-                </div>
-
-                <div v-if="group.cleaningTasks?.length > 0" class="staff-list">
-                  <div v-for="(task, tIdx) in group.cleaningTasks" :key="tIdx"
-                       class="staff-item-wrapper">
-                    <div class="staff-item">
-                      <div class="staff-info">
-                        <i class="mdi mdi-broom"></i>
-                        <span class="staff-position-name">{{ task.name }}</span>
-                        <div class="staff-count-stepper" style="margin-left: 8px;">
-                          <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, -1)">
-                            <i class="mdi mdi-minus"></i>
-                          </button>
-                          <span class="stepper-text">연</span>
-                          <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
-                          <span class="stepper-text">회</span>
-                          <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)">
-                            <i class="mdi mdi-plus"></i>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="staff-actions">
-                        <button type="button" @click="removeCleaningTaskFromGroup(idx, tIdx)"
-                                class="btn-remove-staff">
-                          <i class="mdi mdi-close"></i>
-                        </button>
-                      </div>
-                    </div>
+                <div class="form-group">
+                  <label class="form-label required">현장 상태</label>
+                  <div class="radio-group">
+                    <label v-for="s in statusOptions" :key="s" class="radio-label">
+                      <input type="radio" v-model="site.status" :value="s" /><span>{{ s }}</span>
+                    </label>
                   </div>
                 </div>
 
-                <div v-else style="text-align:center; padding: 16px 0; color: var(--text-muted); font-size: 13px;">
-                  등록된 특수과업이 없습니다.
+                <div class="form-group-row">
+                  <div class="form-group">
+                    <label class="form-label">연면적 (총면적)</label>
+                    <div class="input-with-unit">
+                      <input type="number" v-model="site.areaGross" class="form-input text-right" placeholder="0" min="0" step="any" />
+                      <span class="unit">㎡</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label required">135㎡ 이하 (면세)</label>
+                    <div class="input-with-unit">
+                      <input type="number" v-model="site.areaUnder" class="form-input text-right" placeholder="0" min="0" step="any" />
+                      <span class="unit">㎡</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label required">135㎡ 초과 (과세)</label>
+                    <div class="input-with-unit">
+                      <input type="number" v-model="site.areaOver" class="form-input text-right" placeholder="0" min="0" step="any" />
+                      <span class="unit">㎡</span>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label"><i class="mdi mdi-calculator"></i>총 관리면적</label>
+                    <div class="input-with-unit">
+                      <input type="text" :value="totalArea" class="form-input text-right font-bold bg-highlight" readonly />
+                      <span class="unit bold text-primary">㎡</span>
+                    </div>
+                    <p class="helper-text-sm">
+                      * 과세 면적 입력 시 <strong :class="{'text-primary': isVatSite}">과세사업장({{ isVatSite ? 'Y' : 'N' }})</strong> 설정
+                    </p>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">건물 수</label>
+                  <input type="number" v-model="site.building_su" required class="form-input text-right" placeholder="0" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">세대 수</label>
+                  <input type="number" v-model="site.unit_su" required class="form-input text-right" placeholder="0" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">급여지급일</label>
+                  <select v-model="site.payment_day" required class="form-select">
+                    <option value="">선택</option>
+                    <option v-for="d in 31" :key="d" :value="d">{{ d }}일</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label required">청구예정일</label>
+                  <select v-model="site.billing_day" required class="form-select">
+                    <option value="">선택</option>
+                    <option v-for="d in 31" :key="d" :value="d">{{ d }}일</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 카드 2: 주소 및 사업자 -->
+          <section id="sec-biz" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-card-account-details-outline text-primary"></i>
+              <h2>주소 및 사업자 정보</h2>
+            </div>
+            <div class="card-body">
+              <div class="inner-section">
+                <h4 class="inner-title">현장 주소</h4>
+                <div class="form-grid">
+                  <div class="form-group full-width">
+                    <label class="form-label required">주소 검색</label>
+                    <div class="address-search-group">
+                      <input type="text" v-model="site.postalCode" placeholder="우편번호" required class="form-input postal-input" readonly />
+                      <button type="button" @click="searchAddress" class="btn-search-address"><i class="mdi mdi-magnify"></i> 주소 검색</button>
+                    </div>
+                  </div>
+                  <div class="form-group full-width">
+                    <input type="text" v-model="site.addressMain" placeholder="기본 주소" required class="form-input" readonly />
+                  </div>
                 </div>
               </div>
 
-              <div class="cost-breakdown-wrapper">
-                <button type="button" class="btn-toggle-cost"
-                        @click="group.showCostBreakdown = !group.showCostBreakdown">
-                  <i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i>
-                  <span>{{ group.showCostBreakdown ? '산출내역서 접기' : '산출내역서 펼치기' }}</span>
-                  <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">
-                    월 {{ formatCurrency(getTotalMonthlyFee(group)) }}원
-                  </span>
+              <div class="inner-section divider-top">
+                <h4 class="inner-title">사업자 기본 정보</h4>
+                <div class="form-grid">
+                  <div class="form-group"><label class="form-label">사업자등록번호</label><input type="text" v-model="site.businessNumber" class="form-input" placeholder="예: 123-45-67890" /></div>
+                  <div class="form-group"><label class="form-label">상호명</label><input type="text" v-model="site.businessName" class="form-input" placeholder="상호명 입력" /></div>
+                  <div class="form-group"><label class="form-label">대표자명</label><input type="text" v-model="site.representative" class="form-input" placeholder="대표자명 입력" /></div>
+                  <div class="form-group"><label class="form-label">업태</label><input type="text" v-model="site.businessType" class="form-input" placeholder="예: 서비스, 도매" /></div>
+                  <div class="form-group"><label class="form-label">종목</label><input type="text" v-model="site.businessItem" class="form-input" placeholder="예: 건물관리, 경비" /></div>
+                  <div class="form-group full-width"><label class="form-label">수신용 이메일 (세금계산서/공문)</label><input type="email" v-model="site.email" class="form-input" placeholder="예: example@email.com" /></div>
+                </div>
+              </div>
+
+              <div class="inner-section divider-top">
+                <h4 class="inner-title"><i class="mdi mdi-bank text-primary"></i> 정산 계좌 정보</h4>
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label class="form-label">은행명</label>
+                    <select v-model="site.bankName" class="form-select" @change="setCompanyAccount">
+                      <option value="">선택</option>
+                      <option v-for="bank in accountList" :key="bank.bank" :value="bank.bank">{{ bank.bank }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group"><label class="form-label">계좌번호</label><input type="text" v-model="site.accountNumber" class="form-input" placeholder="- 포함 입력" /></div>
+                  <div class="form-group"><label class="form-label">계좌예금주</label><input type="text" v-model="site.accountName" class="form-input" /></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 카드 3: 계약 및 인원 -->
+          <section id="sec-contract" class="category-card">
+            <div class="card-header flex-between">
+              <div class="title-group"><i class="mdi mdi-file-document-outline text-primary"></i><h2>계약 및 인원 구성</h2></div>
+              <div class="contract-actions">
+                <button v-for="cat in typeOptions" :key="cat.itemCd" type="button" @click="addContractGroup(cat)" class="btn-add">
+                  <i class="mdi mdi-plus"></i>{{ cat.itemNm }} 계약 추가
                 </button>
+              </div>
+            </div>
 
-                <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
+            <div class="card-body bg-body-canvas">
+              <div v-if="contractGroups.length === 0" class="empty-contracts">
+                <i class="mdi mdi-briefcase-plus-outline"></i>
+                <p>현재 등록된 용역 계약이 없습니다.</p>
+                <span>상단의 [계약 추가] 버튼을 눌러 경비/미화 등의 계약을 생성해주세요.</span>
+              </div>
 
-                  <div v-if="group.staffList.length === 0" class="cost-no-staff">
-                    <i class="mdi mdi-account-plus-outline"></i>
-                    <p>먼저 인원 구성에서 직책을 추가하면<br>직책별 산출내역을 입력할 수 있습니다.</p>
+              <div v-for="(group, idx) in contractGroups" :key="idx" class="contract-card shadow-sm">
+                <div class="contract-card-header">
+                  <div class="contract-title">
+                    <span :class="['contract-badge', `badge-${group.category}`]">{{ group.category }}</span>
+                    <span v-if="getContractDuration(group)" class="contract-duration"><i class="mdi mdi-calendar-range"></i>{{ getContractDuration(group) }}</span>
+                  </div>
+                  <button type="button" @click="removeContractGroup(idx)" class="btn-remove-contract" title="계약 삭제"><i class="mdi mdi-trash-can-outline"></i></button>
+                </div>
+
+                <div class="contract-card-body">
+                  <div class="file-upload-section">
+                    <label class="section-label"><i class="mdi mdi-file-pdf-box text-danger"></i> 계약서 스캔본 첨부 (PDF)</label>
+                    <div class="file-upload-box" :class="{ 'is-dragging': group.isDragging }" @dragover="onDragOverGroup(group, $event)" @dragleave="onDragLeaveGroup(group)" @drop="onDropGroup(group, $event)">
+                      <input type="file" :id="'contract-file-' + idx" accept=".pdf" multiple @change="handleFileChangeGroup(group, $event)" class="hidden-file-input" />
+                      <label :for="'contract-file-' + idx" class="file-upload-label">
+                        <div class="upload-placeholder"><i :class="group.isDragging ? 'mdi mdi-tray-arrow-down' : 'mdi mdi-cloud-upload-outline'"></i><p>클릭하거나 PDF 파일을 이곳으로 드래그 하세요.</p></div>
+                      </label>
+                    </div>
+                    <div v-if="group.files && group.files.length > 0" class="file-list-container">
+                      <div v-for="(file, fIndex) in group.files" :key="fIndex" class="file-item-card">
+                        <div class="file-info"><i class="mdi mdi-file-pdf-box text-danger"></i><div class="file-name-group"><span class="file-name">{{ file.name }}</span><span class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span></div></div>
+                        <button type="button" @click="removeFileGroup(group, fIndex)" class="btn-remove-file"><i class="mdi mdi-close"></i></button>
+                      </div>
+                    </div>
                   </div>
 
-                  <template v-else>
-                    <div class="cost-scroll-area">
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-hours">
-                          <i class="mdi mdi-clock-check"></i>
-                          </span>근로시간 기준 <em>(인건비 산출 근거)</em>
-                      </div>
-                      <table class="cost-table hours-standalone-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-rowtotal">산출내역 / 근거</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr>
-                          <td class="hours-label-cell">
-                            <span class="summary-label">
-                              <i class="mdi mdi-clock-outline text-primary"></i> 일 근로시간 (H)
-                            </span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                v-model.number="group.costBreakdown.dailyWorkHours[staff.code]"
-                                @focus="$event.target.select()"
-                                class="tbl-value-input text-right hours-input"
-                                placeholder="0"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
-                          <td>
-                            <input
-                                type="text"
-                                class="tbl-value-input"
-                                v-model="group.costBreakdown.dailyHoursBigo"
-                                placeholder="예: 휴게 1시간 제외"
-                            />
-                          </td>
-                          <td></td>
-                        </tr>
-                        <tr>
-                          <td class="hours-label-cell">
-                            <span class="summary-label">
-                              <i class="mdi mdi-calendar-clock text-primary"></i> 월 근로시간 (H)
-                            </span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]"
-                                @focus="$event.target.select()"
-                                class="tbl-value-input text-right hours-input"
-                                placeholder="0"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell hours-empty-cell">-</td>
-                          <td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.monthlyHoursBigo" placeholder="예: 주 40시간 + 주휴"></td>
-                          <td></td>
-                        </tr>
-                        </tbody>
-                      </table>
+                  <div class="form-grid mt-4">
+                    <div class="form-group"><label class="form-label">최초 계약일</label><input type="date" v-model="group.firstContractDt" class="form-input" max="9999-12-31" /></div>
+                    <div class="form-group"><label class="form-label required">계약 시작일</label><input type="date" v-model="group.contractStart" @change="syncFirstContractDate(group)" class="form-input" max="9999-12-31" /></div>
+                    <div class="form-group"><label class="form-label required">계약 종료일</label><input type="date" v-model="group.contractEnd" class="form-input" max="9999-12-31" /></div>
+                    <div class="form-group full-width"><label class="form-label">근무 형태 설명</label><input type="text" v-model="group.workSchedule" class="form-input" placeholder="예: 격일제 교대 근무 (09:00 ~ 익일 09:00)" /></div>
+                    <div class="form-group full-width"><label class="form-label">휴게 시간 메모</label><input type="text" v-model="group.breakTime" class="form-input" placeholder="예: 주간 2시간, 야간 4시간" /></div>
+                  </div>
 
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-direct">A</span>
-                        직접노무비 <em>(지급내역)</em>
-                        <button type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item">
-                          <i class="mdi mdi-plus"></i>항목 추가
-                        </button>
-                      </div>
-                      <table class="cost-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-rowtotal">산출내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                          <td>
-                            <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
-                            <CategorySelect
-                                v-model="item.label"
-                                v-model:code="item.code"
-                                topCode="04001"
-                            />
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(item.values[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputCost(item, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
-                          <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
-                          <td class="col-action">
-                            <button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost">
-                              <i class="mdi mdi-close"></i>
-                            </button>
-                          </td>
-                        </tr>
-                        </tbody>
-                        <tfoot>
-                        <tr class="tfoot-subtotal">
-                          <td>소계 (A)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}
-                          </td>
-                          <td class="col-rowtotal-cell subtotal-rowtotal">
-                            {{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        </tfoot>
-                      </table>
+                  <div class="staff-section mt-4">
+                    <label class="section-label"><i class="mdi mdi-account-group-outline text-primary"></i> 투입 인원 설정</label>
+                    <div class="staff-input-group">
+                      <select v-model="group.tempJobCode" class="form-select staff-position"><option value="">추가할 직책 선택</option><option v-for="opt in positionOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option></select>
+                      <input type="number" v-model="group.tempCount" min="1" class="form-input staff-count text-right" placeholder="인원수" />
+                      <button type="button" @click="addStaffToGroup(idx)" class="btn-detail">추가</button>
+                    </div>
 
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-indirect">B</span>
-                        간접노무비 <em>(공제내역)</em>
-                        <button type="button" @click="addItem(group, 'indirectLabor')" class="btn-add-cost-item">
-                          <i class="mdi mdi-plus"></i>항목 추가
-                        </button>
+                    <div v-if="group.staffList && group.staffList.length > 0" class="staff-list">
+                      <div v-for="(staff, sIdx) in group.staffList" :key="sIdx" class="staff-item-wrapper">
+                        <div class="staff-item">
+                          <div class="staff-info">
+                            <i class="mdi mdi-account-outline text-primary"></i><span class="staff-position-name">{{ staff.name }}</span>
+                            <div class="staff-count-stepper ml-2"><button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, -1)"><i class="mdi mdi-minus"></i></button><input type="number" v-model.number="staff.count" class="input-stepper" min="1" /><span class="stepper-text">명</span><button type="button" class="btn-stepper" @click.stop="updateStaffCount(staff, 1)"><i class="mdi mdi-plus"></i></button></div>
+                          </div>
+                          <div class="staff-actions">
+                            <button type="button" @click="staff.showSchedule = !staff.showSchedule" class="btn-toggle-schedule" :class="{ 'active': staff.showSchedule }"><i class="mdi" :class="staff.showSchedule ? 'mdi-calendar-collapse-horizontal' : 'mdi-calendar-expand-horizontal'"></i> 근무표</button>
+                            <button type="button" @click="removeStaffFromGroup(idx, sIdx)" class="btn-remove-staff"><i class="mdi mdi-close"></i></button>
+                          </div>
+                        </div>
+                        <div v-show="staff.showSchedule" class="schedule-panel">
+                          <div class="schedule-header"><span>요일별 근무시간</span><button type="button" @click="applyToWeekdays(staff.schedule)" class="btn-batch-apply">평일 일괄 적용</button></div>
+                          <div class="schedule-table-wrap">
+                            <table class="schedule-table">
+                              <thead><tr><th class="col-day">요일</th><th class="col-time">출근 ~ 퇴근</th><th class="col-break">휴게(분)</th><th class="col-opt">격주</th></tr></thead>
+                              <tbody>
+                              <tr v-for="day in weekDays" :key="day.val" :class="{'inactive-row': !staff.schedule[day.val].isActive}">
+                                <td><label class="day-checkbox"><input type="checkbox" v-model="staff.schedule[day.val].isActive" /><span :class="{'text-danger': day.val === 0, 'text-primary': day.val === 6}">{{ day.label }}</span></label></td>
+                                <td><div v-if="staff.schedule[day.val].isActive" class="time-inputs"><input type="time" v-model="staff.schedule[day.val].startTime" class="form-input time-input" /><span>~</span><input type="time" v-model="staff.schedule[day.val].endTime" class="form-input time-input" /></div><span v-else class="text-muted text-sm">휴무</span></td>
+                                <td><input v-if="staff.schedule[day.val].isActive" type="number" step="any" v-model="staff.schedule[day.val].breakTime" class="form-input break-input" /><span v-else class="text-muted">-</span></td>
+                                <td><input v-if="staff.schedule[day.val].isActive" type="checkbox" v-model="staff.schedule[day.val].isBiweekly" /><span v-else class="text-muted">-</span></td>
+                              </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       </div>
-                      <table class="cost-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-rowtotal">산출내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
-                          <td>
-                            <!--CodeSelect v-model="item.label" :allow-empty="false"/-->
-                            <CategorySelect
-                                v-model="item.label"
-                                v-model:code="item.code"
-                                topCode="04002"
-                            />
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(item.values[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputCost(item, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
-                          <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
-                          <td class="col-action">
-                            <button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost">
-                              <i class="mdi mdi-close"></i>
-                            </button>
-                          </td>
-                        </tr>
-                        </tbody>
-                        <tfoot>
-                        <tr class="tfoot-subtotal">
-                          <td>소계 (B)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}
-                          </td>
-                          <td class="col-rowtotal-cell subtotal-rowtotal">
-                            {{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        </tfoot>
-                      </table>
+                      <div class="staff-total">총 인원: <strong>{{ getGroupStaffTotal(group) }}명</strong></div>
+                    </div>
+                  </div>
 
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-expense">C</span>
-                        제경비
-                        <button type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item">
-                          <i class="mdi mdi-plus"></i>항목 추가
-                        </button>
-                      </div>
-                      <table class="cost-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-rowtotal">산출내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
-                          <td>
-                            <!--CodeSelect
-                                v-model="item.code"
-                                @update:label="(val) => item.label = val"
-                                :allow-empty="false"
-                            /-->
-                            <CategorySelect
-                                v-model="item.label"
-                                v-model:code="item.code"
-                                topCode="04003"
-                            />
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(item.values[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputCost(item, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
-                          <td><input type="text" class="tbl-value-input" v-model="item.bigo"></td>
-                          <td class="col-action">
-                            <button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost">
-                              <i class="mdi mdi-close"></i>
-                            </button>
-                          </td>
-                        </tr>
-                        </tbody>
-                        <tfoot>
-                        <tr class="tfoot-subtotal">
-                          <td>소계 (C)</td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            {{ formatCurrency(getExpensesColTotal(group, staff.code)) }}
-                          </td>
-                          <td class="col-rowtotal-cell subtotal-rowtotal">
-                            {{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        </tfoot>
-                      </table>
+                  <!-- 산출내역서 토글 버튼 -->
+                  <div class="cost-breakdown-wrapper mt-4">
+                    <button type="button" class="btn-toggle-cost" @click="group.showCostBreakdown = !group.showCostBreakdown">
+                      <div class="toggle-left"><i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i><span>{{ group.showCostBreakdown ? '상세 산출내역 닫기' : '상세 산출내역 작성하기 (선택)' }}</span></div>
+                      <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">월 {{ formatCurrency(getTotalMonthlyFee(group)) }}원</span>
+                    </button>
+                    <!-- 산출내역서 본문 -->
+                    <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
+                      <div v-if="group.staffList.length === 0" class="cost-no-staff"><i class="mdi mdi-account-plus-outline"></i><p>투입 인원을 먼저 추가해주세요.</p></div>
+                      <template v-else>
+                        <div class="cost-scroll-area">
+                          <!-- 근로시간 -->
+                          <div class="cost-section-title"><span class="cost-block-label label-hours"><i class="mdi mdi-clock-check"></i></span>근로시간 기준</div>
+                          <table class="cost-table">
+                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }} <span class="font-normal">({{ staff.count }}명)</span></th><th class="col-rowtotal">산출근거</th></tr></thead>
+                            <tbody>
+                            <tr><td class="font-bold">일 근로시간 (H)</td><td v-for="staff in group.staffList" :key="staff.code"><input type="number" step="any" min="0" v-model.number="group.costBreakdown.dailyWorkHours[staff.code]" class="tbl-value-input" /></td><td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.dailyHoursBigo" /></td></tr>
+                            <tr><td class="font-bold">월 근로시간 (H)</td><td v-for="staff in group.staffList" :key="staff.code"><input type="number" step="any" min="0" v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]" class="tbl-value-input" /></td><td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.monthlyHoursBigo" /></td></tr>
+                            </tbody>
+                          </table>
+                          <!-- 직접노무비 -->
+                          <div class="cost-section-title flex-between mt-4"><div><span class="cost-block-label label-direct">A</span>직접노무비</div><button type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item">항목 추가</button></div>
+                          <table class="cost-table">
+                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }}</th><th class="col-rowtotal-head">행합계</th><th class="col-rowtotal">산출내역</th><th class="col-action"></th></tr></thead>
+                            <tbody>
+                            <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
+                              <td><CategorySelect v-model="item.label" v-model:code="item.code" topCode="04001"/></td>
+                              <td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(item.values[staff.code])" @focus="$event.target.select()" @input="onInputCost(item, staff.code, $event)" class="tbl-value-input" /></td>
+                              <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
+                              <td><input type="text" class="tbl-value-input" v-model="item.bigo" /></td>
+                              <td class="col-action"><button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
+                            </tr>
+                            </tbody>
+                            <tfoot><tr class="tfoot-subtotal"><td>소계 (A)</td><td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}</td><td class="col-rowtotal-cell">{{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}</td><td></td><td></td></tr></tfoot>
+                          </table>
+                          <!-- 간접노무비 -->
+                          <div class="cost-section-title flex-between mt-4"><div><span class="cost-block-label label-indirect">B</span>간접노무비</div><button type="button" @click="addItem(group, 'indirectLabor')" class="btn-add-cost-item">항목 추가</button></div>
+                          <table class="cost-table">
+                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }}</th><th class="col-rowtotal-head">행합계</th><th class="col-rowtotal">산출내역</th><th class="col-action"></th></tr></thead>
+                            <tbody>
+                            <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
+                              <td><CategorySelect v-model="item.label" v-model:code="item.code" topCode="04002"/></td>
+                              <td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(item.values[staff.code])" @focus="$event.target.select()" @input="onInputCost(item, staff.code, $event)" class="tbl-value-input" /></td>
+                              <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
+                              <td><input type="text" class="tbl-value-input" v-model="item.bigo" /></td>
+                              <td class="col-action"><button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
+                            </tr>
+                            </tbody>
+                            <tfoot><tr class="tfoot-subtotal"><td>소계 (B)</td><td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}</td><td class="col-rowtotal-cell">{{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}</td><td></td><td></td></tr></tfoot>
+                          </table>
+                          <!-- 제경비 -->
+                          <div class="cost-section-title flex-between mt-4"><div><span class="cost-block-label label-expense">C</span>제경비</div><button type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item">항목 추가</button></div>
+                          <table class="cost-table">
+                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }}</th><th class="col-rowtotal-head">행합계</th><th class="col-rowtotal">산출내역</th><th class="col-action"></th></tr></thead>
+                            <tbody>
+                            <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
+                              <td><CategorySelect v-model="item.label" v-model:code="item.code" topCode="04003"/></td>
+                              <td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(item.values[staff.code])" @focus="$event.target.select()" @input="onInputCost(item, staff.code, $event)" class="tbl-value-input" /></td>
+                              <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
+                              <td><input type="text" class="tbl-value-input" v-model="item.bigo" /></td>
+                              <td class="col-action"><button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
+                            </tr>
+                            </tbody>
+                            <tfoot><tr class="tfoot-subtotal"><td>소계 (C)</td><td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getExpensesColTotal(group, staff.code)) }}</td><td class="col-rowtotal-cell">{{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}</td><td></td><td></td></tr></tfoot>
+                          </table>
+                          <!-- 합계 -->
+                          <div class="cost-section-title mt-4"><span class="cost-block-label label-total">합</span>노무비 합계 및 최종 용역비</div>
+                          <table class="cost-table summary-table">
+                            <tbody>
+                            <tr class="summary-row row-d"><td><span class="summary-label font-bold text-primary">D. 노무비 (A+B+C)</span></td><td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td><td class="col-rowtotal-cell"><span class="summary-val font-bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span></td></tr>
+                            <tr class="summary-row row-e"><td><span class="summary-label">E. 일반관리비</span></td><td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(group.costBreakdown.managementFee[staff.code])" @focus="$event.target.select()" @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)" class="tbl-value-input" /></td><td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span></td></tr>
+                            <tr class="summary-row row-f"><td><span class="summary-label">F. 기업이윤</span></td><td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(group.costBreakdown.profit[staff.code])" @focus="$event.target.select()" @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)" class="tbl-value-input" /></td><td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span></td></tr>
+                            <tr class="summary-row row-monthly"><td><span class="summary-label font-bold text-main">1인당 월 용역비 (D+E+F)</span></td><td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val text-primary font-bold">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td><td class="col-rowtotal-cell">-</td></tr>
+                            <tr class="summary-row row-total-fee"><td><span class="summary-label font-bold text-main">월간 용역비 총계</span></td><td :colspan="group.staffList.length"><input type="text" :value="formatCurrency(getDisplayMonthlyTotal(group))" @focus="$event.target.select()" @input="onInputMonthlyTotal(group, $event)" class="tbl-value-input grand-total-input" /></td><td class="col-rowtotal-cell"></td></tr>
+                            <tr class="summary-row row-contract-total"><td><span class="summary-label">계약기간 총액</span></td><td :colspan="group.staffList.length"><input type="text" :value="formatCurrency(group.costBreakdown.contractTotalFee)" @focus="$event.target.select()" @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)" class="tbl-value-input text-main" placeholder="직접 입력" /></td><td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비" /></td></tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div class="cost-special-note">
+                          <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i> 특이사항 기재란</label>
+                          <textarea v-model="group.costBreakdown.specialNote" class="form-textarea" rows="2" placeholder="산출 시 참고할 특이사항 (최저임금 기준 등)"></textarea>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
 
-                      <div class="cost-section-title">
-                        <span class="cost-block-label label-total">합계</span>
-                        노무비 합계 및 용역비 산출
-                      </div>
-                      <table class="cost-table summary-table">
-                        <thead>
-                        <tr>
-                          <th class="col-label">항목</th>
-                          <th v-for="staff in group.staffList" :key="staff.code" class="col-staff">
-                            <span class="staff-th-name">{{ staff.name }}</span>
-                            <span class="staff-th-count">({{ staff.count }}명)</span>
-                          </th>
-                          <th class="col-rowtotal-head">행합계</th>
-                          <th class="col-rowtotal">산출 내역</th>
-                          <th class="col-action"></th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr class="summary-row row-d">
-                          <td><span class="summary-label"><span class="cost-block-label label-total">D</span>노무비 합계 (A+B+C)</span></td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td>
-                          <td class="col-rowtotal-cell"><span class="summary-val bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span></td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        <tr class="summary-row row-e">
-                          <td><div class="summary-label-rate"><span class="summary-label"><span class="cost-block-label label-mgmt">E</span>일반관리비</span></div></td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(group.costBreakdown.managementFee[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span></td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        <tr class="summary-row row-f">
-                          <td>
-                            <div class="summary-label-rate">
-                            <span class="summary-label">
-                              <span class="cost-block-label label-profit">F</span>기업이윤</span>
+          <!-- ★ 카드 4: 대청소 및 특수과업 (계약 카드 밖으로 완벽 분리!) ★ -->
+          <section id="sec-cleaning" class="category-card mt-4">
+            <div class="card-header">
+              <i class="mdi mdi-spray-bottle text-primary"></i>
+              <h2>대청소 및 특수과업</h2>
+            </div>
+            <div class="card-body bg-body-canvas">
+              <div v-if="contractGroups.length === 0" class="empty-contracts">
+                <i class="mdi mdi-information-outline"></i>
+                <p>계약 정보가 없습니다.</p>
+                <span>[계약 및 인원 구성] 탭에서 계약을 먼저 추가해주세요.</span>
+              </div>
+              <div v-else>
+                <div v-for="(group, idx) in contractGroups" :key="'clean-'+idx" class="contract-card shadow-sm">
+                  <div class="contract-card-header">
+                    <div class="contract-title">
+                      <span :class="['contract-badge', `badge-${group.category}`]">{{ group.category }}</span>
+                      <span class="contract-duration">특수과업 설정</span>
+                    </div>
+                  </div>
+                  <div class="contract-card-body">
+                    <div class="staff-input-group">
+                      <select v-model="group.tempCleaningCode" class="form-select staff-position">
+                        <option value="">항목 선택</option>
+                        <option v-for="opt in cleaningTaskOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
+                      </select>
+                      <input type="number" v-model="group.tempCleaningCount" min="1" class="form-input staff-count text-right" placeholder="연간 횟수" />
+                      <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-detail">추가</button>
+                    </div>
+
+                    <div v-if="group.cleaningTasks?.length > 0" class="staff-list mt-3">
+                      <div v-for="(task, tIdx) in group.cleaningTasks" :key="tIdx" class="staff-item-wrapper">
+                        <div class="staff-item">
+                          <div class="staff-info">
+                            <i class="mdi mdi-broom text-success"></i>
+                            <span class="staff-position-name">{{ task.name }}</span>
+                            <div class="staff-count-stepper ml-2">
+                              <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, -1)"><i class="mdi mdi-minus"></i></button>
+                              <span class="stepper-text">연</span>
+                              <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
+                              <span class="stepper-text">회</span>
+                              <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)"><i class="mdi mdi-plus"></i></button>
                             </div>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code">
-                            <input
-                                type="text"
-                                :value="formatCurrency(group.costBreakdown.profit[staff.code])"
-                                @focus="$event.target.select()"
-                                @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)"
-                                class="tbl-value-input"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell">
-                            <span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span>
-                          </td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        <tr class="summary-row row-monthly">
-                          <td><span class="summary-label">
-                            <span class="cost-block-label label-monthly">월</span>1인당 월 용역비 (D+E+F)</span>
-                          </td>
-                          <td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val highlight">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td>
-                          <td class="col-rowtotal-cell">-</td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        <tr class="summary-row row-total-fee">
-                          <td>
-                            <span class="summary-label">
-                              <span class="cost-block-label label-total-fee">합</span>
-                              월간 용역비 총계
-                            </span>
-                          </td>
-                          <td :colspan="group.staffList.length">
-                            <input
-                                type="text"
-                                :value="formatCurrency(getDisplayMonthlyTotal(group))"
-                                @focus="$event.target.select()"
-                                @input="onInputMonthlyTotal(group, $event)"
-                                class="tbl-value-input grand-total-input"
-                                style="font-size: 15px; font-weight: 800; color: var(--primary);"
-                            />
-                          </td>
-
-                          <td class="col-rowtotal-cell"></td>
-                          <td><input type="text" class="tbl-value-input"></td>
-                          <td></td>
-                        </tr>
-                        <tr class="summary-row row-contract-total">
-                          <td>
-                            <span class="summary-label">
-                              <span class="cost-block-label label-contract-total">계</span>
-                              계약기간 총액
-                            </span>
-                          </td>
-                          <td :colspan="group.staffList.length">
-                            <input
-                                type="text"
-                                :value="formatCurrency(group.costBreakdown.contractTotalFee)"
-                                @focus="$event.target.select()"
-                                @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)"
-                                class="tbl-value-input grand-total-input"
-                                placeholder="직접 입력"
-                                style="font-size: 14px; font-weight: 700; color: var(--text-main);"
-                            />
-                          </td>
-                          <td class="col-rowtotal-cell"></td>
-                          <td>
-                            <input
-                                type="text"
-                                class="tbl-value-input"
-                                v-model="group.costBreakdown.contractTotalBigo"
-                                placeholder="예: 24개월 × 월 용역비"
-                            >
-                          </td>
-                          <td></td>
-                        </tr>
-                        </tbody>
-                      </table>
-
-                    </div>
-                    <div class="cost-special-note">
-                      <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i>특이사항</label>
-                      <textarea
-                          v-model="group.costBreakdown.specialNote"
-                          class="form-textarea"
-                          rows="3"
-                          placeholder="예: 최저임금 기준 적용, 5대보험 인원전원 가입 조건으로 산출 등"
-                      ></textarea>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-calculator-variant"></i>
-            <h2>정산 기본 설정</h2>
-          </div>
-
-          <div class="settlement-sub-section">
-            <div class="sub-header">
-              <i class="mdi mdi-cash-sync"></i>
-              <h3>계약별 정산 기준 및 옵션 설정</h3>
-            </div>
-            <p class="info-helper-text" style="margin-bottom: 20px;">
-              * 각 계약 분류별로 정산서에 적용할 급여 정보의 출처 및 수당 포함 여부를 설정해주세요.
-            </p>
-
-            <div v-if="contractGroups.length === 0"
-                 class="settlement-empty-notice">
-              <i class="mdi mdi-information-outline"></i>
-              <span>등록된 계약 정보가 없습니다. [계약 및 인원 정보] 섹션에서 계약을 먼저 추가해주세요.</span>
-            </div>
-
-            <div v-else class="salary-source-list">
-              <div v-for="(group, idx) in contractGroups"
-                   :key="idx"
-                   class="source-selection-row">
-
-                <div class="source-group-title">
-                  <span :class="['contract-badge', `badge-${group.category}`]"
-                        style="padding: 6px 12px; font-size: 13px;">
-                    <i class="mdi mdi-briefcase-outline"></i>{{ group.category }}
-                  </span>
-                </div>
-
-                <div class="source-settings-content">
-                  <div class="setting-block">
-                    <span class="setting-label">급여 데이터 기준</span>
-                    <div class="source-selection-options">
-                      <label class="source-radio-label">
-                        <input
-                            type="radio"
-                            v-model="group.salarySource"
-                            value="employee"
-                            :name="'salarySource_' + idx"
-                        />
-                        <strong>직원 급여 정보</strong>
-                        <span class="text-hint">(저장된 기본 급여 기준)</span>
-                      </label>
-                      <label class="source-radio-label">
-                        <input
-                            type="radio"
-                            v-model="group.salarySource"
-                            value="contract"
-                            :name="'salarySource_' + idx"
-                        />
-                        <strong>계약 산출 정보</strong>
-                        <span class="text-hint">(계약 정보 산출 기준)</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div class="setting-block">
-                    <span class="setting-label">수당 포함 옵션</span>
-                    <div class="source-melt-options">
-                      <div class="header-melt-option">
-                        <span>연차 수당 포함</span>
-                        <label class="switch-xs">
-                          <input type="checkbox" v-model="group.meltOptions.annualLeave" />
-                          <span class="slider-xs round"></span>
-                        </label>
-                      </div>
-                      <div class="header-melt-option">
-                        <span>퇴직 수당 포함</span>
-                        <label class="switch-xs">
-                          <input type="checkbox" v-model="group.meltOptions.severance" />
-                          <span class="slider-xs round"></span>
-                        </label>
-                      </div>
-                      <div class="header-melt-option">
-                        <span>근로자의날 수당 포함</span>
-                        <label class="switch-xs">
-                          <input type="checkbox" v-model="group.meltOptions.workersDay" />
-                          <span class="slider-xs round"></span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-
-          <div class="settlement-sub-section">
-            <div class="sub-header">
-              <i class="mdi mdi-microsoft-excel"></i>
-              <h3>출력 및 내보내기 설정</h3>
-            </div>
-            <p class="info-helper-text" style="margin-bottom:16px;">
-              * 월간 정산 내역 엑셀 다운로드 시 기본으로 포함할 시트(문서)를 선택하세요.
-            </p>
-
-            <div class="export-simple-options">
-              <label class="simple-checkbox-label">
-                <input type="checkbox" v-model="exportConfig.includeStatement" />
-                <span class="checkbox-text">청구 공문 (표지)</span>
-              </label>
-
-              <label class="simple-checkbox-label">
-                <input type="checkbox" v-model="exportConfig.includeDetails" />
-                <span class="checkbox-text">급여 세부 내역서</span>
-              </label>
-
-              <label class="simple-checkbox-label">
-                <input type="checkbox" v-model="exportConfig.includePayroll" />
-                <span class="checkbox-text">급여 대장</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="settlement-sub-section">
-            <div class="sub-header">
-              <i class="mdi mdi-table-arrow-down"></i>
-              <h3>정산서 양식 관리</h3>
-            </div>
-            <p class="info-helper-text" style="margin-bottom: 20px;">
-              * 정산 세부내역서 작성 시 포함할 항목을 직접 커스텀할 수 있습니다.<br>
-              * <strong>[사용 가능 항목]</strong>에서 원하는 코드를 선택 후 <strong>[추가]</strong> 버튼을 눌러주세요.
-            </p>
-
-            <div class="excel-transfer-ui">
-              <div class="transfer-pane">
-                <div class="pane-header">
-                  <span>사용 가능 항목</span>
-                  <span class="count">{{ filteredAvailable.length }}</span>
-                </div>
-                <div class="pane-search">
-                  <i class="mdi mdi-magnify"></i>
-                  <input
-                      type="text"
-                      v-model="searchAvailable"
-                      placeholder="항목명 검색"
-                      class="transfer-input"
-                  />
-                </div>
-                <div class="pane-list">
-                  <div
-                      v-for="item in filteredAvailable"
-                      :key="'avail-' + item.cd"
-                      class="list-item"
-                      :class="{ active: selectedAvailItems.includes(item.cd) }"
-                      @click="toggleAvail(item)"
-                  >
-                    {{ item.nm }}
-                  </div>
-                  <div v-if="filteredAvailable.length === 0" class="empty-list">
-                    항목이 없습니다
-                  </div>
-                </div>
-              </div>
-
-              <div class="transfer-actions">
-                <button
-                    type="button"
-                    class="btn-transfer"
-                    @click="moveToRight"
-                    :disabled="!selectedAvailItems.length"
-                >
-                  추가 <i class="mdi mdi-chevron-right"></i>
-                </button>
-                <button
-                    type="button"
-                    class="btn-transfer btn-transfer-remove"
-                    @click="moveToLeft"
-                    :disabled="!selectedRightItems.length"
-                >
-                  <i class="mdi mdi-chevron-left"></i> 제외
-                </button>
-              </div>
-
-              <div class="transfer-pane">
-                <div class="pane-header">
-                  <span>정산서 표시 항목</span>
-                  <span class="count">{{ filteredSelected.length }}</span>
-                </div>
-                <div class="pane-search">
-                  <i class="mdi mdi-magnify"></i>
-                  <input
-                      type="text"
-                      v-model="searchSelected"
-                      placeholder="항목명 검색"
-                      class="transfer-input"
-                  />
-                </div>
-                <div class="pane-list">
-                  <div
-                      v-for="item in filteredSelected"
-                      :key="'sel-' + item.cd"
-                      class="list-item"
-                      :class="{ active: selectedRightItems.includes(item.cd) }"
-                      @click="toggleRight(item)"
-                  >
-            <span
-                class="item-badge"
-                :class="isPayItem(item.cd) ? 'badge-pay' : 'badge-ded'"
-            >
-              {{ isPayItem(item.cd) ? '지급' : '공제' }}
-            </span>
-                    {{ item.nm }}
-                  </div>
-                  <div v-if="filteredSelected.length === 0" class="empty-list">
-                    선택된 항목이 없습니다
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-account-tie-outline"></i>
-            <h2>담당자 및 기타 정보</h2>
-          </div>
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-account-outline"></i>본사 담당자 이름</label>
-              <input type="text" v-model="site.managerName" class="form-input" placeholder="홍길동" />
-            </div>
-            <div class="form-group">
-              <label class="form-label"><i class="mdi mdi-phone-outline"></i>본사 담당자 연락처</label>
-              <input type="tel" v-model="site.managerContact" class="form-input" placeholder="010-0000-0000" />
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-account-hard-hat-outline"></i>관리 소장 이름</label>
-              <input type="text" v-model="site.director" required class="form-input" placeholder="김관리" />
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-phone-outline"></i>관리 소장 연락처</label>
-              <input type="text" v-model="site.directorContact" required class="form-input" placeholder="010-0000-0000" />
-            </div>
-            <div class="form-group" style="grid-column: 1;">
-              <label class="form-label required"><i class="mdi mdi-account-cash"></i>청구 담당자</label>
-              <input type="text" v-model="site.billingManager" required class="form-input" placeholder="김청구"/>
-            </div>
-            <div class="form-group">
-              <label class="form-label required"><i class="mdi mdi-account-cash"></i>급여 담당자</label>
-              <input type="text" v-model="site.payrollManager" required class="form-input" placeholder="김급여"/>
-            </div>
-
-            <div class="form-group full-width" style="margin-top: 16px;">
-              <div class="memo-stacked-panel">
-
-                <div class="memo-section">
-                  <div class="memo-section-header">
-                    <div class="header-title-group">
-                      <div class="section-icon-box bg-primary-soft">
-                        <i class="mdi mdi-office-building-outline text-primary"></i>
-                      </div>
-                      <div class="section-title-texts">
-                        <h3>현장 운영 특이사항</h3>
-                        <p>현장 운영 관련 이슈</p>
-                      </div>
-                    </div>
-                    <div class="header-count-badge">총 {{ bigoHistory.length }}건</div>
-                  </div>
-
-                  <div class="clean-editor-card primary-focus">
-                    <textarea
-                        v-model="site.bigo"
-                        class="clean-textarea"
-                        rows="2"
-                        placeholder="새로운 현장 메모를 입력하세요 (저장 시 히스토리에 누적됩니다)"
-                    ></textarea>
-                  </div>
-
-                  <div class="clean-timeline-wrapper" v-if="bigoHistory.length > 0">
-                    <div class="clean-timeline">
-                      <div v-for="(item, idx) in bigoHistory" :key="'site-'+idx" class="clean-timeline-item">
-                        <div class="timeline-dot bg-primary"></div>
-                        <div class="timeline-card">
-                          <div class="card-meta">
-                            <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
-                            <!--span v-if="item.writer" class="meta-user">{{ item.writer }}</span-->
                           </div>
-                          <div class="card-text">{{ item.bigo }}</div>
+                          <button type="button" @click="removeCleaningTaskFromGroup(idx, tIdx)" class="btn-remove-staff"><i class="mdi mdi-close"></i></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="empty-state-sm mt-3">등록된 특수과업이 없습니다.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 카드 5: 정산 및 출력 -->
+          <section id="sec-settle" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-calculator-variant text-primary"></i>
+              <h2>정산 설정 및 파일 출력 양식</h2>
+            </div>
+            <div class="card-body">
+              <div class="inner-section">
+                <h4 class="inner-title">급여 계산 기준</h4>
+                <div v-if="contractGroups.length === 0" class="empty-state-sm">계약 정보가 없습니다.</div>
+                <div v-else class="salary-source-list">
+                  <div v-for="(group, idx) in contractGroups" :key="idx" class="source-selection-row">
+                    <div class="source-group-title"><span class="contract-badge badge-gray">{{ group.category }}</span></div>
+                    <div class="source-settings-content">
+                      <div class="setting-block">
+                        <span class="setting-label">기준 금액 출처</span>
+                        <div class="source-selection-options">
+                          <label class="radio-label"><input type="radio" v-model="group.salarySource" value="employee" :name="'src_'+idx"/> 직원 설정 급여</label>
+                          <label class="radio-label"><input type="radio" v-model="group.salarySource" value="contract" :name="'src_'+idx"/> 산출내역서 기준</label>
+                        </div>
+                      </div>
+                      <div class="setting-block">
+                        <span class="setting-label">수당 자동 포함</span>
+                        <div class="source-selection-options gap-4">
+                          <label><input type="checkbox" v-model="group.meltOptions.annualLeave" /> 연차</label>
+                          <label><input type="checkbox" v-model="group.meltOptions.severance" /> 퇴직</label>
+                          <label><input type="checkbox" v-model="group.meltOptions.workersDay" /> 근로자의 날</label>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div class="mt-4"></div>
-                <div class="memo-section">
-                  <div class="memo-section-header">
-                    <div class="header-title-group">
-                      <div class="section-icon-box bg-warning-soft">
-                        <i class="mdi mdi-calculator-variant-outline text-warning"></i>
-                      </div>
-                      <div class="section-title-texts">
-                        <h3>정산·청구 특이사항</h3>
-                        <p>특정 수당 제외 등 정산, 청구 관련 이슈</p>
+              </div>
+
+              <div class="inner-section divider-top">
+                <h4 class="inner-title">기본 파일 출력 시트</h4>
+                <div class="export-simple-options">
+                  <label><input type="checkbox" v-model="exportConfig.includeStatement" /> 청구 공문 (표지)</label>
+                  <label><input type="checkbox" v-model="exportConfig.includeDetails" /> 급여 세부 내역서</label>
+                  <label><input type="checkbox" v-model="exportConfig.includePayroll" /> 급여 대장</label>
+                </div>
+              </div>
+
+              <div class="inner-section divider-top">
+                <h4 class="inner-title">정산서 세부 표시 항목 커스텀</h4>
+                <p class="helper-text-sm mb-2">* 우측 <strong>[정산서 표시 항목]</strong>에 있는 항목만 엑셀에 노출됩니다.</p>
+                <div class="excel-transfer-ui">
+                  <div class="transfer-pane">
+                    <div class="pane-header">사용 가능 항목 <span class="badge">{{ filteredAvailable.length }}</span></div>
+                    <div class="pane-search"><input type="text" v-model="searchAvailable" placeholder="검색..." class="form-input" /></div>
+                    <div class="pane-list">
+                      <div v-for="item in filteredAvailable" :key="'avail-' + item.cd" class="list-item" :class="{ active: selectedAvailItems.includes(item.cd) }" @click="toggleAvail(item)">
+                        {{ item.nm }}
                       </div>
                     </div>
-                    <div class="header-count-badge badge-warning">총 {{ settlementHistory.length }}건</div>
                   </div>
-
-                  <div class="clean-editor-card warning-focus">
-                    <textarea
-                        v-model="site.settlementBigo"
-                        class="clean-textarea"
-                        rows="2"
-                        placeholder="새로운 정산/급여 메모를 입력하세요 (저장 시 히스토리에 누적됩니다)"
-                    ></textarea>
+                  <div class="transfer-actions">
+                    <button type="button" class="btn-transfer-add" @click="moveToRight" :disabled="!selectedAvailItems.length">추가 &rarr;</button>
+                    <button type="button" class="btn-transfer-remove" @click="moveToLeft" :disabled="!selectedRightItems.length">&larr; 제외</button>
                   </div>
-
-                  <div class="clean-timeline-wrapper" v-if="settlementHistory.length > 0">
-                    <div class="clean-timeline">
-                      <div v-for="(item, idx) in settlementHistory" :key="'set-'+idx" class="clean-timeline-item">
-                        <div class="timeline-dot bg-warning"></div>
-                        <div class="timeline-card border-warning-subtle">
-                          <div class="card-meta">
-                            <span class="meta-date">{{ item.regDt ? item.regDt.substring(0, 16) : '-' }}</span>
-                            <!--span v-if="item.writer" class="meta-user">{{ item.writer }}</span-->
-                          </div>
-                          <div class="card-text">{{ item.bigo }}</div>
-                        </div>
+                  <div class="transfer-pane">
+                    <div class="pane-header">정산서 표시 항목 <span class="badge badge-primary">{{ filteredSelected.length }}</span></div>
+                    <div class="pane-search"><input type="text" v-model="searchSelected" placeholder="검색..." class="form-input" /></div>
+                    <div class="pane-list">
+                      <div v-for="item in filteredSelected" :key="'sel-' + item.cd" class="list-item" :class="{ active: selectedRightItems.includes(item.cd) }" @click="toggleRight(item)">
+                        <span :class="['item-badge', isPayItem(item.cd) ? 'badge-pay' : 'badge-ded']">{{ isPayItem(item.cd) ? '지급' : '공제' }}</span>
+                        {{ item.nm }}
                       </div>
                     </div>
                   </div>
                 </div>
-
               </div>
             </div>
-          </div>
+          </section>
 
-          <div class="form-actions final-actions">
-            <button type="button" @click="handleCancel" class="btn-prev"><i class="mdi mdi-close"></i>취소</button>
-            <button type="submit" class="btn-submit"><i class="mdi mdi-check"></i>등록 완료</button>
-          </div>
-        </div>
+          <!-- 카드 6: 담당자 정보 -->
+          <section id="sec-manager" class="category-card">
+            <div class="card-header"><i class="mdi mdi-account-tie-outline text-primary"></i><h2>담당자 정보</h2></div>
+            <div class="card-body">
+              <div class="form-grid">
+                <div class="form-group"><label class="form-label">본사 담당자</label><input type="text" v-model="site.managerName" class="form-input" /></div>
+                <div class="form-group"><label class="form-label">본사 연락처</label><input type="tel" v-model="site.managerContact" class="form-input" /></div>
+                <div class="form-group"><label class="form-label required">현장 소장 이름</label><input type="text" v-model="site.director" class="form-input" /></div>
+                <div class="form-group"><label class="form-label required">현장 소장 연락처</label><input type="text" v-model="site.directorContact" class="form-input" /></div>
+                <div class="form-group"><label class="form-label">청구 담당자</label><input type="text" v-model="site.billingManager" class="form-input" /></div>
+                <div class="form-group"><label class="form-label">급여 담당자</label><input type="text" v-model="site.payrollManager" class="form-input" /></div>
+              </div>
+            </div>
+          </section>
 
-      </div>
-    </form>
+          <!-- 카드 7: 특이사항 및 메모 -->
+          <section id="sec-memo" class="category-card">
+            <div class="card-header"><i class="mdi mdi-text-box-edit-outline text-primary"></i><h2>특이사항 및 메모</h2></div>
+            <div class="card-body">
+              <div class="memo-container">
+                <div class="memo-box">
+                  <div class="memo-title"><i class="mdi mdi-office-building-outline text-primary"></i> 현장 특이사항</div>
+                  <textarea v-model="site.bigo" class="form-textarea" placeholder="일반적인 현장 이슈 및 메모를 남겨주세요"></textarea>
+                  <div v-if="bigoHistory.length > 0" class="memo-history-list mt-2">
+                    <div v-for="(h, i) in bigoHistory" :key="'bh'+i" class="history-item"><span class="date">{{ h.regDt ? h.regDt.substring(0, 16) : '-' }}</span><p>{{ h.bigo }}</p></div>
+                  </div>
+                </div>
+                <div class="memo-box">
+                  <div class="memo-title"><i class="mdi mdi-calculator-variant-outline text-warning"></i> 정산/청구 특이사항</div>
+                  <textarea v-model="site.settlementBigo" class="form-textarea" placeholder="정산 시 유의할 점(수당 제외 등)을 남겨주세요"></textarea>
+                  <div v-if="settlementHistory.length > 0" class="memo-history-list mt-2">
+                    <div v-for="(h, i) in settlementHistory" :key="'sh'+i" class="history-item"><span class="date">{{ h.regDt ? h.regDt.substring(0, 16) : '-' }}</span><p>{{ h.bigo }}</p></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div style="height: 100px;"></div>
+        </form>
+      </main>
+
+    </div>
   </div>
 </template>
 
+<style>
+/* Vue/Nuxt 고질적인 Sticky 방해 요소 강제 해제 */
+body, #__nuxt, #__layout, .v-application { overflow: visible !important; }
+</style>
+
 <style scoped>
 /* =========================================
-   기본 레이아웃
+   공통 CSS 변수
 ========================================= */
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-.header-left { display: flex; align-items: flex-start; gap: 16px; }
-.page-title { font-size: 22px; font-weight: 700; color: var(--text-main); margin: 0 0 4px 0; display: flex; align-items: center; gap: 8px; }
-.page-subtitle { font-size: 13px; color: var(--text-sub); margin: 0; }
-
-.btn-back { width: 42px; height: 42px; border-radius: 10px; background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; padding: 0; }
-.btn-back:hover { background: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
-.btn-back i { font-size: 20px; }
-.btn-cancel { display: flex; align-items: center; gap: 6px; padding: 10px 18px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-cancel:hover { background: var(--bg-hover); color: var(--text-main); border-color: var(--border-focus); }
-
-/* 폼 공통 */
-.form-container { background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); overflow: hidden; }
-
-/* 통합 페이지 섹션 스타일 */
-.form-section { padding: 32px; }
-.section-main-header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid var(--border-color); }
-.section-main-header i { font-size: 24px; color: var(--primary); }
-.section-main-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
-.section-divider { border: none; border-top: 8px solid var(--bg-canvas); margin: 0; }
-.sub-header { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; margin-bottom: 20px; border-bottom: 1px dashed var(--border-color); }
-.sub-header i { font-size: 20px; color: var(--primary); }
-.sub-header h3 { font-size: 16px; font-weight: 700; color: var(--text-main); margin: 0; }
-.mt-4 { margin-top: 32px; }
-
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px; }
-.form-group { display: flex; flex-direction: column; gap: 8px; }
-.form-group.full-width { grid-column: 1 / -1; }
-.form-label, .section-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-sub); }
-.form-label i, .section-label i { font-size: 16px; color: var(--primary); }
-.form-label.required::after { content: '*'; color: var(--danger); margin-left: 2px; }
-.form-input, .form-select, .form-textarea { padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box; }
-.form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-.form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
-.form-textarea { resize: vertical; min-height: 80px; }
-
-.radio-group { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
-.radio-label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color); transition: all 0.2s; background: var(--bg-canvas); font-size: 13px; color: var(--text-sub); }
-.radio-label:hover { border-color: var(--border-focus); color: var(--text-main); }
-.radio-label input[type="radio"] { display: none; }
-.radio-label:has(input:checked) { border-color: var(--primary); background-color: var(--primary-soft); color: var(--primary); font-weight: 600; }
-
-.address-search-group { display: flex; gap: 10px; }
-.postal-input { width: 140px; background-color: var(--bg-canvas); }
-.btn-search-address { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background-color: var(--primary); border: none; border-radius: 8px; color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
-.btn-search-address:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
-
-/* 파일 업로드 */
-.file-upload-section { margin-bottom: 32px; }
-.hidden-file-input { display: none; }
-.file-upload-box { border: 2px dashed var(--border-focus); border-radius: 12px; background-color: var(--bg-canvas); transition: all 0.2s ease; overflow: hidden; }
-.file-upload-box:hover { border-color: var(--primary); background-color: var(--primary-soft); }
-.file-upload-box.has-file { border-style: solid; border-color: var(--success); background-color: rgba(16,185,129,0.05); }
-.file-upload-label { display: block; width: 100%; padding: 40px 20px; cursor: pointer; text-align: center; }
-.upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.upload-placeholder i { font-size: 44px; color: var(--text-muted); margin-bottom: 4px; transition: color 0.2s; }
-.file-upload-box:hover .upload-placeholder i { color: var(--primary); }
-.file-upload-box.is-dragging {
-  border-color: var(--primary);
-  background-color: var(--primary-soft);
-  transform: scale(1.01);
-  transition: all 0.15s ease;
+:root {
+  --primary: #3b82f6; --primary-hover: #2563eb; --primary-soft: #eff6ff;
+  --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+  --text-main: #1e293b; --text-sub: #475569; --text-muted: #94a3b8;
+  --border-color: #e2e8f0; --border-focus: #cbd5e1;
+  --bg-canvas: #f1f5f9; --bg-surface: #ffffff; --bg-hover: #f8fafc;
 }
 
-.file-upload-box.is-dragging .upload-placeholder i {
-  color: var(--primary);
-  animation: bounce 0.6s infinite alternate;
-}
+/* 1. 전체 화면 스크롤 제거 (100vh 고정) */
+/* 1. 전체 화면 스크롤 제거 및 부모 여백 무시 */
+.site-register-page {
+  background-color: var(--bg-canvas, #f1f5f9);
 
-@keyframes bounce {
-  from { transform: translateY(0); }
-  to   { transform: translateY(-6px); }
+  /* 부모(eg-main-content)의 padding 값만큼 마진을 마이너스로 주어 빈 공간을 없앱니다 */
+  /* (만약 프로젝트의 기본 패딩이 20px라면 -20px로 수정해 주세요) */
+  margin: -24px;
+
+  /* ★ 마이너스 마진으로 인해 늘어난 높이 보정 (상단 탭 높이에 맞춰 60px~80px 조절 필요) */
+  height: calc(100vh - 60px);
+
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
+/* 2. 헤더는 상단에 완전히 블록으로 고정 */
+.sticky-header { flex-shrink: 0; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(8px); padding: 16px 32px; border-bottom: 1px solid var(--border-color, #e2e8f0); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); display: flex; justify-content: space-between; align-items: center; z-index: 50; margin: 0; }
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.page-title { font-size: 20px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; display:flex; align-items:center; gap:8px; }
+.page-subtitle { font-size: 13px; color: var(--text-sub, #475569); margin: 4px 0 0 0; }
+.btn-back { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; }
+.btn-back:hover { background: var(--bg-hover, #f8fafc); }
+.btn-cancel { padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; font-weight: 600; cursor: pointer; color: var(--text-sub); }
+.btn-submit { padding: 10px 20px; border-radius: 8px; border: none; background: var(--primary, #3b82f6); color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2); transition: 0.2s; display:flex; align-items:center; gap:6px; }
+.btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3); }
+
+/* 3. 하단 레이아웃: 헤더 밑의 남은 공간을 모두 차지함 */
+.register-layout { display: flex; flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding-top: 24px; overflow: hidden; }
+
+/* 4. 사이드바: 좌측 고정 */
+.quick-nav-sidebar { width: 220px; flex-shrink: 0; height: 100%; overflow-y: auto; padding: 0 16px; }
+.nav-title { font-size: 12px; font-weight: 800; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding-left: 12px; }
+.nav-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--text-sub, #475569); cursor: pointer; transition: all 0.2s; background: transparent; }
+.nav-item i { font-size: 18px; opacity: 0.6; }
+.nav-item:hover { background: rgba(0,0,0,0.04); color: var(--text-main, #1e293b); }
+.nav-item.active { background: #fff; color: var(--primary, #3b82f6); box-shadow: 0 2px 8px rgba(0,0,0,0.05); font-weight: 700; }
+.nav-item.active i { opacity: 1; }
+
+/* 5. ★ 대망의 폼 콘텐츠 영역: 오직 여기에서만 스크롤바가 생깁니다! ★ */
+.content-area { flex: 1; height: 100%; overflow-y: auto; position: relative; padding: 0 24px 80px 24px; scroll-behavior: smooth;}
 
 /* =========================================
-   파일 목록
+   카드 UI 공통
 ========================================= */
-.file-list-container {
-  margin-top: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--bg-surface);
-}
+.category-card { background: #ffffff; border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); overflow: hidden; margin-bottom: 24px;}
+.card-header { padding: 20px 24px; border-bottom: 1px solid var(--border-color, #e2e8f0); background: #fff; display: flex; align-items: center; gap: 12px; }
+.card-header i { font-size: 24px; }
+.card-header h2 { font-size: 18px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; }
+.card-body { padding: 24px; }
+.flex-between { justify-content: space-between; }
+.title-group { display: flex; align-items: center; gap: 12px; }
+.inner-section { padding-bottom: 24px; margin-bottom: 24px; }
+.inner-section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: none !important; }
+.divider-top { border-top: 1px dashed var(--border-color, #e2e8f0); padding-top: 24px; }
+.bg-light-gray { background-color: var(--bg-hover, #f8fafc); margin: 0 -24px -24px -24px; padding: 24px; border-top: 1px solid var(--border-color, #e2e8f0); border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;}
+.inner-title { font-size: 15px; font-weight: 700; color: var(--text-main, #1e293b); margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
 
-.file-list-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--bg-canvas);
-  border-bottom: 1px solid var(--border-color);
-}
+/* =========================================
+   공통 폼 요소
+========================================= */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; background: var(--bg-hover, #f8fafc); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); grid-column: 1 / -1; }
+.full-width { grid-column: 1 / -1; }
+.form-label { font-size: 13px; font-weight: 600; color: var(--text-sub, #475569); }
+.form-label.required::after { content: '*'; color: var(--danger, #ef4444); margin-left: 4px; }
+.form-input, .form-select, .form-textarea { padding: 10px 12px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; font-size: 13px; background: #fff; width: 100%; box-sizing: border-box; transition: 0.2s; }
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); outline: none; }
+.input-with-unit { position: relative; }
+.input-with-unit input { padding-right: 32px; }
+.input-with-unit .unit { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; color: var(--text-muted, #94a3b8); }
+.bg-highlight { background-color: #f0fdf4 !important; border-color: #4ade80 !important; color: #166534; }
+.radio-group { display: flex; gap: 8px; }
+.radio-label { flex: 1; text-align: center; padding: 8px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; cursor: pointer; font-size: 13px; background: #fff; transition: 0.2s;}
+.radio-label input { display: none; }
+.radio-label:has(input:checked) { border-color: var(--primary, #3b82f6); background: var(--primary-soft, #eff6ff); color: var(--primary, #3b82f6); font-weight: 700; }
+.address-search-group { display: flex; gap: 8px; }
+.postal-input { width: 120px; background: #f1f5f9; }
+.btn-search-address { padding: 0 16px; border: none; background: var(--text-sub, #475569); color: #fff; border-radius: 6px; font-size: 13px; font-weight:600; cursor: pointer; white-space: nowrap; transition: 0.2s;}
+.btn-search-address:hover { background: var(--text-main, #1e293b); }
+.text-primary { color: var(--primary, #3b82f6); } .text-danger { color: var(--danger, #ef4444); } .text-warning { color: var(--warning, #f59e0b); } .text-success { color: var(--success, #10b981); } .text-main { color: var(--text-main, #1e293b); } .text-sub { color: var(--text-sub, #475569); } .font-bold { font-weight: 700; } .font-normal { font-weight: 400; } .text-right { text-align: right; }
+.helper-text-sm { font-size: 11px; color: var(--text-muted, #94a3b8); margin: 4px 0 0; } .mt-4 { margin-top: 24px; } .mb-2 { margin-bottom: 8px; } .ml-2 { margin-left: 8px; }
 
-.file-list-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-main);
-}
+/* =========================================
+   계약 카드 전용 스타일
+========================================= */
+.bg-body-canvas { background: var(--bg-hover, #f8fafc); }
+.contract-actions { display: flex; gap: 8px; }
+.btn-add-contract { padding: 8px 14px; border: 1px dashed var(--border-focus, #cbd5e1); background: #fff; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-main, #1e293b); transition: 0.2s;}
+.btn-add-contract:hover { border-color: var(--primary, #3b82f6); color: var(--primary, #3b82f6); background: var(--primary-soft, #eff6ff); }
+.empty-contracts { text-align: center; padding: 50px 20px; border: 1px dashed var(--border-focus, #cbd5e1); border-radius: 8px; background: #fff; }
+.empty-contracts i { font-size: 40px; color: var(--border-focus, #cbd5e1); margin-bottom: 12px; display: block;}
+.empty-contracts p { font-weight: 700; font-size: 15px; margin: 0 0 6px 0; color: var(--text-sub, #475569); }
+.empty-contracts span { font-size: 13px; color: var(--text-muted, #94a3b8); }
 
-.file-list-title i {
-  font-size: 16px;
-  color: var(--primary);
-}
-
-.file-count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  background: var(--primary);
-  color: #fff;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.btn-clear-all {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  background: transparent;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
-  color: var(--danger);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-clear-all:hover {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: var(--danger);
-}
-
-.file-list {
-  display: flex;
-  flex-direction: column;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.file-list::-webkit-scrollbar { width: 6px; }
-.file-list::-webkit-scrollbar-track { background: var(--bg-canvas); }
-.file-list::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 4px; }
-
-.file-item-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border-color);
-  transition: background 0.15s;
-}
-
-.file-item-card:last-child { border-bottom: none; }
-.file-item-card:hover { background: var(--bg-hover); }
-
-.file-icon-wrap {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.file-icon-wrap i {
-  font-size: 20px;
-  color: #ef4444;
-}
-
-.file-meta {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.file-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.file-size {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.btn-remove-file {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-sub);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all 0.15s;
-  font-size: 14px;
-}
-
-.btn-remove-file:hover {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.file-list-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: var(--bg-canvas);
-  border-top: 1px solid var(--border-color);
-  font-size: 12px;
-  color: var(--text-sub);
-}
-
-.file-list-footer .text-success { color: var(--success); font-size: 15px; }
-.file-list-footer strong { color: var(--text-main); }
-
-.upload-placeholder p { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-main); }
-.upload-placeholder span { font-size: 13px; color: var(--text-sub); }
-.upload-selected { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.selected-file-info { display: inline-flex; align-items: center; gap: 10px; background: var(--bg-surface); padding: 12px 20px; border-radius: 8px; box-shadow: var(--shadow-sm); border: 1px solid var(--success); }
-.selected-file-info i { font-size: 24px; color: var(--danger); }
-.file-name { font-size: 14px; font-weight: 600; color: var(--text-main); }
-.file-change-text { font-size: 13px; color: var(--success); font-weight: 600; text-decoration: underline; }
-.file-success-msg {
-  padding: 12px;
-  font-size: 13px;
-  color: var(--success);
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* 계약 */
-.contract-header { margin-bottom: 20px; }
-.contract-description { font-size: 13px; color: var(--text-sub); margin: 0 0 16px 0; }
-.contract-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.btn-add-contract { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--bg-surface); border: 1px dashed var(--border-focus); border-radius: 6px; color: var(--text-sub); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-add-contract:hover { background: var(--bg-hover); border-color: var(--primary); color: var(--primary); }
-.empty-contracts { text-align: center; padding: 50px 20px; background: var(--bg-canvas); border-radius: 10px; border: 1px dashed var(--border-color); color: var(--text-sub); margin-bottom: 20px; }
-.empty-contracts i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; color: var(--text-muted); }
-.empty-contracts p { font-size: 15px; font-weight: 600; color: var(--text-main); margin: 0 0 6px 0; }
-
-.contract-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 20px; overflow: hidden; }
-.contract-card-header {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px 20px;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border-color);
-}
-.contract-header-options {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.header-melt-option {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  color: var(--text-sub);
-}
-
-/* 초소형 스위치 디자인 (헤더용) */
-.switch-xs {
-  position: relative;
-  display: inline-block;
-  width: 28px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.switch-xs input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.slider-xs {
-  position: absolute;
-  cursor: pointer;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: #cbd5e1;
-  transition: .3s;
-  border-radius: 20px;
-}
-.slider-xs:before {
-  position: absolute;
-  content: "";
-  height: 12px;
-  width: 12px;
-  left: 2px;
-  bottom: 2px;
-  background-color: white;
-  transition: .3s;
-  border-radius: 50%;
-}
-.switch-xs input:checked + .slider-xs {
-  background-color: var(--danger); /* 활성화 시 포인트 컬러 */
-}
-.switch-xs input:checked + .slider-xs:before {
-  transform: translateX(12px);
-}
-
+.contract-card { background: #fff; border-radius: 8px; border: 1px solid var(--border-focus, #cbd5e1); margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);}
+.contract-card-header { padding: 14px 20px; background: #f1f5f9; border-bottom: 1px solid var(--border-color, #e2e8f0); display: flex; justify-content: space-between; align-items: center; border-radius: 8px 8px 0 0; }
 .contract-title { display: flex; align-items: center; gap: 12px; }
-.contract-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 800;
-  color: #ffffff;
-  letter-spacing: 0.5px;
-}
-
-.contract-badge i {
-  font-size: 18px;
-}
-.badge-경비 { background-color: #3b82f6; }
-.badge-미화 { background-color: #ec4899; }
-.badge-시설 { background-color: #10b981; }
-.contract-duration { font-size: 12px; color: var(--text-sub); display: flex; align-items: center; gap: 4px; font-weight: 500; }
-.btn-remove-contract { width: 28px; height: 28px; border-radius: 6px; background: rgba(239,68,68,0.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+.contract-badge { padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 800; color: #fff; letter-spacing: 0.5px;}
+.badge-경비 { background: #3b82f6; } .badge-미화 { background: #ec4899; } .badge-시설 { background: #10b981; } .badge-gray { background: #64748b; }
+.contract-duration { font-size: 12px; font-weight: 600; color: var(--text-sub, #475569); display: flex; align-items: center; gap: 4px;}
+.btn-remove-contract { width: 30px; height: 30px; border-radius: 6px; background: rgba(239,68,68,0.1); border: none; color: var(--danger, #ef4444); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
 .btn-remove-contract:hover { background: rgba(239,68,68,0.2); }
 .contract-card-body { padding: 24px; }
 
-/* 인원 */
-.staff-section { margin-top: 24px; padding: 20px; background: var(--bg-canvas); border-radius: 10px; border: 1px dashed var(--border-color); }
-.staff-input-group { display: flex; gap: 10px; margin: 16px 0; align-items: center; }
-.staff-position { flex: 1; }
+/* 파일업로드 */
+.file-upload-section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px dashed var(--border-color, #e2e8f0); }
+.section-label { font-size: 13px; font-weight: 700; color: var(--text-main, #1e293b); display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.file-upload-box { border: 2px dashed var(--border-focus, #cbd5e1); background: var(--bg-hover, #f8fafc); border-radius: 8px; transition: all 0.2s ease; }
+.file-upload-box:hover { border-color: var(--primary, #3b82f6); background: var(--primary-soft, #eff6ff); }
+.file-upload-box.is-dragging { border-color: var(--primary, #3b82f6); background: var(--primary-soft, #eff6ff); transform: scale(1.01); }
+.file-upload-label { display: block; width: 100%; padding: 32px 20px; cursor: pointer; text-align: center; }
+.upload-placeholder i { font-size: 36px; color: var(--text-muted, #94a3b8); margin-bottom: 8px; transition: 0.2s;}
+.file-upload-box:hover .upload-placeholder i { color: var(--primary, #3b82f6); }
+.upload-placeholder p { margin: 0; font-size: 14px; font-weight: 600; color: var(--text-main, #1e293b); }
+.hidden-file-input { display: none; }
+.file-list-container { margin-top: 12px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; background: #fff; overflow: hidden;}
+.file-item-card { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border-color, #e2e8f0); background: #fff; }
+.file-item-card:last-child { border-bottom: none; }
+.file-info { display: flex; align-items: center; gap: 10px; }
+.file-info i { font-size: 20px; }
+.file-name { font-size: 13px; font-weight: 600; color: var(--text-main, #1e293b);}
+.file-size { font-size: 11px; color: var(--text-muted, #94a3b8); margin-left: 8px; }
+.btn-remove-file { width: 28px; height: 28px; border-radius: 6px; background: transparent; border: 1px solid var(--border-color, #e2e8f0); color: var(--text-sub, #475569); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
+.btn-remove-file:hover { background: rgba(239,68,68,0.1); border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+
+/* 인원 추가 & 스텝퍼 */
+.staff-section { background: var(--bg-hover, #f8fafc); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); }
+.staff-input-group { display: flex; gap: 10px; }
 .staff-count { width: 90px; }
-.btn-add-staff { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background-color: var(--success); border: none; border-radius: 8px; color: var(--text-inverse); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: 0.2s; }
-.btn-add-staff:hover { background-color: var(--success-hover); }
+.btn-action-primary { padding: 0 20px; background: var(--primary, #3b82f6); color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; transition: 0.2s;}
+.btn-action-primary:hover { background: var(--primary-hover, #2563eb); }
 .staff-list { display: flex; flex-direction: column; gap: 8px; }
-.staff-total { margin-top: 12px; padding: 10px 14px; background-color: var(--primary-soft); border-radius: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--primary); font-weight: 600; }
-
-/* =========================================
-   ★ 직책별 스케줄 패널
-========================================= */
-.staff-item-wrapper { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface); overflow: hidden; }
-.staff-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; }
-.staff-info { display: flex; align-items: center; gap: 10px; flex: 1; }
-.staff-info i { font-size: 18px; color: var(--primary); }
-.staff-position-name { font-size: 13px; color: var(--text-main); font-weight: 500; }
-.staff-count-badge { padding: 3px 8px; background-color: var(--primary-soft); color: var(--primary); border-radius: 6px; font-size: 12px; font-weight: 600; }
+.staff-item-wrapper { border: 1px solid var(--border-focus, #cbd5e1); border-radius: 8px; background: #fff; overflow: hidden; }
+.staff-item { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
+.staff-info { display: flex; align-items: center; gap: 10px; }
+.staff-position-name { font-size: 14px; font-weight: 700; color: var(--text-main, #1e293b); }
 .staff-actions { display: flex; align-items: center; gap: 8px; }
-.btn-toggle-schedule { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--bg-canvas); border: 1px solid var(--border-focus); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-sub); cursor: pointer; transition: 0.2s; }
-.btn-toggle-schedule.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.btn-toggle-schedule:hover { background: var(--bg-hover); }
-.btn-remove-staff { width: 24px; height: 24px; border-radius: 6px; background: rgba(239,68,68,0.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-.btn-remove-staff:hover { background: rgba(239,68,68,0.2); }
+.staff-count-stepper { display: inline-flex; align-items: center; background: var(--bg-canvas, #f1f5f9); border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; padding: 2px; }
+.btn-stepper { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; cursor: pointer; border-radius: 4px; color: var(--text-sub, #475569); transition: 0.2s;}
+.btn-stepper:hover { background: #e2e8f0; color: var(--text-main, #1e293b); }
+.input-stepper { width: 36px; text-align: center; border: none; background: transparent; font-size: 14px; font-weight: 800; color: var(--primary, #3b82f6); padding: 0;}
+.input-stepper:focus { outline: none; }
+.input-stepper::-webkit-outer-spin-button, .input-stepper::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper-text { font-size: 12px; font-weight: 600; color: var(--text-muted, #94a3b8); padding-right: 8px; }
+.btn-toggle-schedule { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-canvas, #f1f5f9); border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-sub, #475569); cursor: pointer; transition: 0.2s; }
+.btn-toggle-schedule.active { background: var(--primary-soft, #eff6ff); border-color: var(--primary, #3b82f6); color: var(--primary, #3b82f6); }
+.btn-remove-staff { width: 28px; height: 28px; border-radius: 6px; background: rgba(239,68,68,0.1); border: none; color: var(--danger, #ef4444); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.staff-total { margin-top: 12px; padding: 10px 16px; background: var(--primary-soft, #eff6ff); border-radius: 6px; color: var(--primary, #3b82f6); font-size: 13px; }
 
-.schedule-panel { border-top: 1px solid var(--border-focus); background: var(--bg-canvas); }
-.schedule-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-surface); border-bottom: 1px solid var(--border-focus); }
-.schedule-header span { font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
-.btn-batch-apply { padding: 4px 10px; background: var(--primary); color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-.btn-batch-apply:hover { background: var(--primary-hover); }
-
-.schedule-table-wrap { overflow-x: auto; }
-.schedule-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; min-width: 400px; }
-.schedule-table th { padding: 8px; background: var(--bg-hover); color: var(--text-sub); font-weight: 600; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
-.schedule-table td { padding: 8px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+/* 스케줄 패널 */
+.schedule-panel { border-top: 1px solid var(--border-focus, #cbd5e1); background: var(--bg-hover, #f8fafc); padding: 16px; }
+.schedule-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.schedule-header span { font-size: 13px; font-weight: 700; color: var(--text-main, #1e293b); }
+.btn-batch-apply { padding: 6px 12px; background: var(--text-sub, #475569); color: #fff; border: none; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s;}
+.btn-batch-apply:hover { background: var(--text-main, #1e293b); }
+.schedule-table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); }
+.schedule-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; background: #fff; min-width: 450px;}
+.schedule-table th, .schedule-table td { border-bottom: 1px solid var(--border-color, #e2e8f0); padding: 10px; }
+.schedule-table th { background: #f1f5f9; font-weight: 700; color: var(--text-sub, #475569); }
 .schedule-table tbody tr:last-child td { border-bottom: none; }
-.inactive-row td { background-color: var(--bg-hover); opacity: 0.6; }
+.inactive-row td { background: var(--bg-hover, #f8fafc); opacity: 0.6; }
+.time-inputs { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.time-input { padding: 4px 6px; font-size: 12px; width: 110px; text-align: center; }
+.break-input { width: 60px; text-align: right; padding: 4px; }
+.day-checkbox { display: flex; align-items: center; gap: 6px; font-weight: 700; cursor: pointer; justify-content: center;}
 
-.col-day { width: 60px; }
-.col-time { width: auto; }
-.col-break { width: 80px; }
-.col-opt { width: 70px; }
-
-.day-checkbox { display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 700; cursor: pointer; }
-.text-red { color: var(--danger); }
-.text-blue { color: #3b82f6; }
-.text-muted { color: var(--text-muted); }
-
-.time-inputs { display: flex; align-items: center; justify-content: center; gap: 6px; }
-.time-input { padding: 4px 6px; font-size: 12px; width: 120px; text-align: center; }
-.break-input { padding: 4px; font-size: 12px; width: 60px; text-align: right; margin: 0 auto; }
-.biweekly-checkbox { display: flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; font-size: 12px; }
-
-/* =========================================
-   산출내역서 토글
-========================================= */
+/* 산출내역서 전용 테이블 CSS */
 .cost-breakdown-wrapper { margin-top: 24px; }
-.btn-toggle-cost { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 18px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--text-main); cursor: pointer; transition: all 0.2s; text-align: left; }
-.btn-toggle-cost:hover { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.btn-toggle-cost span:nth-child(2) { flex: 1; }
-.cost-preview-badge { padding: 3px 10px; background: var(--primary); color: var(--text-inverse); border-radius: 20px; font-size: 12px; font-weight: 700; }
+.btn-toggle-cost { width: 100%; padding: 16px; background: #f1f5f9; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 8px; font-weight: 700; font-size: 14px; color: var(--text-main, #1e293b); cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: 0.2s;}
+.btn-toggle-cost:hover { background: var(--primary-soft, #eff6ff); border-color: var(--primary, #3b82f6); color: var(--primary, #3b82f6); }
+.toggle-left { display: flex; align-items: center; gap: 8px; }
+.cost-preview-badge { padding: 4px 12px; background: var(--primary, #3b82f6); color: #fff; border-radius: 20px; font-size: 13px; font-weight: 800; }
+.cost-breakdown-section { margin-top: 12px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 8px; overflow: hidden; background: #fff;}
+.cost-no-staff { padding: 50px 20px; text-align: center; color: var(--text-sub, #475569); }
+.cost-no-staff i { font-size: 48px; opacity: 0.3; display: block; margin-bottom: 12px;}
+.cost-scroll-area { overflow-x: auto; padding: 20px; }
+.cost-section-title { font-weight: 700; margin: 24px 0 12px 0; font-size: 14px; display: flex; align-items: center; color: var(--text-main, #1e293b);}
+.cost-section-title:first-child { margin-top: 0; }
+.cost-block-label { background: var(--text-main, #1e293b); color: #fff; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; margin-right: 8px; font-size: 12px; font-weight: 800;}
+.label-hours { background: #64748b;} .label-direct { background: #3b82f6;} .label-indirect { background: #8b5cf6;} .label-expense { background: #f59e0b;} .label-total { background: #10b981; }
+.btn-add-cost-item { padding: 6px 12px; background: #fff; border: 1px dashed var(--primary, #3b82f6); color: var(--primary, #3b82f6); border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; transition: 0.2s;}
+.btn-add-cost-item:hover { background: var(--primary-soft, #eff6ff); }
 
-/* 산출내역서 본체 */
-.cost-breakdown-section { margin-top: 8px; border: 1px solid var(--border-focus); border-radius: 10px; overflow: hidden; }
-.cost-no-staff { padding: 40px 20px; text-align: center; color: var(--text-sub); }
-.cost-no-staff i { font-size: 40px; margin-bottom: 12px; opacity: 0.5; display: block; }
-.cost-no-staff p { font-size: 13px; line-height: 1.7; margin: 0; }
-
-.cost-section-title { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--bg-canvas); border-top: 1px solid var(--border-color); font-size: 13px; font-weight: 700; color: var(--text-main); }
-.cost-section-title:first-child { border-top: none; }
-.cost-section-title em { font-style: normal; font-weight: 400; font-size: 12px; color: var(--text-sub); margin-left: 2px; }
-
-.btn-add-cost-item { display: flex; align-items: center; gap: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; background: var(--bg-surface); border: 1px dashed var(--primary); border-radius: 6px; color: var(--primary); cursor: pointer; transition: 0.2s; margin-left: auto; white-space: nowrap; }
-.btn-add-cost-item:hover { background: var(--primary-soft); }
-.btn-add-cost-item i { font-size: 14px; }
-
-.cost-block-label { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text-inverse); flex-shrink: 0; }
-.label-hours { background: #6b7280;}
-.label-direct    { background-color: #3b82f6; }
-.label-indirect  { background-color: #8b5cf6; }
-.label-expense   { background-color: #f59e0b; }
-.label-total     { background-color: #10b981; }
-.label-mgmt      { background-color: #6b7280; }
-.label-profit    { background-color: #ec4899; }
-.label-monthly   { background-color: #0ea5e9; }
-.label-total-fee { background-color: #f97316; }
-.label-contract-total  { background: #475569; }
-
-.cost-scroll-area { overflow-x: auto; }
-.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--text-main); table-layout: fixed; }
-.cost-table thead tr { background: var(--bg-canvas); }
-.cost-table th, .cost-table td { padding: 8px 10px; border: 1px solid var(--border-color); vertical-align: middle; }
-.cost-table th { font-size: 11px; font-weight: 700; color: var(--text-sub); text-align: center; white-space: nowrap; }
-.cost-table tbody tr:hover { background: var(--bg-hover); }
-.col-label    { min-width: 140px; width: 160px; }
-.col-staff    { min-width: 130px; text-align: center; }
-.col-rowtotal-head { min-width: 120px; text-align: right; }
-.col-rowtotal { min-width: 120px; text-align: right; font-weight: 600; background: rgba(99,102,241,0.04); }
-.col-action   { width: 36px; text-align: center; }
-.col-rowtotal-cell { text-align: right; font-weight: bold; background: rgba(99,102,241,0.04); }
-.staff-th-name  { display: block; font-size: 12px; font-weight: 700; color: var(--text-main); }
-.staff-th-count { display: block; font-size: 11px; color: var(--text-sub); font-weight: 400; }
-.tbl-value-input { width: 100%; padding: 5px 8px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 12px; color: var(--text-main); background: var(--bg-surface); text-align: right; box-sizing: border-box; }
-.tbl-value-input:focus { outline: none; border-color: var(--primary); }
-.btn-remove-cost { width: 24px; height: 24px; border-radius: 4px; background: rgba(239,68,68,0.1); border: none; color: var(--danger); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-.btn-remove-cost:hover { background: rgba(239,68,68,0.25); }
-.btn-remove-cost i { font-size: 13px; }
-.tfoot-subtotal td { background: var(--bg-canvas); font-size: 12px; font-weight: 700; color: var(--text-main); text-align: right; border-top: 2px solid var(--border-focus); }
+/* 테이블 규격 디테일 복원 */
+.cost-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; min-width: 800px;}
+.cost-table th, .cost-table td { border: 1px solid var(--border-color, #e2e8f0); padding: 8px 10px; vertical-align: middle;}
+.cost-table thead th { background: #f8fafc; font-weight: 700; color: var(--text-sub, #475569); text-align: center; white-space: nowrap;}
+.col-label { width: 180px; }
+.col-staff { min-width: 130px; text-align: center; }
+.col-rowtotal-head { width: 130px; text-align: right; }
+.col-rowtotal { width: 160px; text-align: left; }
+.col-action { width: 44px; text-align: center; }
+.tbl-value-input { width: 100%; border: 1px solid var(--border-focus, #cbd5e1); padding: 6px 8px; text-align: right; border-radius: 4px; font-size: 12px; color: var(--text-main, #1e293b); transition: 0.2s;}
+.tbl-value-input:focus { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); outline: none; }
+.col-rowtotal-cell { text-align: right; font-weight: 700; background: rgba(99, 102, 241, 0.03); color: var(--text-main, #1e293b);}
+.tfoot-subtotal td { background: #f1f5f9; font-size: 13px; font-weight: 800; color: var(--text-main, #1e293b); text-align: right; border-top: 2px solid var(--border-focus, #cbd5e1); }
 .tfoot-subtotal td:first-child { text-align: left; }
-.subtotal-rowtotal { background: rgba(99,102,241,0.10) !important; font-size: 13px; }
+.btn-remove-cost { width: 28px; height: 28px; border-radius: 4px; background: rgba(239,68,68,0.1); border: none; color: var(--danger, #ef4444); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
-.summary-table tbody tr td { background: var(--bg-surface); }
-.summary-row td { padding: 10px; }
-.summary-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; white-space: nowrap; }
-.summary-label-rate { display: flex; flex-direction: column; gap: 5px; }
-.summary-val { display: block; text-align: right; font-size: 12px; font-weight: 600; color: var(--text-main); white-space: nowrap; }
-.summary-val.bold { font-weight: 800; font-size: 13px; }
-.summary-val.highlight { color: var(--primary); font-weight: 700; }
-.summary-val.grand-total { font-size: 15px; font-weight: 800; color: var(--primary); text-align: right; }
-.row-d td        { background: rgba(16,185,129,0.04) !important; }
-.row-e td        { background: rgba(107,114,128,0.04) !important; }
-.row-f td        { background: rgba(236,72,153,0.04) !important; }
-.row-monthly td  { background: rgba(14,165,233,0.06) !important; }
-.row-total-fee td{ background: var(--primary-soft) !important; }
+/* 합계 테이블 (Summary) 규격 복원 */
+.summary-table { border-top: 2px solid var(--text-main, #1e293b); }
+.summary-row td { padding: 12px 10px; background: #fff;}
+.summary-label { font-size: 13px; }
+.summary-val { display: block; text-align: right; font-size: 13px; font-weight: 600; color: var(--text-main, #1e293b); }
+.row-d td { background: rgba(16,185,129,0.03) !important; }
+.row-monthly td { background: rgba(59,130,246,0.04) !important; }
+.row-total-fee td { background: var(--primary-soft, #eff6ff) !important; }
+.grand-total-input { font-size: 16px; font-weight: 800; color: var(--primary, #3b82f6); border-color: var(--primary, #3b82f6); padding: 8px;}
+.cost-special-note { padding: 20px; border-top: 1px solid var(--border-color, #e2e8f0); background: #f8fafc; }
 
-.cost-special-note { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-color); }
+/* 정산/엑셀 커스텀 UI */
+.empty-state-sm { padding: 16px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; text-align: center; color: var(--text-muted, #94a3b8); font-size: 13px; }
+.source-selection-row { display: flex; flex-direction: column; gap: 16px; padding: 20px; background: #fff; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; margin-bottom: 16px;}
+.source-group-title .contract-badge { padding: 4px 12px; font-size: 13px; font-weight: 800; border-radius: 6px; color: #fff;}
+.setting-block { display: flex; align-items: center; gap: 24px; }
+.setting-label { width: 100px; font-size: 13px; font-weight: 700; color: var(--text-main, #1e293b); }
+.source-selection-options { display: flex; gap: 24px; align-items: center;}
+.export-simple-options { display: flex; gap: 24px; background: #fff; padding: 20px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); }
+.export-simple-options label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.export-simple-options input[type="checkbox"], .source-selection-options input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary, #3b82f6); cursor: pointer;}
+.excel-transfer-ui { display: flex; gap: 20px; align-items: center; background: #fff; padding: 24px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); }
+.transfer-pane { flex: 1; border: 1px solid var(--border-focus, #cbd5e1); background: #fff; border-radius: 8px; height: 320px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02);}
+.pane-header { padding: 12px 16px; background: #f8fafc; font-weight: 800; font-size: 13px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color, #e2e8f0); }
+.pane-header .badge { background: #e2e8f0; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+.pane-header .badge-primary { background: var(--primary, #3b82f6); color: #fff; }
+.pane-search { padding: 12px; border-bottom: 1px solid var(--border-color, #e2e8f0); }
+.pane-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px;}
+.list-item { padding: 10px 12px; font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 6px; transition: 0.1s; display: flex; align-items: center; gap: 8px;}
+.list-item:hover { background: #f1f5f9; }
+.list-item.active { background: var(--primary-soft, #eff6ff); color: var(--primary, #3b82f6); font-weight: 700; }
+.item-badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 800; }
+.badge-pay { background: rgba(59,130,246,0.1); color: #3b82f6; } .badge-ded { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+.transfer-actions { display: flex; flex-direction: column; gap: 12px; }
+.btn-transfer-add, .btn-transfer-remove { padding: 12px 20px; border: none; border-radius: 6px; font-weight: 800; font-size: 13px; cursor: pointer; transition: 0.2s;}
+.btn-transfer-add { background: var(--primary, #3b82f6); color: #fff; box-shadow: 0 4px 10px rgba(59,130,246,0.2);}
+.btn-transfer-remove { background: #fff; border: 1px solid var(--border-focus, #cbd5e1); color: var(--text-main, #1e293b); box-shadow: 0 2px 6px rgba(0,0,0,0.05);}
+.btn-transfer-add:hover:not(:disabled) { background: var(--primary-hover, #2563eb); transform: translateY(-1px);}
+.btn-transfer-remove:hover:not(:disabled) { background: #f8fafc; border-color: var(--text-muted, #94a3b8);}
+.btn-transfer-add:disabled, .btn-transfer-remove:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; transform: none;}
 
-/* 비고 히스토리 */
-.memo-history { margin-bottom: 12px; background: var(--bg-canvas); border-radius: 8px; border: 1px solid var(--border-color); padding: 16px; }
-.history-header { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px dashed var(--border-focus); }
-.history-list { display: flex; flex-direction: column; gap: 12px; max-height: 150px; overflow-y: auto; }
-.history-item { display: flex; flex-direction: column; gap: 4px; }
-.history-date { font-size: 11px; color: var(--text-sub); }
-.history-content { font-size: 13px; color: var(--text-main); margin: 0; line-height: 1.5; background: var(--bg-surface); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); }
-
-/* 폼 액션 */
-.final-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 24px; border-top: 1px solid var(--border-color); margin-top: 32px; }
-.btn-prev, .btn-submit { display: flex; align-items: center; gap: 6px; padding: 10px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-prev { background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); }
-.btn-prev:hover { background: var(--bg-hover); color: var(--text-main); }
-.btn-submit { background-color: var(--success); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
-.btn-submit:hover { background-color: var(--success-hover); transform: translateY(-1px); }
-
-/* =========================================
-   정산 설정 전용 스타일
-========================================= */
-.info-helper-text { font-size: 12px; color: var(--text-sub); line-height: 1.5; }
-.text-orange { color: #b45309; }
-.text-blue   { color: #2563eb; }
-
-.config-toggle-wrapper { display: flex; gap: 24px; flex-wrap: wrap; }
-.config-toggle-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; cursor: pointer; transition: all 0.2s; }
-
-.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; }
-.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; }
-.slider.round { border-radius: 20px; }
-.slider.round:before { border-radius: 50%; }
-input:checked + .slider { background-color: #dc2626; }
-input:checked + .slider:before { transform: translateX(18px); }
-
-/* 항목 없을 때 안내 */
-.settlement-empty-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 20px 24px;
-  background: var(--bg-canvas);
-  border: 1px dashed var(--border-focus);
-  border-radius: 10px;
-  color: var(--text-sub);
-  font-size: 13px;
-  line-height: 1.6;
-}
-.settlement-empty-notice i { font-size: 20px; color: var(--primary); flex-shrink: 0; margin-top: 2px; }
-
-.deduction-toggles-grid { display: flex; flex-direction: column; gap: 16px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px; }
-.grid-group-label { display: flex; align-items: center; font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
-.config-checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
-.config-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text-main); padding: 6px 12px; background: var(--bg-surface); border-radius: 6px; border: 1px solid var(--border-focus); transition: 0.2s; }
-.config-checkbox:hover { border-color: var(--primary); background: var(--primary-soft); }
-.config-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 15px; height: 15px; cursor: pointer; margin: 0; }
-.grid-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
-
-.contract-calc-switch-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 1px solid var(--border-color);
-}
-
-.calc-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-sub);
-}
-
-/* 작은 스위치 디자인 */
-.switch-sm { position: relative; display: inline-block; width: 32px; height: 18px; }
-.switch-sm input { opacity: 0; width: 0; height: 0; }
-.slider-sm { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; border-radius: 20px; }
-.slider-sm:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
-input:checked + .slider-sm { background-color: var(--primary); }
-input:checked + .slider-sm:before { transform: translateX(14px); }
-
-/* =========================================
-   반응형
-========================================= */
-@media (max-width: 1024px) { .steps-list { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 768px) {
-  .steps-list { grid-template-columns: 1fr; gap: 8px; }
-  .form-section { padding: 16px; }
-  .form-grid { grid-template-columns: 1fr; }
-  .address-search-group { flex-direction: column; }
-  .postal-input { width: 100%; }
-  .btn-search-address { width: 100%; justify-content: center; }
-  .contract-actions { flex-direction: column; }
-  .btn-add-contract { width: 100%; justify-content: center; }
-  .final-actions { flex-direction: column; }
-  .btn-prev, .btn-submit { width: 100%; justify-content: center; }
-  .config-toggle-wrapper { flex-direction: column; }
-  .schedule-table-wrap { overflow-x: auto; }
-}
-
-/* =============================================
-   정산 기본 설정 — 서브 섹션 구분 및 레이아웃
-============================================= */
-.settlement-sub-section {
-  margin-bottom: 36px;
-  padding-bottom: 36px;
-  border-bottom: 1px dashed var(--border-color);
-}
-.settlement-sub-section:last-child {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-/* =============================================
-   계약별 정산 기준 및 옵션 설정
-============================================= */
-.salary-source-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.source-selection-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
+/* 메모 박스 */
+.memo-container { display: flex; flex-direction: column; gap: 20px; }
+.memo-box {
+  background: var(--bg-hover, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
   padding: 20px;
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
 }
-.source-selection-row:hover {
-  border-color: var(--border-focus);
-  background: var(--bg-hover);
-}
-
-.source-group-title {
-  width: 100px;
-  flex-shrink: 0;
-  margin-top: 4px;
-}
-
-.source-settings-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.setting-block {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.setting-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-main);
-  width: 120px;
-  flex-shrink: 0;
-}
-
-.source-selection-options {
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  flex: 1;
-}
-
-.source-radio-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  color: var(--text-sub);
-  cursor: pointer;
-}
-
-.source-radio-label strong {
-  font-weight: 700;
-  color: var(--text-main);
-  font-size: 14px;
-}
-
-.text-hint {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.source-radio-label input[type="radio"] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--border-focus);
-  border-radius: 50%;
-  margin: 0;
-  outline: none;
-  cursor: pointer;
-  position: relative;
-  background-color: var(--bg-surface);
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.source-radio-label input[type="radio"]:checked {
-  border-color: var(--primary);
-}
-
-.source-radio-label input[type="radio"]:checked::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background-color: var(--primary);
-}
-
-/* 수당 옵션 토글 영역 */
-.source-melt-options {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-
-/* =============================================
-   정산서 양식 관리 — Dual Listbox
-============================================= */
-.excel-transfer-ui {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  background: var(--bg-canvas);
-  border: 1px dashed var(--border-color);
-  border-radius: 10px;
-  padding: 24px 20px;
-}
-
-.transfer-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-focus);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  height: 380px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.pane-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border-color);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-main);
-}
-
-.pane-header .count {
-  background: var(--primary-soft);
-  color: var(--primary);
-  padding: 2px 10px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.pane-search {
-  position: relative;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.pane-search i {
-  position: absolute;
-  left: 26px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-  font-size: 16px;
-}
-
-.transfer-input {
-  width: 100%;
-  padding: 10px 12px 10px 36px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 13px;
-  box-sizing: border-box;
-  outline: none;
-  background: var(--bg-canvas);
-  transition: all 0.2s;
-}
-
-.transfer-input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-soft);
-  background: var(--bg-surface);
-}
-
-.pane-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.list-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  font-size: 13px;
-  color: var(--text-main);
-  border-radius: 6px;
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.2s;
-}
-
-.list-item:hover { background: var(--bg-hover); }
-
-.list-item.active {
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-weight: 700;
-}
-
-.item-badge {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.badge-pay { background: rgba(59,130,246,0.1); color: #3b82f6; }
-.badge-ded { background: rgba(139,92,246,0.1); color: #8b5cf6; }
-
-.empty-list {
-  padding: 40px 10px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.transfer-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.btn-transfer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 90px;
-  padding: 12px 0;
-  background: var(--primary);
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #fff;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 4px 10px rgba(99,102,241,0.2);
-}
-
-.btn-transfer:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-}
-
-.btn-transfer-remove {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  color: var(--text-main);
-  box-shadow: var(--shadow-sm);
-}
-
-.btn-transfer-remove:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--danger);
-  border-color: var(--border-focus);
-}
-
-.btn-transfer:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
-}
+.memo-title { font-weight: 800; font-size: 15px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;}
+.memo-title i { font-size: 20px; }
+.history-item { font-size: 13px; background: #f8fafc; padding: 12px; border: 1px solid var(--border-color, #e2e8f0); border-radius: 6px; margin-bottom: 8px; }
+.history-item .date { color: var(--text-muted, #94a3b8); font-size: 11px; font-weight: 600; display: block; margin-bottom: 4px; }
+.history-item p { margin: 0; color: var(--text-main, #1e293b); line-height: 1.5; }
 
 /* 모바일 반응형 */
+@media (max-width: 1024px) {
+  .register-layout { flex-direction: column; align-items: stretch; }
+  .quick-nav-sidebar { width: 100%; position: static; margin-bottom: 8px; z-index: 40; background: transparent; padding-top: 10px; max-height: none; }
+  .nav-list { flex-direction: row; overflow-x: auto; padding-bottom: 12px; gap: 8px;}
+  .nav-item { white-space: nowrap; padding: 10px 16px; background: #fff; border: 1px solid var(--border-color, #e2e8f0);}
+  .form-group-row { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 768px) {
-  .excel-transfer-ui {
-    flex-direction: column;
-  }
-  .transfer-pane {
-    width: 100%;
-    height: 280px;
-  }
-  .transfer-actions {
-    flex-direction: row;
-    width: 100%;
-    justify-content: center;
-  }
-  .btn-transfer {
-    width: 140px;
-  }
-  .source-selection-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-  .setting-block {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .source-selection-options {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 14px;
-  }
-  .text-hint { display: none; }
-}
-
-/* =============================================
-   인원 수정 스텝퍼 (Stepper)
-============================================= */
-.staff-count-stepper {
-  display: inline-flex;
-  align-items: center;
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 2px;
-  width: fit-content;
-}
-
-.btn-stepper {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--text-sub);
-  transition: all 0.2s;
-}
-
-.btn-stepper:hover {
-  background: var(--bg-hover);
-  color: var(--text-main);
-}
-
-.input-stepper {
-  width: 32px;
-  text-align: center;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--primary);
-  outline: none;
-  -moz-appearance: textfield; /* Firefox 기본 화살표 제거 */
-  padding: 0;
-}
-
-/* Chrome, Safari, Edge 기본 화살표 제거 */
-.input-stepper::-webkit-outer-spin-button,
-.input-stepper::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.stepper-text {
-  font-size: 12px;
-  color: var(--text-sub);
-  font-weight: 600;
-  padding-right: 6px;
-}
-
-/* =============================================
-   특이사항 탭 - Stacked & Clean Design (상세페이지 동일 규격)
-============================================= */
-.memo-stacked-panel {
-  width: 100%;
-  padding: 10px 0 20px;
-}
-
-.memo-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.section-divider {
-  height: 1px;
-  background: var(--border-color);
-  margin: 40px 0;
-  position: relative;
-}
-.section-divider::after {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40px;
-  height: 8px;
-  background: var(--bg-surface);
-  border-radius: 4px;
-}
-
-/* 섹션 헤더 */
-.memo-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding-bottom: 12px;
-}
-
-.header-title-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-icon-box {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.section-icon-box i { font-size: 22px; }
-
-.bg-primary-soft { background: var(--primary-soft); }
-.bg-warning-soft { background: rgba(245, 158, 11, 0.1); }
-.text-primary { color: var(--primary); }
-.text-warning { color: var(--warning); }
-
-.section-title-texts {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.section-title-texts h3 {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--text-main);
-  margin: 0;
-}
-.section-title-texts p {
-  font-size: 12px;
-  color: var(--text-sub);
-  margin: 0;
-}
-
-.header-count-badge {
-  padding: 4px 10px;
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-main);
-}
-.header-count-badge.badge-warning {
-  border-color: rgba(245, 158, 11, 0.3);
-  color: var(--warning);
-}
-
-/* 작성 폼 */
-.clean-editor-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  overflow: hidden;
-  transition: all 0.2s;
-}
-.clean-editor-card:focus-within.primary-focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.clean-editor-card:focus-within.warning-focus {
-  border-color: var(--warning);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
-}
-
-.clean-textarea {
-  width: 100%;
-  padding: 16px 20px;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  color: var(--text-main);
-  line-height: 1.6;
-  resize: vertical;
-  box-sizing: border-box;
-}
-.clean-textarea:focus { outline: none; }
-
-/* 타임라인 피드 */
-.clean-timeline-wrapper {
-  position: relative;
-  margin-top: 4px;
-}
-
-.clean-timeline {
-  position: relative;
-  padding-left: 16px;
-}
-
-.clean-timeline::before {
-  content: '';
-  position: absolute;
-  top: 10px;
-  bottom: 0;
-  left: 20px;
-  width: 2px;
-  background: var(--border-color);
-}
-
-.clean-timeline-item {
-  position: relative;
-  padding-left: 28px;
-  margin-bottom: 16px;
-}
-.clean-timeline-item:last-child { margin-bottom: 0; }
-
-.timeline-dot {
-  position: absolute;
-  top: 14px;
-  left: 0;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 4px var(--bg-surface);
-  z-index: 1;
-}
-.bg-primary { background: var(--primary); }
-.bg-warning { background: var(--warning); }
-
-.timeline-card {
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 12px 16px;
-}
-
-.border-warning-subtle {
-  border-left: 3px solid rgba(245, 158, 11, 0.4);
-}
-
-.card-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-
-.meta-date {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-sub);
-}
-
-.meta-user {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-surface);
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
-}
-
-.card-text {
-  font-size: 13px;
-  color: var(--text-main);
-  line-height: 1.5;
-  white-space: pre-line;
-}
-
-/* =============================================
-   출력 및 내보내기 설정 (심플 체크박스)
-============================================= */
-.export-simple-options {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
-  padding: 16px 20px;
-  background: var(--bg-canvas);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.simple-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 4px 0;
-}
-
-.simple-checkbox-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--primary);
-  cursor: pointer;
-  margin: 0;
-}
-
-.checkbox-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-main);
-  user-select: none;
-  transition: color 0.2s;
-}
-
-.simple-checkbox-label:hover .checkbox-text {
-  color: var(--primary);
+  .sticky-header { margin: -16px -16px 16px -16px; padding: 12px 16px; }
+  .page-title { font-size: 18px; }
+  .page-subtitle { display: none; }
+  .form-group-row { grid-template-columns: 1fr; }
+  .excel-transfer-ui { flex-direction: column; }
+  .transfer-pane { width: 100%; height: 280px; }
+  .transfer-actions { flex-direction: row; width: 100%; justify-content: center; }
+  .setting-block { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .source-selection-options { flex-direction: column; align-items: flex-start; gap: 12px;}
 }
 </style>
