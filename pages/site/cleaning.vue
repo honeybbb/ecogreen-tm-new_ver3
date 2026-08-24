@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'nuxt/app';
 
 const router = useRouter();
@@ -59,43 +59,43 @@ const getManagerName = (mIdx) => managers.value.find(m => m.idx === mIdx)?.name 
 // ========================================================
 const cleaningSchedules = ref([
   {
-    idx: 1, sIdx: 101, siteName: "서초 그랑자이", itemCd: "04003001003", itemName: "주차장대청소",
-    cleaningDt: "2026-06-16", durationDays: 1, endDt: "2026-06-16", status: "예정",
+    idx: 1, sIdx: 106, siteName: "옥정8(율정)단지", itemCd: "04003001003", itemName: "주차장대청소",
+    startDt: "2026-08-16", durationDays: 1, endDt: "2026-08-16", status: "예정",
     teamIdx: 1, managerMIdx: 1, address: "서울시 서초구 반포대로 000",
     equipment: "고압세척기, 사다리차", requestNote: "지하주차장 우선 진행 요청",
     docSent: true, docConfirmYn: true
   },
   {
-    idx: 2, sIdx: 101, siteName: "서초 그랑자이", itemCd: "04003001005", itemName: "렉산대청소",
-    cleaningDt: "2026-06-18", durationDays: 1, endDt: "2026-06-18", status: "완료",
+    idx: 2, sIdx: 141, siteName: "북한산힐스테이트7차", itemCd: "04003001005", itemName: "렉산대청소",
+    startDt: "2026-08-18", durationDays: 1, endDt: "2026-08-18", status: "완료",
     teamIdx: 1, managerMIdx: 1, address: "서울시 서초구 반포대로 000",
     equipment: "고소작업대", requestNote: "",
     docSent: true, docConfirmYn: true
   },
   {
     idx: 3, sIdx: 102, siteName: "반포 래미안", itemCd: "04003001003", itemName: "주차장대청소",
-    cleaningDt: "2026-06-25", durationDays: 2, endDt: "2026-06-26", status: "예정",
+    startDt: "2026-06-25", durationDays: 2, endDt: "2026-06-26", status: "예정",
     teamIdx: 2, managerMIdx: 2, address: "서울시 서초구 신반포로 000",
     equipment: "고압세척기", requestNote: "야간 진행 불가, 주간만 가능",
     docSent: true, docConfirmYn: false
   },
   {
-    idx: 4, sIdx: 103, siteName: "잠실 엘스", itemCd: "04003001003", itemName: "주차장대청소",
-    cleaningDt: "2026-06-16", durationDays: 3, endDt: "2026-06-18", status: "진행중",
+    idx: 4, sIdx: 107, siteName: "묵동금호어울림아파트", itemCd: "04003001003", itemName: "주차장대청소",
+    startDt: "2026-08-16", durationDays: 3, endDt: "2026-08-18", status: "진행중",
     teamIdx: 3, managerMIdx: 3, address: "서울시 송파구 올림픽로 000",
     equipment: "고압세척기, 진공흡입차", requestNote: "지상+지하 전체",
     docSent: true, docConfirmYn: true
   },
   {
-    idx: 5, sIdx: 104, siteName: "디에이치 아너힐즈", itemCd: "04003001007", itemName: "유리창대청소",
-    cleaningDt: "2026-06-20", durationDays: 2, endDt: "2026-06-21", status: "예정",
+    idx: 5, sIdx: 114, siteName: "한숲대림아파트", itemCd: "04003001007", itemName: "현관대청소",
+    startDt: "2026-08-20", durationDays: 2, endDt: "2026-08-21", status: "예정",
     teamIdx: 2, managerMIdx: 1, address: "서울시 강남구 개포로 000",
     equipment: "곤도라, 로프", requestNote: "고층부 안전점검 선행",
     docSent: false, docConfirmYn: false
   },
   {
-    idx: 6, sIdx: 105, siteName: "도곡 렉슬", itemCd: "04003001003", itemName: "주차장대청소",
-    cleaningDt: "2026-07-02", durationDays: 1, endDt: "2026-07-02", status: "예정",
+    idx: 6, sIdx: 128, siteName: "백송마을상동자이", itemCd: "04003001003", itemName: "주차장대청소",
+    startDt: "2026-09-02", durationDays: 1, endDt: "2026-09-02", status: "예정",
     teamIdx: 1, managerMIdx: 2, address: "서울시 강남구 도곡로 000",
     equipment: "고압세척기", requestNote: "",
     docSent: true, docConfirmYn: true
@@ -114,12 +114,48 @@ const calendarFilteredSchedules = computed(() => {
     if (filterMode.value === 'team' && filterTeamIdx.value && s.teamIdx !== filterTeamIdx.value) return false;
     if (filterMode.value === 'manager' && filterManagerIdx.value && s.managerMIdx !== filterManagerIdx.value) return false;
     return true;
+  }).sort((a, b) => new Date(a.startDt) - new Date(b.startDt));
+});
+
+const scheduleLaneMap = computed(() => {
+  const sorted = [...calendarFilteredSchedules.value].sort(
+      (a, b) => new Date(a.startDt) - new Date(b.startDt)
+  );
+  const laneEndDates = []; // laneEndDates[lane] = 그 레인에 마지막으로 배정된 일정의 endDt
+  const map = {};
+
+  sorted.forEach(s => {
+    let lane = laneEndDates.findIndex(endDt => endDt < s.startDt);
+    if (lane === -1) {
+      lane = laneEndDates.length;
+    }
+    laneEndDates[lane] = s.endDt;
+    map[s.idx] = lane;
   });
+
+  return map;
+});
+
+const maxLaneCount = computed(() => {
+  const lanes = Object.values(scheduleLaneMap.value);
+  return lanes.length ? Math.max(...lanes) + 1 : 0;
 });
 
 const getSchedulesForDate = (dateStr) => {
-  // 다일 소요 항목도 기간 내 모든 날짜 셀에 노출
-  return calendarFilteredSchedules.value.filter(s => dateStr >= s.cleaningDt && dateStr <= s.endDt);
+  // 레인 번호 순서로 고정된 슬롯 배열을 만들어, 같은 일정은 항상 같은 줄에 그려지도록 함
+  const slots = new Array(maxLaneCount.value).fill(null);
+
+  calendarFilteredSchedules.value
+      .filter(s => dateStr >= s.startDt && dateStr <= s.endDt)
+      .forEach(s => {
+        const start = new Date(s.startDt);
+        const curr = new Date(dateStr);
+        const dayIndex = Math.floor((curr - start) / (1000 * 60 * 60 * 24)) + 1;
+        const lane = scheduleLaneMap.value[s.idx] ?? 0;
+        slots[lane] = { ...s, dayIndex, isStartDay: dayIndex === 1 };
+      });
+
+  return slots; // null인 자리는 빈 칸(스페이서)으로 렌더링
 };
 
 const isPendingConfirm = (schedule) => schedule.docSent && !schedule.docConfirmYn;
@@ -175,11 +211,10 @@ const openDetail = (schedule) => {
   addForm.value = {
     sIdx: schedule.sIdx,
     itemCd: schedule.itemCd,
-    cleaningDt: schedule.cleaningDt,
+    startDt: schedule.startDt,
     status: schedule.status,
     teamIdx: schedule.teamIdx,
     managerMIdx: schedule.managerMIdx,
-    address: schedule.address,
     equipment: schedule.equipment,
     requestNote: schedule.requestNote,
     sendDoc: schedule.docSent
@@ -258,23 +293,30 @@ const getCycleRange = (cycleStartDt, cycleMonths) => {
   return { start: fmt(start), end: fmt(end), label: `${cycleMonths}개월` };
 };
 
-// 상반기(1~6월) 완료 실적 존재 여부 확인 후,
-// 6/30 + 4개월(=10/31) 경과 시점부터 경고 - 요구사항 7
-const isHalfYearWarning = (sIdx, itemCd, cyclePerYear) => {
-  if (cyclePerYear < 2) return false;
+const isDelayedWarning = (sIdx, itemCd, cyclePerYear = 1) => {
   const now = new Date();
   const year = now.getFullYear();
-  const halfYearDeadline = new Date(year, 5, 30); // 6/30
-  const warnFrom = new Date(halfYearDeadline);
-  warnFrom.setMonth(warnFrom.getMonth() + 4); // 10/31부터 경고
 
-  if (now < warnFrom) return false;
-
-  const doneInFirstHalf = cleaningSchedules.value.some(s =>
+  const doneInRange = (fromStr, toStr) => cleaningSchedules.value.some(s =>
       s.sIdx === sIdx && s.itemCd === itemCd && s.status === '완료' &&
-      s.cleaningDt >= `${year}-01-01` && s.cleaningDt <= `${year}-06-30`
+      s.startDt >= fromStr && s.startDt <= toStr
   );
-  return !doneInFirstHalf;
+
+  if (cyclePerYear >= 2) {
+    // 상반기(1~6월): 5/1부터 4개월 경과 판단 / 하반기(7~12월): 11/1부터
+    const h1WarnFrom = new Date(year, 4, 1);
+    const h2WarnFrom = new Date(year, 10, 1);
+    const h1Done = doneInRange(`${year}-01-01`, `${year}-06-30`);
+    const h2Done = doneInRange(`${year}-07-01`, `${year}-12-31`);
+    if (now >= h1WarnFrom && !h1Done) return '상반기';
+    if (now >= h2WarnFrom && !h2Done) return '하반기';
+    return null;
+  }
+
+  // 연 1회: 1/1 기준 4개월 경과(5/1)부터 판단
+  const warnFrom = new Date(year, 4, 1);
+  if (now < warnFrom) return null;
+  return doneInRange(`${year}-01-01`, `${year}-12-31`) ? null : '올해';
 };
 
 // 진행된 일정 횟수 계산 및 잔여 항목 추출 (소요일 합계 포함) - 요구사항 1,8
@@ -298,8 +340,10 @@ const cleaningStatusBySite = computed(() => {
         totalDurationDays,
         usedDurationDays,
         isService: config.isService,
+        cyclePerYear: config.cyclePerYear,
         cycleRange: getCycleRange(config.cycleStartDt, config.cycleMonths),
-        warning: isHalfYearWarning(site.sIdx, config.code, config.cyclePerYear)
+        warningPeriod: isDelayedWarning(site.sIdx, config.code, config.cyclePerYear),
+        warning: !!isDelayedWarning(site.sIdx, config.code, config.cyclePerYear)
       };
     });
 
@@ -354,7 +398,7 @@ const teamWorkload = computed(() => {
   const rows = teams.value.map(team => {
     const cells = months.map(ym => {
       const sum = cleaningSchedules.value
-          .filter(s => s.teamIdx === team.idx && s.cleaningDt.startsWith(ym))
+          .filter(s => s.teamIdx === team.idx && s.startDt.startsWith(ym))
           .reduce((acc, s) => acc + (s.durationDays || 0), 0);
       return sum;
     });
@@ -376,8 +420,15 @@ const isEditMode = ref(false);
 const editingIdx = ref(null);
 
 const addForm = ref({
-  sIdx: '', itemCd: '', cleaningDt: '', status: '예정',
-  teamIdx: '', managerMIdx: '', address: '', equipment: '', requestNote: '',
+  sIdx: '',
+  itemCd: '',
+  startDt: '',
+  endDt: '',
+  status: '예정',
+  teamIdx: '',
+  managerMIdx: '',
+  equipment: '',
+  requestNote: '',
   sendDoc: true
 });
 
@@ -400,8 +451,8 @@ const openAddModal = () => {
   isEditMode.value = false;
   editingIdx.value = null;
   addForm.value = {
-    sIdx: '', itemCd: '', cleaningDt: '', status: '예정',
-    teamIdx: '', managerMIdx: '', address: '', equipment: '', requestNote: '',
+    sIdx: '', itemCd: '', startDt: '', status: '예정',
+    teamIdx: '', managerMIdx: '', equipment: '', requestNote: '',
     sendDoc: true
   };
   showAddModal.value = true;
@@ -433,32 +484,33 @@ const issueDocument = (schedule) => {
 };
 
 const saveAddModal = () => {
-  if (!addForm.value.sIdx || !addForm.value.itemCd || !addForm.value.cleaningDt) {
+  if (!addForm.value.sIdx || !addForm.value.itemCd || !addForm.value.startDt || !addForm.value.endDt) {
     window.customAlert("필수 입력 값을 입력해주세요.", 'error');
+    return;
+  }
+  if (addForm.value.endDt < addForm.value.startDt) {
+    window.customAlert("종료일은 시작일보다 앞설 수 없습니다.", 'error');
     return;
   }
 
   const site = siteContracts.value.find(s => s.sIdx === addForm.value.sIdx);
   const task = site.cleaningConfig.find(t => t.code === addForm.value.itemCd);
 
-  const startDt = addForm.value.cleaningDt;
-  const durationDays = task.durationDays || 1;
-  const endDate = new Date(startDt);
-  endDate.setDate(endDate.getDate() + durationDays - 1);
-  const endDt = endDate.toISOString().slice(0, 10);
+  const startDt = addForm.value.startDt;
+  const endDt = addForm.value.endDt;
+  const durationDays = Math.floor((new Date(endDt) - new Date(startDt)) / (1000 * 60 * 60 * 24)) + 1;
 
   const payload = {
     sIdx: site.sIdx,
     siteName: site.siteName,
     itemCd: task.code,
     itemName: task.name,
-    cleaningDt: startDt,
+    startDt: startDt,
     durationDays,
     endDt,
     status: addForm.value.status,
     teamIdx: addForm.value.teamIdx,
     managerMIdx: addForm.value.managerMIdx,
-    address: addForm.value.address,
     equipment: addForm.value.equipment,
     requestNote: addForm.value.requestNote,
     docSent: addForm.value.sendDoc,
@@ -554,9 +606,9 @@ const saveChecklist = () => {
       <button :class="['tab-item', { active: activeTab === 'calendar' }]" @click="activeTab = 'calendar'">
         <i class="mdi mdi-calendar-month"></i> 일정 캘린더
       </button>
-      <button :class="['tab-item', { active: activeTab === 'status' }]" @click="activeTab = 'status'">
+      <!--button :class="['tab-item', { active: activeTab === 'status' }]" @click="activeTab = 'status'">
         <i class="mdi mdi-clipboard-text-outline"></i> 현장별 실시현황
-      </button>
+      </button-->
       <button :class="['tab-item', { active: activeTab === 'workload' }]" @click="activeTab = 'workload'">
         <i class="mdi mdi-account-group-outline"></i> 팀별 소요일 현황
       </button>
@@ -610,20 +662,27 @@ const saveChecklist = () => {
             >
               <div class="cell-date">{{ day.date }}</div>
               <div class="cell-schedules">
-                <div
-                    v-for="schedule in getSchedulesForDate(day.dateStr)"
-                    :key="schedule.idx"
-                    :class="['schedule-item', { 'schedule-pending': isPendingConfirm(schedule) }]"
-                    @click="openDetail(schedule)"
-                    :style="{'--status-col': getStatusColor(schedule.status)}"
-                >
-                  <div class="schedule-status" :style="{ backgroundColor: getStatusColor(schedule.status) }">{{ schedule.status }}</div>
-                  <div class="schedule-text">
-                    <strong>{{ schedule.siteName }}</strong>
-                    <span>{{ schedule.itemName }} · {{ getTeamName(schedule.teamIdx) }}</span>
-                    <span v-if="isPendingConfirm(schedule)" class="pending-badge">확인대기</span>
+                <template v-for="(schedule, lane) in getSchedulesForDate(day.dateStr)" :key="lane">
+                  <div
+                      v-if="schedule"
+                      :class="[
+                        'schedule-bar',
+                        { 'is-pending': isPendingConfirm(schedule) },
+                        { 'is-start': schedule.isStartDay },
+                        { 'is-end': schedule.dayIndex === schedule.durationDays },
+                        { 'is-middle': !schedule.isStartDay && schedule.dayIndex < schedule.durationDays }
+                      ]"
+                      @click="openDetail(schedule)"
+                      :style="{ backgroundColor: getStatusColor(schedule.status) }"
+                      :title="`${schedule.siteName} · ${schedule.itemName} (${getTeamName(schedule.teamIdx)})`"
+                  >
+                    <div class="bar-content" :style="{ opacity: schedule.isStartDay ? 1 : 0 }">
+                      <span class="bar-title">{{ schedule.siteName }} · {{ schedule.itemName }}</span>
+                      <span v-if="isPendingConfirm(schedule)" class="bar-badge">대기</span>
+                    </div>
                   </div>
-                </div>
+                  <div v-else class="schedule-bar-empty"></div>
+                </template>
               </div>
             </div>
           </div>
@@ -632,24 +691,76 @@ const saveChecklist = () => {
 
       <!-- 현장별 대청소 잔여 횟수 미니 카드 -->
       <div class="status-card">
-        <div class="status-header">
-          <i class="mdi mdi-clipboard-text-outline"></i>
-          <h3>현장별 과업 잔여 현황</h3>
-        </div>
-        <div class="status-list">
-          <div :class="['status-item', { 'status-completed': site.isAllCompleted }]" v-for="site in cleaningStatusBySite" :key="site.sIdx">
-            <h4>{{ site.siteName }}</h4>
-            <div :class="['task-info', { 'task-completed': task.remain <= 0 }]" v-for="task in site.tasks" :key="task.code">
-              <div class="task-name">
-                • {{ task.name }}
-                <span v-if="task.isService" class="badge-service">서비스</span>
-                <i v-if="task.warning" class="mdi mdi-alert-circle warning-icon" title="상반기 미실시 경고"></i>
+        <!-- 사이드 패널용 헤더 & 검색 컨트롤 -->
+        <div class="status-header" style="flex-direction: column; align-items: stretch; gap: 12px; border-bottom: none; padding-bottom: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <i class="mdi mdi-clipboard-text-outline"></i>
+              <h3>현장별 과업 잔여 현황</h3>
+            </div>
+            <span class="site-count-badge">{{ filteredStatusSites.length }}개</span>
+          </div>
+
+          <div class="status-controls" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;">
+            <div class="search-box" style="width: 100%;">
+              <i class="mdi mdi-magnify"></i>
+              <input type="text" v-model="statusSearch" placeholder="현장명/항목명 검색" class="search-input" style="width: 100%;" />
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label class="form-check-inline">
+                <input type="checkbox" v-model="statusOnlyRemaining" /> 미완료만 보기
+              </label>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn-mini" @click="collapseAllSites">전체 접기</button>
+                <button class="btn-mini" @click="expandAllSites">펼치기</button>
               </div>
-              <div class="task-counts">
-                <span class="count-total">총 {{ task.total }}회</span>
-                <span class="count-used">진행 {{ task.used }}회</span>
-                <span class="count-remain" v-if="task.remain > 0">잔여 {{ task.remain }}회</span>
-                <span class="count-remain" v-else>완료</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 통합된 리스트 영역 -->
+        <div class="status-list" style="border-top: 1px solid var(--border-color, #e5e7eb); padding-top: 12px;">
+          <div v-if="filteredStatusSites.length === 0" class="empty-state" style="padding: 12px;">검색 결과가 없습니다.</div>
+
+          <div
+              :class="['status-item', { 'status-completed': site.isAllCompleted, 'status-expanded': isSiteExpanded(site.sIdx) }]"
+              v-for="site in filteredStatusSites" :key="site.sIdx"
+          >
+            <div class="status-item-header" @click="toggleSiteExpand(site.sIdx)">
+              <h4>{{ site.siteName }}</h4>
+              <div class="status-summary">
+                <span class="summary-chip summary-remain" v-if="site.remainCount > 0">잔여 {{ site.remainCount }}</span>
+                <span class="summary-chip summary-done" v-else>전체완료</span>
+                <span class="summary-chip summary-warning" v-if="site.warningCount > 0">
+                  <i class="mdi mdi-alert-circle"></i> {{ site.warningCount }}
+                </span>
+                <i :class="['mdi', isSiteExpanded(site.sIdx) ? 'mdi-chevron-up' : 'mdi-chevron-down', 'expand-icon']"></i>
+              </div>
+            </div>
+
+            <div v-show="isSiteExpanded(site.sIdx)" class="status-item-body">
+              <div :class="['task-info', { 'task-completed': task.remain <= 0 }]" v-for="task in site.tasks" :key="task.code">
+                <div class="task-name">
+                  • {{ task.name }}
+                  <span v-if="task.isService" class="badge-service">서비스</span>
+                  <span v-if="task.remain <= 0" class="badge-done">완료</span>
+                  <span v-else-if="task.warning" class="badge-notdone-warning">
+                    <i class="mdi mdi-alert-circle"></i> {{ task.warningPeriod }} 미실시
+                  </span>
+                  <span v-else class="badge-notdone">미실시</span>
+                </div>
+                <div class="task-counts" style="flex-wrap: wrap;">
+                  <span class="count-total">총 {{ task.total }}회</span>
+                  <span class="count-used">진행 {{ task.used }}회</span>
+                  <span class="count-remain" v-if="task.remain > 0">잔여 {{ task.remain }}회</span>
+                  <span class="count-remain" v-else>완료</span>
+                </div>
+                <div class="task-counts" style="margin-top: 2px;">
+                  <span class="count-used">소요일 {{ task.usedDurationDays }}/{{ task.totalDurationDays }}일</span>
+                </div>
+                <div v-if="task.cycleRange" class="cycle-badge">
+                  주기 {{ task.cycleRange.start }} ~ {{ task.cycleRange.end }}
+                </div>
               </div>
             </div>
           </div>
@@ -703,7 +814,11 @@ const saveChecklist = () => {
               <div class="task-name">
                 • {{ task.name }}
                 <span v-if="task.isService" class="badge-service">서비스</span>
-                <i v-if="task.warning" class="mdi mdi-alert-circle warning-icon" title="상반기 미실시 경고"></i>
+                <span v-if="task.remain <= 0" class="badge-done">실시완료</span>
+                <span v-else-if="task.warning" class="badge-notdone-warning">
+                  <i class="mdi mdi-alert-circle"></i> {{ task.warningPeriod }} 미실시
+                </span>
+                <span v-else class="badge-notdone">미실시</span>
               </div>
               <div class="task-counts">
                 <span class="count-total">총 {{ task.total }}회</span>
@@ -782,7 +897,7 @@ const saveChecklist = () => {
         <div class="doc-list">
           <div class="doc-item" v-for="s in completedSchedules" :key="s.idx">
             <div class="doc-header">
-              <strong>{{ s.siteName }} - {{ s.itemName }} ({{ s.cleaningDt }})</strong>
+              <strong>{{ s.siteName }} - {{ s.itemName }} ({{ s.startDt }})</strong>
               <button v-if="!hasChecklist(s.idx)" class="btn-checklist" @click="openChecklistModal(s)">점검표 작성</button>
               <span v-else class="checklist-done-badge">점검완료</span>
             </div>
@@ -817,13 +932,16 @@ const saveChecklist = () => {
           <div class="form-row">
             <div class="form-group">
               <label>청소 시작일자</label>
-              <input type="date" v-model="addForm.cleaningDt" class="form-control" />
+              <input type="date" v-model="addForm.startDt" class="form-control" />
             </div>
             <div class="form-group">
-              <label>예상 종료일</label>
-              <input type="text" class="form-control" disabled
-                     :value="addForm.cleaningDt ? `소요 ${selectedTaskDuration}일` : '-'" />
+              <label>청소 종료일자</label>
+              <input type="date" v-model="addForm.endDt" class="form-control" />
             </div>
+          </div>
+          <div v-if="addForm.startDt && addForm.endDt" class="duration-hint">
+            <i class="mdi mdi-calendar-range"></i>
+            총 {{ Math.floor((new Date(addForm.endDt) - new Date(addForm.startDt)) / (1000 * 60 * 60 * 24)) + 1 }}일간 진행되는 일정으로 등록됩니다.
           </div>
 
           <div class="form-row">
@@ -841,11 +959,6 @@ const saveChecklist = () => {
                 <option v-for="m in managers" :key="m.idx" :value="m.idx">{{ m.name }}</option>
               </select>
             </div>
-          </div>
-
-          <div class="form-group">
-            <label>현장 주소</label>
-            <input type="text" v-model="addForm.address" class="form-control" placeholder="예: 서울시 서초구 반포대로 000" />
           </div>
 
           <div class="form-group">
@@ -867,9 +980,9 @@ const saveChecklist = () => {
             </select>
           </div>
 
-          <div class="form-group form-check">
+          <!--div class="form-group form-check">
             <label><input type="checkbox" v-model="addForm.sendDoc" /> 저장과 동시에 공문 발송 (현장/담당자/팀장 수신확인 필요)</label>
-          </div>
+          </div-->
         </div>
         <div class="modal-footer">
           <button v-if="isEditMode" class="btn-danger" @click="deleteSchedule" style="margin-right: auto;">삭제</button>
@@ -1604,7 +1717,6 @@ textarea.form-control {
 .calendar-cell {
   border-right: 1px solid var(--border-color, #e5e7eb);
   border-bottom: 1px solid var(--border-color, #e5e7eb);
-  padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1632,8 +1744,6 @@ textarea.form-control {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
   background: var(--primary, #4f46e5);
   color: #fff;
   border-radius: 50%;
@@ -1641,6 +1751,7 @@ textarea.form-control {
 }
 
 .cell-date {
+  padding: 8px;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-main, #111827);
@@ -1693,8 +1804,71 @@ textarea.form-control {
   font-weight: 600;
 }
 
+.duration-hint {
+  font-size: 13px;
+  color: var(--primary, #4f46e5);
+  font-weight: 600;
+  margin-top: -8px;
+}
+.badge-done {
+  display: inline-block; margin-left: 4px; padding: 1px 6px;
+  font-size: 10px; font-weight: 700; color: #166534; background: #dcfce7; border-radius: 4px;
+}
+.badge-notdone {
+  display: inline-block; margin-left: 4px; padding: 1px 6px;
+  font-size: 10px; font-weight: 700; color: #6b7280; background: #f3f4f6; border-radius: 4px;
+}
+.badge-notdone-warning {
+  display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; padding: 1px 6px;
+  font-size: 10px; font-weight: 700; color: #b91c1c; background: #fee2e2; border-radius: 4px;
+}
+
 .schedule-text span {
   color: var(--text-sub, #4b5563);
+}
+
+/* 추가 */
+.cell-schedules {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.schedule-bar {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  color: #fff;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: filter 0.2s;
+}
+.schedule-bar:hover { filter: brightness(0.9); }
+
+.schedule-bar.is-pending {
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.2), rgba(255,255,255,0.2) 10px, transparent 10px, transparent 20px) !important;
+  border-top: 1px dashed rgba(0,0,0,0.3);
+  border-bottom: 1px dashed rgba(0,0,0,0.3);
+}
+
+.bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.bar-title { font-size: 10px; font-weight: 700; text-overflow: ellipsis; overflow: hidden; }
+.bar-badge { background: rgba(0,0,0,0.2); padding: 1px 4px; border-radius: 4px; font-size: 9px; flex-shrink: 0; }
+
+.schedule-bar.is-start { border-top-left-radius: 4px; border-bottom-left-radius: 4px; margin-left: 4px; }
+.schedule-bar.is-end { border-top-right-radius: 4px; border-bottom-right-radius: 4px; margin-right: 4px; }
+.schedule-bar.is-middle { border-radius: 0; margin: 0; }
+.schedule-bar.is-start.is-end { border-radius: 4px; margin-left: 4px; margin-right: 4px; }
+
+.schedule-bar-empty {
+  height: 22px;
 }
 
 @media (max-width: 1024px) {
