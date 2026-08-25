@@ -410,6 +410,10 @@ a {
 .btn-back i { font-size: 20px; }
 
 /* 상세 버튼 */
+.btn-detail { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-surface); color: var(--text-sub); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+.btn-detail:hover { background: var(--bg-hover); color: var(--primary); border-color: var(--border-focus); }
+
+/*
 .btn-detail {
     display: flex; align-items: center; justify-content: center; gap: 4px;
     padding: 6px 12px; background-color: var(--primary); border: none; border-radius: 6px;
@@ -417,6 +421,8 @@ a {
 }
 .btn-detail:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
 .btn-detail i { font-size: 14px; }
+
+ */
 /*
 .badge {
     padding: 3px 8px;
