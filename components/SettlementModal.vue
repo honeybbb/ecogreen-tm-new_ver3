@@ -81,7 +81,9 @@ const formData = ref({
       over135: { area: '', unitPrice: '', supply: 0, vat: 0 }
     },
     insuranceDiff: 0,
-    memo: ''
+    memo: '',
+    headerMessage: '1. 귀 소의 무궁한 발전을 기원합니다.\n2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.\n\n- 아 래 -',
+    footerMessage: ''
   },
   payrollData: [],
 });
@@ -1260,6 +1262,12 @@ const initForm = async () => {
     if (!data.billingData.items) data.billingData.items = [];
     if (!data.billingData.customSummaryItems) data.billingData.customSummaryItems = [];
     if (!data.billingData.memo) data.billingData.memo = '';
+    if (data.billingData.footerMessage === undefined) data.billingData.footerMessage = '';
+
+    // 상단 기존 데이터 호환성 보장 (없으면 기본 세팅)
+    if (data.billingData.headerMessage === undefined) {
+      data.billingData.headerMessage = '1. 귀 소의 무궁한 발전을 기원합니다.\n2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.\n\n- 아 래 -';
+    }
     if (!data.billingData.vatBreakdown) data.billingData.vatBreakdown = {
       under135: {
         label: '135㎡ 이하 (면세)',
@@ -1454,7 +1462,8 @@ const resetAll = async () => {
         under135: { label: '135㎡ 이하 (면세)', area: '', unitPrice: '', supply: 0 }, // label 추가
         over135:  { label: '135㎡ 초과 (과세)', area: '', unitPrice: '', supply: 0, vat: 0 }  // label 추가
       },
-      insuranceDiff: 0
+      insuranceDiff: 0,
+      headerMessage: '1. 귀 소의 무궁한 발전을 기원합니다.\n2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.\n\n- 아 래 -',
     },
     payrollData: [],
   };
@@ -1655,121 +1664,6 @@ const loadPayrollData = async () => {
   }
 };
 
-const loadPayrollData2 = async () => {
-  if (!formData.value.sIdx) {
-    await window.customAlert('현장을 먼저 선택해주세요.', 'error');
-    return;
-  }
-
-  if (formData.value.payrollData.length > 0 && !await window.customConfirm('기존에 입력된 데이터가 모두 초기화됩니다. 정말 불러오시겠습니까?')) {
-    return;
-  }
-
-  try {
-    const targetDate = formData.value.target_month || formData.value.billingDt || '';
-    const [yearStr, monthStr] = targetDate.split('-');
-    const yearNum = parseInt(yearStr);
-    const monthNum = parseInt(monthStr);
-    const sIdx = formData.value.sIdx;
-
-    // 이 달의 총 일수 (일할 계산 기준용)
-    const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();
-
-    await fetchTaxRates();
-    await fetchContractData(); // 현장 산출 내역 로드
-    await nextTick();
-
-    // 1. 새롭게 통합된 API 호출
-    const res = await axios.get('/api/v1/settle/payroll/calculate', {
-      params: { year: yearNum, month: monthNum, sIdx, type: formData.value.type }
-    });
-
-    const rawData = res.data?.data || [];
-
-    formData.value.payrollData = rawData.map((item, idx) => {
-      // 당월 중간 입사/퇴사 여부 판단
-      const inDateObj = item.inDate ? new Date(item.inDate) : null;
-      const isMidMonthJoiner = !!(inDateObj && inDateObj.getFullYear() === yearNum && inDateObj.getMonth() + 1 === monthNum && inDateObj.getDate() !== 1);
-
-      // 2. ★ 핵심: 일할 계산 로직 ★
-      // 백엔드에서 넘겨준 산출 단가(기준급)와 실제 근무일수를 비교
-      let baseSalaryForRole = 0;
-
-      // budgetData가 매핑되어 왔다면 해당 직원의 코드나 직책의 기준 단가를 추출
-      // (현장의 budget 데이터 구조에 맞게 파싱 필요)
-      if (item.budgetData) {
-        // 예: 첫 번째 key의 value를 가져오거나, 사번/직책코드와 매칭
-        const firstKey = Object.keys(item.budgetData)[0];
-        baseSalaryForRole = Number(item.budgetData[firstKey]) || 0;
-      }
-
-      // 실제 근무일수 / 월 총 일수 비율로 일할 계산 (소수점 절사)
-      const actualWorkDays = Number(item.actualWorkDays) || 0;
-      let calculatedGrossPay = 0;
-
-      if (actualWorkDays > 0 && baseSalaryForRole > 0) {
-        calculatedGrossPay = Math.floor((baseSalaryForRole / totalDaysInMonth) * actualWorkDays);
-      }
-
-      // (선택사항) 특정 지급 항목 코드로 분배해야 한다면 로직 추가
-      const calculatedPayItems = {
-        '04001001001': calculatedGrossPay // 예: 기본급 코드에 일할 계산된 총액 부여
-      };
-
-      const rowObj = {
-        idx: item.idx,
-        empName: item.name || '',
-        position: item.roleNm || '',
-        positionCd: item.positionCd || item.itemCd || '', // 원본 직책 코드
-        inDate: item.inDate,
-        outDate: item.outDate ?? '',
-        workersDay: actualWorkDays, // 근무일수 표시용
-
-        // 계산된 금액 삽입
-        grossPay: calculatedGrossPay,
-        payItems: calculatedPayItems,
-
-        // 공제 및 기타 항목 초기화
-        deductionItems: {},
-        originalDeductions: {},
-        originalSanjae: 0,
-        totalDeduct: 0,
-        reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
-        netPay: 0,
-        isMidMonthJoiner,
-        groupNo: idx + 1,
-      };
-
-      // 기존 공제금/충당금 계산 함수 태우기
-      applyContractReserves(rowObj);
-      recalculateInsurances(rowObj);
-
-      if (isMidMonthJoiner) {
-        deductionItems.value.forEach(dItem => {
-          rowObj.deductionItems[dItem.itemCd] = 0;
-          rowObj.originalDeductions[dItem.itemCd] = 0;
-        });
-        rowObj.reserves.empInsEmployer = 0;
-        rowObj.reserves.sanjae = 0;
-        rowObj.originalSanjae = 0;
-      }
-
-      calculateRow(rowObj);
-      return rowObj;
-    });
-
-    if (formData.value.payrollData.length === 0) {
-      await window.customAlert('조건에 맞는 실제 근무 데이터가 없습니다.', 'warning');
-    } else {
-      await window.customAlert('직원 근무 데이터를 성공적으로 불러와 산출했습니다.', 'success');
-    }
-
-  } catch (error) {
-    console.error('데이터 로드 에러:', error);
-    await window.customAlert('데이터를 불러오는 중 오류가 발생했습니다.', 'error');
-  }
-};
-
 const updateDocNo = () => {
   if (isInitializing.value) return;
 
@@ -1813,6 +1707,7 @@ watch([() => formData.value.target_month, () => formData.value.billingDt], () =>
 });
 
 watch(() => formData.value.type, (newType) => {
+  if (isInitializing.value) return;   // 이 줄 추가
   if (newType) handleContractUpdate();
 });
 
@@ -2292,10 +2187,18 @@ onMounted(async () => {
               </div>
             </div>
 
-            <div class="doc-message">
+            <!--div class="doc-message">
               <p>1. 귀 소의 무궁한 발전을 기원합니다.</p>
               <p>2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.</p>
               <p class="text-center mt-4">- 아 래 -</p>
+            </div-->
+            <div class="doc-message-wrap mt-4">
+              <textarea
+                  v-model="formData.billingData.headerMessage"
+                  class="form-input text-center"
+                  rows="4"
+                  style="resize: vertical; line-height: 1.6; font-size: 15px; border: 1px dashed var(--border-focus); background: transparent; padding: 16px;"
+              ></textarea>
             </div>
 
             <div class="table-actions mt-4">
@@ -2309,9 +2212,22 @@ onMounted(async () => {
 
             <div class="table-scroll-wrapper">
               <table class="excel-table statement-table">
+                <colgroup>
+                  <col width="15%">
+                  <col width="10%">
+                  <col width="20%">
+                  <col width="15%">
+                  <col width="*%">
+                  <col width="5%">
+                </colgroup>
                 <thead>
                 <tr>
-                  <th style="width:100px;">산정기간</th> <th style="width:70px;">구분</th> <th>내역</th> <th style="width:90px;">산출금액</th> <th style="width:90px;">비고</th> <th style="width:34px;"></th>
+                  <th style="width:100px;">산정기간</th>
+                  <th style="width:70px;">구분</th>
+                  <th>내역</th>
+                  <th style="width:90px;">산출금액</th>
+                  <th style="width:90px;">비고</th>
+                  <th style="width:34px;"></th>
                 </tr>
                 </thead>
                 <tbody>
@@ -2441,9 +2357,25 @@ onMounted(async () => {
               </div>
             </div>
 
-            <div class="bank-info mt-5">
-              <label>3. 입금계좌 : </label>
-              <input type="text" v-model="formData.billingData.bankInfo" class="bank-input" />
+            <div class="mt-5" style="display: flex; align-items: center; gap: 10px;">
+              <label style="font-weight: 600; font-size: 15px; color: var(--text-main); white-space: nowrap;">3. 입금계좌 : </label>
+              <input
+                  type="text"
+                  v-model="formData.billingData.bankInfo"
+                  class="form-input"
+                  style="border: 1px dashed var(--border-focus); background: transparent; padding: 12px 16px; font-size: 15px; font-weight: bold;"
+              />
+            </div>
+
+            <!-- 4. 하단 추가 전달사항 영역 (상단과 동일한 스타일 적용) -->
+            <div class="doc-message-wrap mt-4">
+              <!--label style="font-weight: 600; font-size: 15px; color: var(--text-main); margin-bottom: 8px; display: block;">4. 추가 전달사항 : </label-->
+              <textarea
+                  v-model="formData.billingData.footerMessage"
+                  class="form-input"
+                  rows="4"
+                  style="resize: vertical; line-height: 1.6; font-size: 15px; border: 1px dashed var(--border-focus); background: transparent; padding: 16px;"
+              ></textarea>
             </div>
           </div>
         </div>
