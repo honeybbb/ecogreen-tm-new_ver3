@@ -557,7 +557,9 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
   const numValue = rawValue === '' || rawValue === '-' ? 0 : Number(rawValue);
 
   obj[key] = numValue;
-
+  if (calcType === 'row' && obj === row.deductionItems && row.originalDeductions) {
+    row.originalDeductions[key] = numValue;
+  }
   if (calcType === 'salary') onSalaryInput(row);
   else if (calcType === 'row') calculateRow(row);
   else if (calcType === 'billing') calculateBillingTotal();
@@ -579,6 +581,9 @@ const handleFormulaBlur = (e, obj, key, row, calcType) => {
   const result = evaluateFormula(raw);
   if (result !== null) {
     obj[key] = result;
+    if (calcType === 'row' && obj === row.deductionItems && row.originalDeductions) {
+      row.originalDeductions[key] = result;
+    }
   } else {
     alert('수식을 계산할 수 없습니다. 예: =100000+50000*2');
   }
@@ -698,7 +703,9 @@ const recalculateInsurances = (row) => {
     }
 
     let amt = 0;
-    if (name.includes('국민연금')) {
+    if (row.isCustom4Ins && ['국민연금', '장기요양', '건강보험', '고용보험'].some(k => name.includes(k))) {
+      amt = originalAmt;
+    } else if (name.includes('국민연금')) {
       amt = Math.floor((calcBase * (rates.nationalPension / 100)) / 10) * 10;
     } else if (name.includes('장기요양')) {
       const health = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
@@ -735,13 +742,17 @@ const getInsuranceTotal = (row) => {
 };
 
 const onSalaryInput = (row) => {
-  if (meltOptions.annualLeave || meltOptions.severance || meltOptions.workersDay) recalculateInsurances(row);
+  row.isCustom4Ins = false; row.isCustomEmp = false;
+  row.isCustomSanjae = false;
+  recalculateInsurances(row);
   calculateRow(row);
 };
 
 watch(meltOptions, () => {
   if (isInitializing.value) return;
   formData.value.payrollData.forEach(row => {
+    row.isCustom4Ins = false; row.isCustomEmp = false;
+    row.isCustomSanjae = false;
     recalculateInsurances(row);
     calculateRow(row);
   });
@@ -1310,6 +1321,7 @@ const initForm = async () => {
       row.originalSanjae = savedSanjae;
       row.isCustomSanjae = true; // DB에서 불러온 값은 기본적으로 사용자 지정값으로 간주
       row.isCustomEmp = true;
+      row.isCustom4Ins = true;
 
       // 공제항목에서는 확실하게 제거 (실수령액 차감 오류 방지)
       if (row.deductionItems) row.deductionItems['04002001008'] = 0;
@@ -1385,9 +1397,7 @@ const initForm = async () => {
     }
 
 
-    nextTick(() => {
-      isInitializing.value = false;
-    });
+    setTimeout(() => { isInitializing.value = false; }, 300);
 
   } else {
     formData.value = {
@@ -1582,6 +1592,9 @@ const loadPayrollData = async () => {
         isMidMonthJoiner,
         gapDays: Number(item.gapDays) || 0,
         groupNo: 0,
+        isCustom4Ins: true,
+        isCustomEmp: true,
+        isCustomSanjae: true,
       };
 
       applyContractReserves(rowObj);
@@ -1683,6 +1696,8 @@ const handleContractUpdate = () => {
       if (formData.value.payrollData.length > 0) {
         nextTick(() => {
           formData.value.payrollData.forEach(row => {
+            row.isCustom4Ins = false; row.isCustomEmp = false;
+            row.isCustomSanjae = false;
             applyContractReserves(row);
             recalculateInsurances(row);
           });
@@ -2491,7 +2506,7 @@ onMounted(async () => {
                         <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="row.isCustomSanjae = true; handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" @blur="handleFormulaBlur($event, row.reserves, 'sanjae', row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       </td>
                       <td v-else>
-                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="row.isCustom4Ins = true; handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       </td>
                     </template>
                   </template>
