@@ -543,7 +543,7 @@ const evaluateFormula = (str) => {
     const result = Function(`"use strict"; return (${expr})`)();
     if (typeof result === 'number' && isFinite(result)) return Math.round(result);
   } catch (e) { /* 잘못된 수식은 무시 */ }
-  return null;
+    return null;
 };
 
 const handleCurrencyInput = async (e, obj, key, row, calcType) => {
@@ -559,9 +559,7 @@ const handleCurrencyInput = async (e, obj, key, row, calcType) => {
   const numValue = rawValue === '' || rawValue === '-' ? 0 : Number(rawValue);
 
   obj[key] = numValue;
-  if (calcType === 'row' && obj === row.deductionItems && row.originalDeductions) {
-    row.originalDeductions[key] = numValue;
-  }
+
   if (calcType === 'salary') onSalaryInput(row);
   else if (calcType === 'row') calculateRow(row);
   else if (calcType === 'billing') calculateBillingTotal();
@@ -583,9 +581,6 @@ const handleFormulaBlur = (e, obj, key, row, calcType) => {
   const result = evaluateFormula(raw);
   if (result !== null) {
     obj[key] = result;
-    if (calcType === 'row' && obj === row.deductionItems && row.originalDeductions) {
-      row.originalDeductions[key] = result;
-    }
   } else {
     alert('수식을 계산할 수 없습니다. 예: =100000+50000*2');
   }
@@ -648,14 +643,12 @@ const applyContractReserves = (row) => {
 
   const sanjaeAmt = findContractValue('산재', '04002001008', staffCode);
   // 당월 중간 입사자는 산재보험도 0원으로 고정
-  if (!row.isCustomSanjae) {
-    if (row.isMidMonthJoiner) {
-      row.reserves.sanjae = 0;
-      row.originalSanjae  = 0;
-    } else {
-      row.reserves.sanjae  = sanjaeAmt;
-      row.originalSanjae   = sanjaeAmt;
-    }
+  if (row.isMidMonthJoiner) {
+    row.reserves.sanjae = 0;
+    row.originalSanjae  = 0;
+  } else {
+    row.reserves.sanjae  = sanjaeAmt;
+    row.originalSanjae   = sanjaeAmt;
   }
 
   finalize();
@@ -677,7 +670,7 @@ const calculateRow = (row) => {
       if (meltOptions.annualLeave) totalGross += Number(row.reserves?.annualLeave) || 0;
       if (meltOptions.severance)   totalGross += Number(row.reserves?.severance)   || 0;
       if (meltOptions.workersDay)  totalGross += Number(row.reserves?.workersDay)  || 0;
-      if (!row.isCustomEmp) { row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0; }
+      row.reserves.empInsEmployer = totalGross > 0 ? Math.floor((totalGross * 0.0045) / 10) * 10 : 0;
     }                                    // ← 추가
   }
 };
@@ -703,9 +696,7 @@ const recalculateInsurances = (row) => {
     }
 
     let amt = 0;
-    if (row.isCustom4Ins && ['국민연금', '장기요양', '건강보험', '고용보험'].some(k => name.includes(k))) {
-      amt = originalAmt;
-    } else if (name.includes('국민연금')) {
+    if (name.includes('국민연금')) {
       amt = Math.floor((calcBase * (rates.nationalPension / 100)) / 10) * 10;
     } else if (name.includes('장기요양')) {
       const health = Math.floor((calcBase * (rates.healthInsurance / 100)) / 10) * 10;
@@ -720,7 +711,7 @@ const recalculateInsurances = (row) => {
     row.deductionItems[code] = amt;
   });
 
-  if (!row.isCustomSanjae && (Number(row.originalSanjae) || 0) > 0) {
+  if ((Number(row.originalSanjae) || 0) > 0) {
     row.reserves.sanjae = Math.floor((calcBase * (rates.industrialAccident / 100)) / 10) * 10;
   }
 };
@@ -742,8 +733,6 @@ const getInsuranceTotal = (row) => {
 };
 
 const onSalaryInput = (row) => {
-  row.isCustom4Ins = false; row.isCustomEmp = false;
-  row.isCustomSanjae = false;
   if (meltOptions.annualLeave || meltOptions.severance || meltOptions.workersDay) recalculateInsurances(row);
   calculateRow(row);
 };
@@ -1323,9 +1312,6 @@ const initForm = async () => {
 
       row.reserves.sanjae = savedSanjae;
       row.originalSanjae = savedSanjae;
-      row.isCustomSanjae = true;
-      row.isCustomEmp = true;
-      row.isCustom4Ins = true;
 
       // 공제항목에서는 확실하게 제거 (실수령액 차감 오류 방지)
       if (row.deductionItems) row.deductionItems['04002001008'] = 0;
@@ -1402,7 +1388,9 @@ const initForm = async () => {
 
     if (formData.value.sIdx && formData.value.type) await fetchContractData();
 
-    setTimeout(() => { isInitializing.value = false; }, 300);
+    nextTick(() => {
+      isInitializing.value = false;
+    });
 
   } else {
     formData.value = {
@@ -1598,9 +1586,6 @@ const loadPayrollData = async () => {
         isMidMonthJoiner,
         gapDays: Number(item.gapDays) || 0,
         groupNo: 0,
-        isCustom4Ins: true,
-        isCustomEmp: true,
-        isCustomSanjae: true,
       };
 
       applyContractReserves(rowObj);
@@ -1696,14 +1681,13 @@ const updateDocNo = () => {
     }
   }
 };
+/*
 const handleContractUpdate = () => {
   if (formData.value.type && formData.value.sIdx) {
     fetchContractData().then(() => {
       if (formData.value.payrollData.length > 0) {
         nextTick(() => {
           formData.value.payrollData.forEach(row => {
-            row.isCustom4Ins = false; row.isCustomEmp = false;
-            row.isCustomSanjae = false;
             applyContractReserves(row);
             recalculateInsurances(row);
           });
@@ -1711,6 +1695,18 @@ const handleContractUpdate = () => {
       }
     });
   }
+};
+
+ */
+const handleContractUpdate = () => {
+  if (!formData.value.type || !formData.value.sIdx) return;
+  // 계약 참조 데이터만 새로고침합니다.
+  // 이미 불러온 직원 행(row)의 reserves는 여기서 건드리지 않습니다 —
+  // 그렇게 하면 시행일자/구분 등을 바꿀 때마다 저장된 산재보험/연차/퇴직 값이
+  // 계약서 기준으로 조용히 재계산되어 버립니다.
+  // (직책을 바꿀 때는 applyContractReserves가 개별적으로 호출되고,
+  //  수당 포함 옵션을 켤 때는 meltOptions watcher가 개별적으로 처리합니다.)
+  fetchContractData();
 };
 
 watch(() => formData.value.sIdx, updateDocNo);
@@ -2542,14 +2538,14 @@ onMounted(async () => {
 
                     <template v-else-if="col.type === 'deduct'">
                       <template v-if="col.isEmployment">
-                        <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="row.isCustom4Ins = true; handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" /></td>
+                        <td><input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" /></td>
                         <td><input type="text" :value="formatCurrency(row.reserves.empInsEmployer)" @focus="$event.target.select()" @input="row.isCustomEmp = true; handleCurrencyInput($event, row.reserves, 'empInsEmployer', row, 'row')" @blur="handleFormulaBlur($event, row.reserves, 'empInsEmployer', row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" /></td>
                       </template>
                       <td v-else-if="col.name.includes('산재')">
-                        <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="row.isCustomSanjae = true; handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" @blur="handleFormulaBlur($event, row.reserves, 'sanjae', row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                        <input type="text" :value="formatCurrency(row.reserves.sanjae)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'sanjae', row, 'row')" @blur="handleFormulaBlur($event, row.reserves, 'sanjae', row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       </td>
                       <td v-else>
-                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="row.isCustom4Ins = true; handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                        <input type="text" :value="formatCurrency(row.deductionItems[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.deductionItems, col.code, row, 'row')" @blur="handleFormulaBlur($event, row.deductionItems, col.code, row, 'row')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       </td>
                     </template>
                   </template>
@@ -2628,88 +2624,88 @@ onMounted(async () => {
             </div>
 
             <div class="summary-area">
-              <table class="excel-table" style="background: var(--bg-surface)">
-                <tbody>
-                <template v-for="(summary, sIdx) in totalSummary" :key="'summary-'+summary.key">
-                  <tr v-if="summary.key === 'grandTotal'">
-                    <td colspan="2" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
-                      <button @click="addCustomSummaryItem" class="btn-add-row" style="font-size: 12px; padding: 4px 10px; display: inline-flex; float: right;">
-                        <i class="mdi mdi-plus-thick"></i> 정산 항목 추가
-                      </button>
-                    </td>
-                  </tr>
+            <table class="excel-table" style="background: var(--bg-surface)">
+              <tbody>
+              <template v-for="(summary, sIdx) in totalSummary" :key="'summary-'+summary.key">
+                <tr v-if="summary.key === 'grandTotal'">
+                  <td colspan="2" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
+                    <button @click="addCustomSummaryItem" class="btn-add-row" style="font-size: 12px; padding: 4px 10px; display: inline-flex; float: right;">
+                      <i class="mdi mdi-plus-thick"></i> 정산 항목 추가
+                    </button>
+                  </td>
+                </tr>
 
-                  <tr>
-                    <td class="text-center bg-gray-50 font-bold"
-                        :class="{'summary-label-cell': summary.toggleable && !summary.isCustom}"
-                        @click="summary.toggleable && !summary.isCustom && toggleSummarySign(summary.key)"
-                        style="font-size: 13px;white-space: pre-line;"
-                        :title="summary.toggleable && !summary.isCustom ? '클릭하여 양수/음수 전환' : ''">
-                      <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
-                        <template v-if="summary.isCustom">
-                          <button @click.stop="toggleCustomSign(summary.index)" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'" style="border: none; cursor: pointer; flex-shrink: 0;">
-                            {{ summary.sign < 0 ? '-' : '+' }}
-                          </button>
-                          <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 6px; box-sizing: border-box;" />
-                        </template>
-                        <template v-else>
+                <tr>
+                  <td class="text-center bg-gray-50 font-bold"
+                      :class="{'summary-label-cell': summary.toggleable && !summary.isCustom}"
+                      @click="summary.toggleable && !summary.isCustom && toggleSummarySign(summary.key)"
+                      style="font-size: 13px;white-space: pre-line;"
+                      :title="summary.toggleable && !summary.isCustom ? '클릭하여 양수/음수 전환' : ''">
+                    <div style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
+                      <template v-if="summary.isCustom">
+                        <button @click.stop="toggleCustomSign(summary.index)" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'" style="border: none; cursor: pointer; flex-shrink: 0;">
+                          {{ summary.sign < 0 ? '-' : '+' }}
+                        </button>
+                        <input type="text" v-model="formData.billingData.customSummaryItems[summary.index].label" placeholder="항목명 입력" class="cell-input text-center font-bold" style="width: 100%; padding: 6px; box-sizing: border-box;" />
+                      </template>
+                      <template v-else>
                             <span v-if="summary.toggleable" class="sign-badge" :class="summary.sign < 0 ? 'bg-red-badge' : 'bg-blue-badge'">
                               {{ summary.sign < 0 ? '-' : '+' }}
                             </span>
-                          {{ summary.label }}
-                        </template>
+                        {{ summary.label }}
+                      </template>
+                    </div>
+                  </td>
+
+                  <td class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color); position: relative;">
+                    <button v-if="summary.isCustom" @click="removeCustomSummaryItem(summary.index)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
+                      <i class="mdi mdi-minus"></i>
+                    </button>
+                    <button v-else-if="summary.deletable" @click="removeSummaryItem(summary.key)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
+                      <i class="mdi mdi-minus"></i>
+                    </button>
+
+                    <template v-if="summary.key === 'insuranceDiff'">
+                      <div style="display: flex; align-items: center; padding-left: 8px;">
+                        <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
+                        <input
+                            type="text"
+                            :value="formatCurrency(formData.billingData.insuranceDiff)"
+                            @focus="$event.target.select()"
+                            @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')"
+                            @blur="handleFormulaBlur($event, formData.billingData, 'insuranceDiff', null, 'none')"
+                            @keyup.enter="$event.target.blur()"
+                            class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'"
+                            style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
+                        />
                       </div>
-                    </td>
-
-                    <td class="text-right font-bold" :class="summary.key === 'grandTotal' ? 'text-blue bg-blue-light' : 'bg-white'" style="padding: 0; border: 1px solid var(--border-color); position: relative;">
-                      <button v-if="summary.isCustom" @click="removeCustomSummaryItem(summary.index)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
-                        <i class="mdi mdi-minus"></i>
-                      </button>
-                      <button v-else-if="summary.deletable" @click="removeSummaryItem(summary.key)" class="btn-delete-row" style="position: absolute; left: -26px; top: 50%; transform: translateY(-50%); z-index: 10;">
-                        <i class="mdi mdi-minus"></i>
-                      </button>
-
-                      <template v-if="summary.key === 'insuranceDiff'">
-                        <div style="display: flex; align-items: center; padding-left: 8px;">
-                          <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                          <input
-                              type="text"
-                              :value="formatCurrency(formData.billingData.insuranceDiff)"
-                              @focus="$event.target.select()"
-                              @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')"
-                              @blur="handleFormulaBlur($event, formData.billingData, 'insuranceDiff', null, 'none')"
-                              @keyup.enter="$event.target.blur()"
-                              class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'"
-                              style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
-                          />
-                        </div>
-                      </template>
-                      <template v-else-if="summary.isCustom">
-                        <div style="display: flex; align-items: center; padding-left: 8px;">
-                          <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
-                          <input
-                              type="text"
-                              :value="formatCurrency(formData.billingData.customSummaryItems[summary.index].amount)"
-                              @focus="$event.target.select()"
-                              @input="handleCurrencyInput($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')"
-                              @blur="handleFormulaBlur($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')"
-                              @keyup.enter="$event.target.blur()"
-                              class="cell-input text-right font-bold"
-                              :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
-                          />
-                        </div>
-                      </template>
-                      <template v-else>
-                        <div style="padding: 6px;" :class="summary.sign < 0 ? 'text-red' : (summary.toggleable ? 'text-blue' : '')">
-                          <span v-if="summary.value !== 0">{{ summary.sign < 0 ? '- ' : (summary.toggleable ? '+ ' : '') }}</span>{{ formatCurrency(summary.value) }}
-                        </div>
-                      </template>
-                    </td>
-                  </tr>
-                </template>
-                </tbody>
-              </table>
-            </div>
+                    </template>
+                    <template v-else-if="summary.isCustom">
+                      <div style="display: flex; align-items: center; padding-left: 8px;">
+                        <span :class="summary.sign < 0 ? 'text-red' : 'text-blue'">{{ summary.sign < 0 ? '-' : '+' }}</span>
+                        <input
+                            type="text"
+                            :value="formatCurrency(formData.billingData.customSummaryItems[summary.index].amount)"
+                            @focus="$event.target.select()"
+                            @input="handleCurrencyInput($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')"
+                            @blur="handleFormulaBlur($event, formData.billingData.customSummaryItems[summary.index], 'amount', null, 'none')"
+                            @keyup.enter="$event.target.blur()"
+                            class="cell-input text-right font-bold"
+                            :class="summary.sign < 0 ? 'text-red' : 'text-blue'" style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
+                        />
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div style="padding: 6px;" :class="summary.sign < 0 ? 'text-red' : (summary.toggleable ? 'text-blue' : '')">
+                        <span v-if="summary.value !== 0">{{ summary.sign < 0 ? '- ' : (summary.toggleable ? '+ ' : '') }}</span>{{ formatCurrency(summary.value) }}
+                      </div>
+                    </template>
+                  </td>
+                </tr>
+              </template>
+              </tbody>
+            </table>
+          </div>
           </div>
 
         </div>
