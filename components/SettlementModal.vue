@@ -774,8 +774,13 @@ const actualInsuranceTotal = computed(() => {
 });
 
 watch([estimatedInsuranceTotal, actualInsuranceTotal], ([est, act]) => {
-  formData.value.billingData.insuranceDiff = est - act;
-}, { immediate: true });
+  runIfReady(() => {
+    // 수동으로 수정된 이력이 없거나, 새 문서일 때만 자동 계산 (DB 값 덮어쓰기 방지)
+    if (!formData.value.billingData.isManualInsuranceDiff) {
+      formData.value.billingData.insuranceDiff = est - act;
+    }
+  });
+});
 
 const toggleSummarySign = (key) => {
   if (currentConfig.summarySigns[key] !== undefined) {
@@ -1204,7 +1209,11 @@ const initForm = async () => {
   if (data.billingData.vatBreakdown.over135 && !data.billingData.vatBreakdown.over135.label) {
     data.billingData.vatBreakdown.over135.label = '135㎡ 초과 (과세)';
   }
-  data.billingData.insuranceDiff = data.billingData.insuranceDiff || 0;
+
+  // 값이 0일 때도 정상적으로 유지되도록 || 대신 !== undefined 사용
+  data.billingData.insuranceDiff = data.billingData.insuranceDiff !== undefined ? data.billingData.insuranceDiff : 0;
+  // DB에서 불러온 값은 수동 입력된 확정값으로 간주하여 자동 덮어쓰기 방지
+  data.billingData.isManualInsuranceDiff = true;
 
   data.payrollData.forEach(normalizePayrollRow);
 
@@ -2267,8 +2276,8 @@ onMounted(async () => {
                               type="text"
                               :value="formatCurrency(formData.billingData.insuranceDiff)"
                               @focus="$event.target.select()"
-                              @input="handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')"
-                              @blur="handleFormulaBlur($event, formData.billingData, 'insuranceDiff', null, 'none')"
+                              @input="formData.billingData.isManualInsuranceDiff = true; handleCurrencyInput($event, formData.billingData, 'insuranceDiff', null, 'none')"
+                              @blur="formData.billingData.isManualInsuranceDiff = true; handleFormulaBlur($event, formData.billingData, 'insuranceDiff', null, 'none')"
                               @keyup.enter="$event.target.blur()"
                               class="cell-input text-right font-bold" :class="summary.sign < 0 ? 'text-red' : 'text-blue'"
                               style="width: 100%; height: 100%; padding: 6px; box-sizing: border-box; border-radius: 0;"
