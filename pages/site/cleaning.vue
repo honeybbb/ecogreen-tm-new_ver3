@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'nuxt/app';
+import axios from "axios";
 
 const router = useRouter();
 
@@ -35,14 +36,148 @@ const nextMonth = () => {
   currentDate.value = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth() + 1, 1);
 };
 
+
+// ========================================================
+// 팀 배정 (Kanban) 로직
+// ========================================================
+const draggedTask = ref(null);
+
+const onDragStart = (e, task) => {
+  draggedTask.value = task;
+  e.dataTransfer.effectAllowed = 'move';
+  // 드래그 시 고스트 이미지 디자인을 위해 약간의 딜레이
+  setTimeout(() => {
+    e.target.classList.add('is-dragging');
+  }, 0);
+};
+
+const onDragEnd = (e) => {
+  e.target.classList.remove('is-dragging');
+  draggedTask.value = null;
+};
+
+const onDrop = (e, teamIdx) => {
+  if (draggedTask.value) {
+    draggedTask.value.teamIdx = teamIdx;
+    // 배정 시 상태 자동 업데이트 (예: 예정)
+    if (teamIdx !== null && draggedTask.value.status === '대기') {
+      draggedTask.value.status = '예정';
+    }
+  }
+};
+
+const getUnassignedTasks = computed(() => {
+  return cleaningSchedules.value.filter(s => s.teamIdx === null || s.teamIdx === '');
+});
+
+const getTasksForTeam = (teamIdx) => {
+  return cleaningSchedules.value.filter(s => s.teamIdx === teamIdx);
+};
+
 // ========================================================
 // 2. 대청소팀 / 담당자 마스터 (임시 데이터 - 추후 API로 교체)
 // ========================================================
-const teams = ref([
-  { idx: 1, teamName: '1팀', leaderName: '김철수' },
-  { idx: 2, teamName: '2팀', leaderName: '이영희' },
-  { idx: 3, teamName: '3팀', leaderName: '박민수' }
+const cleaningStaff = ref([
+    /*
+  { id: 1, name: '김철수', role: '반장' },
+  { id: 2, name: '이영희', role: '반장' },
+  { id: 3, name: '박민수', role: '반장' },
+  { id: 4, name: '홍길동', role: '팀원' },
+  { id: 5, name: '유재석', role: '팀원' },
+  { id: 6, name: '강호동', role: '팀원' },
+  { id: 7, name: '신동엽', role: '팀원' },
+  { id: 8, name: '이수근', role: '팀원' },
+  { id: 9, name: '조세호', role: '팀원' },
+  { id: 10, name: '서장훈', role: '팀원' },
+
+     */
 ]);
+
+const teams = ref([
+  { idx: 1, teamName: '1팀', leaderName: '김철수', memberIds: [1, 4, 5] },
+  { idx: 2, teamName: '2팀', leaderName: '이영희', memberIds: [2, 6, 7] },
+  { idx: 3, teamName: '3팀', leaderName: '박민수', memberIds: [3, 8] }
+]);
+
+const getTeamMembers = (teamIdx) => {
+  const team = teams.value.find(t => t.idx === teamIdx);
+  if (!team || !team.memberIds) return [];
+  return team.memberIds.map(id => cleaningStaff.value.find(s => s.id === id)).filter(Boolean);
+};
+
+const showTeamModal = ref(false);
+const editingTeam = ref(null);
+
+const openTeamModal = (team) => {
+  editingTeam.value = JSON.parse(JSON.stringify(team));
+  if (!editingTeam.value.memberIds) editingTeam.value.memberIds = [];
+  showTeamModal.value = true;
+};
+
+const closeTeamModal = () => {
+  showTeamModal.value = false;
+  editingTeam.value = null;
+};
+
+const toggleMember = (staffId) => {
+  // memberIds 배열이 없으면 초기화
+  if (!editingTeam.value.memberIds) {
+    editingTeam.value.memberIds = [];
+  }
+
+  // 이미 선택된 팀원이면 제거, 아니면 추가
+  const index = editingTeam.value.memberIds.indexOf(staffId);
+  if (index > -1) {
+    editingTeam.value.memberIds.splice(index, 1);
+  } else {
+    editingTeam.value.memberIds.push(staffId);
+  }
+};
+
+const saveTeamMembers = () => {
+  if (!editingTeam.value.teamName || !editingTeam.value.teamName.trim()) {
+    alert('팀명을 입력해주세요.');
+    return;
+  }
+  const idx = teams.value.findIndex(t => t.idx === editingTeam.value.idx);
+
+  const memberIds = editingTeam.value.memberIds || [];
+  const members = memberIds.map(id => cleaningStaff.value.find(s => s.id === id)).filter(Boolean);
+  const leader = members.find(m => m.role === '반장') || members[0];
+
+  editingTeam.value.leaderName = leader ? leader.name : '-';
+
+  if (idx > -1) {
+    teams.value[idx] = { ...editingTeam.value };
+  } else {
+    teams.value.push({ ...editingTeam.value });
+  }
+  closeTeamModal();
+};
+
+const createNewTeam = () => {
+  editingTeam.value = {
+    idx: Date.now(),
+    teamName: `${teams.value.length + 1}팀`,
+    leaderName: '-',
+    memberIds: []
+  };
+  showTeamModal.value = true;
+};
+
+const deleteTeam = (teamIdx) => {
+  const tasks = getTasksForTeam(teamIdx);
+  if (tasks.length > 0) {
+    alert('배정된 일정이 있어 삭제할 수 없습니다. 먼저 일정을 다른 팀이나 미배정으로 옮겨주세요.');
+    return;
+  }
+  if (confirm('이 팀을 정말로 삭제하시겠습니까?')) {
+    teams.value = teams.value.filter(t => t.idx !== teamIdx);
+    closeTeamModal();
+  }
+};
+
+
 
 const managers = ref([
   { idx: 1, name: '정담당' },
@@ -64,6 +199,13 @@ const cleaningSchedules = ref([
     teamIdx: 1, managerMIdx: 1, address: "서울시 서초구 반포대로 000",
     equipment: "고압세척기, 사다리차", requestNote: "지하주차장 우선 진행 요청",
     docSent: true, docConfirmYn: true
+  },
+  {
+    idx: 99, sIdx: 150, siteName: "신규 배정대기 아파트", itemCd: "04003001003", itemName: "주차장대청소",
+    startDt: "2026-08-25", durationDays: 1, endDt: "2026-08-25", status: "예정",
+    teamIdx: null, managerMIdx: null, address: "서울시 종로구",
+    equipment: "고압세척기", requestNote: "배정 대기중",
+    docSent: false, docConfirmYn: false
   },
   {
     idx: 2, sIdx: 141, siteName: "북한산힐스테이트7차", itemCd: "04003001005", itemName: "렉산대청소",
@@ -447,6 +589,17 @@ const onSiteChange = () => {
   addForm.value.itemCd = '';
 };
 
+const openAddModalWithDate = (dateStr) => {
+  isEditMode.value = false;
+  editingIdx.value = null;
+  addForm.value = {
+    sIdx: '', itemCd: '', startDt: dateStr, endDt: dateStr, status: '예정',
+    teamIdx: '', managerMIdx: '', equipment: '', requestNote: '',
+    sendDoc: true
+  };
+  showAddModal.value = true;
+};
+
 const openAddModal = () => {
   isEditMode.value = false;
   editingIdx.value = null;
@@ -612,6 +765,9 @@ const saveChecklist = () => {
       <button :class="['tab-item', { active: activeTab === 'workload' }]" @click="activeTab = 'workload'">
         <i class="mdi mdi-account-group-outline"></i> 팀별 소요일 현황
       </button>
+      <button :class="['tab-item', { active: activeTab === 'assign' }]" @click="activeTab = 'assign'">
+        <i class="mdi mdi-account-switch"></i> 팀 배정
+      </button>
       <!--button :class="['tab-item', { active: activeTab === 'documents' }]" @click="activeTab = 'documents'">
         <i class="mdi mdi-file-document-outline"></i> 공문/점검표함
       </button-->
@@ -659,6 +815,8 @@ const saveChecklist = () => {
                 v-for="(day, index) in calendarDays"
                 :key="index"
                 :class="['calendar-cell', { 'not-current': !day.isCurrentMonth, 'is-today': day.isToday }]"
+                @click="openAddModalWithDate(day.dateStr)"
+                style="cursor: pointer;"
             >
               <div class="cell-date">{{ day.date }}</div>
               <div class="cell-schedules">
@@ -672,7 +830,7 @@ const saveChecklist = () => {
                         { 'is-end': schedule.dayIndex === schedule.durationDays },
                         { 'is-middle': !schedule.isStartDay && schedule.dayIndex < schedule.durationDays }
                       ]"
-                      @click="openDetail(schedule)"
+                      @click.stop="openDetail(schedule)"
                       :style="{ backgroundColor: getStatusColor(schedule.status) }"
                       :title="`${schedule.siteName} · ${schedule.itemName} (${getTeamName(schedule.teamIdx)})`"
                   >
@@ -684,8 +842,10 @@ const saveChecklist = () => {
                   <div v-else class="schedule-bar-empty"></div>
                 </template>
               </div>
+
             </div>
           </div>
+
         </div>
       </div>
 
@@ -864,6 +1024,99 @@ const saveChecklist = () => {
       <p class="table-hint">※ 월 15일 이상 배정된 팀은 강조 표시됩니다. 인력 추가 편성 판단 시 참고하세요.</p>
     </div>
 
+
+    <!-- ============ 팀 배정 (Kanban) ============ -->
+    <div v-if="activeTab === 'assign'" class="kanban-wrapper">
+      <div class="status-header" style="margin-bottom: 20px;">
+        <i class="mdi mdi-account-switch"></i>
+        <h3>현장 대청소 팀 배정 (Drag & Drop)</h3>
+      </div>
+
+      <div class="kanban-board">
+        <!-- 미배정 컬럼 -->
+        <div class="kanban-col unassigned-col" @dragover.prevent @drop="onDrop($event, null)">
+          <div class="col-header">
+            <h4><i class="mdi mdi-clipboard-text-outline"></i> 미배정 현장</h4>
+            <span class="task-count">{{ getUnassignedTasks.length }}</span>
+          </div>
+          <div class="col-body">
+            <div
+                v-for="task in getUnassignedTasks"
+                :key="task.idx"
+                class="task-card"
+                draggable="true"
+                @dragstart="onDragStart($event, task)"
+                @dragend="onDragEnd"
+            >
+              <div class="task-card-header">
+                <span class="task-site">{{ task.siteName }}</span>
+                <span class="task-date">{{ task.startDt === task.endDt ? task.startDt : `${task.startDt} ~ ${task.endDt}` }}</span>
+              </div>
+              <div class="task-card-body">
+                <p><strong>{{ task.itemName }}</strong></p>
+                <p class="task-address"><i class="mdi mdi-map-marker-outline"></i> {{ task.address }}</p>
+                <p v-if="task.requestNote" class="task-note"><i class="mdi mdi-alert-circle-outline"></i> {{ task.requestNote }}</p>
+              </div>
+            </div>
+            <div v-if="getUnassignedTasks.length === 0" class="empty-col">미배정 건이 없습니다.</div>
+          </div>
+        </div>
+
+        <!-- 각 팀별 컬럼 -->
+        <div
+            class="kanban-col team-col"
+            v-for="team in teams"
+            :key="team.idx"
+            @dragover.prevent
+            @drop="onDrop($event, team.idx)"
+        >
+          <div class="col-header" style="flex-direction: column; align-items: stretch; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h4><i class="mdi mdi-account-group-outline"></i> {{ team.teamName }}</h4>
+              <button class="btn-icon-small" @click="openTeamModal(team)" title="팀원 편성"><i class="mdi mdi-account-cog"></i> 인원편성</button>
+            </div>
+            <div class="team-info" style="justify-content: space-between; align-items: flex-start; width: 100%;">
+              <div class="team-member-list">
+                <span v-for="member in getTeamMembers(team.idx)" :key="member.id" class="member-chip" :class="{'is-leader': member.role === '반장'}">
+                  {{ member.name }}
+                </span>
+                <span v-if="getTeamMembers(team.idx).length === 0" class="empty-members">편성된 인원 없음</span>
+              </div>
+              <span class="task-count">{{ getTasksForTeam(team.idx).length }}건</span>
+            </div>
+          </div>
+          <div class="col-body">
+            <div
+                v-for="task in getTasksForTeam(team.idx)"
+                :key="task.idx"
+                class="task-card assigned"
+                draggable="true"
+                @dragstart="onDragStart($event, task)"
+                @dragend="onDragEnd"
+            >
+              <div class="task-card-header">
+                <span class="task-site">{{ task.siteName }}</span>
+                <span class="task-date">{{ task.startDt === task.endDt ? task.startDt : `${task.startDt} ~ ${task.endDt}` }}</span>
+              </div>
+              <div class="task-card-body">
+                <p><strong>{{ task.itemName }}</strong></p>
+                <div class="task-tags">
+                  <span class="status-badge" :class="{'is-done': task.status === '완료', 'is-progress': task.status === '진행중'}">{{ task.status }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-if="getTasksForTeam(team.idx).length === 0" class="empty-col">배정된 일정이 없습니다.</div>
+          </div>
+        </div>
+
+        <!-- 팀 추가 버튼 컬럼 -->
+        <div class="kanban-col add-team-col" @click="createNewTeam">
+          <i class="mdi mdi-plus-circle-outline"></i>
+          <span>새 청소팀 추가</span>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ 탭4: 공문/수신확인 + 완료 점검표 ============ -->
     <div v-if="activeTab === 'documents'" style="display: flex; flex-direction: column; gap: 20px;">
       <div class="status-card status-card-full">
@@ -901,6 +1154,49 @@ const saveChecklist = () => {
               <button v-if="!hasChecklist(s.idx)" class="btn-checklist" @click="openChecklistModal(s)">점검표 작성</button>
               <span v-else class="checklist-done-badge">점검완료</span>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- 팀원 편성 모달 -->
+    <div v-if="showTeamModal" class="modal-overlay" @click="closeTeamModal">
+      <div class="modal-content" style="width: 500px;" @click.stop>
+        <div class="modal-header">
+          <h2>팀 설정 및 인원 편성</h2>
+          <button class="btn-close" @click="closeTeamModal"><i class="mdi mdi-close"></i></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group" style="margin-bottom: 20px;">
+            <label style="font-weight:600; color:#334155; margin-bottom:8px; display:block;">팀명</label>
+            <input type="text" v-model="editingTeam.teamName" class="form-input" placeholder="예: 4팀, 외벽특수팀" />
+          </div>
+          <p class="modal-desc" style="margin-bottom:12px;">이 팀에 배정할 인원을 선택해주세요. (반장 선택 시 리더로 자동 지정)</p>
+          <div class="staff-selection-list">
+            <div
+                v-for="staff in cleaningStaff"
+                :key="staff.id"
+                class="staff-item"
+                :class="{'is-selected': editingTeam?.memberIds?.includes(staff.id)}"
+                @click="toggleMember(staff.id)"
+            >
+              <div class="staff-info">
+                <span class="staff-role" :class="{'is-leader': staff.position?.includes('반장')}">{{ staff.position }}</span>
+                <span class="staff-name">{{ staff.name }}</span>
+              </div>
+              <div class="staff-check">
+                <i class="mdi" :class="editingTeam?.memberIds?.includes(staff.id) ? 'mdi-check-circle text-primary' : 'mdi-checkbox-blank-circle-outline text-gray'"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="justify-content: space-between;">
+          <button v-if="teams.find(t => t.idx === editingTeam?.idx)" class="btn-danger" @click="deleteTeam(editingTeam.idx)">팀 삭제</button>
+          <div v-else></div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-cancel" @click="closeTeamModal">취소</button>
+            <button class="btn-submit" @click="saveTeamMembers">저장</button>
           </div>
         </div>
       </div>
@@ -975,6 +1271,7 @@ const saveChecklist = () => {
             <label>상태</label>
             <select v-model="addForm.status" class="form-control">
               <option value="예정">예정</option>
+              <option value="확정">확정</option> <!-- 알림톡 -->
               <option value="진행중">진행중</option>
               <option value="완료">완료</option>
             </select>
@@ -1890,5 +2187,304 @@ textarea.form-control {
   .form-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* ==================== KANBAN BOARD ==================== */
+.kanban-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.kanban-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  align-items: flex-start;
+}
+.kanban-col {
+  background: #f8fafc;
+  border-radius: 12px;
+  width: 320px;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e2e8f0;
+  max-height: calc(100vh - 200px);
+}
+.unassigned-col {
+  background: #fdf8f6;
+  border-color: #fce7f3;
+}
+.col-header {
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 12px 12px 0 0;
+}
+.unassigned-col .col-header {
+  border-bottom-color: #fce7f3;
+}
+.col-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.unassigned-col .col-header h4 {
+  color: #be123c;
+}
+.team-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.team-leader {
+  font-size: 12px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.task-count {
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.unassigned-col .task-count {
+  background: #ffe4e6;
+  color: #e11d48;
+}
+.col-body {
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 200px;
+}
+.task-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+  cursor: grab;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  transition: all 0.2s;
+}
+.task-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+  transform: translateY(-2px);
+}
+.task-card:active {
+  cursor: grabbing;
+}
+.task-card.is-dragging {
+  opacity: 0.5;
+  background: #f1f5f9;
+}
+.task-card.assigned {
+  border-left: 4px solid #3b82f6;
+}
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.task-site {
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+}
+.task-date {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+.task-card-body p {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  color: #334155;
+}
+.task-card-body p:last-child {
+  margin-bottom: 0;
+}
+.task-address {
+  color: #64748b !important;
+  font-size: 12px !important;
+}
+.task-note {
+  color: #eab308 !important;
+  background: #fefce8;
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px dashed #fde047;
+}
+.task-tags {
+  display: flex;
+  margin-top: 10px;
+}
+.status-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #475569;
+  font-weight: 600;
+}
+.status-badge.is-progress {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.status-badge.is-done {
+  background: #dcfce7;
+  color: #15803d;
+}
+.empty-col {
+  text-align: center;
+  padding: 24px 0;
+  color: #94a3b8;
+  font-size: 13px;
+  font-style: italic;
+}
+
+
+.btn-icon-small {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 13px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-icon-small:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.team-member-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
+.member-chip {
+  font-size: 12px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+.member-chip.is-leader {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  font-weight: 600;
+}
+.empty-members {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.modal-desc {
+  font-size: 14px;
+  color: #64748b;
+  margin-bottom: 16px;
+}
+.staff-selection-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.staff-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.staff-item:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+.staff-item.is-selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+.staff-role {
+  font-size: 12px;
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+  color: #475569;
+}
+.staff-role.is-leader {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.staff-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: #1e293b;
+}
+.text-primary { color: #3b82f6 !important; font-size: 20px; }
+.text-gray { color: #cbd5e1 !important; font-size: 20px; }
+
+.add-team-col {
+  background: transparent;
+  border: 2px dashed #cbd5e1;
+  justify-content: center;
+  align-items: center;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 200px;
+}
+.add-team-col:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+.add-team-col i {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+.add-team-col span {
+  font-weight: 600;
+  font-size: 15px;
+}
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: 1px solid #dc2626;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-danger:hover {
+  background: #dc2626;
 }
 </style>
