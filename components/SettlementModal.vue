@@ -1246,9 +1246,9 @@ const resetAll = async () => {
   const { sIdx, type, target_month, billingDt } = formData.value;
   formData.value = createEmptyFormData({ sIdx, type, target_month, billingDt });
 
-  meltOptions.annualLeave = false;
-  meltOptions.severance = false;
-  meltOptions.workersDay = false;
+  // meltOptions.annualLeave = false;
+  // meltOptions.severance = false;
+  // meltOptions.workersDay = false;
   currentConfig.showGrossPay = true;
   currentConfig.showAnnualLeave = true;
   currentConfig.showSeverance = true;
