@@ -1153,10 +1153,20 @@ const applyViewConfig = (data) => {
     applyExportConfig(savedConfig);
 
     if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
-    if (!currentConfig.summarySigns) {
+
+    // ✅ 수정 완료: DB에 저장된 +/- 부호 상태 복원
+    if (savedConfig.summarySigns) {
+      currentConfig.summarySigns = savedConfig.summarySigns;
+    } else if (!currentConfig.summarySigns) {
       currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
     }
-    if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
+
+    // ✅ 수정 완료: DB에 저장된 삭제(숨김) 항목 복원
+    if (savedConfig.hiddenSummaryKeys) {
+      currentConfig.hiddenSummaryKeys = savedConfig.hiddenSummaryKeys;
+    } else if (!currentConfig.hiddenSummaryKeys) {
+      currentConfig.hiddenSummaryKeys = [];
+    }
   } catch (e) {
     console.error('viewConfig 파싱 에러:', e);
   }
