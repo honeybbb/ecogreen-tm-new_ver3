@@ -15,6 +15,13 @@ const {
 // ========================================================
 const activeTab = ref('calendar'); // calendar | status | workload | documents
 
+// 탭별 한 줄 설명 (복잡해 보이는 화면을 "지금 무엇을 하는 탭인지"로 풀어주는 용도)
+const tabDescriptions = {
+  calendar: '날짜를 클릭해 새 일정을 등록하세요. 등록된 일정을 클릭하면 세부 내용을 보고 수정할 수 있어요.',
+  workload: '팀별로 이번 달 전후 얼마나 바쁜지 한눈에 확인하세요. 15일 이상 배정된 팀은 강조 표시돼요.',
+  assign: '왼쪽 미배정 현장을 원하는 팀 칸으로 끌어다 놓으면 바로 배정됩니다. 이미 배정된 일정도 다른 팀으로 옮길 수 있어요.'
+};
+
 // ========================================================
 // 1. 달력 상태 및 생성 로직
 // ========================================================
@@ -56,18 +63,61 @@ const onDragEnd = (e) => {
   draggedTask.value = null;
 };
 
-const onDrop = (e, teamIdx) => {
+const onDrop1 = (e, teamIdx) => {
   if (draggedTask.value) {
     draggedTask.value.teamIdx = teamIdx;
     // 배정 시 상태 자동 업데이트 (예: 예정)
     if (teamIdx !== null && draggedTask.value.status === '대기') {
-      draggedTask.value.status = '예정';
+      draggedTask.value.status = '0';
+    }
+  }
+};
+
+const onDrop = async (e, teamIdx) => {
+  if (draggedTask.value) {
+    const taskIdx = draggedTask.value.idx;
+    const previousTeamIdx = draggedTask.value.tIdx; // 실패 시 롤백용
+    const previousStatus = draggedTask.value.status;   // 실패 시 롤백용
+
+    // 1. 프론트엔드 UI 즉시 업데이트 (사용자 경험을 위해 먼저 변경)
+    draggedTask.value.teamIdx = teamIdx;
+    let newStatus = draggedTask.value.status;
+    if (teamIdx !== null && draggedTask.value.status === '대기') {
+      newStatus = '0';
+      draggedTask.value.status = newStatus;
+    }
+
+    try {
+      const payload = {
+        tIdx: teamIdx,
+        status: newStatus
+      };
+
+      const res = await axios.put(`/api/v1/site/cleaning/schedule/${taskIdx}`, payload);
+
+      if (!res.data.result) {
+        throw new Error(res.data.message || '팀 배정 실패');
+      }
+
+      // 성공 시 별도 처리 불필요 (이미 UI는 변경됨)
+
+    } catch (error) {
+      console.error('팀 배정 DB 업데이트 에러:', error);
+      window.customAlert('팀 배정 중 오류가 발생했습니다. 원래 상태로 되돌립니다.', 'error');
+
+      // 3. 실패 시 프론트엔드 UI 롤백
+      const task = cleaningSchedules.value.find(s => s.idx === taskIdx);
+      if (task) {
+        task.teamIdx = previousTeamIdx;
+        task.status = previousStatus;
+      }
     }
   }
 };
 
 const getUnassignedTasks = computed(() => {
-  return cleaningSchedules.value.filter(s => s.teamIdx === null || s.teamIdx === '');
+  // console.log(cleaningSchedules.value, 'cleaningSchedules')
+  return cleaningSchedules.value.filter(s => s.teamIdx == null || s.teamIdx == '');
 });
 
 const getTasksForTeam = (teamIdx) => {
@@ -79,30 +129,33 @@ const getTasksForTeam = (teamIdx) => {
 // ========================================================
 const cleaningStaff = ref([
     /*
-  { id: 1, name: '김철수', role: '반장' },
-  { id: 2, name: '이영희', role: '반장' },
-  { id: 3, name: '박민수', role: '반장' },
-  { id: 4, name: '홍길동', role: '팀원' },
-  { id: 5, name: '유재석', role: '팀원' },
-  { id: 6, name: '강호동', role: '팀원' },
-  { id: 7, name: '신동엽', role: '팀원' },
-  { id: 8, name: '이수근', role: '팀원' },
-  { id: 9, name: '조세호', role: '팀원' },
-  { id: 10, name: '서장훈', role: '팀원' },
+  { idx: 1, name: '김철수', position: '반장' },
+  { idx: 2, name: '이영희', position: '반장' },
+  { idx: 3, name: '박민수', position: '반장' },
+  { idx: 4, name: '홍길동', position: '팀원' },
+  { idx: 5, name: '유재석', position: '팀원' },
+  { idx: 6, name: '강호동', position: '팀원' },
+  { idx: 7, name: '신동엽', position: '팀원' },
+  { idx: 8, name: '이수근', position: '팀원' },
+  { idx: 9, name: '조세호', position: '팀원' },
+  { idx: 10, name: '서장훈', position: '팀원' },
 
      */
 ]);
 
 const teams = ref([
-  { idx: 1, teamName: '1팀', leaderName: '김철수', memberIds: [1, 4, 5] },
-  { idx: 2, teamName: '2팀', leaderName: '이영희', memberIds: [2, 6, 7] },
-  { idx: 3, teamName: '3팀', leaderName: '박민수', memberIds: [3, 8] }
+    /*
+  { idx: 1, teamName: '1팀', leaderId: 1, leaderName: '김철수', memberIds: [1, 4, 5] },
+  { idx: 2, teamName: '2팀', leaderId: 2, leaderName: '이영희', memberIds: [2, 6, 7] },
+  { idx: 3, teamName: '3팀', leaderId: 3, leaderName: '박민수', memberIds: [3, 8] }
+
+     */
 ]);
 
 const getTeamMembers = (teamIdx) => {
   const team = teams.value.find(t => t.idx === teamIdx);
   if (!team || !team.memberIds) return [];
-  return team.memberIds.map(id => cleaningStaff.value.find(s => s.id === id)).filter(Boolean);
+  return team.memberIds.map(idx => cleaningStaff.value.find(s => s.idx === idx)).filter(Boolean);
 };
 
 const showTeamModal = ref(false);
@@ -110,6 +163,10 @@ const editingTeam = ref(null);
 
 const openTeamModal = (team) => {
   editingTeam.value = JSON.parse(JSON.stringify(team));
+  // 기존 팀의 leaderId 유지, 없으면 선택된 첫 번째 사람을 리더로
+  if (!editingTeam.value.leaderId && editingTeam.value.memberIds?.length > 0) {
+    editingTeam.value.leaderId = editingTeam.value.memberIds[0];
+  }
   if (!editingTeam.value.memberIds) editingTeam.value.memberIds = [];
   showTeamModal.value = true;
 };
@@ -119,22 +176,28 @@ const closeTeamModal = () => {
   editingTeam.value = null;
 };
 
-const toggleMember = (staffId) => {
-  // memberIds 배열이 없으면 초기화
-  if (!editingTeam.value.memberIds) {
-    editingTeam.value.memberIds = [];
-  }
+const toggleMember = (mIdx) => {
+  if (!editingTeam.value.memberIds) editingTeam.value.memberIds = [];
 
-  // 이미 선택된 팀원이면 제거, 아니면 추가
-  const index = editingTeam.value.memberIds.indexOf(staffId);
+  const index = editingTeam.value.memberIds.indexOf(mIdx);
   if (index > -1) {
+    // 체크 해제 시
     editingTeam.value.memberIds.splice(index, 1);
+    // 만약 해제된 사람이 팀장이었다면, 남은 사람 중 첫 번째를 팀장으로 변경
+    if (editingTeam.value.leaderId === mIdx) {
+      editingTeam.value.leaderId = editingTeam.value.memberIds.length > 0 ? editingTeam.value.memberIds[0] : null;
+    }
   } else {
-    editingTeam.value.memberIds.push(staffId);
+    // 체크 시
+    editingTeam.value.memberIds.push(mIdx);
+    // 첫 멤버가 추가되었다면 자동으로 팀장으로 지정
+    if (editingTeam.value.memberIds.length === 1) {
+      editingTeam.value.leaderId = mIdx;
+    }
   }
 };
 
-const saveTeamMembers = () => {
+const saveTeamMembersTmp = async () => {
   if (!editingTeam.value.teamName || !editingTeam.value.teamName.trim()) {
     alert('팀명을 입력해주세요.');
     return;
@@ -142,8 +205,8 @@ const saveTeamMembers = () => {
   const idx = teams.value.findIndex(t => t.idx === editingTeam.value.idx);
 
   const memberIds = editingTeam.value.memberIds || [];
-  const members = memberIds.map(id => cleaningStaff.value.find(s => s.id === id)).filter(Boolean);
-  const leader = members.find(m => m.role === '반장') || members[0];
+  const members = memberIds.map(idx => cleaningStaff.value.find(s => s.idx === idx)).filter(Boolean);
+  const leader = members.find(m => m.position === '반장') || members[0];
 
   editingTeam.value.leaderName = leader ? leader.name : '-';
 
@@ -155,14 +218,62 @@ const saveTeamMembers = () => {
   closeTeamModal();
 };
 
+const saveTeamMembers = async () => {
+  const { idx, teamName, memberIds, leaderId } = editingTeam.value;
+
+  if (!teamName || !teamName.trim()) {
+    window.customAlert('팀명을 입력해주세요.', 'error');
+    return;
+  }
+
+  // 1. 백엔드로 보낼 팀원 배열 (수동 지정된 leaderId 기준으로 leaderFl 부여)
+  const membersPayload = (memberIds || []).map(mIdx => {
+    return {
+      mIdx: mIdx,
+      leaderFl: (leaderId === mIdx) ? 'Y' : 'N'
+    };
+  });
+
+  // (안전장치) 팀원이 있는데 리더가 없으면 첫 번째 인원 리더 지정
+  if (membersPayload.length > 0 && !membersPayload.some(m => m.leaderFl === 'Y')) {
+    membersPayload[0].leaderFl = 'Y';
+    editingTeam.value.leaderId = membersPayload[0].mIdx;
+  }
+
+  try {
+    const payload = { name: teamName, members: membersPayload };
+    const isExisting = idx && String(idx).length < 13;
+    const url = `/api/v1/member/cleaning/team${isExisting ? `/${idx}` : ''}`;
+    const method = isExisting ? 'put' : 'post';
+
+    const { data } = await axios[method](url, payload);
+
+    if (data.result) {
+      window.alert('팀 편성이 성공적으로 저장되었습니다.');
+      closeTeamModal();
+      await fetchCleaningTeam()
+    } else {
+      window.customAlert(`저장 실패: ${data.message}`, 'error');
+    }
+  } catch (error) {
+    console.error('팀 저장 에러:', error);
+    window.customAlert('서버 통신 중 오류가 발생했습니다.', 'error');
+  }
+};
+
 const createNewTeam = () => {
   editingTeam.value = {
     idx: Date.now(),
     teamName: `${teams.value.length + 1}팀`,
+    leaderId: null, // 신규 추가
     leaderName: '-',
     memberIds: []
   };
   showTeamModal.value = true;
+};
+
+const setLeader = (mIdx) => {
+  editingTeam.value.leaderId = mIdx;
 };
 
 const deleteTeam = (teamIdx) => {
@@ -193,55 +304,58 @@ const getManagerName = (mIdx) => managers.value.find(m => m.idx === mIdx)?.name 
 //    (현장 계약의 cleaningConfig 기반으로 생성된 일정 + 신규 필드)
 // ========================================================
 const cleaningSchedules = ref([
+    /*
   {
     idx: 1, sIdx: 106, siteName: "옥정8(율정)단지", itemCd: "04003001003", itemName: "주차장대청소",
-    startDt: "2026-08-16", durationDays: 1, endDt: "2026-08-16", status: "예정",
-    teamIdx: 1, managerMIdx: 1, address: "서울시 서초구 반포대로 000",
-    equipment: "고압세척기, 사다리차", requestNote: "지하주차장 우선 진행 요청",
+    startDt: "2026-08-16", durationDays: 1, endDt: "2026-08-16", status: "0",
+    teamIdx: 1, mnIdx: 1, address: "서울시 서초구 반포대로 000",
+    equipment: "고압세척기, 사다리차", memo: "지하주차장 우선 진행 요청",
     docSent: true, docConfirmYn: true
   },
   {
     idx: 99, sIdx: 150, siteName: "신규 배정대기 아파트", itemCd: "04003001003", itemName: "주차장대청소",
-    startDt: "2026-08-25", durationDays: 1, endDt: "2026-08-25", status: "예정",
-    teamIdx: null, managerMIdx: null, address: "서울시 종로구",
-    equipment: "고압세척기", requestNote: "배정 대기중",
+    startDt: "2026-08-25", durationDays: 1, endDt: "2026-08-25", status: "0",
+    teamIdx: null, mnIdx: null, address: "서울시 종로구",
+    equipment: "고압세척기", memo: "배정 대기중",
     docSent: false, docConfirmYn: false
   },
   {
     idx: 2, sIdx: 141, siteName: "북한산힐스테이트7차", itemCd: "04003001005", itemName: "렉산대청소",
-    startDt: "2026-08-18", durationDays: 1, endDt: "2026-08-18", status: "완료",
-    teamIdx: 1, managerMIdx: 1, address: "서울시 서초구 반포대로 000",
-    equipment: "고소작업대", requestNote: "",
+    startDt: "2026-08-18", durationDays: 1, endDt: "2026-08-18", status: "0",
+    teamIdx: 1, mnIdx: 1, address: "서울시 서초구 반포대로 000",
+    equipment: "고소작업대", memo: "",
     docSent: true, docConfirmYn: true
   },
   {
     idx: 3, sIdx: 102, siteName: "반포 래미안", itemCd: "04003001003", itemName: "주차장대청소",
-    startDt: "2026-06-25", durationDays: 2, endDt: "2026-06-26", status: "예정",
-    teamIdx: 2, managerMIdx: 2, address: "서울시 서초구 신반포로 000",
-    equipment: "고압세척기", requestNote: "야간 진행 불가, 주간만 가능",
+    startDt: "2026-06-25", durationDays: 2, endDt: "2026-06-26", status: "0",
+    teamIdx: 2, mnIdx: 2, address: "서울시 서초구 신반포로 000",
+    equipment: "고압세척기", memo: "야간 진행 불가, 주간만 가능",
     docSent: true, docConfirmYn: false
   },
   {
     idx: 4, sIdx: 107, siteName: "묵동금호어울림아파트", itemCd: "04003001003", itemName: "주차장대청소",
-    startDt: "2026-08-16", durationDays: 3, endDt: "2026-08-18", status: "진행중",
-    teamIdx: 3, managerMIdx: 3, address: "서울시 송파구 올림픽로 000",
-    equipment: "고압세척기, 진공흡입차", requestNote: "지상+지하 전체",
+    startDt: "2026-08-16", durationDays: 3, endDt: "2026-08-18", status: "2",
+    teamIdx: 3, mnIdx: 3, address: "서울시 송파구 올림픽로 000",
+    equipment: "고압세척기, 진공흡입차", memo: "지상+지하 전체",
     docSent: true, docConfirmYn: true
   },
   {
     idx: 5, sIdx: 114, siteName: "한숲대림아파트", itemCd: "04003001007", itemName: "현관대청소",
-    startDt: "2026-08-20", durationDays: 2, endDt: "2026-08-21", status: "예정",
-    teamIdx: 2, managerMIdx: 1, address: "서울시 강남구 개포로 000",
-    equipment: "곤도라, 로프", requestNote: "고층부 안전점검 선행",
+    startDt: "2026-08-20", durationDays: 2, endDt: "2026-08-21", status: "0",
+    teamIdx: 2, mnIdx: 1, address: "서울시 강남구 개포로 000",
+    equipment: "곤도라, 로프", memo: "고층부 안전점검 선행",
     docSent: false, docConfirmYn: false
   },
   {
     idx: 6, sIdx: 128, siteName: "백송마을상동자이", itemCd: "04003001003", itemName: "주차장대청소",
-    startDt: "2026-09-02", durationDays: 1, endDt: "2026-09-02", status: "예정",
-    teamIdx: 1, managerMIdx: 2, address: "서울시 강남구 도곡로 000",
-    equipment: "고압세척기", requestNote: "",
+    startDt: "2026-09-02", durationDays: 1, endDt: "2026-09-02", status: "0",
+    teamIdx: 1, mnIdx: 2, address: "서울시 강남구 도곡로 000",
+    equipment: "고압세척기", memo: "",
     docSent: true, docConfirmYn: true
   }
+
+     */
 ]);
 
 // 캘린더 필터 (팀별 / 담당자별 / 전체) - 요구사항 3,4
@@ -254,16 +368,16 @@ const filterManagerIdx = ref('');
 const calendarFilteredSchedules = computed(() => {
   return cleaningSchedules.value.filter(s => {
     if (filterMode.value === 'team' && filterTeamIdx.value && s.teamIdx !== filterTeamIdx.value) return false;
-    if (filterMode.value === 'manager' && filterManagerIdx.value && s.managerMIdx !== filterManagerIdx.value) return false;
+    if (filterMode.value === 'manager' && filterManagerIdx.value && s.mnIdx !== filterManagerIdx.value) return false;
     return true;
   }).sort((a, b) => new Date(a.startDt) - new Date(b.startDt));
 });
 
 const scheduleLaneMap = computed(() => {
   const sorted = [...calendarFilteredSchedules.value].sort(
-      (a, b) => new Date(a.startDt) - new Date(b.startDt)
+      (a, b) => new Date(a.startDt) - new Date(b.startDt) || a.idx - b.idx  // 동점이면 idx로 고정
   );
-  const laneEndDates = []; // laneEndDates[lane] = 그 레인에 마지막으로 배정된 일정의 endDt
+  const laneEndDates = [];
   const map = {};
 
   sorted.forEach(s => {
@@ -300,11 +414,14 @@ const getSchedulesForDate = (dateStr) => {
   return slots; // null인 자리는 빈 칸(스페이서)으로 렌더링
 };
 
+// 해당 날짜에 표시할 일정이 하나라도 있는지 여부 (빈 날짜에 "일정 추가" 힌트를 보여주기 위함)
+const cellHasSchedules = (dateStr) => getSchedulesForDate(dateStr).some(Boolean);
+
 const isPendingConfirm = (schedule) => schedule.docSent && !schedule.docConfirmYn;
 
 const getStatusColor = (status) => {
-  if (status === '완료') return 'var(--success)';
-  if (status === '진행중') return 'var(--warning)';
+  if (status == '3') return 'var(--success)';
+  if (status == '2') return 'var(--warning)';
   return 'var(--primary)';
 };
 
@@ -354,11 +471,12 @@ const openDetail = (schedule) => {
     sIdx: schedule.sIdx,
     itemCd: schedule.itemCd,
     startDt: schedule.startDt,
+    endDt: schedule.endDt,
     status: schedule.status,
     teamIdx: schedule.teamIdx,
-    managerMIdx: schedule.managerMIdx,
+    mnIdx: schedule.mnIdx,
     equipment: schedule.equipment,
-    requestNote: schedule.requestNote,
+    memo: schedule.memo,
     sendDoc: schedule.docSent
   };
   showAddModal.value = true;
@@ -440,7 +558,7 @@ const isDelayedWarning = (sIdx, itemCd, cyclePerYear = 1) => {
   const year = now.getFullYear();
 
   const doneInRange = (fromStr, toStr) => cleaningSchedules.value.some(s =>
-      s.sIdx === sIdx && s.itemCd === itemCd && s.status === '완료' &&
+      s.sIdx === sIdx && s.itemCd === itemCd && s.status == '3' &&
       s.startDt >= fromStr && s.startDt <= toStr
   );
 
@@ -550,8 +668,52 @@ const teamWorkload = computed(() => {
   return { months, rows };
 });
 
-onMounted(() => {
+const getCleaningStaff = () => {
+  axios.get(`/api/v1/member/cleaning`).then((res) => {
+    console.log(res.data.data);
+    cleaningStaff.value = res.data.data;
+  })
+}
+
+const fetchCleaningTeam = async function () {
+  try {
+    const { data } = await axios.get('/api/v1/site/cleaning/team');
+
+    if (data.result) {
+      // 서버에서 온 데이터(data.data)를 프론트엔드 UI 구조에 맞게 변환
+      teams.value = data.data.map(t => {
+        // leaderName을 구하기 위해 cleaningStaff에서 leaderId로 사람을 찾음
+        const leader = cleaningStaff.value.find(s => s.idx === t.leaderId);
+
+        return {
+          idx: t.idx,
+          teamName: t.teamName,
+          leaderId: t.leaderId,
+          leaderName: leader ? leader.name : '-',
+          // memberIds 문자열("1,4,5")을 배열([1, 4, 5])로 변환 (팀원이 없을 경우 빈 배열)
+          memberIds: t.memberIds ? t.memberIds.split(',').map(Number) : []
+        };
+      });
+    } else {
+      console.error('팀 목록 로드 실패:', data.data);
+    }
+  } catch (error) {
+    console.error('팀 목록 통신 에러:', error);
+  }
+}
+
+const fetchSchedules = async () => {
+  axios.get(`/api/v1/site/cleaning/schedule`).then((res) => {
+    console.log(res.data.data)
+    cleaningSchedules.value = res.data.data;
+  })
+}
+
+onMounted(async () => {
   fetchSiteOptions();
+  await getCleaningStaff();
+  fetchSchedules();
+  fetchCleaningTeam();
 });
 
 // ========================================================
@@ -566,11 +728,11 @@ const addForm = ref({
   itemCd: '',
   startDt: '',
   endDt: '',
-  status: '예정',
+  status: '0',
   teamIdx: '',
-  managerMIdx: '',
+  mnIdx: '',
   equipment: '',
-  requestNote: '',
+  memo: '',
   sendDoc: true
 });
 
@@ -593,8 +755,15 @@ const openAddModalWithDate = (dateStr) => {
   isEditMode.value = false;
   editingIdx.value = null;
   addForm.value = {
-    sIdx: '', itemCd: '', startDt: dateStr, endDt: dateStr, status: '예정',
-    teamIdx: '', managerMIdx: '', equipment: '', requestNote: '',
+    sIdx: '',
+    itemCd: '',
+    startDt: dateStr,
+    endDt: dateStr,
+    status: '0',
+    teamIdx: '',
+    mnIdx: '',
+    equipment: '',
+    memo: '',
     sendDoc: true
   };
   showAddModal.value = true;
@@ -604,8 +773,15 @@ const openAddModal = () => {
   isEditMode.value = false;
   editingIdx.value = null;
   addForm.value = {
-    sIdx: '', itemCd: '', startDt: '', status: '예정',
-    teamIdx: '', managerMIdx: '', equipment: '', requestNote: '',
+    sIdx: '',
+    itemCd: '',
+    startDt: '',
+    endDt: '',
+    status: '0',
+    teamIdx: '',
+    mnIdx: '',
+    equipment: '',
+    memo: '',
     sendDoc: true
   };
   showAddModal.value = true;
@@ -630,13 +806,13 @@ const issueDocument = (schedule) => {
     sentAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
     receipts: [
       { type: '현장', name: schedule.siteName, confirmedYn: false, confirmedAt: null },
-      { type: '담당자', name: getManagerName(schedule.managerMIdx), confirmedYn: false, confirmedAt: null },
+      { type: '담당자', name: getManagerName(schedule.mnIdx), confirmedYn: false, confirmedAt: null },
       { type: '대청소팀장', name: teamName, confirmedYn: false, confirmedAt: null }
     ]
   });
 };
 
-const saveAddModal = () => {
+const saveAddModalTmp = () => {
   if (!addForm.value.sIdx || !addForm.value.itemCd || !addForm.value.startDt || !addForm.value.endDt) {
     window.customAlert("필수 입력 값을 입력해주세요.", 'error');
     return;
@@ -663,9 +839,9 @@ const saveAddModal = () => {
     endDt,
     status: addForm.value.status,
     teamIdx: addForm.value.teamIdx,
-    managerMIdx: addForm.value.managerMIdx,
+    mnIdx: addForm.value.mnIdx,
     equipment: addForm.value.equipment,
-    requestNote: addForm.value.requestNote,
+    memo: addForm.value.memo,
     docSent: addForm.value.sendDoc,
     docConfirmYn: false
   };
@@ -687,6 +863,68 @@ const saveAddModal = () => {
   }
 
   closeAddModal();
+};
+
+const saveAddModal = async () => {
+  if (!addForm.value.sIdx || !addForm.value.itemCd || !addForm.value.startDt || !addForm.value.endDt) {
+    window.customAlert("필수 입력 값을 입력해주세요.", 'error');
+    return;
+  }
+  if (addForm.value.endDt < addForm.value.startDt) {
+    window.customAlert("종료일은 시작일보다 앞설 수 없습니다.", 'error');
+    return;
+  }
+
+  const site = siteContracts.value.find(s => s.sIdx === addForm.value.sIdx);
+  const task = site.cleaningConfig.find(t => t.code === addForm.value.itemCd);
+
+  const startDt = addForm.value.startDt;
+  const endDt = addForm.value.endDt;
+
+  // 날짜 계산
+  const durationDays = Math.floor((new Date(endDt) - new Date(startDt)) / 86400000) + 1;
+
+  // 백엔드로 보낼 Payload 객체
+  // (빈 값이나 선택하지 않은 팀/관리자는 null로 처리하여 DB에 NULL 값으로 들어가게 합니다)
+  const payload = {
+    cIdx: useAuthStore().user?.cIdx, // 또는 백엔드에서 session으로 알아서 처리한다면 생략 가능
+    sIdx: site.sIdx,
+    siteName: site.siteName,
+    itemCd: task.code,
+    itemName: task.name,
+    startDt: startDt,
+    durationDays: durationDays,
+    endDt: endDt,
+    status: addForm.value.status,
+    teamIdx: addForm.value.teamIdx || null,
+    mnIdx: addForm.value.mnIdx || null,
+    equipment: addForm.value.equipment || null,
+    memo: addForm.value.memo || null,
+    docSent: 'N' // 최초 등록 시 기본값 N 세팅
+  };
+
+  try {
+    // 신규 등록(POST)인지, 기존 수정(PUT)인지 판별
+    const url = `/api/v1/site/cleaning/schedule${isEditMode.value ? `/${editingIdx.value}` : ''}`;
+    const method = isEditMode.value ? 'put' : 'post';
+
+    // API 통신
+    const { data } = await axios[method](url, payload);
+
+    if (data.result) {
+      window.alert(isEditMode.value ? '일정이 성공적으로 수정되었습니다.' : '일정이 성공적으로 등록되었습니다.');
+
+      // TODO: 데이터 목록 새로고침 API 호출 (예: getCleaningSchedules())
+      await fetchSchedules();
+
+      closeAddModal();
+    } else {
+      window.customAlert(`저장 실패: ${data.message || '알 수 없는 오류'}`, 'error');
+    }
+  } catch (error) {
+    console.error('일정 저장 에러:', error);
+    window.customAlert('서버 통신 중 에러가 발생했습니다.', 'error');
+  }
 };
 
 const deleteSchedule = () => {
@@ -713,7 +951,7 @@ const checklists = ref([]);
 const showChecklistModal = ref(false);
 const checklistForm = ref({ scheduleIdx: null, siteManagerSign: '', rating: 5, issues: '', nextDayInstruction: '' });
 
-const completedSchedules = computed(() => cleaningSchedules.value.filter(s => s.status === '완료'));
+const completedSchedules = computed(() => cleaningSchedules.value.filter(s => s.status == '3'));
 
 const hasChecklist = (scheduleIdx) => checklists.value.some(c => c.scheduleIdx === scheduleIdx);
 
@@ -772,6 +1010,9 @@ const saveChecklist = () => {
         <i class="mdi mdi-file-document-outline"></i> 공문/점검표함
       </button-->
     </div>
+    <p class="tab-desc">
+      <i class="mdi mdi-arrow-right-thin"></i> {{ tabDescriptions[activeTab] }}
+    </p>
 
     <!-- ============ 탭1: 일정 캘린더 ============ -->
     <div v-if="activeTab === 'calendar'" class="content-body" style="display: grid; grid-template-columns: 3fr 1fr; gap: 20px;">
@@ -841,11 +1082,24 @@ const saveChecklist = () => {
                   </div>
                   <div v-else class="schedule-bar-empty"></div>
                 </template>
+                <div
+                    v-if="day.isCurrentMonth && !cellHasSchedules(day.dateStr)"
+                    class="cell-add-hint"
+                >
+                  <i class="mdi mdi-plus"></i> 일정 추가
+                </div>
               </div>
 
             </div>
           </div>
 
+        </div>
+
+        <div class="calendar-legend">
+          <span class="legend-item"><i class="legend-dot" style="background: var(--primary);"></i> 예정</span>
+          <span class="legend-item"><i class="legend-dot" style="background: var(--warning);"></i> 진행중</span>
+          <span class="legend-item"><i class="legend-dot" style="background: var(--success);"></i> 완료</span>
+          <span class="legend-item"><i class="legend-dot legend-dot-pending"></i> 수신확인 대기</span>
         </div>
       </div>
 
@@ -866,7 +1120,7 @@ const saveChecklist = () => {
               <i class="mdi mdi-magnify"></i>
               <input type="text" v-model="statusSearch" placeholder="현장명/항목명 검색" class="search-input" style="width: 100%;" />
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap:8px;">
               <label class="form-check-inline">
                 <input type="checkbox" v-model="statusOnlyRemaining" /> 미완료만 보기
               </label>
@@ -1027,9 +1281,14 @@ const saveChecklist = () => {
 
     <!-- ============ 팀 배정 (Kanban) ============ -->
     <div v-if="activeTab === 'assign'" class="kanban-wrapper">
-      <div class="status-header" style="margin-bottom: 20px;">
+      <div class="status-header" style="margin-bottom: 12px;">
         <i class="mdi mdi-account-switch"></i>
-        <h3>현장 대청소 팀 배정 (Drag & Drop)</h3>
+        <h3>현장 대청소 팀 배정</h3>
+      </div>
+
+      <div class="kanban-intro">
+        <i class="mdi mdi-information-outline"></i>
+        현장 카드를 원하는 팀 칸으로 끌어다 놓으면 바로 배정돼요. 일정을 등록할 때 이미 팀을 골랐다면 처음부터 해당 팀 칸에 표시됩니다.
       </div>
 
       <div class="kanban-board">
@@ -1055,7 +1314,10 @@ const saveChecklist = () => {
               <div class="task-card-body">
                 <p><strong>{{ task.itemName }}</strong></p>
                 <p class="task-address"><i class="mdi mdi-map-marker-outline"></i> {{ task.address }}</p>
-                <p v-if="task.requestNote" class="task-note"><i class="mdi mdi-alert-circle-outline"></i> {{ task.requestNote }}</p>
+                <p v-if="task.memo" class="task-note"><i class="mdi mdi-alert-circle-outline"></i> {{ task.memo }}</p>
+              </div>
+              <div class="task-card-footer">
+                <i class="mdi mdi-drag"></i> 끌어서 팀에 배정
               </div>
             </div>
             <div v-if="getUnassignedTasks.length === 0" class="empty-col">미배정 건이 없습니다.</div>
@@ -1077,7 +1339,7 @@ const saveChecklist = () => {
             </div>
             <div class="team-info" style="justify-content: space-between; align-items: flex-start; width: 100%;">
               <div class="team-member-list">
-                <span v-for="member in getTeamMembers(team.idx)" :key="member.id" class="member-chip" :class="{'is-leader': member.role === '반장'}">
+                <span v-for="member in getTeamMembers(team.idx)" :key="member.id" class="member-chip" :class="{'is-leader': member.position === '반장'}">
                   {{ member.name }}
                 </span>
                 <span v-if="getTeamMembers(team.idx).length === 0" class="empty-members">편성된 인원 없음</span>
@@ -1101,11 +1363,11 @@ const saveChecklist = () => {
               <div class="task-card-body">
                 <p><strong>{{ task.itemName }}</strong></p>
                 <div class="task-tags">
-                  <span class="status-badge" :class="{'is-done': task.status === '완료', 'is-progress': task.status === '진행중'}">{{ task.status }}</span>
+                  <span class="status-badge" :class="{'is-done': task.status == '3', 'is-progress': task.status == '2'}">{{ task.status }}</span>
                 </div>
               </div>
             </div>
-            <div v-if="getTasksForTeam(team.idx).length === 0" class="empty-col">배정된 일정이 없습니다.</div>
+            <div v-if="getTasksForTeam(team.idx).length === 0" class="empty-col">배정된 일정이 없습니다.<br>왼쪽에서 카드를 끌어다 놓으세요.</div>
           </div>
         </div>
 
@@ -1172,21 +1434,39 @@ const saveChecklist = () => {
             <label style="font-weight:600; color:#334155; margin-bottom:8px; display:block;">팀명</label>
             <input type="text" v-model="editingTeam.teamName" class="form-input" placeholder="예: 4팀, 외벽특수팀" />
           </div>
-          <p class="modal-desc" style="margin-bottom:12px;">이 팀에 배정할 인원을 선택해주세요. (반장 선택 시 리더로 자동 지정)</p>
+          <p class="modal-desc" style="margin-bottom:12px;">이 팀에 배정할 인원을 선택해주세요.</p>
+          <!-- 기존 팀원 편성 모달 내부의 staff-selection-list를 아래 코드로 교체하세요 -->
           <div class="staff-selection-list">
             <div
                 v-for="staff in cleaningStaff"
-                :key="staff.id"
+                :key="staff.idx"
                 class="staff-item"
-                :class="{'is-selected': editingTeam?.memberIds?.includes(staff.id)}"
-                @click="toggleMember(staff.id)"
+                :class="{'is-selected': editingTeam?.memberIds?.includes(staff.idx)}"
+                @click="toggleMember(staff.idx)"
             >
               <div class="staff-info">
-                <span class="staff-role" :class="{'is-leader': staff.position?.includes('반장')}">{{ staff.position }}</span>
+                <span class="staff-role">{{ staff.position }}</span>
                 <span class="staff-name">{{ staff.name }}</span>
               </div>
-              <div class="staff-check">
-                <i class="mdi" :class="editingTeam?.memberIds?.includes(staff.id) ? 'mdi-check-circle text-primary' : 'mdi-checkbox-blank-circle-outline text-gray'"></i>
+
+              <!-- 액션 영역 (버튼 + 체크아이콘) -->
+              <div class="staff-actions-row">
+                <!-- 이 사람이 선택된 상태일 때만 팀장 지정 버튼 노출 -->
+                <button
+                    v-if="editingTeam?.memberIds?.includes(staff.idx)"
+                    type="button"
+                    class="btn-leader-select"
+                    :class="{ 'is-leader': editingTeam.leaderId === staff.idx }"
+                    @click.stop="setLeader(staff.idx)"
+                >
+                  <i class="mdi mdi-crown"></i>
+                  {{ editingTeam.leaderId === staff.idx ? '팀장' : '팀장 지정' }}
+                </button>
+
+                <!-- 기존 선택 체크박스 -->
+                <i class="mdi check-icon"
+                   :class="editingTeam?.memberIds?.includes(staff.idx) ? 'mdi-check-circle text-primary' : 'mdi-checkbox-blank-circle-outline text-gray'">
+                </i>
               </div>
             </div>
           </div>
@@ -1196,7 +1476,7 @@ const saveChecklist = () => {
           <div v-else></div>
           <div style="display:flex; gap:8px;">
             <button class="btn-cancel" @click="closeTeamModal">취소</button>
-            <button class="btn-submit" @click="saveTeamMembers">저장</button>
+            <button class="btn-add" @click="saveTeamMembers">저장</button>
           </div>
         </div>
       </div>
@@ -1210,71 +1490,92 @@ const saveChecklist = () => {
           <button class="btn-close" @click="closeAddModal"><i class="mdi mdi-close"></i></button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label>현장 선택</label>
-            <SiteSelect v-model="addForm.sIdx" width="100%" @change="onSiteChange"/>
-          </div>
 
-          <div class="form-group" v-if="availableTasks.length > 0">
-            <label>청소 항목</label>
-            <select v-model="addForm.itemCd" class="form-control">
-              <option value="" disabled>항목을 선택하세요</option>
-              <option v-for="task in availableTasks" :key="task.code" :value="task.code">
-                {{ task.name }} (회당 {{ task.durationDays }}일 소요)
-              </option>
-            </select>
-          </div>
+          <!-- 1) 기본 정보: 현장과 청소 항목 -->
+          <div class="form-section">
+            <h4 class="form-section-title">1. 어디를, 무엇을 청소하나요?</h4>
+            <div class="form-group">
+              <label>현장 선택 <span class="req">*</span></label>
+              <SiteSelect v-model="addForm.sIdx" width="100%" @change="onSiteChange"/>
+            </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label>청소 시작일자</label>
-              <input type="date" v-model="addForm.startDt" class="form-control" />
-            </div>
-            <div class="form-group">
-              <label>청소 종료일자</label>
-              <input type="date" v-model="addForm.endDt" class="form-control" />
-            </div>
-          </div>
-          <div v-if="addForm.startDt && addForm.endDt" class="duration-hint">
-            <i class="mdi mdi-calendar-range"></i>
-            총 {{ Math.floor((new Date(addForm.endDt) - new Date(addForm.startDt)) / (1000 * 60 * 60 * 24)) + 1 }}일간 진행되는 일정으로 등록됩니다.
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>대청소팀</label>
-              <select v-model="addForm.teamIdx" class="form-control">
-                <option value="" disabled>팀을 선택하세요</option>
-                <option v-for="t in teams" :key="t.idx" :value="t.idx">{{ t.teamName }} ({{ t.leaderName }})</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>담당 관리자</label>
-              <select v-model="addForm.managerMIdx" class="form-control">
-                <option value="" disabled>담당자를 선택하세요</option>
-                <option v-for="m in managers" :key="m.idx" :value="m.idx">{{ m.name }}</option>
+            <div class="form-group" v-if="availableTasks.length > 0">
+              <label>청소 항목 <span class="req">*</span></label>
+              <select v-model="addForm.itemCd" class="form-control">
+                <option value="" disabled>항목을 선택하세요</option>
+                <option v-for="task in availableTasks" :key="task.code" :value="task.code">
+                  {{ task.name }} <!--(회당 {{ task.durationDays }}일 소요)-->
+                </option>
               </select>
             </div>
           </div>
 
-          <div class="form-group">
-            <label>투입 장비</label>
-            <input type="text" v-model="addForm.equipment" class="form-control" placeholder="예: 고압세척기, 사다리차" />
+          <!-- 2) 일정: 시작일/종료일 -->
+          <div class="form-section">
+            <h4 class="form-section-title">2. 언제 진행하나요?</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label>청소 시작일자 <span class="req">*</span></label>
+                <input type="date" v-model="addForm.startDt" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label>청소 종료일자 <span class="req">*</span></label>
+                <input type="date" v-model="addForm.endDt" class="form-control" />
+              </div>
+            </div>
+            <div v-if="addForm.startDt && addForm.endDt" class="duration-hint">
+              <i class="mdi mdi-calendar-range"></i>
+              총 {{ Math.floor((new Date(addForm.endDt) - new Date(addForm.startDt)) / (1000 * 60 * 60 * 24)) + 1 }}일간 진행되는 일정으로 등록됩니다.
+            </div>
           </div>
 
-          <div class="form-group">
-            <label>단지 요청사항</label>
-            <textarea v-model="addForm.requestNote" class="form-control" rows="2" placeholder="현장에서 요청한 특이사항"></textarea>
+          <!-- 3) 배정: 팀/담당자 (선택 사항임을 명시) -->
+          <div class="form-section">
+            <h4 class="form-section-title">3. 누가 담당하나요? <span class="optional-tag">선택</span></h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label>대청소팀</label>
+                <select v-model="addForm.teamIdx" class="form-control">
+                  <option value="" disabled>팀을 선택하세요</option>
+                  <option v-for="t in teams" :key="t.idx" :value="t.idx">{{ t.teamName }} ({{ t.leaderName }})</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>담당 관리자</label>
+                <select v-model="addForm.mnIdx" class="form-control">
+                  <option value="" disabled>담당자를 선택하세요</option>
+                  <option v-for="m in managers" :key="m.idx" :value="m.idx">{{ m.name }}</option>
+                </select>
+              </div>
+            </div>
+            <p class="field-hint">
+              <i class="mdi mdi-information-outline"></i>
+              지금 정하지 않아도 됩니다. 나중에 <b>팀 배정</b> 탭에서 끌어다 놓아 배정하거나, 이 일정을 다시 눌러 바꿀 수 있어요.
+            </p>
           </div>
 
-          <div class="form-group">
-            <label>상태</label>
-            <select v-model="addForm.status" class="form-control">
-              <option value="예정">예정</option>
-              <option value="확정">확정</option> <!-- 알림톡 -->
-              <option value="진행중">진행중</option>
-              <option value="완료">완료</option>
-            </select>
+          <!-- 4) 추가 정보 -->
+          <div class="form-section">
+            <h4 class="form-section-title">4. 추가로 알아둘 내용</h4>
+            <div class="form-group">
+              <label>투입 장비</label>
+              <input type="text" v-model="addForm.equipment" class="form-control" placeholder="예: 고압세척기, 사다리차" />
+            </div>
+
+            <div class="form-group">
+              <label>단지 요청사항</label>
+              <textarea v-model="addForm.memo" class="form-control" rows="2" placeholder="현장에서 요청한 특이사항"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>진행 상태</label>
+              <select v-model="addForm.status" class="form-control">
+                <option value="0">예정</option>
+                <option value="1">확정</option> <!-- 알림톡 -->
+                <option value="2">진행중</option>
+                <option value="3">완료</option>
+              </select>
+            </div>
           </div>
 
           <!--div class="form-group form-check">
@@ -1362,6 +1663,14 @@ const saveChecklist = () => {
 .tab-item.active {
   color: var(--primary, #4f46e5);
   border-bottom-color: var(--primary, #4f46e5);
+}
+.tab-desc {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -8px 0 0 0;
+  font-size: 12px;
+  color: var(--text-sub, #4b5563);
 }
 
 /* 캘린더 필터바 */
@@ -1660,6 +1969,50 @@ textarea.form-control {
   font-family: inherit;
 }
 
+/* 모달 내 구획(1. 어디를... / 2. 언제... 등) */
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px dashed var(--border-color, #e5e7eb);
+}
+.form-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.form-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary, #4f46e5);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.optional-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-sub, #4b5563);
+  background: var(--bg-hover, #f3f4f6);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.req {
+  color: var(--danger, #ef4444);
+}
+.field-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-sub, #4b5563);
+  background: var(--bg-canvas, #f9fafb);
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
 /* 모달 스타일 */
 .modal-overlay {
   position: fixed;
@@ -1707,7 +2060,7 @@ textarea.form-control {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 .form-group {
   display: flex;
@@ -1719,6 +2072,10 @@ textarea.form-control {
   font-weight: 600;
   color: var(--text-main, #111827);
 }
+
+.form-input, .form-select, .form-textarea { padding: 10px 12px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; font-size: 13px; background: #fff; width: 100%; box-sizing: border-box; transition: 0.2s; }
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); outline: none; }
+
 .form-control {
   padding: 10px 12px;
   border: 1px solid var(--border-color, #e5e7eb);
@@ -1739,7 +2096,7 @@ textarea.form-control {
 }
 .btn-cancel {
   padding: 8px 16px;
-  background: var(--bg-hover, #f3f4f6);
+  /*background: var(--bg-hover, #f3f4f6);*/
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 6px;
   font-weight: 600;
@@ -1793,6 +2150,32 @@ textarea.form-control {
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.1));
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-sub, #4b5563);
+}
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.legend-dot-pending {
+  background: repeating-linear-gradient(45deg, #cbd5e1, #cbd5e1 2px, #fff 2px, #fff 4px);
+  border: 1px solid #94a3b8;
 }
 
 .status-card {
@@ -2043,7 +2426,7 @@ textarea.form-control {
   justify-content: center;
   background: var(--primary, #4f46e5);
   color: #fff;
-  border-radius: 50%;
+  /*border-radius: 50%;*/
   font-weight: 700;
 }
 
@@ -2059,6 +2442,24 @@ textarea.form-control {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.cell-add-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--primary, #4f46e5);
+  opacity: 0;
+  padding: 4px 0;
+  transition: opacity 0.15s;
+}
+.calendar-cell:hover .cell-add-hint {
+  opacity: 0.85;
+}
+.not-current .cell-add-hint {
+  display: none;
 }
 
 .schedule-item {
@@ -2194,6 +2595,23 @@ textarea.form-control {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+.kanban-intro {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-canvas, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text-sub, #4b5563);
+}
+.kanban-intro i {
+  color: var(--primary, #4f46e5);
+  font-size: 16px;
+  flex-shrink: 0;
 }
 .kanban-board {
   display: flex;
@@ -2357,6 +2775,17 @@ textarea.form-control {
   color: #94a3b8;
   font-size: 13px;
   font-style: italic;
+  line-height: 1.6;
+}
+.task-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 
@@ -2448,8 +2877,45 @@ textarea.form-control {
   font-weight: 500;
   color: #1e293b;
 }
-.text-primary { color: #3b82f6 !important; font-size: 20px; }
-.text-gray { color: #cbd5e1 !important; font-size: 20px; }
+
+/* 팀원 모달 - 우측 액션 영역 */
+.staff-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.check-icon {
+  font-size: 20px;
+}
+
+/* 팀장 지정 버튼 */
+.btn-leader-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #64748b;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-leader-select:hover {
+  background: #e2e8f0;
+}
+/* 팀장으로 활성화되었을 때의 스타일 (금색/오렌지색 계열 강조) */
+.btn-leader-select.is-leader {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #d97706;
+}
+.btn-leader-select.is-leader i {
+  color: #f59e0b;
+  font-size: 14px;
+}
 
 .add-team-col {
   background: transparent;
