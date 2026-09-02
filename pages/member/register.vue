@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onActivated, ref, watch, computed } from 'vue';
+import { onMounted, onActivated, ref, watch, computed, onBeforeUnmount } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
@@ -29,8 +29,32 @@ const {
 
 const cIdx = authStore.user?.cIdx;
 
+// =============================================
+// [추가] 퀵 네비게이션(스크롤 이동) 로직
+// =============================================
+const activeSection = ref('sec-basic');
+const navItems = [
+  { id: 'sec-basic', title: '기본 정보', icon: 'mdi-account-details-outline' },
+  { id: 'sec-special', title: '특이 사항', icon: 'mdi-alert-circle-outline' },
+  { id: 'sec-work', title: '근무 정보', icon: 'mdi-briefcase-outline' },
+  { id: 'sec-payroll', title: '급여 및 기타', icon: 'mdi-cash-multiple' },
+];
+
+const scrollToSection = (id) => {
+  activeSection.value = id;
+  const el = document.getElementById(id);
+  const container = document.querySelector('.content-area');
+
+  if (el && container) {
+    const topPos = el.offsetTop - 24;
+    container.scrollTo({ top: topPos, behavior: 'smooth' });
+  }
+};
+// =============================================
+
 // === 1. 초기 상태를 반환하는 함수 ===
 const getInitialEmployee = () => ({
+  member_type: 'SITE',
   type: '',
   name: '',
   billingName: '', //정산서용 이름
@@ -94,6 +118,7 @@ const contractYear = computed(() => {
 
 const wageInputs = ref({});
 const periodsData = ref([]); // 입/퇴사일, 일용직,대근 근무시작/종료일, 휴직시작/종료일 등
+
 // 기간 추가 함수
 const addPeriod = () => {
   periodsData.value.push({ startDate: '', endDate: '', outReason: '' });
@@ -106,14 +131,19 @@ const removePeriod = (index) => {
 
 // 상태(status)가 변경될 때마다 처리
 watch(() => employee.value.status, (newStatus) => {
-  // 일용직(2) 이나 대근(3)일 경우
   if (newStatus === '2' || newStatus === '3') {
     if(periodsData.value.length === 0) {
-      addPeriod(); // 최초 1개의 입력 칸 생성
+      addPeriod();
     }
   } else {
-    // 그 외의 상태(재직, 퇴사, 휴직)면 periodsData 초기화
     periodsData.value = [];
+  }
+});
+
+// 본사로 변경 시 현장 선택값 초기화
+watch(() => employee.value.member_type, (newVal) => {
+  if (newVal === 'HQ') {
+    employee.value.site = '';
   }
 });
 
@@ -129,32 +159,24 @@ const todayDate = computed(() => {
   return `${year}-${month}-${day}`;
 });
 
-// 현재 펼쳐진 부모 메뉴 코드를 저장
 const expandedNodeCd = ref(null);
 
-// 하위 메뉴 토글 함수
 const toggleNode = (itemCd) => {
   if (expandedNodeCd.value === itemCd) {
-    expandedNodeCd.value = null; // 이미 열려있으면 닫기
+    expandedNodeCd.value = null;
   } else {
-    expandedNodeCd.value = itemCd; // 클릭한 메뉴 열기
+    expandedNodeCd.value = itemCd;
   }
 };
-// ==========================================
-// 커스텀 트리 드롭다운 로직 (직위)
-// ==========================================
+
 const isPositionMenuOpen = ref(false);
 
 const positionTree = computed(() => {
   if (!positionOptions.value || positionOptions.value.length === 0) return [];
-
-  // 5자리 루트 코드가 섞여 있을 경우를 대비해 하위 항목(8자리 이상)만 필터링
   const validItems = positionOptions.value.filter(p => p.itemCd.length > 5);
   if (validItems.length === 0) return [];
-
   const minLength = Math.min(...validItems.map(p => p.itemCd.length));
   const parents = validItems.filter(p => p.itemCd.length === minLength);
-
   return parents.map(parent => {
     const children = validItems.filter(
         p => p.itemCd.startsWith(parent.itemCd) && p.itemCd.length > parent.itemCd.length
@@ -188,30 +210,26 @@ const handleContractSave = (savedData) => {
   window.alert('근로계약서 내용이 임시 저장되었습니다.');
 };
 
-// 4. 폼 제출 핸들러 (한 번에 검증)
+// 4. 폼 제출 핸들러
 const handleSubmit = async () => {
-  if (!employee.value.site) {
-    window.customAlert('현장을 선택해주세요.','error')//alert('현장을 선택해주세요.');
+  if (employee.value.member_type === 'SITE' && !employee.value.site) {
+    window.customAlert('근무 현장을 선택해주세요.','error');
+    scrollToSection('sec-work');
     return;
   }
+  if (!employee.value.type) { window.customAlert('직원 구분을 선택해주세요.','error'); scrollToSection('sec-basic'); return; }
+  if (!employee.value.name) { window.customAlert('이름을 입력해주세요.','error'); scrollToSection('sec-basic'); return; }
 
-  // 특수 조건 검증
   if (employee.value.foreigner === 'Y' && (!employee.value.nationality || !employee.value.visa_code)) {
     window.customAlert('외국인인 경우 국적과 비자 코드를 입력해주세요.','error');
+    scrollToSection('sec-special');
     return;
   }
   if (employee.value.disability === 'Y' && !employee.value.disability_grade) {
     window.customAlert('장애 여부가 "예"인 경우 장애 등급을 선택해주세요.','error');
+    scrollToSection('sec-special');
     return;
   }
-
-  /* 20260421 백승훈 이사님과 통화 후 필수값 삭제
-  if (!contractDataTemp.value || !contractDataTemp.value.contractStartDt || !contractDataTemp.value.contractEndDt) {
-    alert('근로계약서의 계약기간을 입력해주세요.\n근로계약서 작성 버튼을 클릭하여 계약 시작일과 종료일을 입력하세요.');
-    return;
-  }
-
-   */
 
   if (!await window.customConfirm(`${employee.value.name} 직원을 등록하시겠습니까?`)) return;
 
@@ -222,7 +240,6 @@ const handleSubmit = async () => {
     monthWorkTime: contractDataTemp.value?.monthWorkTime || 0,
     contractData: contractDataTemp.value,
     periodsData : periodsData.value,
-    // wageInputs: wageInputs.value,
   };
 
   try {
@@ -236,7 +253,6 @@ const handleSubmit = async () => {
         query: route.query
       });
     } else {
-      // alert('등록 실패: ' + (res.data.message || '알 수 없는 오류'));
       window.customAlert('등록 실패: ' + (res.data.message || '알 수 없는 오류'), 'error');
     }
   } catch (error) {
@@ -245,7 +261,6 @@ const handleSubmit = async () => {
   }
 };
 
-// 5. 취소 버튼 핸들러
 const handleCancel = async () => {
   if (await window.customConfirm('작성 중인 내용이 사라집니다. 취소하시겠습니까?')) {
     resetForm();
@@ -256,89 +271,22 @@ const handleCancel = async () => {
   }
 };
 
-// 지급항목
 const getWageCode = async function () {
   const cIdx = authStore.user?.cIdx;
   try {
     const res = await axios.get(`/api/v1/config/code/wage/${cIdx}`);
     const rawData = res.data.data || [];
-    const includeCodes = ['04001001', '04001002','04001003','04001004','04001005','04001006']; // 표시할 코드만 명시
+    const includeCodes = ['04001001', '04001002','04001003','04001004','04001005','04001006'];
     items.value = rawData.filter(item => includeCodes.includes(item.itemCd));
   } catch (err) {
     console.error("항목 로드 실패", err);
   }
 }
 
-/*
 const getBudgetData = async function () {
   const { site, type, position } = employee.value;
   if (!site || !type || !position) return;
 
-  try {
-    const res = await axios.get(`/api/v1/site/contract/budget`, { params: { sIdx: site, type: type } });
-    const budgetData = res.data.data[0];
-    if (!budgetData) return;
-
-    const jsonData = typeof budgetData.jsonData === 'string'
-        ? JSON.parse(budgetData.jsonData)
-        : budgetData.jsonData;
-
-    const staffDetail = typeof budgetData.staffDetail === 'string'
-        ? JSON.parse(budgetData.staffDetail)
-        : budgetData.staffDetail;
-
-    const newWageInputs = {};
-    const newItems = [];
-
-    // directLabor만 지급항목(임금)으로, indirectLabor는 공제항목으로 구분
-    ['directLabor', 'indirectLabor'].forEach(groupKey => {
-      (jsonData?.[groupKey] || []).forEach(item => {
-        if (!item.label) return;
-
-        // wagesData에서 이름 찾기, 없으면 label 그대로
-        const itemNm = wagesData.value.find(w => w.itemCd === item.label)?.itemNm ?? item.label;
-
-        newItems.push({
-          itemCd: item.label,
-          itemNm,
-          groupKey, // 'directLabor' | 'indirectLabor'
-          groupCd: item.label.substring(0, 5),
-        });
-
-        if (item.values?.[position] !== undefined) {
-          newWageInputs[item.label] = Number(item.values[position]) || 0;
-        }
-      });
-    });
-
-    items.value = newItems;
-    wageInputs.value = newWageInputs;
-
-    let selectedSchedule = null;
-    if (staffDetail) {
-      const targetStaff = staffDetail.find(s => s.code === position);
-      if (targetStaff) selectedSchedule = targetStaff.schedule;
-    }
-
-    contractDataTemp.value = {
-      ...contractDataTemp.value,
-      wageInputs: newWageInputs,
-      workSchedule: selectedSchedule,
-    };
-
-  } catch (err) {
-    console.error('데이터 로드 실패:', err);
-  }
-};
-
- */
-// 1. 예산 데이터 가져오기 함수 (계약 직책 자동 추론 로직 적용)
-const getBudgetData = async function () {
-  const { site, type, position } = employee.value;
-  if (!site || !type || !position) return;
-
-  // ★ 핵심 마법: 코드가 8자리(예: 01002001)를 넘어가면
-  // 뒤에 붙은 꼬리를 자르고 부모 코드(8자리)만 추출해서 임금 계약의 기준으로 삼음
   const contractPosCd = position.length > 8 ? position.substring(0, 8) : position;
 
   try {
@@ -360,9 +308,7 @@ const getBudgetData = async function () {
     ['directLabor', 'indirectLabor'].forEach(groupKey => {
       (jsonData?.[groupKey] || []).forEach(item => {
         if (!item.label) return;
-
         const itemNm = wagesData.value.find(w => w.itemCd === item.label)?.itemNm ?? item.label;
-
         newItems.push({
           itemCd: item.label,
           itemNm,
@@ -370,7 +316,6 @@ const getBudgetData = async function () {
           groupCd: item.label.substring(0, 5),
         });
 
-        // ★ 잘라낸 부모 코드(contractPosCd)로 산출내역서의 임금을 찾음!
         if (item.values?.[contractPosCd] !== undefined) {
           newWageInputs[item.label] = Number(item.values[contractPosCd]) || 0;
         }
@@ -382,7 +327,6 @@ const getBudgetData = async function () {
 
     let selectedSchedule = null;
     if (staffDetail) {
-      // ★ 스케줄 정보도 부모 코드(contractPosCd) 기준으로 가져옴
       const targetStaff = staffDetail.find(s => s.code === contractPosCd);
       if (targetStaff) selectedSchedule = targetStaff.schedule;
     }
@@ -402,7 +346,6 @@ watch(
     () => [employee.value.firstNumber, employee.value.lastNumber],
     ([front, back]) => {
       if (!front || front.length !== 6) return;
-
       let yearPrefix = '';
       const yearPart = front.substring(0, 2);
       const monthPart = front.substring(2, 4);
@@ -410,49 +353,31 @@ watch(
 
       if (back && back.length >= 1) {
         const genderCode = back.substring(0, 1);
-        // 홀수면 M(남성), 짝수면 F(여성)
         employee.value.gender = (genderCode % 2 !== 0) ? 'M' : 'F';
-
-        if (['1', '2', '5', '6'].includes(genderCode)) {
-          yearPrefix = '19';
-        } else if (['3', '4', '7', '8'].includes(genderCode)) {
-          yearPrefix = '20';
-        } else {
-          yearPrefix = '19';
-        }
+        if (['1', '2', '5', '6'].includes(genderCode)) yearPrefix = '19';
+        else if (['3', '4', '7', '8'].includes(genderCode)) yearPrefix = '20';
+        else yearPrefix = '19';
       } else {
         const currentYearShort = new Date().getFullYear() % 100;
-        if (parseInt(yearPart) > currentYearShort) {
-          yearPrefix = '19';
-        } else {
-          yearPrefix = '20';
-        }
+        if (parseInt(yearPart) > currentYearShort) yearPrefix = '19';
+        else yearPrefix = '20';
       }
 
       const fullDate = `${yearPrefix}${yearPart}-${monthPart}-${dayPart}`;
-
-      if (isValidDate(fullDate)) {
-        employee.value.birthDate = fullDate;
-      }
+      if (isValidDate(fullDate)) employee.value.birthDate = fullDate;
     }
 );
 
-// 현장 변경 시
 watch(
     () => [employee.value.site, employee.value.type, employee.value.position],
     ([newSite, newType, newPos]) => {
-      // 세 가지 필수 정보가 모두 있을 때만 API 호출
-      if (newSite && newType && newPos) {
-        getBudgetData();
-      }
+      if (newSite && newType && newPos) getBudgetData();
     }
 );
 
-// 이름 입력 시 정산서용 이름 자동 동기화
 watch(
     () => employee.value.name,
     (newName, oldName) => {
-      // 정산서용 이름이 비어있거나, 기존 이름과 똑같을 때만 값을 업데이트
       if (!employee.value.billingName || employee.value.billingName === oldName) {
         employee.value.billingName = newName;
       }
@@ -478,16 +403,40 @@ const getPositionCode = async () => {
   }
 };
 
+let scrollHandler = null;
+
 onMounted(() => {
   resetForm();
   getCompanyData();
   fetchSiteOptions();
   fetchTypeOptions();
-  // fetchPositionOptions();
   fetchDisabledOptions();
   fetchBankOption();
   fetchWageCode();
   getPositionCode();
+
+  // 스크롤 위치 감지
+  const container = document.querySelector('.content-area');
+  if (container) {
+    scrollHandler = () => {
+      const sections = navItems.map(item => document.getElementById(item.id));
+      let current = 'sec-basic';
+      sections.forEach(section => {
+        if (section && container.scrollTop >= (section.offsetTop - 150)) {
+          current = section.getAttribute('id');
+        }
+      });
+      activeSection.value = current;
+    };
+    container.addEventListener('scroll', scrollHandler);
+  }
+});
+
+onBeforeUnmount(() => {
+  const container = document.querySelector('.content-area');
+  if (container && scrollHandler) {
+    container.removeEventListener('scroll', scrollHandler);
+  }
 });
 
 onActivated(() => {
@@ -497,814 +446,457 @@ onActivated(() => {
 
 <template>
   <div class="member-register-page">
-    <div class="page-header">
+
+    <!-- 상단 고정(Sticky) 헤더 -->
+    <div class="page-header sticky-header">
       <div class="header-left">
-        <button type="button" @click="handleCancel" class="btn-back" style="padding: 10px;">
+        <button type="button" @click="handleCancel" class="btn-back">
           <i class="mdi mdi-arrow-left"></i>
         </button>
         <div>
-          <h1 class="page-title">
-            <i class="mdi mdi-account-plus-outline"></i>
-            직원 등록
-          </h1>
-          <p class="page-subtitle">새로운 직원 정보를 등록합니다</p>
+          <h1 class="page-title"><i class="mdi mdi-account-plus-outline text-primary"></i> 직원 등록</h1>
+          <p class="page-subtitle">새로운 직원 정보를 카테고리별로 입력합니다.</p>
         </div>
       </div>
-      <div class="header-actions">
-        <button type="button" @click="handleCancel" class="btn-cancel">
-          <i class="mdi mdi-close"></i>
-          <span>취소</span>
+      <div class="header-right">
+        <button type="button" @click="handleCancel" class="btn-cancel">취소</button>
+        <button type="button" @click="handleSubmit" class="btn-submit">
+          <i class="mdi mdi-check"></i> 등록 완료
         </button>
       </div>
     </div>
 
-    <form @submit.prevent="handleSubmit">
-      <div class="form-container">
+    <!-- 메인 레이아웃 -->
+    <div class="register-layout">
 
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-account-outline"></i>
-            <h2>기본 정보</h2>
-          </div>
-
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-tag-outline"></i>
-                구분
-              </label>
-              <select v-model="employee.type" required class="form-select">
-                <option value="">선택하세요</option>
-                <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
-                  {{ type.itemNm }}
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-account-outline"></i>
-                이름
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.name"
-                  required
-                  class="form-input"
-                  placeholder="홍길동"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-file-document-edit-outline"></i>
-                정산서용 이름
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.billingName"
-                  class="form-input"
-                  placeholder="정산서 표시용"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-card-account-details-outline"></i>
-                사번
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.id"
-                  required
-                  class="form-input"
-                  placeholder="EMP001"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-lock-outline"></i>
-                비밀번호
-              </label>
-              <input
-                  type="password"
-                  v-model="employee.password"
-                  required
-                  class="form-input"
-                  placeholder="••••••••"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-badge-account-horizontal-outline"></i>
-                주민번호
-              </label>
-              <div class="ssn-group">
-                <input
-                    type="text"
-                    v-model="employee.firstNumber"
-                    required
-                    class="form-input ssn-input"
-                    maxlength="6"
-                    placeholder="000000"
-                />
-                <span class="ssn-separator">-</span>
-                <input
-                    type="text"
-                    v-model="employee.lastNumber"
-                    required
-                    class="form-input ssn-input"
-                    maxlength="7"
-                    placeholder="0000000"
-                    autocomplete="off"
-                />
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-cake-variant-outline"></i>
-                생년월일
-              </label>
-              <input
-                  type="date"
-                  v-model="employee.birthDate"
-                  class="form-input"
-                  max="9999-12-31"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-phone-outline"></i>
-                연락처
-              </label>
-              <input
-                  type="tel"
-                  v-model="employee.phone"
-                  class="form-input"
-                  placeholder="010-0000-0000"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-human-male-female"></i>
-                성별
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="M" v-model="employee.gender" required />
-                  <span class="radio-text">남성</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="F" v-model="employee.gender" required />
-                  <span class="radio-text">여성</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-email-outline"></i>
-                이메일
-              </label>
-              <input
-                  type="email"
-                  v-model="employee.email"
-                  class="form-input"
-                  placeholder="example@email.com"
-              />
-            </div>
-
-            <div class="form-group full-width">
-              <label class="form-label">
-                <i class="mdi mdi-home-outline"></i>
-                주소
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.address"
-                  class="form-input"
-                  placeholder="서울시 강남구..."
-              />
-            </div>
-          </div>
+      <!-- 좌측 퀵 네비게이션 -->
+      <aside class="quick-nav-sidebar">
+        <div class="nav-wrapper">
+          <h3 class="nav-title">입력 항목</h3>
+          <ul class="nav-list">
+            <li v-for="nav in navItems" :key="nav.id"
+                :class="['nav-item', { active: activeSection === nav.id }]"
+                @click="scrollToSection(nav.id)">
+              <i :class="['mdi', nav.icon]"></i>
+              <span>{{ nav.title }}</span>
+            </li>
+          </ul>
         </div>
+      </aside>
 
-        <hr class="section-divider" />
+      <!-- 우측 메인 폼 영역 (스크롤) -->
+      <main class="content-area">
+        <form @submit.prevent="handleSubmit" id="registerForm">
 
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-alert-circle-outline"></i>
-            <h2>특이 사항</h2>
-          </div>
-
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-wheelchair-accessibility"></i>
-                장애 여부
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.disability" required />
-                  <span class="radio-text">예</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.disability" required />
-                  <span class="radio-text">아니오</span>
-                </label>
-              </div>
+          <!-- 카드 1: 기본 정보 -->
+          <section id="sec-basic" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-account-outline text-primary"></i>
+              <h2>기본 정보</h2>
             </div>
+            <div class="card-body">
+              <div class="form-grid">
 
-            <div v-if="employee.disability === 'Y'" class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-calendar-outline"></i>
-                장애등록일
-              </label>
-              <input
-                  type="date"
-                  v-model="employee.disability_date"
-                  class="form-input"
-                  max="9999-12-31"
-              />
-            </div>
-
-            <div v-if="employee.disability === 'Y'" class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-format-list-numbered"></i>
-                장애등급
-              </label>
-              <select v-model="employee.disability_grade" class="form-select">
-                <option value="">선택하세요</option>
-                <option v-for="item in disabledOptions" :key="item.itemCd" :value="item.itemCd">
-                  {{ item.itemNm }}
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-account-group-outline"></i>
-                새터민 여부
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.defector" required />
-                  <span class="radio-text">예</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.defector" required />
-                  <span class="radio-text">아니오</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-medal-outline"></i>
-                국가유공자 여부
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.patriot" required />
-                  <span class="radio-text">예</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.patriot" required />
-                  <span class="radio-text">아니오</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-school-outline"></i>
-                청년인턴 여부
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.intern" required />
-                  <span class="radio-text">예</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.intern" required />
-                  <span class="radio-text">아니오</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-hand-heart-outline"></i>
-                기초수급자 여부
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.beneficiary" required />
-                  <span class="radio-text">예</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.beneficiary" required />
-                  <span class="radio-text">아니오</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-earth"></i>
-                외국인 여부
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.foreigner" required />
-                  <span class="radio-text">예</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.foreigner" required />
-                  <span class="radio-text">아니오</span>
-                </label>
-              </div>
-            </div>
-
-            <div v-if="employee.foreigner === 'Y'" class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-flag-outline"></i>
-                국적
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.nationality"
-                  class="form-input"
-                  placeholder="예: 베트남"
-              />
-            </div>
-
-            <div v-if="employee.foreigner === 'Y'" class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-passport"></i>
-                비자 코드
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.visa_code"
-                  class="form-input"
-                  placeholder="예: E-9"
-              />
-            </div>
-
-            <div v-if="employee.foreigner === 'Y'" class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-calendar-clock-outline"></i>
-                비자만료일
-              </label>
-              <input
-                  type="date"
-                  v-model="employee.visa_date"
-                  class="form-input"
-                  max="9999-12-31"
-              />
-            </div>
-
-            <div class="form-group full-width">
-              <label class="form-label">
-                <i class="mdi mdi-dots-horizontal-circle-outline"></i>
-                기타 특이사항 (정부 정책 등 자유 입력)
-              </label>
-
-              <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
-                <input
-                    type="text"
-                    v-model="employee.etc_name_1"
-                    class="form-input"
-                    style="flex: 1;"
-                    placeholder="항목명 입력 (예: 일자리안정자금 대상)"
-                />
-                <div class="radio-group" style="margin: 0; padding: 0; min-width: 140px;">
-                  <label class="radio-label" style="padding: 6px 12px;">
-                    <input type="radio" value="Y" v-model="employee.etc_value_1" />
-                    <span class="radio-text">예</span>
-                  </label>
-                  <label class="radio-label" style="padding: 6px 12px;">
-                    <input type="radio" value="N" v-model="employee.etc_value_1" />
-                    <span class="radio-text">아니오</span>
-                  </label>
+                <div class="form-group full-width">
+                  <label class="form-label required">소속 구분</label>
+                  <div class="radio-group">
+                    <label class="radio-label">
+                      <input type="radio" value="SITE" v-model="employee.member_type" required />
+                      <span>현장 소속</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" value="HQ" v-model="employee.member_type" required />
+                      <span>본사 소속</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
 
-              <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
-                <input
-                    type="text"
-                    v-model="employee.etc_name_2"
-                    class="form-input"
-                    style="flex: 1;"
-                    placeholder="항목명 입력"
-                />
-                <div class="radio-group" style="margin: 0; padding: 0; min-width: 140px;">
-                  <label class="radio-label" style="padding: 6px 12px;">
-                    <input type="radio" value="Y" v-model="employee.etc_value_2" />
-                    <span class="radio-text">예</span>
-                  </label>
-                  <label class="radio-label" style="padding: 6px 12px;">
-                    <input type="radio" value="N" v-model="employee.etc_value_2" />
-                    <span class="radio-text">아니오</span>
-                  </label>
+                <div class="form-group">
+                  <label class="form-label required">구분</label>
+                  <select v-model="employee.type" required class="form-select">
+                    <option value="">선택하세요</option>
+                    <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
+                      {{ type.itemNm }}
+                    </option>
+                  </select>
                 </div>
-              </div>
 
-              <div style="display: flex; gap: 12px; align-items: center;">
-                <input
-                    type="text"
-                    v-model="employee.etc_name_3"
-                    class="form-input"
-                    style="flex: 1;"
-                    placeholder="항목명 입력"
-                />
-                <div class="radio-group" style="margin: 0; padding: 0; min-width: 140px;">
-                  <label class="radio-label" style="padding: 6px 12px;">
-                    <input type="radio" value="Y" v-model="employee.etc_value_3" />
-                    <span class="radio-text">예</span>
-                  </label>
-                  <label class="radio-label" style="padding: 6px 12px;">
-                    <input type="radio" value="N" v-model="employee.etc_value_3" />
-                    <span class="radio-text">아니오</span>
-                  </label>
+                <div class="form-group">
+                  <label class="form-label required">이름</label>
+                  <input type="text" v-model="employee.name" required class="form-input" placeholder="홍길동" />
                 </div>
+
+                <div class="form-group">
+                  <label class="form-label">정산서용 이름</label>
+                  <input type="text" v-model="employee.billingName" class="form-input" placeholder="정산서 표시용" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">사번</label>
+                  <input type="text" v-model="employee.id" required class="form-input" placeholder="EMP001" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">비밀번호</label>
+                  <input type="password" v-model="employee.password" required class="form-input" placeholder="••••••••" />
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label required">주민등록번호</label>
+                  <div class="ssn-group">
+                    <input type="text" v-model="employee.firstNumber" required class="form-input ssn-input" maxlength="6" placeholder="000000" />
+                    <span class="ssn-separator">-</span>
+                    <input type="password" v-model="employee.lastNumber" required class="form-input ssn-input" maxlength="7" placeholder="0000000" autocomplete="off" />
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">생년월일</label>
+                  <input type="date" v-model="employee.birthDate" class="form-input" max="9999-12-31" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">성별</label>
+                  <div class="radio-group">
+                    <label class="radio-label">
+                      <input type="radio" value="M" v-model="employee.gender" required /><span>남성</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" value="F" v-model="employee.gender" required /><span>여성</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">연락처</label>
+                  <input type="tel" v-model="employee.phone" class="form-input" placeholder="010-0000-0000" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">이메일</label>
+                  <input type="email" v-model="employee.email" class="form-input" placeholder="example@email.com" />
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label">주소</label>
+                  <input type="text" v-model="employee.address" class="form-input" placeholder="전체 주소 입력" />
+                </div>
+
               </div>
             </div>
-          </div>
-        </div>
+          </section>
 
-        <hr class="section-divider" />
-
-        <div class="form-section">
-          <div class="section-main-header">
-            <i class="mdi mdi-briefcase-outline"></i>
-            <h2>근무 정보</h2>
-          </div>
-
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-office-building-outline"></i>
-                근무 현장
-              </label>
-              <SiteSelect v-model="employee.site" required :allow-empty="false" width="100%"/>
+          <!-- 카드 2: 특이 사항 -->
+          <section id="sec-special" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-alert-circle-outline text-primary"></i>
+              <h2>특이 사항</h2>
             </div>
+            <div class="card-body">
+              <div class="form-grid">
 
-            <!--div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-account-tie-outline"></i>
-                직위
-              </label>
-              <select v-model="employee.position" required class="form-select">
-                <option value="">선택하세요</option>
-                <option v-for="pos in positionOptions" :key="pos.itemCd" :value="pos.itemCd">
-                  {{ pos.itemNm }}
-                </option>
-              </select>
-            </div-->
-            <div class="form-group position-dropdown-container">
-              <label class="form-label required">
-                <i class="mdi mdi-account-tie-outline"></i>
-                직위
-              </label>
+                <div class="form-group">
+                  <label class="form-label required">장애 여부</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.disability" required /><span>예</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.disability" required /><span>아니오</span></label>
+                  </div>
+                </div>
+                <div v-if="employee.disability === 'Y'" class="form-group">
+                  <label class="form-label required">장애등급</label>
+                  <select v-model="employee.disability_grade" class="form-select">
+                    <option value="">선택하세요</option>
+                    <option v-for="item in disabledOptions" :key="item.itemCd" :value="item.itemCd">{{ item.itemNm }}</option>
+                  </select>
+                </div>
+                <div v-if="employee.disability === 'Y'" class="form-group">
+                  <label class="form-label">장애등록일</label>
+                  <input type="date" v-model="employee.disability_date" class="form-input" max="9999-12-31" />
+                </div>
 
-              <div class="custom-select-btn" @click="isPositionMenuOpen = !isPositionMenuOpen">
-                <span>{{ selectedPositionName }}</span>
-                <i class="mdi mdi-chevron-down"></i>
-              </div>
+                <div class="form-group">
+                  <label class="form-label required">새터민 여부</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.defector" required /><span>예</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.defector" required /><span>아니오</span></label>
+                  </div>
+                </div>
 
-              <div v-if="isPositionMenuOpen" class="dropdown-overlay" @click="isPositionMenuOpen = false"></div>
+                <div class="form-group">
+                  <label class="form-label required">국가유공자 여부</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.patriot" required /><span>예</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.patriot" required /><span>아니오</span></label>
+                  </div>
+                </div>
 
-              <ul v-if="isPositionMenuOpen" class="custom-dropdown-menu">
-                <li v-for="node in positionTree" :key="node.itemCd" class="menu-item">
+                <div class="form-group">
+                  <label class="form-label required">청년인턴 여부</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.intern" required /><span>예</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.intern" required /><span>아니오</span></label>
+                  </div>
+                </div>
 
-                  <div class="menu-label">
-  <span class="menu-text" @click.stop="selectPosition(node)">
-    {{ node.itemNm }}
-  </span>
+                <div class="form-group">
+                  <label class="form-label required">기초수급자 여부</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.beneficiary" required /><span>예</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.beneficiary" required /><span>아니오</span></label>
+                  </div>
+                </div>
 
-                    <div
-                        v-if="node.children.length > 0"
-                        class="toggle-icon-wrap"
-                        @click.stop="toggleNode(node.itemCd)"
-                    >
-                      <i class="mdi" :class="expandedNodeCd === node.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                <div class="form-group">
+                  <label class="form-label required">외국인 여부</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.foreigner" required /><span>예</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.foreigner" required /><span>아니오</span></label>
+                  </div>
+                </div>
+
+                <template v-if="employee.foreigner === 'Y'">
+                  <div class="form-group"><label class="form-label required">국적</label><input type="text" v-model="employee.nationality" class="form-input" placeholder="예: 베트남" /></div>
+                  <div class="form-group"><label class="form-label required">비자 코드</label><input type="text" v-model="employee.visa_code" class="form-input" placeholder="예: E-9" /></div>
+                  <div class="form-group"><label class="form-label">비자만료일</label><input type="date" v-model="employee.visa_date" class="form-input" max="9999-12-31" /></div>
+                </template>
+
+                <div class="form-group full-width" style="margin-top:12px;">
+                  <label class="form-label">기타 특이사항 커스텀 (정부 정책 등 자유 입력)</label>
+                  <div class="custom-etc-row">
+                    <input type="text" v-model="employee.etc_name_1" class="form-input" placeholder="항목명 1 (예: 일자리안정자금)" />
+                    <div class="radio-group etc-radio">
+                      <label class="radio-label"><input type="radio" value="Y" v-model="employee.etc_value_1" /><span>예</span></label>
+                      <label class="radio-label"><input type="radio" value="N" v-model="employee.etc_value_1" /><span>아니오</span></label>
                     </div>
                   </div>
+                  <div class="custom-etc-row mt-2">
+                    <input type="text" v-model="employee.etc_name_2" class="form-input" placeholder="항목명 2" />
+                    <div class="radio-group etc-radio">
+                      <label class="radio-label"><input type="radio" value="Y" v-model="employee.etc_value_2" /><span>예</span></label>
+                      <label class="radio-label"><input type="radio" value="N" v-model="employee.etc_value_2" /><span>아니오</span></label>
+                    </div>
+                  </div>
+                  <div class="custom-etc-row mt-2">
+                    <input type="text" v-model="employee.etc_name_3" class="form-input" placeholder="항목명 3" />
+                    <div class="radio-group etc-radio">
+                      <label class="radio-label"><input type="radio" value="Y" v-model="employee.etc_value_3" /><span>예</span></label>
+                      <label class="radio-label"><input type="radio" value="N" v-model="employee.etc_value_3" /><span>아니오</span></label>
+                    </div>
+                  </div>
+                </div>
 
-                  <ul v-show="expandedNodeCd === node.itemCd" class="custom-submenu">
-                    <li
-                        v-for="child in node.children"
-                        :key="child.itemCd"
-                        class="submenu-item"
-                        @click.stop="selectPosition(child)"
-                    >
-                      {{ child.itemNm }}
+              </div>
+            </div>
+          </section>
+
+          <!-- 카드 3: 근무 정보 -->
+          <section id="sec-work" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-briefcase-outline text-primary"></i>
+              <h2>근무 정보</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-grid">
+
+                <div class="form-group">
+                  <label class="form-label" :class="{ required: employee.member_type === 'SITE' }">근무 현장</label>
+                  <!-- 현장 소속일 때만 콤보박스 표시 -->
+                  <SiteSelect
+                      v-if="employee.member_type === 'SITE'"
+                      v-model="employee.site"
+                      required
+                      :allow-empty="false"
+                      width="100%"
+                  />
+                  <!-- 본사 소속일 때는 읽기 전용 텍스트창 표시 -->
+                  <input
+                      v-else
+                      type="text"
+                      class="form-input bg-readonly"
+                      value="본사"
+                      disabled
+                  />
+                </div>
+
+                <div class="form-group position-dropdown-container">
+                  <label class="form-label required">직위</label>
+                  <div class="custom-select-btn" @click="isPositionMenuOpen = !isPositionMenuOpen">
+                    <span>{{ selectedPositionName }}</span>
+                    <i class="mdi mdi-chevron-down"></i>
+                  </div>
+                  <div v-if="isPositionMenuOpen" class="dropdown-overlay" @click="isPositionMenuOpen = false"></div>
+                  <ul v-if="isPositionMenuOpen" class="custom-dropdown-menu">
+                    <li v-for="node in positionTree" :key="node.itemCd" class="menu-item">
+                      <div class="menu-label">
+                        <span class="menu-text" @click.stop="selectPosition(node)">{{ node.itemNm }}</span>
+                        <div v-if="node.children.length > 0" class="toggle-icon-wrap" @click.stop="toggleNode(node.itemCd)">
+                          <i class="mdi" :class="expandedNodeCd === node.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                        </div>
+                      </div>
+                      <ul v-show="expandedNodeCd === node.itemCd" class="custom-submenu">
+                        <li v-for="child in node.children" :key="child.itemCd" class="submenu-item" @click.stop="selectPosition(child)">
+                          {{ child.itemNm }}
+                        </li>
+                      </ul>
                     </li>
                   </ul>
-
-                </li>
-              </ul>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-calendar-start-outline"></i>
-                입사일
-              </label>
-              <input
-                  type="date"
-                  v-model="employee.joinDate"
-                  class="form-input"
-                  max="9999-12-31"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-account-check-outline"></i>
-                재직 상태
-              </label>
-              <div class="radio-group" style="word-break:keep-all;">
-                <label class="radio-label">
-                  <input type="radio" v-model="employee.status" value="0" required />
-                  <span class="radio-text">재직</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" v-model="employee.status" value="1" required />
-                  <span class="radio-text">퇴사</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" v-model="employee.status" value="2" required />
-                  <span class="radio-text">일용직</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" v-model="employee.status" value="3" required />
-                  <span class="radio-text">대근</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" v-model="employee.status" value="4" required />
-                  <span class="radio-text">휴직</span>
-                </label>
-              </div>
-            </div>
-
-            <template v-if="employee.status == 1">
-              <div class="form-group">
-                <label class="form-label required">
-                  <i class="mdi mdi-calendar-end-outline"></i>
-                  퇴사일
-                </label>
-                <input
-                    type="date"
-                    v-model="employee.outDate"
-                    required
-                    class="form-input"
-                    max="9999-12-31"
-                />
-              </div>
-
-              <div class="form-group">
-                <label class="form-label required">퇴사 사유</label>
-                <input type="text" v-model="employee.outReason" class="form-input" placeholder="퇴사 사유를 입력하세요" />
-              </div>
-            </template>
-
-            <template v-if="employee.status == 2 || employee.status == 3">
-              <div class="form-group full-width">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                  <label class="form-label required">
-                    <i class="mdi mdi-calendar-multiselect"></i>
-                    근무 기간 설정
-                  </label>
-                  <button type="button" @click="addPeriod" class="btn-cancel" style="padding: 4px 10px;">
-                    <i class="mdi mdi-plus"></i> 기간 추가
-                  </button>
                 </div>
 
-                <div v-for="(period, index) in periodsData" :key="index" style="display: flex; gap: 10px; margin-bottom: 10px; align-items: center;">
-                  <input type="date" v-model="period.startDate" class="form-input" required placeholder="시작일" />
-                  <span>~</span>
-                  <input type="date" v-model="period.endDate" class="form-input" required placeholder="종료일" />
-                  <input type="text" v-model="period.outReason" class="form-input" placeholder="비고 (선택)" style="flex: 1;" />
-                  <button type="button" @click="removePeriod(index)" v-if="periodsData.length > 1" class="btn-cancel" style="border: none; color: var(--danger); background: transparent; padding: 4px;">
-                    <i class="mdi mdi-minus-circle-outline" style="font-size: 20px;"></i>
-                  </button>
+                <div class="form-group">
+                  <label class="form-label">입사일</label>
+                  <input type="date" v-model="employee.joinDate" class="form-input" max="9999-12-31" />
                 </div>
+
+                <div class="form-group">
+                  <label class="form-label">고용승계일</label>
+                  <input type="date" v-model="employee.transferDate" class="form-input" max="9999-12-31" />
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label required">재직 상태</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" v-model="employee.status" value="0" required /><span>재직</span></label>
+                    <label class="radio-label"><input type="radio" v-model="employee.status" value="1" required /><span>퇴사</span></label>
+                    <label class="radio-label"><input type="radio" v-model="employee.status" value="2" required /><span>일용직</span></label>
+                    <label class="radio-label"><input type="radio" v-model="employee.status" value="3" required /><span>대근</span></label>
+                    <label class="radio-label"><input type="radio" v-model="employee.status" value="4" required /><span>휴직</span></label>
+                  </div>
+                </div>
+
+                <!-- 상태별 조건부 입력폼 -->
+                <template v-if="employee.status == 1">
+                  <div class="form-group"><label class="form-label required">퇴사일</label><input type="date" v-model="employee.outDate" required class="form-input" max="9999-12-31" /></div>
+                  <div class="form-group"><label class="form-label required">퇴사 사유</label><input type="text" v-model="employee.outReason" class="form-input" placeholder="사유 입력" /></div>
+                </template>
+
+                <template v-if="employee.status == 2 || employee.status == 3">
+                  <div class="form-group full-width bg-light-section">
+                    <div class="flex-between align-center mb-3">
+                      <label class="form-label required mb-0">근무 기간 설정</label>
+                      <button type="button" @click="addPeriod" class="btn-mini"><i class="mdi mdi-plus"></i> 기간 추가</button>
+                    </div>
+                    <div v-for="(period, index) in periodsData" :key="index" class="period-row">
+                      <input type="date" v-model="period.startDate" class="form-input" required />
+                      <span class="separator">~</span>
+                      <input type="date" v-model="period.endDate" class="form-input" required />
+                      <input type="text" v-model="period.outReason" class="form-input" placeholder="비고 (선택)" style="flex: 1;" />
+                      <button type="button" @click="removePeriod(index)" v-if="periodsData.length > 1" class="btn-remove-icon"><i class="mdi mdi-close"></i></button>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-if="employee.status == 4">
+                  <div class="form-group"><label class="form-label required">휴직 시작일</label><input type="date" v-model="employee.joinDate" required class="form-input" max="9999-12-31" /></div>
+                  <div class="form-group"><label class="form-label required">휴직 종료일</label><input type="date" v-model="employee.outDate" required class="form-input" max="9999-12-31" /></div>
+                  <div class="form-group full-width"><label class="form-label required">휴직 사유</label><input type="text" v-model="employee.outReason" class="form-input" placeholder="사유 입력" /></div>
+                </template>
+
               </div>
-            </template>
 
-            <template v-if="employee.status == 4">
-              <div class="form-group">
-                <label class="form-label required">
-                  <i class="mdi mdi-calendar-end-outline"></i>
-                  휴직 시작일
-                </label>
-                <input
-                    type="date"
-                    v-model="employee.joinDate"
-                    required
-                    class="form-input"
-                    max="9999-12-31"
-                />
-              </div>
-              <div class="form-group">
-                <label class="form-label required">
-                  <i class="mdi mdi-calendar-end-outline"></i>
-                  휴직 종료일
-                </label>
-                <input
-                    type="date"
-                    v-model="employee.outDate"
-                    required
-                    class="form-input"
-                    max="9999-12-31"
-                />
+              <!-- 근로계약서 작성 영역 -->
+              <div class="contract-write-section mt-4">
+                <button type="button" @click="showModal = true" class="btn-contract">
+                  <i class="mdi mdi-file-document-edit-outline"></i>
+                  <span>근로계약서 작성하기 (전자서명 전송용)</span>
+                </button>
+                <p class="helper-text-sm text-center mt-2">* 계약서를 미리 작성해두면 입사 시 바로 서명 요청을 보낼 수 있습니다.</p>
               </div>
 
-              <div class="form-group">
-                <label class="form-label required">휴직 사유</label>
-                <textarea v-model="employee.outReason" class="form-input" placeholder="휴직 사유를 입력하세요" />
-              </div>
-            </template>
-
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-calendar-start-outline"></i>
-                고용승계일
-              </label>
-              <input
-                  type="date"
-                  v-model="employee.transferDate"
-                  class="form-input"
-                  max="9999-12-31"
-              />
             </div>
-          </div>
+          </section>
 
-          <div class="section-main-header">
-            <i class="mdi mdi-file-document-outline"></i>
-            <h2>근로 계약서 관리</h2>
-          </div>
-          <div class="form-grid mb-4">
-            <div class="form-group full-width">
-              <button type="button" @click="showModal = true" class="btn-contract">
-                <i class="mdi mdi-file-document-edit-outline"></i>
-                근로계약서 작성 (필수)
-              </button>
+          <!-- 카드 4: 급여 및 기타 -->
+          <section id="sec-payroll" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-cash-multiple text-primary"></i>
+              <h2>급여 및 기타 정보</h2>
             </div>
-          </div>
+            <div class="card-body">
+              <div class="form-grid">
 
-          <div class="section-main-header">
-            <i class="mdi mdi-cash-multiple"></i>
-            <h2>급여 및 기타 정보</h2>
-          </div>
+                <div class="form-group">
+                  <label class="form-label">은행</label>
+                  <select v-model="employee.bankName" class="form-select">
+                    <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">{{ bank.itemNm }}</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">계좌번호</label>
+                  <input type="text" v-model="employee.accountNumber" class="form-input" placeholder="숫자만 입력" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">예금주</label>
+                  <input type="text" v-model="employee.accountNm" class="form-input" placeholder="예금주 성명" />
+                </div>
 
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-bank-outline"></i>
-                은행
-              </label>
-              <select v-model="employee.bankName" class="form-select">
-                <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">
-                  {{ bank.itemNm }}
-                </option>
-              </select>
-            </div>
+                <div class="form-group">
+                  <label class="form-label required">4대보험 가입</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.four_ins" required /><span>가입</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.four_ins" required /><span>미가입</span></label>
+                  </div>
+                </div>
 
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-credit-card-outline"></i>
-                계좌번호
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.accountNumber"
-                  class="form-input"
-                  placeholder="숫자만 입력"
-              />
-            </div>
+                <div class="form-group">
+                  <label class="form-label required">퇴직연금 가입</label>
+                  <div class="radio-group">
+                    <label class="radio-label"><input type="radio" value="Y" v-model="employee.retire_pension" required /><span>가입</span></label>
+                    <label class="radio-label"><input type="radio" value="N" v-model="employee.retire_pension" required /><span>미가입</span></label>
+                  </div>
+                </div>
 
-            <div class="form-group">
-              <label class="form-label">
-                <i class="mdi mdi-account-cash"></i>
-                예금주
-              </label>
-              <input
-                  type="text"
-                  v-model="employee.accountNm"
-                  class="form-input"
-                  placeholder="숫자만 입력"
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-shield-check-outline"></i>
-                4대보험 가입
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.four_ins" required />
-                  <span class="radio-text">가입</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.four_ins" required />
-                  <span class="radio-text">미가입</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label required">
-                <i class="mdi mdi-piggy-bank-outline"></i>
-                퇴직연금 가입
-              </label>
-              <div class="radio-group">
-                <label class="radio-label">
-                  <input type="radio" value="Y" v-model="employee.retire_pension" required />
-                  <span class="radio-text">가입</span>
-                </label>
-                <label class="radio-label">
-                  <input type="radio" value="N" v-model="employee.retire_pension" required />
-                  <span class="radio-text">미가입</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group full-width" style="margin-top: 16px;">
-              <div class="memo-stacked-panel">
-
-                <div class="memo-section">
-                  <div class="memo-section-header">
-                    <div class="header-title-group">
-                      <div class="section-icon-box bg-primary-soft">
-                        <i class="mdi mdi-account-details-outline text-primary"></i>
+                <!-- 메모 영역 (기존의 Stacked Panel 스타일 호환) -->
+                <div class="form-group full-width mt-2">
+                  <div class="memo-stacked-panel">
+                    <div class="memo-section">
+                      <div class="memo-section-header">
+                        <div class="header-title-group">
+                          <div class="section-icon-box bg-primary-soft">
+                            <i class="mdi mdi-account-details-outline text-primary"></i>
+                          </div>
+                          <div class="section-title-texts">
+                            <h3>직원 기본 특이사항</h3>
+                            <p>직원 관리, 업무 및 산재 관련 이슈 메모</p>
+                          </div>
+                        </div>
                       </div>
-                      <div class="section-title-texts">
-                        <h3>직원 기본 특이사항</h3>
-                        <p>직원 관리, 업무 및 산재 관련 이슈</p>
+                      <div class="clean-editor-card primary-focus">
+                        <textarea v-model="employee.bigo" class="clean-textarea" rows="2" placeholder="내용을 입력하세요"></textarea>
+                      </div>
+                    </div>
+
+                    <div class="mt-4"></div>
+
+                    <div class="memo-section">
+                      <div class="memo-section-header">
+                        <div class="header-title-group">
+                          <div class="section-icon-box bg-warning-soft">
+                            <i class="mdi mdi-calculator-variant-outline text-warning"></i>
+                          </div>
+                          <div class="section-title-texts">
+                            <h3>급여 관련 특이사항</h3>
+                            <p>수당 지급, 공제 예외 등 급여 처리 관련 메모</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="clean-editor-card warning-focus">
+                        <textarea v-model="employee.payrollBigo" class="clean-textarea" rows="2" placeholder="내용을 입력하세요"></textarea>
                       </div>
                     </div>
                   </div>
-
-                  <div class="clean-editor-card primary-focus">
-                    <textarea
-                        v-model="employee.bigo"
-                        class="clean-textarea"
-                        rows="3"
-                        placeholder="직원 기본 특이사항을 입력하세요"
-                    ></textarea>
-                  </div>
-                </div>
-
-                <div class="mt-4" style="margin-top: 24px;"></div>
-
-                <div class="memo-section">
-                  <div class="memo-section-header">
-                    <div class="header-title-group">
-                      <div class="section-icon-box bg-warning-soft">
-                        <i class="mdi mdi-calculator-variant-outline text-warning"></i>
-                      </div>
-                      <div class="section-title-texts">
-                        <h3>급여 관련 특이사항</h3>
-                        <p>수당 지급, 공제 예외 등 급여 처리 관련 이슈</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="clean-editor-card warning-focus">
-                    <textarea
-                        v-model="employee.payrollBigo"
-                        class="clean-textarea"
-                        rows="3"
-                        placeholder="급여 및 정산 관련 특이사항을 입력하세요"
-                    ></textarea>
-                  </div>
                 </div>
 
               </div>
             </div>
-          </div>
+          </section>
 
-          <div class="form-actions">
-            <button type="submit" class="btn-save">
-              <i class="mdi mdi-check"></i>
-              등록 완료
-            </button>
-          </div>
-        </div>
+          <div style="height: 100px;"></div>
+        </form>
+      </main>
 
-      </div>
-    </form>
+    </div>
 
+    <!-- 근로계약서 모달 (기존 컴포넌트 유지) -->
     <ContractModal
         :is-open="showModal"
         :employee-data="{
@@ -1324,321 +916,184 @@ onActivated(() => {
   </div>
 </template>
 
+<style>
+/* Vue/Nuxt 고질적인 Sticky 방해 요소 강제 해제 */
+body, #__nuxt, #__layout, .v-application { overflow: visible !important; }
+</style>
+
 <style scoped>
-.page-header {
+/* =========================================
+   공통 CSS 변수 & 레이아웃 (현장등록과 동일)
+========================================= */
+:root {
+  --primary: #3b82f6; --primary-hover: #2563eb; --primary-soft: #eff6ff;
+  --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+  --text-main: #1e293b; --text-sub: #475569; --text-muted: #94a3b8;
+  --border-color: #e2e8f0; --border-focus: #cbd5e1;
+  --bg-canvas: #f1f5f9; --bg-surface: #ffffff; --bg-hover: #f8fafc;
+}
+
+.member-register-page {
+  background-color: var(--bg-canvas, #f1f5f9);
+  margin: -24px;
+  height: calc(100vh - 60px);
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sticky-header {
+  flex-shrink: 0; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(8px);
+  padding: 16px 32px; border-bottom: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); display: flex; justify-content: space-between;
+  align-items: center; z-index: 50; margin: 0;
+}
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.page-title { font-size: 20px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; display:flex; align-items:center; gap:8px; }
+.page-subtitle { font-size: 13px; color: var(--text-sub, #475569); margin: 4px 0 0 0; }
+
+.btn-back { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; }
+.btn-back:hover { background: var(--bg-hover, #f8fafc); }
+.btn-back i { font-size: 20px; color: var(--text-sub); }
+
+.btn-cancel { padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; font-weight: 600; cursor: pointer; color: var(--text-sub); transition: 0.2s; }
+.btn-cancel:hover { background: var(--bg-hover); color: var(--text-main); }
+.btn-submit { padding: 10px 20px; border-radius: 8px; border: none; background: var(--primary, #3b82f6); color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2); transition: 0.2s; display:flex; align-items:center; gap:6px; }
+.btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3); }
+
+/* 퀵 네비게이션 & 메인 레이아웃 */
+.register-layout { display: flex; flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding-top: 24px; overflow: hidden; }
+
+.quick-nav-sidebar { width: 220px; flex-shrink: 0; height: 100%; overflow-y: auto; padding: 0 16px; }
+.nav-title { font-size: 12px; font-weight: 800; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding-left: 12px; }
+.nav-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--text-sub, #475569); cursor: pointer; transition: all 0.2s; background: transparent; }
+.nav-item i { font-size: 18px; opacity: 0.6; }
+.nav-item:hover { background: rgba(0,0,0,0.04); color: var(--text-main, #1e293b); }
+.nav-item.active { background: #fff; color: var(--primary, #3b82f6); box-shadow: 0 2px 8px rgba(0,0,0,0.05); font-weight: 700; }
+.nav-item.active i { opacity: 1; }
+
+.content-area { flex: 1; height: 100%; overflow-y: auto; position: relative; padding: 0 24px 80px 24px; scroll-behavior: smooth;}
+
+/* =========================================
+   카드 UI 공통
+========================================= */
+/* 1. category-card에서 overflow: hidden 속성을 제거(또는 visible로 변경)합니다. */
+.category-card {
+  background: #ffffff;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  overflow: visible; /* hidden에서 visible로 변경 */
   margin-bottom: 24px;
 }
 
-.header-left {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.btn-back { width: 42px; height: 42px; border-radius: 10px; background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; padding: 0; }
-.btn-back:hover { background: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
-.btn-back i { font-size: 20px; }
-.btn-cancel { display: flex; align-items: center; gap: 6px; padding: 10px 18px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-cancel:hover { background: var(--bg-hover); color: var(--text-main); border-color: var(--border-focus); }
-
-/* =========================================
-   폼 컨테이너 및 섹션
-========================================= */
-.form-container {
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-.form-section {
-  padding: 32px;
-}
-.section-divider {
-  border: 0;
-  height: 1px;
-  background: var(--border-color);
-  margin: 0;
-}
-
-.mb-4 { margin-bottom: 32px; }
-
-/*
-.step-header { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 1px dashed var(--border-color); }
-.step-header i { font-size: 24px; color: var(--primary); }
-.step-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
- */
-.section-main-header { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid var(--border-color); }
-.section-main-header i { font-size: 24px; color: var(--primary); }
-.section-main-header h2 { font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; }
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
-  margin-bottom: 32px;
-  max-width: 520px;
-}
-.form-group { display: flex; flex-direction: column; gap: 8px; }
-.form-group.full-width { grid-column: 1 / -1; }
-.form-label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-sub); }
-.form-label i { font-size: 16px; color: var(--primary); }
-.form-label.required::after { content: '*'; color: var(--danger); margin-left: 2px; }
-
-.form-input, .form-select, .form-textarea { padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; color: var(--text-main); transition: all 0.2s; background: var(--bg-surface); box-sizing: border-box; }
-.form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
-.form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
-.form-textarea { resize: vertical; min-height: 80px; }
-
-/* 주민번호 그룹 */
-.ssn-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%; /* 부모 너비를 넘지 않도록 꽉 채움 */
-}
-.ssn-input {
-  flex: 1;
-  text-align: center;
-  letter-spacing: 2px;
-  min-width: 0; /* 🌟 핵심: input의 기본 너비 제한을 풀어주어 영역에 맞게 줄어들 수 있도록 함 */
-}
-.ssn-separator {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-/* 라디오 그룹 */
-.radio-group { display: flex; gap: 12px; padding: 4px 0; }
-.radio-label {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
-  padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color);
-  transition: all 0.2s; background: var(--bg-canvas); font-size: 13px; color: var(--text-sub);
-}
-.radio-label:hover { border-color: var(--border-focus); color: var(--text-main); }
-
-.radio-label input[type="radio"] { display: none; }
-.radio-label:has(input:checked) {
-  border-color: var(--primary); background-color: var(--primary-soft);
-  color: var(--primary); font-weight: 600;
-}
-
-/* 근로계약서 버튼 */
-.btn-contract {
-  width: 100%; padding: 14px; background-color: var(--header-bg);
-  border: none; border-radius: 8px; color: var(--text-inverse);
-  font-size: 14px; font-weight: 600; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  transition: all 0.2s; box-shadow: var(--shadow-sm);
-}
-.btn-contract:hover { background-color: var(--bg-hover); color: var(--text-main); border: 1px solid var(--border-focus); }
-.btn-contract i { font-size: 18px; }
-
-/* 폼 액션 버튼 (제출) */
-.form-actions {
-  display: flex; justify-content: flex-end; gap: 10px;
-  padding-top: 24px; border-top: 1px solid var(--border-color);
-}
-.btn-save {
-  display: flex; align-items: center; gap: 6px; padding: 12px 24px;
-  border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s;
-  background-color: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-sm);
-}
-.btn-save:hover { background-color: var(--primary-hover); transform: translateY(-1px); }
-
-/* 반응형 */
-@media (max-width: 768px) {
-  .form-section { padding: 16px; }
-  .form-grid { grid-template-columns: 1fr; }
-  .ssn-group { flex-direction: row; display: grid; }
-  .btn-save { width: 100%; justify-content: center; }
-}
-
-/* =============================================
-   특이사항 탭 - Stacked & Clean Design
-============================================= */
-.memo-stacked-panel {
-  width: 100%;
-  padding: 10px 0 20px;
-}
-
-.memo-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* 섹션 헤더 */
-.memo-section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding-bottom: 12px;
-}
-
-.header-title-group {
+/* 2. overflow: hidden을 뺐을 때 상단 배경색이 모서리 둥글기를 덮어버리지 않도록 header에 반경을 추가합니다. */
+.card-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  background: #fff;
   display: flex;
   align-items: center;
   gap: 12px;
+  border-top-left-radius: 12px; /* 추가 */
+  border-top-right-radius: 12px; /* 추가 */
 }
+.card-header i { font-size: 24px; }
+.card-header h2 { font-size: 18px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; }
+.card-body { padding: 24px; }
 
-.section-icon-box {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* =========================================
+   공통 폼 요소
+========================================= */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.full-width { grid-column: 1 / -1; }
+.form-label { font-size: 13px; font-weight: 700; color: var(--text-sub, #475569); }
+.form-label.required::after { content: '*'; color: var(--danger, #ef4444); margin-left: 4px; }
+.form-input, .form-select, .form-textarea { padding: 10px 12px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; font-size: 13px; background: #fff; width: 100%; box-sizing: border-box; transition: 0.2s; color: var(--text-main); }
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); outline: none; }
+.bg-readonly { background-color: var(--bg-hover); color: var(--text-sub); }
+
+.radio-group { display: flex; gap: 8px; }
+.radio-label { flex: 1; text-align: center; padding: 8px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; cursor: pointer; font-size: 13px; background: #fff; transition: 0.2s; color: var(--text-sub);}
+.radio-label input { display: none; }
+.radio-label:has(input:checked) { border-color: var(--primary, #3b82f6); background: var(--primary-soft, #eff6ff); color: var(--primary, #3b82f6); font-weight: 700; }
+
+.ssn-group { display: flex; align-items: center; gap: 10px; width: 100%; }
+.ssn-input { flex: 1; text-align: center; letter-spacing: 2px; min-width: 0; }
+.ssn-separator { font-size: 18px; font-weight: 700; color: var(--text-muted); }
+
+/* 기간/기타 특이사항 (배열 추가) */
+.custom-etc-row { display: flex; gap: 12px; align-items: center; }
+.etc-radio { min-width: 140px; margin: 0; }
+.bg-light-section { background: var(--bg-hover); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); }
+.flex-between { display: flex; justify-content: space-between; }
+.align-center { align-items: center; }
+.mb-0 { margin-bottom: 0; }
+.mb-3 { margin-bottom: 12px; }
+.mt-2 { margin-top: 8px; }
+.mt-4 { margin-top: 24px; }
+.period-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+.separator { color: var(--text-sub); font-weight: bold; }
+.btn-mini { padding: 4px 10px; background: #fff; border: 1px dashed var(--text-sub); border-radius: 4px; font-size: 12px; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 4px; }
+.btn-mini:hover { border-color: var(--primary); color: var(--primary); }
+.btn-remove-icon { background: none; border: none; color: var(--danger); font-size: 18px; cursor: pointer; padding: 4px; }
+
+/* 근로계약서 버튼 */
+.contract-write-section { background: var(--bg-canvas); padding: 20px; border-radius: 8px; border: 1px dashed var(--border-focus); }
+.btn-contract { width: 100%; padding: 14px; background-color: #1e293b; border: none; border-radius: 8px; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.btn-contract:hover { background-color: #0f172a; transform: translateY(-1px); }
+.btn-contract i { font-size: 18px; }
+.helper-text-sm { font-size: 12px; color: var(--text-sub); }
+.text-center { text-align: center; }
+
+/* 특이사항 메모 UI (Stacked Panel 호환) */
+.memo-stacked-panel { width: 100%; }
+.memo-section { display: flex; flex-direction: column; gap: 16px; }
+.memo-section-header { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 8px; }
+.header-title-group { display: flex; align-items: center; gap: 12px; }
+.section-icon-box { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
 .section-icon-box i { font-size: 22px; }
-
 .bg-primary-soft { background: var(--primary-soft); }
 .bg-warning-soft { background: rgba(245, 158, 11, 0.1); }
 .text-primary { color: var(--primary); }
 .text-warning { color: var(--warning); }
+.section-title-texts h3 { font-size: 15px; font-weight: 800; color: var(--text-main); margin: 0 0 2px 0; }
+.section-title-texts p { font-size: 12px; color: var(--text-sub); margin: 0; }
+.clean-editor-card { background: #fff; border: 1px solid var(--border-focus); border-radius: 8px; overflow: hidden; transition: 0.2s; }
+.clean-editor-card:focus-within.primary-focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.clean-editor-card:focus-within.warning-focus { border-color: var(--warning); box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15); }
+.clean-textarea { width: 100%; padding: 14px; border: none; font-size: 13px; color: var(--text-main); resize: vertical; outline: none; }
 
-.section-title-texts {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.section-title-texts h3 {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--text-main);
-  margin: 0;
-}
-.section-title-texts p {
-  font-size: 12px;
-  color: var(--text-sub);
-  margin: 0;
-}
+/* 커스텀 트리 메뉴 (직위) */
+.position-dropdown-container { position: relative; }
+.dropdown-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99; cursor: default; }
+.custom-select-btn { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--border-focus); border-radius: 6px; background: #fff; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.2s; height: 41px; box-sizing: border-box; }
+.custom-select-btn:hover { border-color: var(--primary); }
+.position-dropdown-container:focus-within .custom-select-btn { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.custom-dropdown-menu { position: absolute; top: calc(100% + 4px); left: 0; width: 100%; background: #fff; border: 1px solid var(--border-focus); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 6px 0; margin: 0; list-style: none; z-index: 100; max-height: 250px; overflow-y: auto; }
+.menu-label { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.15s; }
+.menu-label:hover { background: var(--bg-hover); color: var(--primary); font-weight: 700; }
+.menu-text { flex: 1; }
+.toggle-icon-wrap { padding: 4px 8px; margin-right: -8px; cursor: pointer; border-radius: 4px; }
+.toggle-icon-wrap:hover { background: var(--border-color); }
+.custom-submenu { width: 100%; background: var(--bg-canvas); padding: 4px 0; margin: 0; list-style: none; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+.submenu-item { padding: 8px 16px 8px 36px; font-size: 12px; color: var(--text-sub); cursor: pointer; transition: 0.15s; }
+.submenu-item:hover { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 
-/* 작성 폼 (에디터 스타일) */
-.clean-editor-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  overflow: hidden;
-  transition: all 0.2s;
+/* 모바일 반응형 */
+@media (max-width: 1024px) {
+  .register-layout { flex-direction: column; }
+  .quick-nav-sidebar { width: 100%; padding-top: 10px; }
+  .nav-list { flex-direction: row; overflow-x: auto; padding-bottom: 12px; }
+  .nav-item { white-space: nowrap; border: 1px solid var(--border-color); background: #fff; }
 }
-.clean-editor-card:focus-within.primary-focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.clean-editor-card:focus-within.warning-focus {
-  border-color: var(--warning);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
-}
-
-.clean-textarea {
-  width: 100%;
-  padding: 16px 20px;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  color: var(--text-main);
-  line-height: 1.6;
-  resize: vertical;
-  box-sizing: border-box;
-}
-.clean-textarea:focus { outline: none; }
-/* ==========================================
-   커스텀 트리 드롭다운 메뉴 CSS (아코디언 방식)
-========================================== */
-.position-dropdown-container {
-  position: relative;
-}
-
-.dropdown-overlay {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 99; cursor: default;
-}
-
-.custom-select-btn {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px;
-  background: var(--bg-surface); font-size: 13px; color: var(--text-main);
-  cursor: pointer; transition: all 0.2s; height: 42px; box-sizing: border-box;
-}
-.custom-select-btn:hover { border-color: var(--border-focus); }
-
-/* 활성화 시 포커스 링 효과 */
-.position-dropdown-container:focus-within .custom-select-btn {
-  border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-.custom-dropdown-menu {
-  position: absolute; top: calc(100% + 4px); left: 0;
-  width: 100%; min-width: 180px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  padding: 6px 0; margin: 0; list-style: none;
-  z-index: 100; max-height: 300px; overflow-y: auto; /* 세로 스크롤 유지 */
-}
-
-/* 상위 메뉴 아이템 */
-.menu-label {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 16px; font-size: 13px; color: var(--text-main);
-  cursor: pointer; transition: background 0.15s;
-}
-.menu-label:hover {
-  background: var(--bg-hover); color: var(--primary); font-weight: 600;
-}
-
-/* 아래로 펼쳐지는 서브메뉴 스타일 */
-.custom-submenu {
-  position: static;
-  width: 100%;
-  background: var(--bg-canvas);
-  padding: 4px 0; margin: 0; list-style: none;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-}
-
-/* 1. 서브메뉴 스타일 (display: none; 삭제됨) */
-.custom-submenu {
-  position: static;
-  width: 100%;
-  background: var(--bg-canvas);
-  padding: 4px 0; margin: 0; list-style: none;
-  border-top: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-}
-
-/* 2. 신규 추가 클래스 (클릭 영역 및 아이콘 래퍼) */
-.menu-text {
-  flex: 1;
-  display: flex;
-  align-items: center;
-}
-
-.toggle-icon-wrap {
-  padding: 4px 8px;
-  margin-right: -8px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background 0.15s;
-}
-
-.toggle-icon-wrap:hover {
-  background: var(--border-color);
-}
-
-/* 하위 메뉴 아이템 */
-.submenu-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 16px 8px 36px; /* 좌측 여백(36px) 들여쓰기 */
-  font-size: 12px; color: var(--text-sub);
-  cursor: pointer; transition: background 0.15s;
-}
-.submenu-item:hover {
-  background: var(--primary-soft); color: var(--primary); font-weight: 700;
+@media (max-width: 768px) {
+  .sticky-header { margin: -16px -16px 16px -16px; padding: 12px 16px; }
+  .page-title { font-size: 18px; }
+  .page-subtitle { display: none; }
+  .ssn-group { flex-direction: row; display: grid; }
 }
 </style>
