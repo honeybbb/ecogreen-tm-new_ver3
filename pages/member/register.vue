@@ -54,7 +54,6 @@ const scrollToSection = (id) => {
 
 // === 1. 초기 상태를 반환하는 함수 ===
 const getInitialEmployee = () => ({
-  member_type: 'SITE',
   type: '',
   name: '',
   billingName: '', //정산서용 이름
@@ -141,8 +140,8 @@ watch(() => employee.value.status, (newStatus) => {
 });
 
 // 본사로 변경 시 현장 선택값 초기화
-watch(() => employee.value.member_type, (newVal) => {
-  if (newVal === 'HQ') {
+watch(() => employee.value.type, (newVal) => {
+  if (!['01001001', '01001002'].includes(newVal)) {
     employee.value.site = '';
   }
 });
@@ -212,7 +211,10 @@ const handleContractSave = (savedData) => {
 
 // 4. 폼 제출 핸들러
 const handleSubmit = async () => {
-  if (employee.value.member_type === 'SITE' && !employee.value.site) {
+  if (
+      ['01001001', '01001002'].includes(employee.value.type) &&
+      !employee.value.site
+  ) {
     window.customAlert('근무 현장을 선택해주세요.','error');
     scrollToSection('sec-work');
     return;
@@ -498,27 +500,22 @@ onActivated(() => {
               <div class="form-grid">
 
                 <div class="form-group full-width">
-                  <label class="form-label required">소속 구분</label>
+                  <label class="form-label required">구분</label>
                   <div class="radio-group">
-                    <label class="radio-label">
-                      <input type="radio" value="SITE" v-model="employee.member_type" required />
-                      <span>현장 소속</span>
-                    </label>
-                    <label class="radio-label">
-                      <input type="radio" value="HQ" v-model="employee.member_type" required />
-                      <span>본사 소속</span>
+                    <label
+                        v-for="type in typeOptions"
+                        :key="type.itemCd"
+                        class="radio-label"
+                    >
+                      <input
+                          type="radio"
+                          :value="type.itemCd"
+                          v-model="employee.type"
+                          required
+                      />
+                      <span>{{ type.itemNm }}</span>
                     </label>
                   </div>
-                </div>
-
-                <div class="form-group">
-                  <label class="form-label required">구분</label>
-                  <select v-model="employee.type" required class="form-select">
-                    <option value="">선택하세요</option>
-                    <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">
-                      {{ type.itemNm }}
-                    </option>
-                  </select>
                 </div>
 
                 <div class="form-group">
@@ -699,10 +696,10 @@ onActivated(() => {
               <div class="form-grid">
 
                 <div class="form-group">
-                  <label class="form-label" :class="{ required: employee.member_type === 'SITE' }">근무 현장</label>
+                  <label class="form-label" :class="{ required: ['01001001', '01001002'].includes(employee.type) }">근무 현장</label>
                   <!-- 현장 소속일 때만 콤보박스 표시 -->
                   <SiteSelect
-                      v-if="employee.member_type === 'SITE'"
+                      v-if="['01001001', '01001002'].includes(employee.type)"
                       v-model="employee.site"
                       required
                       :allow-empty="false"
@@ -713,7 +710,7 @@ onActivated(() => {
                       v-else
                       type="text"
                       class="form-input bg-readonly"
-                      value="본사"
+                      :value="typeOptions.find(type => type.itemCd === employee.type)?.itemNm || ''"
                       disabled
                   />
                 </div>

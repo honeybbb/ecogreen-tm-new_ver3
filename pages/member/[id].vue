@@ -30,7 +30,6 @@ const isLoading = ref(false);
 
 // 직원 정보
 const employee = ref({
-  member_type: 'SITE',
   id: '',
   name: '',
   billingName: '',//정산서용이름
@@ -342,7 +341,6 @@ const loadEmployeeData = async () => {
 
     // 3. 직원 정보 세팅
     employee.value = {
-      member_type: rawData.hq == 'Y' ? 'HQ':'SITE',
       ...rawData,
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
       contract,
@@ -823,20 +821,32 @@ onMounted(async () => {
               <div class="section-header">
                 <i class="mdi mdi-account-outline"></i><h3>개인정보</h3>
               </div>
-              <div class="info-grid">
-                <div class="info-item " style="word-break:keep-all;">
-                  <label>소속 구분</label>
-                  <div class="radio-group ">
-                    <label class="radio-label">
-                      <input type="radio" v-model="employee.member_type" value="SITE" />
-                      <span>현장 소속</span>
-                    </label>
-                    <label class="radio-label">
-                      <input type="radio" v-model="employee.member_type" value="HQ" />
-                      <span>본사 소속</span>
+              <div class="info-grid ">
+                <div class="info-item">
+                  <label class="form-label required">구분</label>
+                  <div class="radio-group">
+                    <label
+                        v-for="type in typeOptions"
+                        :key="type.itemCd"
+                        class="radio-label"
+                    >
+                      <input
+                          type="radio"
+                          :value="type.itemCd"
+                          v-model="employee.typeCd"
+                          required
+                      />
+                      <span>{{ type.itemNm }}</span>
                     </label>
                   </div>
                 </div>
+
+                <!--div class="info-item">
+                  <label >구분</label>
+                  <select v-model="employee.typeCd" class="info-select">
+                    <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">{{ type.itemNm }}</option>
+                  </select>
+                </div-->
 
                 <div class="info-item">
                   <label>이름</label>
@@ -911,22 +921,25 @@ onMounted(async () => {
                   <label>사번</label>
                   <span class="info-value">{{ employee.id }}</span>
                 </div>
-                <div class="info-item">
-                  <label>구분</label>
-                  <select v-model="employee.typeCd" class="info-select">
-                    <option v-for="type in typeOptions" :key="type.itemCd" :value="type.itemCd">{{ type.itemNm }}</option>
-                  </select>
-                </div>
+
                 <div class="info-item">
                   <label>근무 현장</label>
                   <!--select v-if="isEditing" v-model="employee.sIdx" class="info-select">
                     <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
                   </select-->
                   <SiteSelect
+                      v-if="['01001001', '01001002'].includes(employee.typeCd)"
                       v-model="employee.sIdx"
                       :allow-empty="false"
                       width="100%"
                       style="background: var(--bg-canvas) !important; border-radius: 8px !important;"
+                  />
+                  <input
+                      v-else
+                      type="text"
+                      class="info-input bg-readonly"
+                      :value="typeOptions.find(type => type.itemCd === employee.typeCd)?.itemNm || ''"
+                      disabled
                   />
                 </div>
                 <!--div class="info-item">
