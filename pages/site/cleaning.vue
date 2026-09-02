@@ -288,15 +288,13 @@ const deleteTeam = (teamIdx) => {
   }
 };
 
-
-
 const managers = ref([
-  { idx: 1, name: '조용우' },
-  { idx: 2, name: '허주범' },
-  { idx: 3, name: '유재준' },
-  { idx: 4, name: '강태웅' },
-  { idx: 5, name: '박승문' },
-  { idx: 6, name: '황재춘' },
+  { idx: 31, name: '조용우' },
+  { idx: 32, name: '허주범' },
+  { idx: 30, name: '유재준' },
+  { idx: 28, name: '강태웅' },
+  { idx: 29, name: '박승문' },
+  { idx: 33, name: '황재춘' },
 ]);
 
 const getTeamName = (teamIdx) => teams.value.find(t => t.idx === teamIdx)?.teamName || '-';
