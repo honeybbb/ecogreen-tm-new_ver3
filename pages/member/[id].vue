@@ -30,6 +30,7 @@ const isLoading = ref(false);
 
 // 직원 정보
 const employee = ref({
+  member_type: 'SITE',
   id: '',
   name: '',
   billingName: '',//정산서용이름
@@ -84,6 +85,8 @@ const wageInputs = ref({});
 const contractDataTemp = ref(null);
 
 const periodsData = ref([]);
+const currentHistoryIdx = ref(null); //근무이력 PK
+
 const addPeriod = () => {
   periodsData.value.push({ startDate: '', endDate: '', outReason: '' });
 };
@@ -315,10 +318,17 @@ const loadEmployeeData = async () => {
     periodsData.value = parsedHistory
         .filter(h => rawData.status == '2' || rawData.status == '3')
         .map(h => ({
+          idx: h.idx, //기존 이력 PK
           startDate: h.startDate,
           endDate: h.endDate,
           outReason: h.outReason
         }));
+
+    //단일 상태(재직, 퇴사, 휴직)일 경우 가장 최근 이력의 PK 기억해두기
+    const currentHist = parsedHistory.filter(h => h.status == rawData.status).pop();
+    if (currentHist) {
+      currentHistoryIdx.value = currentHist.idx;
+    }
 
     // 휴직(4)인 경우, 가장 최근의 휴직 기록 1건을 가져와서 폼에 바인딩
     if (rawData.status == '4') {
@@ -332,6 +342,7 @@ const loadEmployeeData = async () => {
 
     // 3. 직원 정보 세팅
     employee.value = {
+      member_type: rawData.hq == 'Y' ? 'HQ':'SITE',
       ...rawData,
       siteName: rawData.sites ? JSON.parse(rawData.sites)[0]?.name : '',
       contract,
@@ -618,7 +629,8 @@ const saveEmployee = async () => {
       bigo: employee.value.bigo,
       payrollBigo: employee.value.payrollBigo,
       adminId: authStore.user?.managerId || employee.value.id, // 세션/스토어의 로그인 아이디
-      periodsData: periodsData.value,
+      historyIdx: currentHistoryIdx.value, // 단일 이력 PK 추가해서 전송
+      periodsData: periodsData.value,      // 다중 이력 (이 안에 idx 포함됨)
 
       contractData: contractDataTemp.value || {
         wageInputs: employee.value.contract?.contractData || {},
@@ -812,6 +824,20 @@ onMounted(async () => {
                 <i class="mdi mdi-account-outline"></i><h3>개인정보</h3>
               </div>
               <div class="info-grid">
+                <div class="info-item " style="word-break:keep-all;">
+                  <label>소속 구분</label>
+                  <div class="radio-group ">
+                    <label class="radio-label">
+                      <input type="radio" v-model="employee.member_type" value="SITE" />
+                      <span>현장 소속</span>
+                    </label>
+                    <label class="radio-label">
+                      <input type="radio" v-model="employee.member_type" value="HQ" />
+                      <span>본사 소속</span>
+                    </label>
+                  </div>
+                </div>
+
                 <div class="info-item">
                   <label>이름</label>
                   <input type="text" v-model="employee.name" class="info-input" />
