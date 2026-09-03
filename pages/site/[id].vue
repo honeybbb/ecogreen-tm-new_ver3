@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
+import EquipmentDetailModal from '~/components/modal/EquipmentDetailModal';
+import DataTable from '~/components/common/DataTable';
 
 // =============================================
 // Router & Route
@@ -152,6 +154,32 @@ const handleStaffRemove = (id) => {
 };
 const goToDetail = (id) => window.open(router.resolve(`/member/${id}`).href, "_blank", "width=1200,height=800");
 
+
+const staffColumns = [
+  { key: 'id', label: '사번', width: '60px' },
+  { key: 'name', label: '이름', width: '80px' },
+  { key: 'position', label: '직책', width: '80px' },
+  { key: 'gender', label: '성별', width: '60px', align: 'center' },
+  { key: 'birthDt', label: '나이', width: '60px', align: 'center' },
+  { key: 'foreigner', label: '내/외국인', width: '80px', align: 'center' },
+  { key: 'disability', label: '장애여부', width: '80px', align: 'center' },
+  { key: 'inDate', label: '입사일', width: '100px', align: 'center' },
+  { key: 'outDate', label: '퇴사일', width: '100px', align: 'center' },
+  { key: 'outReason', label: '퇴직사유', width: '100px' },
+  { key: 'four_ins', label: '4대보험', width: '60px', align: 'center' },
+  { key: 'retire_pension', label: '퇴직연금', width: '60px', align: 'center' },
+  { key: 'phone', label: '연락처', width: '120px' },
+  { key: 'status', label: '상태', width: '80px', align: 'center' },
+  { key: 'actions', label: '관리', align: 'center', width: '80px' }
+];
+
+const ageLimits = ref({ pension: 60, employment: 65 });
+
+const getDisabilityStyle = (grade) => {
+  const opt = disabledOptions.value?.find(o => o.itemNm == grade);
+  return { backgroundColor: opt?.option || 'var(--bg-hover)', color: 'var(--bg-surface)', border: 'none' };
+};
+
 // =============================================
 // 장비 관리
 // =============================================
@@ -160,7 +188,7 @@ const isEquipLoaded    = ref(false);
 const isEquipModalOpen = ref(false);
 const editingEquip     = ref(null);
 
-const EQUIP_CATEGORIES = ['청소기계 (탑승/보행)', '일반 청소용구', '경비/통신장비', '안전/제설장비', '기타'];
+const EQUIP_CATEGORIES = ['주요 장비', '기타 장비'];
 const EQUIP_STATUS_OPTIONS = [
   { value: 'normal',   label: '정상',   color: 'success' },
   { value: 'check',    label: '수리/점검중', color: 'warning' },
@@ -169,13 +197,27 @@ const EQUIP_STATUS_OPTIONS = [
 
 const equipStatusMap = Object.fromEntries(EQUIP_STATUS_OPTIONS.map(o => [o.value, o]));
 
+const equipColumns = [
+  { key: 'name', label: '장비명 (모델명)' },
+  { key: 'quantity', label: '보유 수량', align: 'center', width: '100px' },
+  { key: 'status', label: '상태', align: 'center', width: '120px' },
+  { key: 'purchaseDate', label: '도입(구매)일', width: '120px' },
+  { key: 'nextCheckDate', label: '다음 점검일', width: '120px' },
+  { key: 'note', label: '특이사항' },
+  { key: 'actions', label: '관리', align: 'center', width: '100px' }
+];
+
+const equipRowClass = (item) => {
+  if (item.status === 'fault') return 'row-fault';
+  if (item.status === 'check') return 'row-check';
+  return '';
+};
+
+
 const getEquipIcon = (category) => {
   const icons = {
-    '청소기계 (탑승/보행)': 'mdi-car-wash',
-    '일반 청소용구': 'mdi-vacuum',
-    '경비/통신장비': 'mdi-radio-handheld',
-    '안전/제설장비': 'mdi-hard-hat',
-    '기타': 'mdi-toolbox-outline'
+    '주요 장비': 'mdi-car-wash',
+    '기타 장비': 'mdi-toolbox-outline'
   };
   return icons[category] || 'mdi-cog-outline';
 };
@@ -197,14 +239,59 @@ const equipStats = computed(() => {
   return { total, totalQuantity, normal, check, fault };
 });
 
+const collapsedEquipCategories = ref(['기타 장비']);
+const toggleEquipCategory = (cat) => {
+  if (collapsedEquipCategories.value.includes(cat)) {
+    collapsedEquipCategories.value = collapsedEquipCategories.value.filter(c => c !== cat);
+  } else {
+    collapsedEquipCategories.value.push(cat);
+  }
+};
+
 const equipByCategory = computed(() => {
   const map = {};
   for (const cat of EQUIP_CATEGORIES) {
-    const items = equipmentList.value.filter(e => e.category === cat);
-    if (items.length) map[cat] = items;
+    map[cat] = [];
+  }
+  for (const item of equipmentList.value) {
+    const cat = EQUIP_CATEGORIES.includes(item.category) ? item.category : '기타 장비';
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(item);
+  }
+  for (const cat in map) {
+    if (map[cat].length === 0) delete map[cat];
   }
   return map;
 });
+
+
+// ========================================================
+// ========================================================
+// 3. 상세 모달 (공통 컴포넌트 사용)
+// ========================================================
+const showDetailModal = ref(false);
+const selectedEq = ref(null);
+
+const openEquipmentDetail = (eq) => {
+  selectedEq.value = eq;
+  showDetailModal.value = true;
+};
+
+const closeDetailModal = () => {
+  showDetailModal.value = false;
+  selectedEq.value = null;
+};
+
+const handleEquipmentUpdate = (payload) => {
+  if (payload.type === 'repair') {
+    if (payload.data.updateStatus) {
+      const eq = equipmentList.value.find(e => e.idx === selectedEq.value?.idx);
+      if (eq) {
+        eq.status = 'check'; // 기안 시 수리/점검중으로 변경
+      }
+    }
+  }
+};
 
 const openEquipModal = (equip = null) => {
   editingEquip.value = equip;
@@ -260,10 +347,13 @@ const fetchEquipmentList = async () => {
     equipmentList.value = res.data.data || [];
   } catch {
     equipmentList.value = [
-      { idx: 1, name: '탑승식 습식 바닥세정기', category: '청소기계 (탑승/보행)', quantity: 1, location: '지하 1층 미화창고', purchaseDate: '2023-05-10', nextCheckDate: '2024-11-10', status: 'normal', note: '배터리 상태 양호' },
-      { idx: 2, name: '건습식 진공청소기 (대형)', category: '일반 청소용구', quantity: 3, location: '각 동 미화휴게실', purchaseDate: '2024-01-15', nextCheckDate: '2024-12-15', status: 'check', note: '1동 청소기 흡입력 저하로 본사 A/S 입고' },
-      { idx: 3, name: '업무용 무전기 (디지털)', category: '경비/통신장비', quantity: 6, location: '방재실 / 초소', purchaseDate: '2022-11-01', nextCheckDate: '2024-05-01', status: 'fault', note: '2대 배터리 수명 다함 (신규 기안 필요)' },
-      { idx: 4, name: '엔진형 제설기', category: '안전/제설장비', quantity: 2, location: '정문 초소 옆 창고', purchaseDate: '2021-10-20', nextCheckDate: '2024-10-01', status: 'normal', note: '동절기 전 엔진오일 교체 요망' },
+      { idx: 1, name: '탑승식 바닥세정기', category: '주요 장비', quantity: 2, location: '지하 1층 미화창고', purchaseDate: '2023-05-10', nextCheckDate: '2024-11-10', status: 'normal', note: '배터리 상태 양호' },
+      { idx: 2, name: '보행식 바닥세정기', category: '주요 장비', quantity: 1, location: '각 동 미화휴게실', purchaseDate: '2024-01-15', nextCheckDate: '2024-12-15', status: 'check', note: 'A/S 입고' },
+      { idx: 3, name: '전기카트 / 전동카트', category: '주요 장비', quantity: 2, location: '방재실 / 초소', purchaseDate: '2022-11-01', nextCheckDate: '2024-05-01', status: 'fault', note: '배터리 교체 요망' },
+      { idx: 4, name: '고압세척기', category: '주요 장비', quantity: 1, location: '정문 초소 옆 창고', purchaseDate: '2021-10-20', nextCheckDate: '2024-10-01', status: 'normal', note: '' },
+      { idx: 5, name: '전동송풍기', category: '기타 장비', quantity: 4, location: '자재창고', purchaseDate: '2022-01-10', nextCheckDate: '2024-08-01', status: 'normal', note: '' },
+      { idx: 6, name: '미화카트', category: '기타 장비', quantity: 19, location: '각 동 미화창고', purchaseDate: '2023-02-15', nextCheckDate: '', status: 'normal', note: '' },
+      { idx: 7, name: '돌돌이 / 신주청소기 / 주차장진공청소기', category: '기타 장비', quantity: 3, location: '지하주차장', purchaseDate: '2023-05-20', nextCheckDate: '', status: 'normal', note: '' },
     ];
   }
   isEquipLoaded.value = true;
@@ -448,34 +538,34 @@ const createDefaultCostBreakdown = (staffList = []) => ({
   dailyWorkHours: makeValuesObj(staffList, 0), //일근로시간
   monthlyWorkHours: makeValuesObj(staffList, 0),  //월근로시간
   directLabor: [
-      /*
-    { label: '기본급',         values: makeValuesObj(staffList) },
-    { label: '야간근로수당',    values: makeValuesObj(staffList) },
-    { label: '직책수당',        values: makeValuesObj(staffList) },
-    { label: '근로자의날수당', values: makeValuesObj(staffList) },
-    { label: '연차적립금',      values: makeValuesObj(staffList) },
-    { label: '퇴직적립금',      values: makeValuesObj(staffList) },
+    /*
+  { label: '기본급',         values: makeValuesObj(staffList) },
+  { label: '야간근로수당',    values: makeValuesObj(staffList) },
+  { label: '직책수당',        values: makeValuesObj(staffList) },
+  { label: '근로자의날수당', values: makeValuesObj(staffList) },
+  { label: '연차적립금',      values: makeValuesObj(staffList) },
+  { label: '퇴직적립금',      values: makeValuesObj(staffList) },
 
-       */
+     */
   ],
   indirectLabor: [
-      /*
-    { label: '건강보험',     values: makeValuesObj(staffList) },
-    { label: '장기요양보험', values: makeValuesObj(staffList) },
-    { label: '국민연금',     values: makeValuesObj(staffList) },
-    { label: '고용보험',     values: makeValuesObj(staffList) },
-    { label: '산재보험',     values: makeValuesObj(staffList) },
+    /*
+  { label: '건강보험',     values: makeValuesObj(staffList) },
+  { label: '장기요양보험', values: makeValuesObj(staffList) },
+  { label: '국민연금',     values: makeValuesObj(staffList) },
+  { label: '고용보험',     values: makeValuesObj(staffList) },
+  { label: '산재보험',     values: makeValuesObj(staffList) },
 
-       */
+     */
   ],
   expenses: [
-      /*
-    { label: '피복비 및 장구비', values: makeValuesObj(staffList) },
-    { label: '교육훈련비',       values: makeValuesObj(staffList) },
-    { label: '소모품비',         values: makeValuesObj(staffList) },
-    { label: '복리후생비',       values: makeValuesObj(staffList) },
+    /*
+  { label: '피복비 및 장구비', values: makeValuesObj(staffList) },
+  { label: '교육훈련비',       values: makeValuesObj(staffList) },
+  { label: '소모품비',         values: makeValuesObj(staffList) },
+  { label: '복리후생비',       values: makeValuesObj(staffList) },
 
-       */
+     */
   ],
   managementFee: makeValuesObj(staffList),
   profit: makeValuesObj(staffList),
@@ -1639,9 +1729,9 @@ onMounted(async () => {
               :class="['tab-button', { active: activeTab === tab.id }]"
               @click="changeTab(tab.id)">
         <i :class="['mdi', tab.icon]"></i><span>{{ tab.name }}</span>
-        <span v-if="tab.id === 'equipment' && equipStats.fault > 0" class="tab-alert-badge">
+        <!--span v-if="tab.id === 'equipment' && equipStats.fault > 0" class="tab-alert-badge">
           {{ equipStats.fault }}
-        </span>
+        </span-->
       </button>
     </div>
 
@@ -1674,7 +1764,7 @@ onMounted(async () => {
                 <select v-model="site.status" class="info-select">
                   <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
                 </select>
-                </div>
+              </div>
               <!--div class="info-item">
                 <label>관리면적</label>
                 <div v-if="isEditing" class="area-input">
@@ -2798,13 +2888,78 @@ onMounted(async () => {
         </div>
 
         <!-- 리스트 형태 테이블 -->
-        <StaffDataTable
-            :members="staffTableRows"
-            :disabled-options="disabledOptions"
-            :columns="['id', 'name', 'position', 'gender', 'birthDt', 'foreigner', 'disability', 'inDate', 'outDate', 'outReason', 'four_ins', 'retire_pension', 'phone', 'status']"
-            @remove="handleStaffRemove"
-            @detail="goToDetail"
-        />
+        <DataTable
+            :items="staffTableRows"
+            :columns="staffColumns"
+        >
+          <template #cell-id="{ item }">
+            <span>{{ item.id }}</span>
+          </template>
+          <template #cell-name="{ item }">
+            <span class="member-name cursor-pointer fw-bold text-primary" @click="goToDetail(item.id)">{{ item.name }}</span>
+          </template>
+          <template #cell-position="{ item }">
+            <span>{{ item.position }}</span>
+          </template>
+          <template #cell-gender="{ item }">
+            <span>{{ item.gender === 'M' ? '남' : '여' }}</span>
+          </template>
+          <template #cell-birthDt="{ item }">
+            <span :class="{'age-warning': calculateAge(item.birthDt) >= ageLimits.employment}"
+                  :title="calculateAge(item.birthDt) >= ageLimits.employment ? '고용보험 가입 제외 대상 (만 65세 이상)' : ''">
+              {{ calculateAge(item.birthDt) ? calculateAge(item.birthDt) + '세' : '-' }}
+            </span>
+          </template>
+          <template #cell-foreigner="{ item }">
+            <span v-if="item.foreigner === 'Y' || item.foreigner === true" class="badge badge-foreigner tooltip-container">
+              <i class="mdi mdi-earth"></i> 외국인
+            </span>
+            <span v-else class="text-gray">내국인</span>
+          </template>
+          <template #cell-disability="{ item }">
+            <span v-if="item.disability === 'Y' || item.disability === true" class="badge tooltip-container" :style="getDisabilityStyle(item.disability_grade)">
+              <i class="mdi mdi-wheelchair-accessibility"></i> 장애
+            </span>
+            <span v-else class="text-gray">-</span>
+          </template>
+          <template #cell-inDate="{ item }">
+            <div>{{ formatDate(item.inDate) }}</div>
+          </template>
+          <template #cell-outDate="{ item }">
+            <div>{{ formatDate(item.outDate) }}</div>
+          </template>
+          <template #cell-outReason="{ item }">
+            <span>{{ item.outReason }}</span>
+          </template>
+          <template #cell-four_ins="{ item }">
+            <i v-if="item.four_ins === 'Y' || item.four_ins === true" class="mdi mdi-check-circle check-icon"></i>
+            <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
+          </template>
+          <template #cell-retire_pension="{ item }">
+            <i v-if="item.retire_pension === 'Y' || item.retire_pension === true" class="mdi mdi-check-circle check-icon"></i>
+            <i v-else class="mdi mdi-close-circle uncheck-icon"></i>
+          </template>
+          <template #cell-phone="{ item }">
+            <span>{{ item.phone }}</span>
+          </template>
+          <template #cell-status="{ item }">
+            <span :class="['status-badge', item.status == 0 ? 'status-active' : item.status == 1 ? 'status-inactive':'status-preparing']">
+              {{ item.status == 0 ? '재직' : item.status == 1 ? '퇴사' : item.status == 2 ? '일용직' : item.status == 3 ? '대근' : '휴직' }}
+            </span>
+          </template>
+          <template #cell-actions="{ item }">
+            <div style="display: flex; gap:4px; justify-content: center;">
+              <button @click="goToDetail(item.id)" class="btn-detail"><i class="mdi mdi-eye"></i></button>
+              <button @click="handleStaffRemove(item.id)" class="btn-remove-cost" style="background:var(--danger); color:#fff; border:none; border-radius:4px; padding:4px;"><i class="mdi mdi-close"></i></button>
+            </div>
+          </template>
+          <template #empty>
+            <div class="empty-state">
+              <i class="mdi mdi-account-off-outline"></i>
+              <p>표시할 직원이 없습니다</p>
+            </div>
+          </template>
+        </DataTable>
       </div>
 
       <!-- ── 장비현황 탭 ── -->
@@ -2849,51 +3004,43 @@ onMounted(async () => {
         <div v-else class="equip-sections">
           <template v-for="(items, cat) in equipByCategory" :key="cat">
             <div class="equip-group">
-              <div class="equip-group-header">
+              <div class="equip-group-header" @click="toggleEquipCategory(cat)" style="cursor: pointer;">
                 <i :class="['mdi', getEquipIcon(cat)]"></i>
                 <span class="equip-group-name">{{ cat }}</span>
                 <span class="equip-group-count">{{ items.length }}종</span>
+                <i :class="['mdi', collapsedEquipCategories.includes(cat) ? 'mdi-chevron-down' : 'mdi-chevron-up']" style="margin-left: auto; color: var(--text-muted); font-size: 24px;"></i>
               </div>
-              <div class="equip-table-wrap">
-                <table class="equip-table">
-                  <thead>
-                  <tr>
-                    <th>장비명 (모델명)</th>
-                    <th class="tc">보유 수량</th>
-                    <th>보관/지급 위치</th>
-                    <th class="tc">상태</th>
-                    <th>도입(구매)일</th>
-                    <th>다음 점검일</th>
-                    <th>특이사항</th>
-                    <th class="tc">관리</th>
-                  </tr>
-                  </thead>
-                  <tbody>
-                  <tr v-for="equip in items" :key="equip.idx"
-                      :class="{ 'row-fault': equip.status === 'fault', 'row-check': equip.status === 'check' }">
-                    <td class="equip-name-cell">{{ equip.name }}</td>
-                    <td class="tc fw-bold text-primary">{{ equip.quantity }}대</td>
-                    <td>{{ equip.location || '-' }}</td>
-                    <td class="tc">
-                      <span :class="['equip-status-badge', `esb-${equipStatusMap[equip.status]?.color || 'gray'}`]">
-                        {{ equipStatusMap[equip.status]?.label || equip.status }}
-                      </span>
-                    </td>
-                    <td class="text-muted">{{ equip.purchaseDate || '-' }}</td>
-                    <td :class="isCheckOverdue(equip.nextCheckDate) ? 'text-red fw-bold' : 'text-muted'">
-                      {{ equip.nextCheckDate || '-' }}
-                      <span v-if="isCheckOverdue(equip.nextCheckDate)" class="overdue-chip">기한초과</span>
-                    </td>
-                    <td class="text-muted small-text">{{ equip.note || '-' }}</td>
-                    <td class="tc">
-                      <div class="equip-action-btns">
-                        <button type="button" class="btn-equip-edit" @click="openEquipModal(equip)"><i class="mdi mdi-pencil-outline"></i></button>
-                        <button type="button" class="btn-equip-del"  @click="deleteEquip(equip)"> <i class="mdi mdi-trash-can-outline"></i></button>
-                      </div>
-                    </td>
-                  </tr>
-                  </tbody>
-                </table>
+              <div class="equip-table-wrap" v-show="!collapsedEquipCategories.includes(cat)">
+                <DataTable :items="items" :columns="equipColumns" :rowClass="equipRowClass">
+                  <template #cell-name="{ item }">
+                    <span class="equip-name-cell">{{ item.name }}</span>
+                  </template>
+                  <template #cell-quantity="{ item }">
+                    <span class="fw-bold text-primary">{{ item.quantity }}대</span>
+                  </template>
+                  <template #cell-status="{ item }">
+                    <span :class="['equip-status-badge', `esb-${equipStatusMap[item.status]?.color || 'gray'}`]">
+                      {{ equipStatusMap[item.status]?.label || item.status }}
+                    </span>
+                  </template>
+                  <template #cell-purchaseDate="{ item }">
+                    <span class="text-muted">{{ item.purchaseDate || '-' }}</span>
+                  </template>
+                  <template #cell-nextCheckDate="{ item }">
+                    <span :class="isCheckOverdue(item.nextCheckDate) ? 'text-red fw-bold' : 'text-muted'">
+                      {{ item.nextCheckDate || '-' }}
+                      <span v-if="isCheckOverdue(item.nextCheckDate)" class="overdue-chip">기한초과</span>
+                    </span>
+                  </template>
+                  <template #cell-note="{ item }">
+                    <span class="text-muted small-text">{{ item.note || '-' }}</span>
+                  </template>
+                  <template #cell-actions="{ item }">
+                    <div class="equip-action-btns justify-center">
+                      <button type="button" class="btn-detail" @click="openEquipmentDetail(item)" title="상세보기"><i class="mdi mdi-eye"></i></button>
+                    </div>
+                  </template>
+                </DataTable>
               </div>
             </div>
           </template>
@@ -3073,7 +3220,17 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ── 장비 등록/수정 모달 ── -->
+
+    <!-- ── 상세 이력 모달 (공통 컴포넌트) ── -->
+    <EquipmentDetailModal
+        :show="showDetailModal"
+        :equipment="selectedEq"
+        @close="closeDetailModal"
+        @update="handleEquipmentUpdate"
+    />
+
+    <!-- ── 기존 장비 등록/수정 모달 ── -->
+
     <div v-if="isEquipModalOpen" class="modal-overlay" @click.self="closeEquipModal">
       <div class="modal-box modal-box-wide">
         <div class="modal-header">
@@ -5077,8 +5234,8 @@ input:checked + .slider:before { transform: translateX(18px); }
 }
 
 @media (max-width: 900px) {
-    .contract-layout { flex-direction: column; }
-    .contract-sidebar { flex: none; width: 100%; max-height: 320px; }
+  .contract-layout { flex-direction: column; }
+  .contract-sidebar { flex: none; width: 100%; max-height: 320px; }
 }
 
 /* =============================================

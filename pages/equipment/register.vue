@@ -219,20 +219,6 @@ const saveEquipment = async () => {
 /* =========================================
    Layout & Header
 ========================================= */
-.equip-register-page {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-color);
-}
-
 .header-left {
   display: flex;
   align-items: flex-start;
@@ -247,11 +233,6 @@ const saveEquipment = async () => {
 .btn-back:hover { background: var(--bg-hover); color: var(--text-main); }
 .btn-back i { font-size: 20px; }
 
-.page-title { margin: 0; font-size: 22px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
-.page-title i { color: var(--primary); font-size: 26px; }
-.page-subtitle { margin: 4px 0 0 0; color: var(--text-sub); font-size: 13px; }
-
-.header-actions { display: flex; gap: 10px; }
 .btn-cancel, .btn-save {
   display: flex; align-items: center; gap: 6px; padding: 10px 20px; height: 42px;
   border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-sizing: border-box;

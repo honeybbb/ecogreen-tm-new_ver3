@@ -2,13 +2,14 @@
 import { ref, computed, onMounted, onActivated, onBeforeUnmount } from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from "axios";
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 import * as XLSX from 'xlsx';
-import DataTable from "~/components/DataTable.vue";
+import DataTable from "~/components/common/DataTable.vue";
 import TableColumnSettingModal from "~/components/TableColumnSettingModal.vue";
 import { useTableColumns } from "~/composables/useTableColumns";
 import { useCellMemo } from '@/composables/useCellMemo';
 import CellMemoPanel from '@/components/CellMemoPanel.vue';
+import FilterSearchGroup from '@/components/common/FilterSearchGroup.vue'
 
 const router = useRouter();
 const { typeOptions, fetchTypeOptions } = useApi();
@@ -20,6 +21,7 @@ const siteDefaultColumns = [
   { key: 'contract', label: '계약 기간', visible: true, sortable: true, width: '25%' },
   { key: 'total_cost', label: '월 용역비', visible: true, sortable: true, width: '10%' },
   { key: 'cleaningExpense', label: '대청소비', visible: true, sortable: true, width: '10%' },
+  { key: 'cleaningSupplies', label: '청소용품비', visible: true, sortable: true, width: '10%' },
   { key: 'otherExpense', label: '기타제경비', visible: true, sortable: true, width: '10%' },
   { key: 'managementFee', label: '일반관리비', visible: true, sortable: true, width: '10%' },
   { key: 'profit', label: '기업이윤', visible: true, sortable: true, width: '10%' },
@@ -41,7 +43,7 @@ const { columns, isSettingModalOpen, fetchColumns, saveColumns } = useTableColum
 
 const memoColLabelMap = {
   idx: 'ID', name: '현장명', address: '주소', contract: '계약 기간',
-  total_cost: '월 용역비', cleaningExpense: '대청소비', otherExpense: '기타제경비',
+  total_cost: '월 용역비', cleaningExpense: '대청소비', cleaningSupplies: '청소용품비', otherExpense: '기타제경비',
   managementFee: '일반관리비', profit: '기업이윤', staffCount: '배정 인원',
   unit_su: '세대 수', building_su: '건물 수', deep_clean_count: '대청소 횟수',
   // renewal_status: '재계약 요청',
@@ -73,6 +75,7 @@ const billingManager = ref([]);
 
 const getTotalCost = (site) => site.contracts?.reduce((sum, c) => sum + (Number(c.total_cost) || 0), 0) || 0;
 const getCleaningExpense = (site) => site.contracts?.reduce((sum, c) => sum + (Number(c.cleaningExpense) || 0), 0) || 0;
+const getCleaningSupplies = (site) => site.contracts?.reduce((sum, c) => sum + (Number(c.cleaningSupplies) || 0), 0) || 0;
 const getOtherExpense = (site) => site.contracts?.reduce((sum, c) => sum + (Number(c.otherExpense) || 0), 0) || 0;
 const getManagementFee = (site) => site.contracts?.reduce((sum, c) => sum + (Number(c.managementFee) || 0), 0) || 0;
 const getProfit = (site) => site.contracts?.reduce((sum, c) => sum + (Number(c.profit) || 0), 0) || 0;
@@ -127,7 +130,7 @@ const downloadExcel = () => {
     return {
       'ID': site.idx, '현장명': site.name, '주소': site.address, '계약 기간': contractText,
       '월 용역비(원)': getTotalCost(site) || '-', '대청소비(원)': getCleaningExpense(site) || '-',
-      '기타제경비(원)': getOtherExpense(site) || '-', '일반관리비(원)': getManagementFee(site) || '-',
+      '청소용품비(원)': getCleaningSupplies(site) || '-', '기타제경비(원)': getOtherExpense(site) || '-', '일반관리비(원)': getManagementFee(site) || '-',
       '기업이윤(원)': getProfit(site) || '-', '배정 인원(명)': getTotalStaff(site),
       '세대 수': site.unit_su || 0, '건물 수': site.building_su || 0, '대청소 횟수(회)': getDeepCleanCount(site) || '-',
       //'재계약 요청': site.renewal_status || '-',
@@ -232,6 +235,7 @@ const filteredSites = computed(() => {
     }
     else if (sortKey.value === 'total_cost') { valA = getTotalCost(a); valB = getTotalCost(b); }
     else if (sortKey.value === 'cleaningExpense') { valA = getCleaningExpense(a); valB = getCleaningExpense(b); }
+    else if (sortKey.value === 'cleaningSupplies') { valA = getCleaningSupplies(a); valB = getCleaningSupplies(b); }
     else if (sortKey.value === 'otherExpense') { valA = getOtherExpense(a); valB = getOtherExpense(b); }
     else if (sortKey.value === 'managementFee') { valA = getManagementFee(a); valB = getManagementFee(b); }
     else if (sortKey.value === 'profit') { valA = getProfit(a); valB = getProfit(b); }
@@ -420,13 +424,12 @@ onActivated(async () => { await getSites(); });
         <div class="filter-group"><label class="filter-label">구분</label><select v-model="selectedType" class="filter-select" @change="onFilterChange"><option value="전체">전체</option><option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option></select></div>
         <div class="filter-group"><label class="filter-label">본사 담당</label><select v-model="selectedManager" class="filter-select"><option value="전체">전체</option><option v-for="b in manager" :key="b.value" :value="b.value">{{ b.value }}</option></select></div>
         <div class="filter-group"><label class="filter-label">청구 담당</label><select v-model="selectedBilling" class="filter-select"><option value="전체">전체</option><option v-for="b in billingManager" :key="b.value" :value="b.value">{{ b.value }}</option></select></div>
-        <div class="search-group" style="flex: 1;">
-          <div class="search-box">
-            <i class="mdi mdi-magnify"></i><input type="text" v-model="searchTerm" placeholder="현장명으로 검색..." class="search-input" />
-            <button v-if="searchTerm" @click="searchTerm = ''; onFilterChange()" class="search-clear"><i class="mdi mdi-close"></i></button>
-          </div>
-          <button @click="resetFilters" class="btn-search" title="필터 초기화"><i class="mdi mdi-filter-off"></i><span>검색필터 초기화</span></button>
-        </div>
+        <FilterSearchGroup
+            v-model="searchTerm"
+            placeholder="현장명으로 검색..."
+            @search="onFilterChange"
+            @reset="resetFilters"
+        />
       </div>
     </div>
 
@@ -500,6 +503,12 @@ onActivated(async () => { await getSites(); });
         <template #cell-cleaningExpense="{ item }">
           <span class="text-primary num-cell cell-ellipsis" :title="getCleaningExpense(item) > 0 ? formatCurrency(getCleaningExpense(item)) + '원' : '-'">
             {{ getCleaningExpense(item) > 0 ? formatCurrency(getCleaningExpense(item)) + '원' : '-' }}
+          </span>
+        </template>
+
+        <template #cell-cleaningSupplies="{ item }">
+          <span class="text-primary num-cell cell-ellipsis" :title="getCleaningSupplies(item) > 0 ? formatCurrency(getCleaningSupplies(item)) + '원' : '-'">
+            {{ getCleaningSupplies(item) > 0 ? formatCurrency(getCleaningSupplies(item)) + '원' : '-' }}
           </span>
         </template>
 

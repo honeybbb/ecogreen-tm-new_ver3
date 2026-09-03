@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from '@/stores/auth';
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 
 const { positionOptions, fetchPositionOptions } = useApi();
 const authStore = useAuthStore();

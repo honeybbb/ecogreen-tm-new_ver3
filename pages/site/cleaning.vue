@@ -89,7 +89,7 @@ const onDrop = async (e, teamIdx) => {
 
     try {
       const payload = {
-        tIdx: teamIdx,
+        teamIdx: teamIdx,
         status: newStatus
       };
 

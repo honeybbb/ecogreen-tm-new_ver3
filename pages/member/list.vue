@@ -2,11 +2,13 @@
 import { ref, computed, onMounted, onActivated, watch, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 import { useRouter, useRoute } from 'nuxt/app';
-import Pagination from '@/components/Pagination.vue'
+import Pagination from '@/components/common/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
-import DataTable from "~/components/DataTable.vue";
+import DataTable from "~/components/common/DataTable.vue";
 import { useCellMemo } from '@/composables/useCellMemo';
+import ExcelDownloadModal from "@/components/Exceldownloadmodal.vue";
 import CellMemoPanel from '@/components/CellMemoPanel.vue';
+import FilterSearchGroup from '~/components/common/FilterSearchGroup.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -506,14 +508,12 @@ onActivated(async () => { await fetchMembers(); });
             <option value="F">여성</option>
           </select>
         </div>
-        <div class="search-group">
-          <div class="search-box">
-            <i class="mdi mdi-magnify"></i>
-            <input type="text" v-model="searchTerm" placeholder="이름으로 검색..." class="search-input" @input="onFilterChange" @keyup.enter="onFilterChange" />
-            <button v-if="searchTerm" @click="searchTerm = ''; onFilterChange()" class="search-clear"><i class="mdi mdi-close"></i></button>
-          </div>
-          <button @click="resetFilters" class="btn-search" title="필터 초기화"><i class="mdi mdi-filter-off"></i><span>검색필터 초기화</span></button>
-        </div>
+        <FilterSearchGroup
+            v-model="searchTerm"
+            placeholder="이름으로 검색..."
+            @search="onFilterChange"
+            @reset="resetFilters"
+        />
       </div>
 
       <div class="filter-toggles-row">

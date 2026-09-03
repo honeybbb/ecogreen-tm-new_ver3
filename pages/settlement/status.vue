@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useTableResize } from "~/composables/useTableResize.js";
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 import * as XLSX from 'xlsx';
 
 const { startResize } = useTableResize();

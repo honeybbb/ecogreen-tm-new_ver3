@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 import {useRouter, useRoute} from "#app";
 
 const route = useRoute();
