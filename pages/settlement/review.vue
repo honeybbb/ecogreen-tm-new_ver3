@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, reactive, watch } from 'vue'
 import axios from 'axios'
 
-import Pagination from '~/components/Pagination.vue'
+import Pagination from '~/components/common/Pagination.vue'
 import SiteSelect from '~/components/SiteSelect.vue'
 
 const { siteOptions, fetchSiteOptions } = useApi()
@@ -420,7 +420,7 @@ onMounted(async () => {
 
             <td class="text-right">
               <span class="">{{ fmt(item.estTotalSalary) }}원</span> /
-              <span :class="['real-text', { 'error-text': hasError(item.totalPaySum, item.estTotalSalary) }]">
+              <span :class="['real-text', { 'error-text': hasError(item.totalGrossPay, item.estTotalSalary) }]">
                 {{ fmt(item.totalGrossPay) }}원
                 <i v-if="hasError(item.totalGrossPay, item.estTotalSalary)" class="mdi mdi-alert-circle-outline"></i>
               </span>
@@ -540,6 +540,9 @@ onMounted(async () => {
               </table>
             </div>
           </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="isJoinLeaveModalOpen=false" class="btn-cancel">닫기</button>
         </div>
       </div>
     </div>
