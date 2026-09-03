@@ -89,7 +89,7 @@ const onDrop = async (e, teamIdx) => {
 
     try {
       const payload = {
-        tIdx: teamIdx,
+        teamIdx: teamIdx,
         status: newStatus
       };
 
@@ -928,10 +928,25 @@ const saveAddModal = async () => {
   }
 };
 
-const deleteSchedule = () => {
+const deleteSchedule = async () => {
   if (confirm("일정을 삭제하시겠습니까?")) {
-    cleaningSchedules.value = cleaningSchedules.value.filter(s => s.idx !== editingIdx.value);
-    closeAddModal();
+    try {
+      // 1. 백엔드 API 호출 (idx 파라미터 전달)
+      await axios.delete(`/api/v1/site/cleaning/schedule/${editingIdx.value}`);
+
+      // 2. API 성공 시 프론트엔드 배열에서 해당 일정 제거
+      cleaningSchedules.value = cleaningSchedules.value.filter(
+          (s) => s.idx !== editingIdx.value
+      );
+
+      // 3. 모달 닫기 및 알림
+      closeAddModal();
+      alert("일정이 삭제되었습니다.");
+
+    } catch (error) {
+      console.error("일정 삭제 실패:", error);
+      alert("일정 삭제 중 오류가 발생했습니다.");
+    }
   }
 };
 

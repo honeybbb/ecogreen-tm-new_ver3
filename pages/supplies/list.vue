@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 import { useRoute, useRouter } from "#app";
 
 // 1. API 및 상태 관리
@@ -145,7 +145,7 @@ const saveBudgets = async () => {
     return;
   }
 
-  if (!confirm(`체크된 ${selectedSites.value.length}개 현장의 예산 설정을 저장하시겠습니까?`)) return;
+  if (!await window.customConfirm(`체크된 ${selectedSites.value.length}개 현장의 예산 설정을 저장하시겠습니까?`)) return;
 
   // 선택된 현장 ID에 대한 데이터만 추출
   const dataToSave = {};

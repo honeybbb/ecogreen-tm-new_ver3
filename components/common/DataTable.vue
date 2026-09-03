@@ -83,7 +83,7 @@ const handleSort = (col) => {
                  :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']">
               </i>
             </div>
-            <div class="resize-handle" @mousedown.stop="startResize"></div>
+            <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
           </th>
         </template>
       </tr>
@@ -142,10 +142,12 @@ const handleSort = (col) => {
 .data-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 /* ★ 핵심 해결책: max-width: 0 으로 설정하여, 컬럼 크기가 좁아졌을 때 텍스트가 테이블을 강제로 찢고 늘어나는 것을 방지하고 말줄임표 처리가 작동하도록 유도합니다. */
-.data-table td {
+.data-table td, .data-table th {
+  box-sizing: border-box;
   max-width: 0;
 }
 
@@ -180,6 +182,13 @@ const handleSort = (col) => {
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.th-content span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .th-content.justify-center {
   justify-content: center;

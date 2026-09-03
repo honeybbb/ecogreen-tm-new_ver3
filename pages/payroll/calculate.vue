@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
 import XLSX from 'xlsx-js-style'
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
 import {calculateAge} from "~/utils/formatter.js";
 import {formatCurrency} from "../../utils/formatter.js";

@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { useRouter } from 'nuxt/app';
 import { useAuthStore } from "~/stores/auth.js";
-import Pagination from '@/components/Pagination.vue';
+import Pagination from '~/components/common/Pagination.vue';
 
 const router = useRouter();
 const authStore = useAuthStore();

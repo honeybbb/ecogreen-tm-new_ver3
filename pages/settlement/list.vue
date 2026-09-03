@@ -5,7 +5,7 @@ import axios from 'axios'
 
 import SettlementPrintModal from '@/components/SettlementPrintModal.vue'
 import EstimatePrintModal   from '~/components/estimatePrintModal.vue'
-import Pagination           from '~/components/Pagination.vue'
+import Pagination           from '~/components/common/Pagination.vue'
 import {useTableResize} from "~/composables/useTableResize.js";
 
 const router = useRouter()

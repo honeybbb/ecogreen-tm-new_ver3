@@ -404,7 +404,7 @@ import { ref, computed, onMounted, watch, onActivated } from 'vue'
 import axios from 'axios'
 import { useRoute, useRouter } from '#app'
 import { useAuthStore } from '~/stores/auth.js'
-import Pagination from '~/components/Pagination.vue'
+import Pagination from '~/components/common/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
 
 // 유틸

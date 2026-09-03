@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { useAuthStore } from '~/stores/auth.js';
-import Pagination from '~/components/Pagination.vue';
+import Pagination from '~/components/common/Pagination.vue';
 import { calculateAge } from '~/utils/formatter.js';
 import { useTableResize } from '~/composables/useTableResize.js';
 
