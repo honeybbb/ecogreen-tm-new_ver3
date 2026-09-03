@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
 import XLSX from 'xlsx-js-style'
-import Pagination from "~/components/Pagination.vue";
+import Pagination from "~/components/common/Pagination.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
 import {calculateAge} from "~/utils/formatter.js";
 import {formatCurrency} from "../../../utils/formatter.js";
@@ -309,7 +309,7 @@ const resetBasePay = (row) => {
   calculateInsurances(row);
 };
 
-const resetCalculatedPay = () => {
+const resetCalculatedPay = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
 
   if (selectedRows.length === 0) {
@@ -317,7 +317,7 @@ const resetCalculatedPay = () => {
     return;
   }
 
-  if (!confirm('선택한 직원의 급여 계산 내역을 초기화하시겠습니까?\n(저장하지 않은 내역은 모두 0원으로 되돌아갑니다.)')) {
+  if (!await window.customConfirm('선택한 직원의 급여 계산 내역을 초기화하시겠습니까?\n(저장하지 않은 내역은 모두 0원으로 되돌아갑니다.)')) {
     return;
   }
 
@@ -488,7 +488,7 @@ const calculateInsurances = async (row) => {
 const savePayroll = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
   if (selectedRows.length === 0) { alert('저장할 직원을 체크해주세요.'); return; }
-  if (!confirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
+  if (!await window.customConfirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
   try {
     const [saveYear, saveMonth] = selectedYearMonth.value.split('-');
     await Promise.all(selectedRows.map(row => {
