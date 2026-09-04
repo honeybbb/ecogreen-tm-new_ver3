@@ -38,7 +38,8 @@ const categories = computed(() => {
   const baseGroups = [
     { id: '04001', name: '직접노무비', icon: 'mdi-account-hard-hat' },
     { id: '04002', name: '간접노무비', icon: 'mdi-account-tie' },
-    { id: '04003', name: '제경비', icon: 'mdi-store-cog-outline' }
+    { id: '04003', name: '제경비', icon: 'mdi-store-cog-outline' },
+    { id: '04004', name: '관리비', icon: 'mdi-calculator' },
   ];
 
   return baseGroups.map(group => {
