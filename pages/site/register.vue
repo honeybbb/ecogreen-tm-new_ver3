@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, onActivated } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import { useAuthStore } from '@/stores/auth';
 import axios from 'axios';
+import CostBreakdownSection from '~/components/common/CostBreakdownSection.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -1342,89 +1343,8 @@ onMounted(() => {
                   </div>
 
                   <!-- 산출내역서 토글 버튼 -->
-                  <div class="cost-breakdown-wrapper mt-4">
-                    <button type="button" class="btn-toggle-cost" @click="group.showCostBreakdown = !group.showCostBreakdown">
-                      <div class="toggle-left"><i :class="group.showCostBreakdown ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'"></i><span>{{ group.showCostBreakdown ? '상세 산출내역 닫기' : '상세 산출내역 작성하기 (선택)' }}</span></div>
-                      <span v-if="getTotalMonthlyFee(group) > 0" class="cost-preview-badge">월 {{ formatCurrency(getTotalMonthlyFee(group)) }}원</span>
-                    </button>
-                    <!-- 산출내역서 본문 -->
-                    <div v-show="group.showCostBreakdown" class="cost-breakdown-section">
-                      <div v-if="group.staffList.length === 0" class="cost-no-staff"><i class="mdi mdi-account-plus-outline"></i><p>투입 인원을 먼저 추가해주세요.</p></div>
-                      <template v-else>
-                        <div class="cost-scroll-area">
-                          <!-- 근로시간 -->
-                          <div class="cost-section-title"><span class="cost-block-label label-hours"><i class="mdi mdi-clock-check"></i></span>근로시간 기준</div>
-                          <table class="cost-table">
-                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }} <span class="font-normal">({{ staff.count }}명)</span></th><th class="col-rowtotal">산출근거</th></tr></thead>
-                            <tbody>
-                            <tr><td class="font-bold">일 근로시간 (H)</td><td v-for="staff in group.staffList" :key="staff.code"><input type="number" step="any" min="0" v-model.number="group.costBreakdown.dailyWorkHours[staff.code]" class="tbl-value-input" /></td><td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.dailyHoursBigo" /></td></tr>
-                            <tr><td class="font-bold">월 근로시간 (H)</td><td v-for="staff in group.staffList" :key="staff.code"><input type="number" step="any" min="0" v-model.number="group.costBreakdown.monthlyWorkHours[staff.code]" class="tbl-value-input" /></td><td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.monthlyHoursBigo" /></td></tr>
-                            </tbody>
-                          </table>
-                          <!-- 직접노무비 -->
-                          <div class="cost-section-title flex-between mt-4"><div><span class="cost-block-label label-direct">A</span>직접노무비</div><button type="button" @click="addItem(group, 'directLabor')" class="btn-add-cost-item">항목 추가</button></div>
-                          <table class="cost-table">
-                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }}</th><th class="col-rowtotal-head">행합계</th><th class="col-rowtotal">산출내역</th><th class="col-action"></th></tr></thead>
-                            <tbody>
-                            <tr v-for="(item, iIdx) in group.costBreakdown.directLabor" :key="'dl-'+iIdx">
-                              <td><CategorySelect v-model="item.label" v-model:code="item.code" topCode="04001"/></td>
-                              <td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(item.values[staff.code])" @focus="$event.target.select()" @input="onInputCost(item, staff.code, $event)" class="tbl-value-input" /></td>
-                              <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
-                              <td><input type="text" class="tbl-value-input" v-model="item.bigo" /></td>
-                              <td class="col-action"><button type="button" @click="removeItem(group, 'directLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
-                            </tr>
-                            </tbody>
-                            <tfoot><tr class="tfoot-subtotal"><td>소계 (A)</td><td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getDirectLaborColTotal(group, staff.code)) }}</td><td class="col-rowtotal-cell">{{ formatCurrency(getSubtotalRowTotal(group, getDirectLaborColTotal)) }}</td><td></td><td></td></tr></tfoot>
-                          </table>
-                          <!-- 간접노무비 -->
-                          <div class="cost-section-title flex-between mt-4"><div><span class="cost-block-label label-indirect">B</span>간접노무비</div><button type="button" @click="addItem(group, 'indirectLabor')" class="btn-add-cost-item">항목 추가</button></div>
-                          <table class="cost-table">
-                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }}</th><th class="col-rowtotal-head">행합계</th><th class="col-rowtotal">산출내역</th><th class="col-action"></th></tr></thead>
-                            <tbody>
-                            <tr v-for="(item, iIdx) in group.costBreakdown.indirectLabor" :key="'il-'+iIdx">
-                              <td><CategorySelect v-model="item.label" v-model:code="item.code" topCode="04002"/></td>
-                              <td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(item.values[staff.code])" @focus="$event.target.select()" @input="onInputCost(item, staff.code, $event)" class="tbl-value-input" /></td>
-                              <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
-                              <td><input type="text" class="tbl-value-input" v-model="item.bigo" /></td>
-                              <td class="col-action"><button type="button" @click="removeItem(group, 'indirectLabor', iIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
-                            </tr>
-                            </tbody>
-                            <tfoot><tr class="tfoot-subtotal"><td>소계 (B)</td><td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getIndirectLaborColTotal(group, staff.code)) }}</td><td class="col-rowtotal-cell">{{ formatCurrency(getSubtotalRowTotal(group, getIndirectLaborColTotal)) }}</td><td></td><td></td></tr></tfoot>
-                          </table>
-                          <!-- 제경비 -->
-                          <div class="cost-section-title flex-between mt-4"><div><span class="cost-block-label label-expense">C</span>제경비</div><button type="button" @click="addItem(group, 'expenses')" class="btn-add-cost-item">항목 추가</button></div>
-                          <table class="cost-table">
-                            <thead><tr><th class="col-label">항목</th><th v-for="staff in group.staffList" :key="staff.code" class="col-staff">{{ staff.name }}</th><th class="col-rowtotal-head">행합계</th><th class="col-rowtotal">산출내역</th><th class="col-action"></th></tr></thead>
-                            <tbody>
-                            <tr v-for="(item, eIdx) in group.costBreakdown.expenses" :key="'exp-'+eIdx">
-                              <td><CategorySelect v-model="item.label" v-model:code="item.code" topCode="04003"/></td>
-                              <td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(item.values[staff.code])" @focus="$event.target.select()" @input="onInputCost(item, staff.code, $event)" class="tbl-value-input" /></td>
-                              <td class="col-rowtotal-cell">{{ formatCurrency(getRowTotal(item, group.staffList)) }}</td>
-                              <td><input type="text" class="tbl-value-input" v-model="item.bigo" /></td>
-                              <td class="col-action"><button type="button" @click="removeItem(group, 'expenses', eIdx)" class="btn-remove-cost"><i class="mdi mdi-close"></i></button></td>
-                            </tr>
-                            </tbody>
-                            <tfoot><tr class="tfoot-subtotal"><td>소계 (C)</td><td v-for="staff in group.staffList" :key="staff.code">{{ formatCurrency(getExpensesColTotal(group, staff.code)) }}</td><td class="col-rowtotal-cell">{{ formatCurrency(getSubtotalRowTotal(group, getExpensesColTotal)) }}</td><td></td><td></td></tr></tfoot>
-                          </table>
-                          <!-- 합계 -->
-                          <div class="cost-section-title mt-4"><span class="cost-block-label label-total">합</span>노무비 합계 및 최종 용역비</div>
-                          <table class="cost-table summary-table">
-                            <tbody>
-                            <tr class="summary-row row-d"><td><span class="summary-label font-bold text-primary">D. 노무비 (A+B+C)</span></td><td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val">{{ formatCurrency(getLaborColTotal(group, staff.code)) }}</span></td><td class="col-rowtotal-cell"><span class="summary-val font-bold">{{ formatCurrency(getLaborGrandTotal(group)) }}</span></td></tr>
-                            <tr class="summary-row row-e"><td><span class="summary-label">E. 일반관리비</span></td><td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(group.costBreakdown.managementFee[staff.code])" @focus="$event.target.select()" @input="onInputSingleCost(group.costBreakdown.managementFee, staff.code, $event)" class="tbl-value-input" /></td><td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getManagementFeeGrandTotal(group)) }}</span></td></tr>
-                            <tr class="summary-row row-f"><td><span class="summary-label">F. 기업이윤</span></td><td v-for="staff in group.staffList" :key="staff.code"><input type="text" :value="formatCurrency(group.costBreakdown.profit[staff.code])" @focus="$event.target.select()" @input="onInputSingleCost(group.costBreakdown.profit, staff.code, $event)" class="tbl-value-input" /></td><td class="col-rowtotal-cell"><span class="summary-val">{{ formatCurrency(getProfitGrandTotal(group)) }}</span></td></tr>
-                            <tr class="summary-row row-monthly"><td><span class="summary-label font-bold text-main">1인당 월 용역비 (D+E+F)</span></td><td v-for="staff in group.staffList" :key="staff.code"><span class="summary-val text-primary font-bold">{{ formatCurrency(getMonthlyTotalCol(group, staff.code)) }}</span></td><td class="col-rowtotal-cell">-</td></tr>
-                            <tr class="summary-row row-total-fee"><td><span class="summary-label font-bold text-main">월간 용역비 총계</span></td><td :colspan="group.staffList.length"><input type="text" :value="formatCurrency(getDisplayMonthlyTotal(group))" @focus="$event.target.select()" @input="onInputMonthlyTotal(group, $event)" class="tbl-value-input grand-total-input" /></td><td class="col-rowtotal-cell"></td></tr>
-                            <tr class="summary-row row-contract-total"><td><span class="summary-label">계약기간 총액</span></td><td :colspan="group.staffList.length"><input type="text" :value="formatCurrency(group.costBreakdown.contractTotalFee)" @focus="$event.target.select()" @input="onInputSingleRaw(group.costBreakdown, 'contractTotalFee', $event)" class="tbl-value-input text-main" placeholder="직접 입력" /></td><td><input type="text" class="tbl-value-input" v-model="group.costBreakdown.contractTotalBigo" placeholder="예: 24개월 × 월 용역비" /></td></tr>
-                            </tbody>
-                          </table>
-                        </div>
-                        <div class="cost-special-note">
-                          <label class="form-label"><i class="mdi mdi-text-box-edit-outline"></i> 특이사항 기재란</label>
-                          <textarea v-model="group.costBreakdown.specialNote" class="form-textarea" rows="2" placeholder="산출 시 참고할 특이사항 (최저임금 기준 등)"></textarea>
-                        </div>
-                      </template>
-                    </div>
+                  <div class="mt-4">
+                    <CostBreakdownSection :group="group" variant="register" />
                   </div>
                 </div>
               </div>
