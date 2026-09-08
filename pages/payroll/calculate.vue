@@ -633,20 +633,44 @@ const getOtherInsuranceAmount = (row) => {
 };
 
 // calculateInsurances 전체 교체
+// 건강/장기요양/국민연금 부과 면제월 판별 (2일 이후 입사자의 첫 달)
+const isInsuranceWaivedMonth = (row) => {
+  if (!row.inDate) return false;
+  const [inYearStr, inMonthStr, inDayStr] = String(row.inDate).split('-');
+  const firstYear  = Number(inYearStr);
+  const firstMonth = Number(inMonthStr);
+  const inDay      = Number(inDayStr);
+
+  const [selYear, selMonth] = selectedYearMonth.value.split('-').map(Number);
+
+  // 입사월이면서 2일 이후 입사면 해당 월 부과 면제
+  if (firstYear === selYear && firstMonth === selMonth && inDay > 1) {
+    return true;
+  }
+  return false;
+};
+
 const calculateInsurances = async (row) => {
   let taxablePay = 0
+  let originalTaxablePay = 0
+
   payItems.value.forEach(item => {
+    // 실제 지급액 기준 (일할계산 등 반영됨)
     const amt   = Number(row.payItems[item.itemCd] || 0)
     const limit = item.tax_free || 0
     const taxed = limit > 0 ? Math.max(0, amt - limit) : amt
     taxablePay += taxed
+
+    // 원래 급여 기준 (일할계산 전 전체 금액)
+    const originalAmt = Number(row._originalPayItems[item.itemCd] || 0)
+    const originalTaxed = limit > 0 ? Math.max(0, originalAmt - limit) : originalAmt
+    originalTaxablePay += originalTaxed
   })
 
   if (!row.deductionItems) row.deductionItems = {};
   const rates = targetCodes.value;
   let incomeTax = 0, localTax = 0;
 
-  //if (row.deductionFlags['04002002004']) {
   if (row.deductionFlags['04002002004'] !== false) {
     try {
       const year = new Date().getFullYear();
@@ -658,18 +682,23 @@ const calculateInsurances = async (row) => {
     } catch (e) { console.error('소득세 조회 실패', e); }
   }
 
+  const isWaived = isInsuranceWaivedMonth(row);
   let healthAmt = 0;
-  // if (row.deductionFlags['04002001001']) {
-if (row.deductionFlags['04002001001'] !== false) {
-    healthAmt = Math.floor((taxablePay * (rates.health / 100)) / 10) * 10;
+
+  if (row.deductionFlags['04002001001'] !== false) {
+    if (isWaived) {
+      healthAmt = 0;
+    } else {
+      healthAmt = Math.floor((originalTaxablePay * (rates.health / 100)) / 10) * 10;
+    }
     row.deductionItems['04002001001'] = healthAmt;
   } else {
     row.deductionItems['04002001001'] = 0;
   }
 
   const calc = {
-    '04002001002': () => Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
-    '04002001003': () => Math.floor((taxablePay * (rates.pension / 100)) / 10) * 10,
+    '04002001002': () => isWaived ? 0 : Math.floor((healthAmt * (rates.longTerm / 100)) / 10) * 10,
+    '04002001003': () => isWaived ? 0 : Math.floor((originalTaxablePay * (rates.pension / 100)) / 10) * 10,
     '04002001004': () => Math.floor((taxablePay * (rates.employment / 100)) / 10) * 10,
     '04002002004': () => incomeTax,
     '04002002003': () => localTax,
@@ -1311,7 +1340,7 @@ const getWageCode = async () => {
           ...leaf,
           tax_free: Number(leaf.tax_free) || 0,
           groupNm:  GROUP_NM[getTopAncestor(leaf.itemCd)] ?? '기타',
-    }));
+        }));
 
   } catch (e) {
     console.error('임금코드 로드 실패:', e);
