@@ -16,9 +16,9 @@ export default defineNuxtConfig({
     app: {
         // pageTransition: { name: 'page', mode: 'out-in' },
         head: {
-            title: '에코그린티엠(ver3)',
+            title: '관리자 ERP(ver3)',
             meta: [
-                { name: 'description', content: '에코그린티엠(ver3) ERP 시스템' }
+                { name: 'description', content: '관리자 ERP 시스템' }
             ],
             link: [
                 {
