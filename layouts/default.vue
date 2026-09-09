@@ -17,10 +17,11 @@ const tabStore = useTabStore();
 
 const miniVariant = ref(false);
 const mobileMenuOpen = ref(false);
-const title = ref('에코그린티엠');
+// const title = ref('에코그린티엠');
 const isDarkMode = ref(false);
 
 const cIdx = computed(() => authStore.user?.cIdx ?? null);
+const title = computed(() => authStore.user?.companyNm ?? null);
 const items = ref([]);
 const systemItems = ref([]);
 

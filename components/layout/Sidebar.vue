@@ -42,7 +42,7 @@ watch(() => route.path, () => {
     <div class="eg-brand">
       <div class="eg-logo-wrapper">
         <div class="eg-logo-icon">
-          <span class="eg-logo-text">EG</span>
+          <span class="eg-logo-text">ERP</span>
         </div>
         <transition name="fade">
           <span v-show="!miniVariant || mobileMenuOpen" class="eg-brand-text">{{ title }}</span>

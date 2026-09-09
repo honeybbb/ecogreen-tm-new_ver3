@@ -57,9 +57,9 @@ const handleLogin = async () => {
     <!-- 왼쪽 브랜드 패널 -->
     <aside class="brand-panel">
       <div class="brand-inner">
-        <div class="brand-logo">
+        <!--div class="brand-logo">
           <img src="/logo.jpg" alt="로고" />
-        </div>
+        </div-->
         <div class="brand-text">
           <h2 class="brand-title">통합 관리자 시스템</h2>
           <p class="brand-sub">업무를 더 스마트하게, 관리를 더 쉽게</p>
