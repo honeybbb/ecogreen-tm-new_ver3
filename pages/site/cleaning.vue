@@ -1070,10 +1070,10 @@ onMounted(async () => {
       <button :class="['tab-item', { active: activeTab === 'calendar' }]" @click="activeTab = 'calendar'">
         <i class="mdi mdi-calendar-month"></i> 일정 캘린더
       </button>
-      <button :class="['tab-item', { active: activeTab === 'status' }]" @click="activeTab = 'status'">
+      <!--button :class="['tab-item', { active: activeTab === 'status' }]" @click="activeTab = 'status'">
         <i class="mdi mdi-clipboard-text-outline"></i> 현장별 실시현황
         <span v-if="totalWarningCount > 0" class="tab-badge">{{ totalWarningCount }}</span>
-      </button>
+      </button-->
       <button :class="['tab-item', { active: activeTab === 'workload' }]" @click="activeTab = 'workload'">
         <i class="mdi mdi-account-group-outline"></i> 소요일 합산
       </button>
@@ -1081,12 +1081,12 @@ onMounted(async () => {
         <i class="mdi mdi-account-switch"></i> 팀 배정
         <span v-if="getUnassignedTasks.length > 0" class="tab-badge">{{ getUnassignedTasks.length }}</span>
       </button>
-      <button :class="['tab-item', { active: activeTab === 'documents' }]" @click="activeTab = 'documents'">
+      <!--button :class="['tab-item', { active: activeTab === 'documents' }]" @click="activeTab = 'documents'">
         <i class="mdi mdi-file-document-outline"></i> 공문·점검표
         <span v-if="pendingDocSchedules.length + checklistPendingCount > 0" class="tab-badge">
           {{ pendingDocSchedules.length + checklistPendingCount }}
         </span>
-      </button>
+      </button-->
     </div>
     <p class="tab-desc"><i class="mdi mdi-arrow-right-thin"></i> {{ tabDescriptions[activeTab] }}</p>
 
