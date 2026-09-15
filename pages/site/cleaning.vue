@@ -1110,11 +1110,11 @@ onMounted(async () => {
 
           <div class="filter-spacer"></div>
 
-          <select v-model="docFilter" class="form-control filter-select" title="공문 수신확인 상태">
+          <!--select v-model="docFilter" class="form-control filter-select" title="공문 수신확인 상태">
             <option value="all">공문 상태 전체</option>
             <option value="confirmed">확인 완료분만</option>
             <option value="pending">확인 대기분만</option>
-          </select>
+          </select-->
         </div>
 
         <div class="calendar-header">
@@ -1803,7 +1803,12 @@ onMounted(async () => {
             <h4 class="form-section-title">4. 현장에 전달할 내용</h4>
             <div class="form-group">
               <label>투입 장비</label>
-              <input v-model="addForm.equipment" type="text" class="form-control" placeholder="예: 고압세척기, 사다리차" />
+              <!--input v-model="addForm.equipment" type="text" class="form-control" placeholder="예: 고압세척기, 사다리차" /-->
+              <select v-model="addForm.equipment" class="form-control">
+                <option value="" disabled>투입 장비가 있다면 선택하세요.</option>
+                <option value="고압세척기">고압세척기</option>
+                <option value="사다리차">사다리차</option>
+              </select>
             </div>
             <div class="form-group">
               <label>단지 요청사항</label>
@@ -1820,7 +1825,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="form-section">
+          <!--div class="form-section">
             <h4 class="form-section-title">5. 공문 발송</h4>
             <label class="doc-toggle">
               <input v-model="addForm.docRequired" type="checkbox" />
@@ -1844,7 +1849,7 @@ onMounted(async () => {
               <i class="mdi mdi-information-outline"></i>
               저장하면 <b>공문·점검표</b> 탭의 발송 대기 목록에 올라갑니다. 발송은 그 화면에서 실행합니다.
             </p>
-          </div>
+          </div-->
         </div>
 
         <div class="modal-footer">
@@ -2006,9 +2011,16 @@ onMounted(async () => {
 .text-primary { color: var(--primary, #4f46e5); }
 .text-gray { color: #cbd5e1; }
 
-.calendar-body { display: grid; grid-template-columns: repeat(7, 1fr); }
+.calendar-body {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: 140px; /* 추가: 모든 주의 높이를 140px로 고정 */
+}
 .calendar-cell {
-  display: flex; flex-direction: column; gap: 6px; min-height: 120px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px;
+  height: 100%; /* 변경: min-height: 120px; 대신 height: 100% 사용 */
+  overflow: hidden; /* 추가: 영역 밖으로 삐져나가는 것 방지 */
+  cursor: pointer;
   border-right: 1px solid var(--border-color, #e5e7eb);
   border-bottom: 1px solid var(--border-color, #e5e7eb);
   transition: background .2s;
@@ -2022,7 +2034,22 @@ onMounted(async () => {
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--primary, #4f46e5); color: #fff; font-weight: 700;
 }
-.cell-schedules { display: flex; flex-direction: column; gap: 2px; }
+.cell-schedules {
+  display: flex; flex-direction: column; gap: 2px;
+  flex: 1; /* 추가: 남은 세로 공간을 꽉 채움 */
+  overflow-y: auto; /* 추가: 내용이 많으면 세로 스크롤 생성 */
+  padding-bottom: 4px; /* 스크롤 여유 공간 */
+}
+.cell-schedules::-webkit-scrollbar {
+  width: 4px;
+}
+.cell-schedules::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cell-schedules::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
 .cell-add-hint {
   display: flex; align-items: center; justify-content: center; gap: 2px;
   padding: 4px 0; font-size: 11px; color: var(--primary, #4f46e5);
@@ -2419,7 +2446,9 @@ textarea.form-control { resize: vertical; font-family: inherit; }
   .content-body { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
-  .calendar-cell { min-height: 84px; }
+  .calendar-body {
+    grid-auto-rows: 110px; /* 모바일 화면에서는 달력 한 칸 높이를 110px로 고정 */
+  }
   .form-row { grid-template-columns: 1fr; }
   .staff-selection-list { grid-template-columns: 1fr; }
   .bar-title { font-size: 9px; }
