@@ -16,7 +16,7 @@ export default defineNuxtConfig({
     app: {
         // pageTransition: { name: 'page', mode: 'out-in' },
         head: {
-            title: '관리자 ERP(ver3)',
+            title: '관리자 ERP 시스템',
             meta: [
                 { name: 'description', content: '관리자 ERP 시스템' }
             ],

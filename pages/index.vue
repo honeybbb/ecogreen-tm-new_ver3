@@ -12,8 +12,6 @@ const cIdx = authStore.user?.cIdx;
 // 1. 주요 현황 데이터 (KPI)
 const startDate = ref('');
 const endDate = ref('');
-const orderCount = ref(0);
-const offCount = ref(0);
 const totalPayrollNet = ref(0); // 이번 달 실지급액 총합
 
 // stats 변수의 컬러 정의를 common.css의 테마 변수로 매칭
@@ -165,7 +163,7 @@ const calculateProcessed = (data) => {
       contractEnd = targetContract.endDt || '';
       urgentType = targetContract.type || targetContract.category || '계약';
 
-      // 2. ⭐ 최근 차수 계약 시작일(startDt)과 종료일(endDt)을 기준으로 진행률 계산
+      // 2. 최근 차수 계약 시작일(startDt)과 종료일(endDt)을 기준으로 진행률 계산
       if (targetContract.startDt && targetContract.endDt) {
         const startDate = new Date(targetContract.startDt);
         const endDate = new Date(targetContract.endDt);

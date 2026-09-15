@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from 'axios';
 
@@ -13,51 +13,110 @@ const EQUIP_CATEGORIES = ['청소기계 (탑승/보행)', '일반 청소용구',
 const form = ref({
   name: '',
   model: '',
-  category: '',
+  serialNo: '', // 일련번호
+  type: '',
   totalQty: 1,
   price: 0,
   purchaseDate: new Date().toISOString().substring(0, 10), // 오늘 날짜 기본값
+  mfgDt: '', // 제조년월
   note: ''
 });
 
 // =============================================
-// 이미지 업로드 관리
+// 이미지 업로드 관리 (다중 업로드 지원)
 // =============================================
 const fileInput = ref(null);
-const imagePreview = ref(null);
-const selectedFile = ref(null);
+// 여러 이미지를 담을 배열: { file: File, previewUrl: string } 형태
+const selectedFiles = ref([]);
 
 // 파일 선택 창 띄우기
 const triggerFileInput = () => {
   fileInput.value.click();
 };
 
-// 파일 첨부 시 미리보기 생성
+// 파일 첨부 시 미리보기 생성 (다중 선택 처리)
 const handleFileChange = (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
 
-  if (!file.type.startsWith('image/')) {
-    alert('이미지 파일만 업로드 가능합니다.');
-    return;
+  // 선택된 파일들을 순회하며 배열에 추가
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+
+    if (!file.type.startsWith('image/')) {
+      alert(`${file.name}은(는) 이미지 파일이 아닙니다.`);
+      continue;
+    }
+
+    // 5MB 용량 제한 검사
+    if (file.size > 5 * 1024 * 1024) {
+      alert(`${file.name}의 크기가 5MB를 초과합니다.`);
+      continue;
+    }
+
+    selectedFiles.value.push({
+      file: file,
+      previewUrl: URL.createObjectURL(file) // 미리보기 URL 생성
+    });
   }
 
-  // 5MB 용량 제한 예시
-  if (file.size > 5 * 1024 * 1024) {
-    alert('이미지 크기는 5MB를 초과할 수 없습니다.');
-    return;
+  // 동일한 파일을 다시 선택할 수 있도록 input 초기화
+  if (fileInput.value) fileInput.value.value = '';
+};
+
+// 첨부된 특정 이미지 삭제
+const removeImage = (index) => {
+  const removedFile = selectedFiles.value.splice(index, 1)[0];
+  URL.revokeObjectURL(removedFile.previewUrl); // 메모리 누수 방지
+};
+
+// =============================================
+// 퀵 네비게이션(스크롤 이동) 로직
+// =============================================
+const activeSection = ref('sec-basic');
+const navItems = [
+  { id: 'sec-image', title: '장비 사진', icon: 'mdi-image-outline' },
+  { id: 'sec-basic', title: '기본 정보', icon: 'mdi-text-box-outline' },
+];
+
+const scrollToSection = (id) => {
+  activeSection.value = id;
+  const el = document.getElementById(id);
+  const container = document.querySelector('.content-area');
+
+  if (el && container) {
+    const topPos = el.offsetTop - 24;
+    container.scrollTo({ top: topPos, behavior: 'smooth' });
   }
-
-  selectedFile.value = file;
-  imagePreview.value = URL.createObjectURL(file);
 };
 
-// 첨부된 이미지 삭제
-const removeImage = () => {
-  selectedFile.value = null;
-  imagePreview.value = null;
-  if (fileInput.value) fileInput.value.value = ''; // input 초기화
-};
+let scrollHandler = null;
+
+onMounted(() => {
+  const container = document.querySelector('.content-area');
+  if (container) {
+    scrollHandler = () => {
+      const sections = navItems.map(item => document.getElementById(item.id));
+      let current = 'sec-basic';
+      sections.forEach(section => {
+        if (section && container.scrollTop >= (section.offsetTop - 150)) {
+          current = section.getAttribute('id');
+        }
+      });
+      activeSection.value = current;
+    };
+    container.addEventListener('scroll', scrollHandler);
+  }
+});
+
+onBeforeUnmount(() => {
+  const container = document.querySelector('.content-area');
+  if (container && scrollHandler) {
+    container.removeEventListener('scroll', scrollHandler);
+  }
+  // 컴포넌트 언마운트 시 남아있는 이미지 URL 메모리 해제
+  selectedFiles.value.forEach(item => URL.revokeObjectURL(item.previewUrl));
+});
 
 // =============================================
 // 액션 핸들러
@@ -70,38 +129,53 @@ const goBack = () => {
 
 const saveEquipment = async () => {
   // 1. 유효성 검사
-  if (!form.value.name) { alert('장비명을 입력해주세요.'); return; }
-  if (!form.value.category) { alert('장비 분류를 선택해주세요.'); return; }
-  if (form.value.totalQty < 1) { alert('총 구매 수량은 1개 이상이어야 합니다.'); return; }
+  if (!form.value.name) {
+    alert('장비명을 입력해주세요.');
+    scrollToSection('sec-basic');
+    return;
+  }
+  if (!form.value.type) {
+    alert('장비 분류를 선택해주세요.');
+    scrollToSection('sec-basic');
+    return;
+  }
+  if (form.value.totalQty < 1) {
+    alert('총 구매 수량은 1개 이상이어야 합니다.');
+    scrollToSection('sec-basic');
+    return;
+  }
 
-  // 2. FormData 객체 생성 (이미지 파일 전송을 위해 필수)
+  // 2. FormData 객체 생성
   const formData = new FormData();
   formData.append('name', form.value.name);
+  formData.append('type', form.value.type);
   formData.append('model', form.value.model);
-  formData.append('category', form.value.category);
+  formData.append('serialNo', form.value.serialNo);
   formData.append('totalQty', form.value.totalQty);
   formData.append('price', form.value.price);
   formData.append('purchaseDate', form.value.purchaseDate);
+  formData.append('mfgDt', form.value.mfgDt);
   formData.append('note', form.value.note);
 
-  if (selectedFile.value) {
-    formData.append('equipImage', selectedFile.value); // 서버에서 받을 필드명
+  // 다중 이미지 파일 전송
+  if (selectedFiles.value.length > 0) {
+    selectedFiles.value.forEach(item => {
+      formData.append('imgPath', item.file);
+    });
   }
 
   if (!confirm('신규 장비를 등록하시겠습니까?')) return;
 
   try {
-    // [백엔드 API 호출]
-    // Content-Type: multipart/form-data 설정 생략 가능 (axios가 FormData 인식 시 자동 처리)
     await axios.post('/api/v1/equipment/register', formData);
 
     alert('장비 등록이 완료되었습니다.');
-    router.push('/equipment/list');
+    await router.push('/equipment/list');
   } catch (e) {
     console.error(e);
-    // API 미구현 시 임시 알림 및 라우팅
-    alert('[목업] 등록 성공 처리되었습니다.');
-    router.push('/equipment/list');
+    alert('등록 중 문제가 발생했습니다.');
+    // 임시 테스트용 라우팅 (실제 환경에 맞게 수정)
+    // await router.push('/equipment/list');
   }
 };
 </script>
@@ -109,192 +183,285 @@ const saveEquipment = async () => {
 <template>
   <div class="equip-register-page">
 
-    <div class="page-header">
+    <!-- 상단 고정(Sticky) 헤더 -->
+    <div class="page-header sticky-header">
       <div class="header-left">
-        <button @click="goBack" class="btn-back">
+        <button type="button" @click="goBack" class="btn-back">
           <i class="mdi mdi-arrow-left"></i>
         </button>
         <div>
-          <h1 class="page-title">
-            <i class="mdi mdi-plus-box-multiple-outline"></i> 신규 마스터 장비 등록
-          </h1>
-          <p class="page-subtitle">본사 자산으로 귀속될 신규 장비를 등록하고 현장에 분배할 수 있습니다.</p>
+          <h1 class="page-title"><i class="mdi mdi-plus-box-multiple-outline text-primary"></i> 신규 장비 등록</h1>
+          <p class="page-subtitle">본사 자산으로 귀속될 신규 장비를 등록합니다.</p>
         </div>
       </div>
-      <div class="header-actions">
-        <button @click="goBack" class="btn-cancel"><i class="mdi mdi-close"></i> 취소</button>
-        <button @click="saveEquipment" class="btn-save"><i class="mdi mdi-check"></i> 장비 등록</button>
+      <div class="header-right">
+        <button type="button" @click="goBack" class="btn-cancel">취소</button>
+        <button type="button" @click="saveEquipment" class="btn-submit">
+          <i class="mdi mdi-check"></i> 장비 등록
+        </button>
       </div>
     </div>
 
-    <div class="register-content">
+    <!-- 메인 레이아웃: 좌측 네비 + 우측 스크롤 폼 -->
+    <div class="register-layout">
 
-      <div class="image-section">
-        <div class="section-title">
-          <i class="mdi mdi-image-outline"></i> 장비 사진
+      <!-- 좌측 퀵 네비게이션 -->
+      <aside class="quick-nav-sidebar">
+        <div class="nav-wrapper">
+          <h3 class="nav-title">입력 항목</h3>
+          <ul class="nav-list">
+            <li v-for="nav in navItems" :key="nav.id"
+                :class="['nav-item', { active: activeSection === nav.id }]"
+                @click="scrollToSection(nav.id)">
+              <i :class="['mdi', nav.icon]"></i>
+              <span>{{ nav.title }}</span>
+            </li>
+          </ul>
         </div>
+      </aside>
 
-        <div class="image-upload-container">
-          <input
-              type="file"
-              ref="fileInput"
-              @change="handleFileChange"
-              accept="image/png, image/jpeg, image/jpg"
-              hidden
-          />
+      <!-- 우측 메인 폼 영역 (스크롤) -->
+      <main class="content-area">
+        <form @submit.prevent="saveEquipment" id="registerForm">
 
-          <div v-if="imagePreview" class="image-preview-box">
-            <img :src="imagePreview" alt="장비 미리보기" />
-            <div class="image-overlay">
-              <button @click="triggerFileInput" class="btn-img-action"><i class="mdi mdi-camera-retake"></i> 변경</button>
-              <button @click="removeImage" class="btn-img-action btn-danger"><i class="mdi mdi-trash-can-outline"></i> 삭제</button>
+          <!-- 카드 1: 장비 사진 -->
+          <section id="sec-image" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-image-outline text-primary"></i>
+              <h2>장비 사진</h2>
             </div>
-          </div>
+            <div class="card-body">
 
-          <div v-else class="image-empty-box" @click="triggerFileInput">
-            <i class="mdi mdi-cloud-upload-outline"></i>
-            <p>클릭하여 장비 사진을 업로드하세요</p>
-            <span>JPG, PNG 지원 (최대 5MB)</span>
-          </div>
-        </div>
-      </div>
+              <!-- multiple 속성 추가 -->
+              <input
+                  type="file"
+                  ref="fileInput"
+                  @change="handleFileChange"
+                  accept="image/png, image/jpeg, image/jpg"
+                  multiple
+                  hidden
+              />
 
-      <div class="form-section">
-        <div class="section-title">
-          <i class="mdi mdi-text-box-outline"></i> 기본 정보 입력
-        </div>
+              <!-- 다중 이미지 갤러리 그리드 -->
+              <div class="image-gallery-grid">
 
-        <div class="form-grid">
+                <!-- 등록된 이미지들 미리보기 루프 -->
+                <div v-for="(img, index) in selectedFiles" :key="index" class="image-preview-box">
+                  <img :src="img.previewUrl" alt="장비 미리보기" />
+                  <div class="image-overlay">
+                    <button type="button" @click="removeImage(index)" class="btn-img-action btn-danger">
+                      <i class="mdi mdi-trash-can-outline"></i> 삭제
+                    </button>
+                  </div>
+                </div>
 
-          <div class="form-item full-width">
-            <label class="required">장비명</label>
-            <input type="text" v-model="form.name" class="info-input" placeholder="예: 탑승식 습식 바닥세정기" />
-          </div>
+                <!-- 이미지 추가 버튼 -->
+                <div class="image-empty-box" @click="triggerFileInput">
+                  <i class="mdi mdi-plus-box-outline"></i>
+                  <p>사진 추가</p>
+                  <span>(최대 5MB)</span>
+                </div>
 
-          <div class="form-item">
-            <label>모델명</label>
-            <input type="text" v-model="form.model" class="info-input" placeholder="예: T-1000 PRO" />
-          </div>
+              </div>
 
-          <div class="form-item required">
-            <label class="required">장비 분류</label>
-            <select v-model="form.category" class="info-select">
-              <option value="">선택하세요</option>
-              <option v-for="cat in EQUIP_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
-            </select>
-          </div>
-
-          <div class="form-item">
-            <label class="required">총 구매 수량 (대)</label>
-            <input type="number" v-model.number="form.totalQty" min="1" class="info-input text-right" />
-          </div>
-
-          <div class="form-item">
-            <label>도입(구매)일</label>
-            <input type="date" v-model="form.purchaseDate" class="info-input" />
-          </div>
-
-          <div class="form-item full-width">
-            <label>개당 구매 단가 (원)</label>
-            <div class="input-with-unit">
-              <input type="number" v-model.number="form.price" min="0" step="10000" class="info-input text-right" />
-              <span class="unit">원</span>
             </div>
-            <span class="help-text">자산 가치 평가를 위해 입력합니다. (총액: {{ (form.price * form.totalQty).toLocaleString() }}원)</span>
-          </div>
+          </section>
 
-          <div class="form-item full-width">
-            <label>비고 및 특이사항</label>
-            <textarea v-model="form.note" class="info-textarea" rows="4" placeholder="구매처, 기본 사양, 보증(A/S) 기간 등 필요한 메모를 남겨주세요."></textarea>
-          </div>
+          <!-- 카드 2: 기본 정보 -->
+          <section id="sec-basic" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-text-box-outline text-primary"></i>
+              <h2>기본 정보 입력</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-grid">
 
-        </div>
-      </div>
+                <div class="form-group">
+                  <label class="form-label required">장비 분류</label>
+                  <select v-model="form.type" required class="form-select">
+                    <option value="">선택하세요</option>
+                    <option v-for="cat in EQUIP_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">장비명</label>
+                  <input type="text" v-model="form.name" required class="form-input" placeholder="예: 탑승식 습식 바닥세정기" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">모델명</label>
+                  <input type="text" v-model="form.model" class="form-input" placeholder="예: T-1000 PRO" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">일련번호</label>
+                  <input type="text" v-model="form.serialNo" class="form-input" placeholder="ASA23180" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">총 수량</label>
+                  <input type="number" v-model.number="form.totalQty" min="1" required class="form-input text-right" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">도입(구매)일</label>
+                  <input type="date" v-model="form.purchaseDate" class="form-input" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">제조년월</label>
+                  <input type="date" v-model="form.mfgDt" class="form-input" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">개당 구매 단가 (원)</label>
+                  <div class="input-with-unit">
+                    <input type="number" v-model.number="form.price" min="0" step="10000" class="form-input text-right" />
+                    <span class="unit">원</span>
+                  </div>
+                  <p class="helper-text-sm">자산 가치 평가를 위해 입력합니다. (총액: {{ (form.price * form.totalQty).toLocaleString() }}원)</p>
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label">비고 및 특이사항</label>
+                  <textarea v-model="form.note" class="form-textarea" rows="4" placeholder="구매처, 기본 사양, 보증(A/S) 기간 등 필요한 메모를 남겨주세요."></textarea>
+                </div>
+
+              </div>
+            </div>
+          </section>
+
+          <div style="height: 100px;"></div>
+        </form>
+      </main>
 
     </div>
   </div>
 </template>
 
+<style>
+/* Vue/Nuxt 고질적인 Sticky 방해 요소 강제 해제 */
+body, #__nuxt, #__layout, .v-application { overflow: visible !important; }
+</style>
+
 <style scoped>
-/* =========================================
-   Layout & Header
-========================================= */
-.header-left {
+.equip-register-page {
+  background-color: var(--bg-canvas, #f1f5f9);
+  margin: -24px;
+  height: calc(100vh - 60px);
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.btn-back {
-  width: 42px; height: 42px; border-radius: 10px; background: var(--bg-surface);
-  border: 1px solid var(--border-color); color: var(--text-sub); cursor: pointer;
-  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+.sticky-header {
+  flex-shrink: 0; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(8px);
+  padding: 16px 32px; border-bottom: 1px solid var(--border-color, #e2e8f0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); display: flex; justify-content: space-between;
+  align-items: center; z-index: 50; margin: 0;
 }
-.btn-back:hover { background: var(--bg-hover); color: var(--text-main); }
-.btn-back i { font-size: 20px; }
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.page-title { font-size: 20px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; display:flex; align-items:center; gap:8px; }
+.page-subtitle { font-size: 13px; color: var(--text-sub, #475569); margin: 4px 0 0 0; }
 
-.btn-cancel, .btn-save {
-  display: flex; align-items: center; gap: 6px; padding: 10px 20px; height: 42px;
-  border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-sizing: border-box;
-}
-.btn-cancel { background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); }
+.btn-back { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; }
+.btn-back:hover { background: var(--bg-hover, #f8fafc); }
+.btn-back i { font-size: 20px; color: var(--text-sub); }
+
+.btn-cancel { padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; font-weight: 600; cursor: pointer; color: var(--text-sub); transition: 0.2s; }
 .btn-cancel:hover { background: var(--bg-hover); color: var(--text-main); }
-.btn-save { background: var(--primary); border: none; color: white; box-shadow: var(--shadow-sm); }
-.btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
+.btn-submit { padding: 10px 20px; border-radius: 8px; border: none; background: var(--primary, #3b82f6); color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2); transition: 0.2s; display:flex; align-items:center; gap:6px; }
+.btn-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3); }
+
+/* 퀵 네비게이션 & 메인 레이아웃 */
+.register-layout { display: flex; flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding-top: 24px; overflow: hidden; }
+
+.quick-nav-sidebar { width: 220px; flex-shrink: 0; height: 100%; overflow-y: auto; padding: 0 16px; }
+.nav-title { font-size: 12px; font-weight: 800; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding-left: 12px; }
+.nav-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--text-sub, #475569); cursor: pointer; transition: all 0.2s; background: transparent; }
+.nav-item i { font-size: 18px; opacity: 0.6; }
+.nav-item:hover { background: rgba(0,0,0,0.04); color: var(--text-main, #1e293b); }
+.nav-item.active { background: #fff; color: var(--primary, #3b82f6); box-shadow: 0 2px 8px rgba(0,0,0,0.05); font-weight: 700; }
+.nav-item.active i { opacity: 1; }
+
+.content-area { flex: 1; height: 100%; overflow-y: auto; position: relative; padding: 0 24px 80px 24px; scroll-behavior: smooth;}
 
 /* =========================================
-   Content Layout (좌우 분할)
+   카드 UI 공통
 ========================================= */
-.register-content {
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
-}
-
-.image-section {
-  width: 350px;
-  flex-shrink: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
+.category-card {
+  background: #ffffff;
+  border: 1px solid var(--border-color, #e2e8f0);
   border-radius: 12px;
-  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  overflow: visible;
+  margin-bottom: 24px;
 }
-
-.form-section {
-  flex: 1;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 32px;
-}
-
-.section-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-main);
-  margin-bottom: 20px;
+.card-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  background: #fff;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
 }
-.section-title i { color: var(--primary); font-size: 20px; }
+.card-header i { font-size: 24px; }
+.card-header h2 { font-size: 18px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; }
+.card-body { padding: 24px; }
 
 /* =========================================
-   Image Upload UI
+   공통 폼 요소
 ========================================= */
-.image-upload-container {
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.full-width { grid-column: 1 / -1; }
+.form-label { font-size: 13px; font-weight: 700; color: var(--text-sub, #475569); }
+.form-label.required::after { content: '*'; color: var(--danger, #ef4444); margin-left: 4px; }
+.form-input, .form-select, .form-textarea { padding: 10px 12px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; font-size: 13px; background: #fff; width: 100%; box-sizing: border-box; transition: 0.2s; color: var(--text-main); }
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); outline: none; }
+.form-textarea { resize: vertical; min-height: 80px; }
+
+.input-with-unit { display: flex; align-items: center; border: 1px solid var(--border-focus); border-radius: 6px; background: #fff; overflow: hidden; }
+.input-with-unit:focus-within { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+.input-with-unit .form-input { border: none; box-shadow: none; flex: 1; border-radius: 0; }
+.input-with-unit .form-input:focus { box-shadow: none; }
+.input-with-unit .unit {
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--text-sub);
+  border-left: 1px solid var(--border-focus);
+  display:flex;
+  align-items:center;
+}
+
+.helper-text-sm { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* =========================================
+   다중 이미지 갤러리 UI
+========================================= */
+.image-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.image-preview-box, .image-empty-box {
   width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 12px;
   overflow: hidden;
-  background: var(--bg-canvas);
+  position: relative;
 }
 
 .image-empty-box {
-  width: 100%;
-  height: 100%;
   border: 2px dashed var(--border-focus);
-  border-radius: 12px;
+  background: var(--bg-canvas);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -304,35 +471,28 @@ const saveEquipment = async () => {
   color: var(--text-sub);
 }
 .image-empty-box:hover {
-  background: rgba(99, 102, 241, 0.03);
+  background: rgba(59, 130, 246, 0.05);
   border-color: var(--primary);
   color: var(--primary);
 }
-.image-empty-box i { font-size: 48px; margin-bottom: 12px; opacity: 0.8; }
-.image-empty-box p { font-size: 14px; font-weight: 600; margin: 0 0 6px 0; }
-.image-empty-box span { font-size: 12px; opacity: 0.7; }
+.image-empty-box i { font-size: 32px; margin-bottom: 8px; opacity: 0.8; }
+.image-empty-box p { font-size: 13px; font-weight: 600; margin: 0 0 4px 0; }
+.image-empty-box span { font-size: 11px; opacity: 0.7; }
 
-.image-preview-box {
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
 .image-preview-box img {
   width: 100%;
   height: 100%;
-  object-fit: cover; /* 이미지가 박스를 꽉 채우도록 */
+  object-fit: cover;
+  border: 1px solid var(--border-color);
 }
 
-/* 마우스 올렸을 때 액션 버튼 보이기 */
 .image-overlay {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -341,103 +501,17 @@ const saveEquipment = async () => {
 }
 
 .btn-img-action {
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.95);
   border: none;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-main);
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .btn-img-action:hover { background: white; }
 .btn-danger { color: var(--danger); }
-
-/* =========================================
-   Form Elements
-========================================= */
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
-
-.form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.form-item.full-width { grid-column: 1 / -1; }
-
-.form-item label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-sub);
-}
-.form-item label.required::after {
-  content: '*';
-  color: var(--danger);
-  margin-left: 4px;
-}
-
-.info-input, .info-select, .info-textarea {
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-main);
-  background: var(--bg-canvas);
-  transition: all 0.2s;
-  box-sizing: border-box;
-}
-.info-input:focus, .info-select:focus, .info-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-  background: var(--bg-surface);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.info-textarea { resize: vertical; }
-
-.input-with-unit {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.input-with-unit .info-input { flex: 1; }
-.unit { font-size: 14px; font-weight: 600; color: var(--text-sub); }
-
-.help-text {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-.text-right { text-align: right; }
-
-/* =========================================
-   Responsive Breakpoints
-========================================= */
-@media (max-width: 1024px) {
-  /* 태블릿 이하는 세로 배치 */
-  .register-content {
-    flex-direction: column;
-  }
-  .image-section {
-    width: 100%;
-    max-width: 400px;
-    margin: 0 auto;
-  }
-}
-
-@media (max-width: 768px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-section {
-    padding: 20px;
-  }
-}
 </style>
