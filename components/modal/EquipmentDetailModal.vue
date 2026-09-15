@@ -48,7 +48,7 @@ const currentTransactions = computed(() => mockTransactions.value.filter(t => t.
 // ========================================================
 // 장비 이동 폼
 // ========================================================
-const ALL_SITES = ['본사 창고', '반포 래미안', '북한산힐스테이트7차', '옥정8단지', 'LH 위례 6단지', '강서 대명 강동'];
+// const ALL_SITES = ['본사 창고', '반포 래미안', '북한산힐스테이트7차', '옥정8단지', 'LH 위례 6단지', '강서 대명 강동'];
 
 const showMoveModal = ref(false);
 const moveForm = ref({
@@ -90,8 +90,23 @@ const executeMove = () => {
     manager: manager || '미지정'
   });
 
-  alert('장비 이동 처리가 완료되었습니다.');
-  showMoveModal.value = false;
+  const payload = {
+    eqIdx: props.equipment?.idx,
+    fromSite: fromSite,
+    toSite: toSite,
+    qty: qty,
+    date: date
+  };
+
+  axios.put(`/api/v1/equipment/move`, payload)
+      .then(() => {
+        alert('장비 이동 처리가 완료되었습니다.');
+        showMoveModal.value = false;
+      })
+      .catch((err) => {
+        console.error(err);
+        alert('장비 이동 처리 중 오류가 발생했습니다.');
+      });
 };
 
 // ========================================================
@@ -140,6 +155,7 @@ const executeRepair = () => {
 
 // 모달이 열릴 때 기본 탭 초기화
 import { watch } from 'vue';
+import axios from "axios";
 watch(() => props.show, (newVal) => {
   if (newVal) {
     detailTab.value = props.equipment?.assignments ? 'assignment' : 'info';
@@ -304,16 +320,18 @@ watch(() => props.show, (newVal) => {
       <div class="modal-body" style="padding: 24px;">
         <div class="move-form-group">
           <label>출발지</label>
-          <input type="text" :value="moveForm.fromSite" disabled class="form-input bg-gray" />
+          <!--input type="text" :value="moveForm.fromSite" disabled class="form-input bg-gray" /-->
+          <SiteSelect v-model="moveForm.toSite" disabled />
         </div>
         <div class="move-form-group">
           <label>도착지</label>
-          <select v-model="moveForm.toSite" class="form-input">
+          <!--select v-model="moveForm.toSite" class="form-input">
             <option value="" disabled>도착 현장을 선택하세요</option>
             <option v-for="site in ALL_SITES" :key="site" :value="site" :disabled="site === moveForm.fromSite">
               {{ site }}
             </option>
-          </select>
+          </select-->
+          <SiteSelect v-model="moveForm.toSite" />
         </div>
         <div class="move-form-group">
           <label>이동 수량 (최대 {{ moveForm.maxQty }}개)</label>

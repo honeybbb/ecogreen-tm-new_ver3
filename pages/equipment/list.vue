@@ -5,6 +5,7 @@ const router = useRouter()
 import Pagination from '@/components/common/Pagination.vue'
 import EquipmentDetailModal from '@/components/modal/EquipmentDetailModal.vue'
 import FilterSearchGroup from "~/components/common/FilterSearchGroup.vue";
+import axios from "axios";
 
 // ========================================================
 // 1. 상태 및 상수 정의
@@ -158,6 +159,31 @@ const handleEquipmentUpdate = (payload) => {
     }
   }
 };
+
+const getEquipmentList = async () => {
+  // isLoading.value = true;
+
+  try {
+    const response = await axios.get('/api/v1/equipment/list');
+
+    // 백엔드 응답 구조가 { result: true, data: [...] } 라고 가정
+    if (response.data.result) {
+      equipments.value = response.data.data;
+    } else {
+      alert(response.data.msg || '데이터를 불러오지 못했습니다.');
+    }
+  } catch (error) {
+    console.error('장비 목록 조회 에러:', error);
+    alert('서버와 통신 중 오류가 발생했습니다.');
+  } finally {
+    // isLoading.value = false;
+  }
+};
+
+// 3. 컴포넌트 마운트 시 자동 호출
+onMounted(() => {
+  // getEquipmentList();
+});
 </script>
 
 <template>
@@ -318,8 +344,6 @@ const handleEquipmentUpdate = (payload) => {
 .text-muted { color: #9ca3af; }
 .text-right { text-align: right !important; }
 .text-lg { font-size: 18px; }
-.mt-2 { margin-top: 8px; }
-.mt-3 { margin-top: 12px; }
 
 /* ── 빈 상태 (Empty State) ── */
 .empty-state { text-align: center; padding: 60px 20px; color: #9ca3af; }
