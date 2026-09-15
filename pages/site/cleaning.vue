@@ -517,19 +517,26 @@ const onDrop = async (e, teamIdx) => {
   const prevTeamIdx = task.teamIdx;
   const prevStatus = task.status;
 
-  // 낙관적 업데이트
   task.teamIdx = teamIdx;
   if (teamIdx !== null && task.status === 0) task.status = 1; // 팀 배정 → 확정
 
   try {
     const { data } = await axios.put(`/api/v1/site/cleaning/schedule/${task.idx}`, {
-      tIdx: teamIdx,          // DB 컬럼명
-      teamIdx: teamIdx,       // 호환용
+      itemCd: task.itemCd,
+      startDt: task.startDt,
+      endDt: task.endDt,
+      durationDays: task.durationDays,
+      mnIdx: task.mnIdx,
+      memo: task.memo,
+      teamIdx: teamIdx,
+      tIdx: teamIdx,
       status: task.status
     });
+
     if (!data.result) throw new Error(data.message || '팀 배정 실패');
   } catch (error) {
     console.error('팀 배정 실패:', error);
+    // 실패 시 롤백
     task.teamIdx = prevTeamIdx;
     task.status = prevStatus;
     window.customAlert?.('팀 배정에 실패했습니다. 이전 상태로 되돌렸습니다.', 'error');
