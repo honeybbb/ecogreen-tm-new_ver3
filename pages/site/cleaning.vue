@@ -1179,7 +1179,7 @@ onMounted(async () => {
           <span class="legend-item"><i class="legend-dot" style="background: #0ea5e9;"></i> 확정</span>
           <span class="legend-item"><i class="legend-dot" style="background: var(--warning, #f59e0b);"></i> 진행중</span>
           <span class="legend-item"><i class="legend-dot" style="background: var(--success, #22c55e);"></i> 완료</span>
-          <span class="legend-item"><i class="legend-dot legend-dot-pending"></i> 공문 수신확인 대기</span>
+          <!--span class="legend-item"><i class="legend-dot legend-dot-pending"></i> 공문 수신확인 대기</span-->
         </div>
       </div>
 
@@ -2432,8 +2432,11 @@ textarea.form-control { resize: vertical; font-family: inherit; }
 }
 .btn-add:hover, .btn-save:hover { background: var(--primary-hover, #4338ca); }
 .btn-cancel {
-  padding: 8px 16px; background: #fff; border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: 6px; font-weight: 600; cursor: pointer;
+  padding: 8px 16px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
 }
 .btn-danger {
   padding: 8px 16px; background: var(--danger, #ef4444); color: #fff;
