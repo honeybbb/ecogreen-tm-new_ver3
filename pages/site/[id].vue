@@ -77,7 +77,7 @@ const site = ref({
   billingManager: '',
   payrollManager: '',
   memo: '',
-  status: '준비 중',
+  status: 'Y',
   payment_day: '',
   billing_day: '31',
   bigo: '',
@@ -88,7 +88,10 @@ const site = ref({
 });
 
 const siteTypeOptions  = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
-const statusOptions    = ref(['준비 중', '운영 중', '계약 종료']);
+const statusOptions = ref([
+  { label: '운영 중', value: 'Y' },
+  { label: '계약 종료', value: 'N' }
+]);
 const accountList = ref([]);
 // =============================================
 // 계약 그룹
@@ -1108,7 +1111,7 @@ const getSiteData = async () => {
       businessType:   result.businessType || '',
       businessItem:   result.businessItem || '',
       email:          result.email || '',
-      status:         result.status === 'Y' ? '운영 중' : '계약 종료',
+      status:         result.status,
       areaGross:      result.area,
       areaOver:       result.areaOver,
       areaUnder:      result.areaUnder,
@@ -1697,9 +1700,9 @@ onMounted(async () => {
         <div class="profile-info">
           <div class="profile-main">
             <h2 class="profile-name">{{ site.siteName || '현장명 없음' }}</h2>
-            <span :class="['status-badge', site.status === '운영 중' ? 'status-active' : site.status === '준비 중' ? 'status-pending' : 'status-inactive']">
-              <i :class="['mdi', site.status === '운영 중' ? 'mdi-check-circle-outline' : site.status === '준비 중' ? 'mdi-clock-outline' : 'mdi-close-circle-outline']"></i>
-              {{ site.status }}
+            <span :class="['status-badge', site.status === 'Y' ? 'status-active' : site.status === '준비 중' ? 'status-pending' : 'status-inactive']">
+              <i :class="['mdi', site.status === 'Y' ? 'mdi-check-circle-outline' : site.status === '준비 중' ? 'mdi-clock-outline' : 'mdi-close-circle-outline']"></i>
+              {{ site.status == 'Y' ? '운영 중' : '계약 종료' }}
             </span>
           </div>
           <div class="profile-details">
@@ -1768,7 +1771,7 @@ onMounted(async () => {
               <div class="info-item">
                 <label>현장 상태</label>
                 <select v-model="site.status" class="info-select">
-                  <option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</option>
+                  <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
                 </select>
               </div>
               <!--div class="info-item">
@@ -2566,8 +2569,9 @@ onMounted(async () => {
             <span>{{ item.phone }}</span>
           </template>
           <template #cell-status="{ item }">
-            <span :class="['status-badge', item.status == 0 ? 'status-active' : item.status == 1 ? 'status-inactive':'status-preparing']">
-              {{ item.status == 0 ? '재직' : item.status == 1 ? '퇴사' : item.status == 2 ? '일용직' : item.status == 3 ? '대근' : '휴직' }}
+            <span :class="['status-badge', site.status === 'Y' ? 'status-active' : 'status-inactive']">
+              <i :class="['mdi', site.status === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
+              {{ site.status === 'Y' ? '운영 중' : '계약 종료' }}
             </span>
           </template>
           <template #cell-actions="{ item }">
