@@ -67,7 +67,7 @@ const selectedType = ref('전체');
 const selectedVat = ref('전체');
 const selectedManager = ref('전체');
 const selectedBilling = ref('전체');
-const statusOptions = ref(['전체', '운영 중', '준비 중', '계약 종료']);
+const statusOptions = ref(['전체', '운영 중', '계약 종료']);
 const sTypeOptions = ref(['전체', '아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
 const vatOptions = ref([ { label: '전체', value: '전체' }, { label: '과세', value: 'Y' }, { label: '면세', value: 'N' } ]);
 const manager = ref([]);
@@ -405,10 +405,10 @@ onActivated(async () => { await getSites(); });
         <div class="stat-icon"><i class="mdi mdi-check-circle-outline"></i></div>
         <div class="stat-content"><span class="stat-label">운영 중</span><span class="stat-value">{{ statsInfo.active }} <small>건</small></span></div>
       </div>
-      <div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
+      <!--div class="stat-card" style="--card-color: var(--warning); --card-bg: rgba(245, 158, 11, 0.1);">
         <div class="stat-icon"><i class="mdi mdi-clock-outline"></i></div>
         <div class="stat-content"><span class="stat-label">준비 중</span><span class="stat-value">{{ statsInfo.preparing }} <small>건</small></span></div>
-      </div>
+      </div-->
       <div class="stat-card" style="--card-color: var(--text-sub); --card-bg: var(--bg-hover);">
         <div class="stat-icon"><i class="mdi mdi-close-circle-outline"></i></div>
         <div class="stat-content"><span class="stat-label">계약 종료</span><span class="stat-value">{{ statsInfo.ended }} <small>건</small></span></div>

@@ -102,7 +102,7 @@ const getInitSiteData = () => ({
   billingManager: '',
   payrollManager: '',
   memo: '',
-  status: '운영 중',
+  status: 'Y',
   payment_day: '',
   billing_day: '31',
   bigo: '',
@@ -117,7 +117,10 @@ const site = ref(getInitSiteData());
 const accountList = ref([]);
 const contractGroups = ref([]);
 const siteTypeOptions = ref(['아파트', '주상복합', '오피스텔', '상업 시설', '기타']);
-const statusOptions  = ref(['운영 중', '계약 종료']);
+const statusOptions = ref([
+  { label: '운영 중', value: 'Y' },
+  { label: '계약 종료', value: 'N' }
+]);
 const bigoHistory    = ref([]);
 const settlementHistory = ref([]);
 const detailInput    = ref(null);
@@ -818,7 +821,7 @@ const getSiteData = async () => {
     site.value.siteName       = result.name;
     site.value.siteId         = result.site_id;
     site.value.siteType       = result.sType;
-    site.value.status         = result.status === 'Y' ? '운영 중' : '계약 종료';
+    site.value.status         = result.status;
     site.value.areaGross      = result.area;
     site.value.areaOver       = result.areaOver;
     site.value.areaUnder      = result.areaUnder;
@@ -1132,7 +1135,7 @@ onMounted(() => {
                   <label class="form-label required">현장 상태</label>
                   <div class="radio-group">
                     <label v-for="s in statusOptions" :key="s" class="radio-label">
-                      <input type="radio" v-model="site.status" :value="s" /><span>{{ s }}</span>
+                      <input type="radio" v-model="site.status" :value="s.value" /><span>{{ s.label }}</span>
                     </label>
                   </div>
                 </div>
