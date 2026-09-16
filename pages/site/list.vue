@@ -32,7 +32,7 @@ const siteDefaultColumns = [
   // { key: 'renewal_status', label: '재계약 요청', visible: true, sortable: true, width: '10%', align: 'center' },
   { key: 'manager', label: '본사 담당자', visible: true, sortable: true, width: '10%' },
   { key: 'manager_phone', label: '본사 연락처', visible: false, sortable: false, width: '10%' },
-  { key: 'director', label: '현장 담당자', visible: false, sortable: true, width: '10%' },
+  { key: 'director', label: '현장 소장', visible: false, sortable: true, width: '10%' },
   { key: 'director_phone', label: '현장 연락처', visible: false, sortable: false, width: '10%' },
   { key: 'billingManager', label: '청구 담당자', visible: false, sortable: true, width: '10%' },
   { key: 'status', label: '상태', visible: true, sortable: true, width: '8%', align: 'center' },
@@ -48,7 +48,7 @@ const memoColLabelMap = {
   unit_su: '세대 수', building_su: '건물 수', deep_clean_count: '대청소 횟수',
   // renewal_status: '재계약 요청',
   manager: '본사 담당자', manager_phone: '본사 연락처',
-  director: '현장 담당자', director_phone: '현장 연락처', billingManager: '청구 담당자', status: '상태'
+  director: '현장 소장', director_phone: '현장 연락처', billingManager: '청구 담당자', status: '상태'
 };
 
 const {
@@ -135,7 +135,7 @@ const downloadExcel = () => {
       '세대 수': site.unit_su || 0, '건물 수': site.building_su || 0, '대청소 횟수(회)': getDeepCleanCount(site) || '-',
       //'재계약 요청': site.renewal_status || '-',
       '본사 담당자': site.manager || '-', '본사 연락처': site.manager_phone || '-',
-      '현장 담당자': site.director || '-', '현장 연락처': site.director_phone || '-', '청구 담당자': site.billingManager || '-', '상태': site.status
+      '현장 소장': site.director || '-', '현장 연락처': site.director_phone || '-', '청구 담당자': site.billingManager || '-', '상태': site.status
     };
   });
   const worksheet = XLSX.utils.json_to_sheet(excelData);
