@@ -856,9 +856,18 @@ const dynamicSettlementItems = computed(() => {
 });
 
 const settlementConfig = ref({
-  activePayLabels: [],// 직접노무비 특수 지급항목 표시 여부 (label 배열)
-  activeDeductionLabels: [], // 간접노무비(공제항목) 표시 여부 (label 배열)
+  activePayLabels: [],       // 04001 (지급)
+  activeDeductionLabels: [], // 04002 (공제)
+  activeExpenseLabels: [],   // 04003 (제경)
+  activeManageLabels: [],    // 04004 (관리비)
 });
+
+const unifiedSelectedCds = computed(() => [
+  ...settlementConfig.value.activePayLabels,
+  ...settlementConfig.value.activeDeductionLabels,
+  ...settlementConfig.value.activeExpenseLabels,  // 추가
+  ...settlementConfig.value.activeManageLabels,   // 추가
+]);
 
 const exportConfig = ref({
   includeStatement: true, // 청구 공문
@@ -920,27 +929,28 @@ const isPayItem = (cd) => {
 };
 
  */
-// 지급/공제 판별기 — groupNm(04001=지급항목) 기준으로 판별
-const isPayItem = (cd) => {
-  if (!cd) return false;
+// 코드 접두어(앞 5자리)를 기준으로 항목 그룹을 판별하는 함수
+const getItemGroupType = (cd) => {
+  if (!cd) return 'pay';
+  const prefix = String(cd).substring(0, 5);
 
-  // 1) wagesData에 이미 계산된 groupNm을 우선 사용 (가장 정확함)
-  const found = wagesData.value.find(w => w.itemCd === cd);
-  if (found) return found.groupNm === '지급항목';
+  if (prefix === '04001') return 'pay';       // 지급
+  if (prefix === '04002') return 'deduction'; // 공제
+  if (prefix === '04003') return 'expense';   // 제경비 (정산항목)
+  if (prefix === '04004') return 'manage';    // 관리비 (관리항목)
 
-  // 2) wagesData에 없는 코드(레거시 라벨 fallback) → 현재 계약에 쓰인 위치로 판별
-  if (dynamicSettlementItems.value.payCds.includes(cd)) return true;
-  if (dynamicSettlementItems.value.deductionCds.includes(cd)) return false;
-
-  // 3) 최후 fallback: 코드 접두어
-  return String(cd).startsWith('04001');
+  return 'pay'; // 기본값 (fallback)
 };
 
-// 현재 선택 설정된 항목
-const unifiedSelectedCds = computed(() => [
-  ...settlementConfig.value.activePayLabels,
-  ...settlementConfig.value.activeDeductionLabels,
-]);
+// UI에 보여줄 텍스트
+const getBadgeName = (cd) => {
+  const type = getItemGroupType(cd);
+  if (type === 'pay') return '지급';
+  if (type === 'deduction') return '공제';
+  if (type === 'expense') return '제경';
+  if (type === 'manage') return '관리';
+  return '기타';
+};
 
 // 리스트 필터링 (검색어 + 이미 선택된 항목 제외)
 const filteredAvailable = computed(() =>
@@ -971,27 +981,39 @@ const toggleRight = (item) => { // item = { cd, nm }
   else selectedRightItems.value.push(item.cd);
 };
 
-// 이동 버튼 로직
 const moveToRight = () => {
   selectedAvailItems.value.forEach(cd => {
-    if (isPayItem(cd)) {
-      if (!settlementConfig.value.activePayLabels.includes(cd))
-        settlementConfig.value.activePayLabels.push(cd);
-    } else {
-      if (!settlementConfig.value.activeDeductionLabels.includes(cd))
-        settlementConfig.value.activeDeductionLabels.push(cd);
+    const type = getItemGroupType(cd);
+
+    if (type === 'pay' && !settlementConfig.value.activePayLabels.includes(cd)) {
+      settlementConfig.value.activePayLabels.push(cd);
+    }
+    else if (type === 'deduction' && !settlementConfig.value.activeDeductionLabels.includes(cd)) {
+      settlementConfig.value.activeDeductionLabels.push(cd);
+    }
+    else if (type === 'expense' && !settlementConfig.value.activeExpenseLabels.includes(cd)) {
+      settlementConfig.value.activeExpenseLabels.push(cd);
+    }
+    else if (type === 'manage' && !settlementConfig.value.activeManageLabels.includes(cd)) {
+      settlementConfig.value.activeManageLabels.push(cd);
     }
   });
   selectedAvailItems.value = [];
 };
 
-// 왼쪽으로 이동 — cd 기준 제거
 const moveToLeft = () => {
   selectedRightItems.value.forEach(cd => {
     const pIdx = settlementConfig.value.activePayLabels.indexOf(cd);
     if (pIdx > -1) settlementConfig.value.activePayLabels.splice(pIdx, 1);
+
     const dIdx = settlementConfig.value.activeDeductionLabels.indexOf(cd);
     if (dIdx > -1) settlementConfig.value.activeDeductionLabels.splice(dIdx, 1);
+
+    const eIdx = settlementConfig.value.activeExpenseLabels.indexOf(cd);
+    if (eIdx > -1) settlementConfig.value.activeExpenseLabels.splice(eIdx, 1);
+
+    const mIdx = settlementConfig.value.activeManageLabels.indexOf(cd);
+    if (mIdx > -1) settlementConfig.value.activeManageLabels.splice(mIdx, 1);
   });
   selectedRightItems.value = [];
 };
@@ -1205,6 +1227,8 @@ const getSiteData = async () => {
 
           settlementConfig.value.activePayLabels = (parsed.activePayLabels || []).map(convertLabelToCode);
           settlementConfig.value.activeDeductionLabels = (parsed.activeDeductionLabels || []).map(convertLabelToCode);
+          settlementConfig.value.activeExpenseLabels = (parsed.activeExpenseLabels || []).map(convertLabelToCode); // 추가
+          settlementConfig.value.activeManageLabels = (parsed.activeManageLabels || []).map(convertLabelToCode);   // 추가
         } catch (e) {
           console.error('viewConfig 파싱 에러:', e);
         }
@@ -1505,6 +1529,8 @@ const saveSiteData = async () => {
       viewConfig: JSON.stringify({
         activePayLabels:       settlementConfig.value.activePayLabels,
         activeDeductionLabels: settlementConfig.value.activeDeductionLabels,
+        activeExpenseLabels:   settlementConfig.value.activeExpenseLabels, // 추가
+        activeManageLabels:    settlementConfig.value.activeManageLabels,  // 추가
       }),
       exportConfig: JSON.stringify(exportConfig.value),
     };
@@ -2460,8 +2486,8 @@ onMounted(async () => {
                       :class="{ active: selectedRightItems.includes(item.cd) }"
                       @click="toggleRight(item)"
                   >
-                    <span class="item-badge" :class="isPayItem(item.cd) ? 'badge-pay' : 'badge-ded'">
-                      {{ isPayItem(item.cd) ? '지급' : '공제' }}
+                    <span class="item-badge" :class="'badge-' + getItemGroupType(item.cd)">
+                      {{ getBadgeName(item.cd) }}
                     </span>
                     {{ item.nm }}
                   </div>
@@ -3732,8 +3758,13 @@ input:checked + .slider:before { transform: translateX(18px); }
   font-weight: 700;
 }
 
-.badge-pay { background: rgba(59,130,246,0.1); color: #3b82f6; }
-.badge-ded { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+/* 기존 지급/공제 뱃지 색상 */
+.badge-pay { background: rgba(59,130,246,0.1); color: #3b82f6; } /* 파랑 */
+.badge-deduction { background: rgba(139,92,246,0.1); color: #8b5cf6; } /* 보라 */
+
+/* 새로 추가하는 제경/관리 뱃지 색상 */
+.badge-expense { background: rgba(245, 158, 11, 0.1); color: #f59e0b; } /* 주황 */
+.badge-manage { background: rgba(107, 114, 128, 0.1); color: #4b5563; } /* 회색 */
 
 .empty-list {
   padding: 40px 10px;
