@@ -205,6 +205,43 @@ async function revertStatus(item) {
   }
 }
 
+async function copySelected() {
+  if (!selectedItems.value.length) return;
+  if (!confirm(`선택한 ${selectedItems.value.length}건을 복사하시겠습니까?\n(복사된 정산서는 '작성중' 상태로 추가됩니다.)`)) return
+
+  isLoading.value = true
+  try {
+    await Promise.all(selectedItems.value.map(item => {
+      // 기존 저장 API(/api/v1/settle/site/data/{sIdx})를 활용해 id 없이 신규 등록
+      const payload = {
+        year: item.year,
+        month: item.month,
+        type: item.type,
+        docType: item.docType,
+        docNo: (item.docNo || '') + '-복사본',
+        billingDt: item.billingDt,
+        subTotal: item.subTotal,
+        vatAmount: item.vatAmount,
+        grandTotal: item.grandTotal,
+        billingData: item.billingData,
+        payrollData: item.payrollData,
+        viewConfig: item.viewConfig,
+        cIdx: useAuthStore().user?.cIdx || 0,
+        status: 0 // 복사본은 무조건 작성중(0) 상태
+      }
+      return axios.post(`/api/v1/settle/site/data/${item.sIdx}`, payload)
+    }))
+
+    window.customAlert('선택한 정산서가 성공적으로 복사되었습니다.')
+    await fetchList()
+  } catch (error) {
+    console.error('복사 중 오류 발생:', error)
+    alert('복사 중 오류가 발생했습니다.')
+  } finally {
+    isLoading.value = false
+  }
+}
+
 async function deleteSelected() {
   if (!selectedItems.value.length) return
   if (!confirm(`선택한 ${selectedItems.value.length}건을 삭제하시겠습니까?\n(복구 불가)`)) return
@@ -391,8 +428,11 @@ onActivated(async () => {
       <div class="header-actions">
         <transition name="fade">
           <div v-if="selectedItems.length > 0" class="bulk-actions">
-            <button @click="handlePrint" class="btn-print">
+            <!--button @click="handlePrint" class="btn-print">
               <i class="mdi mdi-printer-outline"></i>출력 ({{ selectedItems.length }}건)
+            </button-->
+            <button @click="copySelected" class="btn-print">
+              <i class="mdi mdi-content-copy"></i>선택 복사
             </button>
             <button @click="deleteSelected" class="btn-delete">
               <i class="mdi mdi-trash-can-outline"></i>선택 삭제
@@ -819,18 +859,35 @@ onActivated(async () => {
    출력 / 삭제 버튼
 ────────────────────────────────────────────── */
 .btn-print {
-  display:inline-flex; align-items:center; gap:6px; padding:9px 14px;
-  border:1px solid rgba(14,165,233,.4); border-radius:8px;
-  font-size:13px; font-weight:600; cursor:pointer; transition:all .2s;
-  background:rgba(14,165,233,.08); color:#0ea5e9; font-family:inherit;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 18px;
+  border:1px solid rgba(14,165,233,.4);
+  border-radius:8px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all .2s;
+  background:rgba(14,165,233,.08);
+  color:#0ea5e9;
+  font-family:inherit;
 }
 .btn-print:hover { background:#0ea5e9; color:#fff; border-color:#0ea5e9; }
 
 .btn-delete {
-  display:inline-flex; align-items:center; gap:6px; padding:9px 14px;
-  border:1px solid rgba(239,68,68,.3); border-radius:8px;
-  font-size:13px; font-weight:600; cursor:pointer; transition:all .2s;
-  background:rgba(239,68,68,.05); color:var(--danger); font-family:inherit;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 18px;
+  border:1px solid rgba(239,68,68,.3);
+  border-radius:8px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer; transition:all .2s;
+  background:rgba(239,68,68,.05);
+  color:var(--danger);
+  font-family:inherit;
 }
 .btn-delete:hover { background:var(--danger); color:#fff; border-color:var(--danger); }
 
