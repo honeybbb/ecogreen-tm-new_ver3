@@ -6,6 +6,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { useAuthStore } from '~/stores/auth.js';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
@@ -307,30 +308,213 @@ const retireTotal = computed(() => hasRetire.value ? formData.value.retireItems.
 const grandTotal = computed(() => annualTotal.value + retireTotal.value);
 
 const isSaving = ref(false);
+
 const handleSave = async () => {
-  if (!formData.value.sIdx) { alert('현장을 선택해주세요.'); return; }
+  const sIdx = formData.value.sIdx;
+  if (!sIdx) { window.customAlert('현장을 선택해주세요.','error'); return; }
+
+  const [year, month] = (formData.value.target_month || formData.value.billingDt).split('-');
+  if (!year || !month) { alert('날짜를 선택해주세요.'); return; }
+
   isSaving.value = true;
   try {
     const combinedPayroll = [...(hasAnnual.value ? formData.value.annualItems : []), ...(hasRetire.value ? formData.value.retireItems : [])];
-    const payload = { ...formData.value, docType: 'RETIRE_ANNUAL', subTotal: grandTotal.value, grandTotal: grandTotal.value, payrollData: combinedPayroll, cIdx: authStore.user?.cIdx || 0 };
+    const payload = {
+      ...formData.value,
+      year: parseInt(year) || 0,
+      month: parseInt(month) || 0,
+      docType: 'RETIRE_ANNUAL',
+      subTotal: grandTotal.value,
+      grandTotal: grandTotal.value,
+      payrollData: combinedPayroll,
+      cIdx: authStore.user?.cIdx || 0
+    };
     const res = await axios.post(`/api/v1/settle/site/data/${formData.value.sIdx}`, payload);
     if (res.data.result) { alert('저장되었습니다.'); emit('save'); closeModal(); }
   } catch (e) { console.error(e); alert('서버 통신 오류'); } finally { isSaving.value = false; }
 };
 
-// 엑셀 내보내기 [원본 로직 유지]
-const exportToExcel = () => {
+// ── 회사 양식(토큰화 xlsx) 다운로드 → 데이터 치환 ──────────────────
+const getSettleTemplate = async (docType) => {
+  const res = await axios.get('/api/v1/settle/template/list', {
+    params: { cIdx: authStore.user?.cIdx },
+  });
+  const list = res.data?.data || [];
+  return list.find(t => t.docType === docType) || null;
+};
+
+const resolveFileUrl = (filePath) => {
+  if (!filePath) return '';
+  if (/^https?:\/\//.test(filePath)) return filePath;
+  return `/api${filePath}`; // 지난번 SERVICE 양식과 동일한 프록시 규칙
+};
+
+const toDotDate = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}.`;
+};
+
+// 날짜 문자열이 유효하면 Date 객체 그대로 반환 → 템플릿 셀의 날짜서식(mm-dd-yy)이 그대로 적용됨
+const toDateOrText = (dateStr) => {
+  if (!dateStr || dateStr === '재직중') return dateStr || '';
+  const d = new Date(dateStr);
+  return isNaN(d) ? dateStr : d;
+};
+
+const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
+
+// prefix(leave./retire.)별 반복블록을 찾아 필요한 만큼 복제 후 채운다 (여러 블록 지원 버전)
+const fillRepeatBlock = (sheet, prefix, records) => {
+  const tokenRe = new RegExp(`^\\{\\{${prefix}\\.\\w+\\}\\}$`);
+  const keyRe = new RegExp(`^\\{\\{${prefix}\\.(\\w+)\\}\\}$`);
+
+  let templateRowNum = null;
+  const colKeyMap = {};
+
+  outer:
+      for (let r = 1; r <= sheet.rowCount; r++) {
+        const row = sheet.getRow(r);
+        for (let c = 1; c <= sheet.columnCount; c++) {
+          const v = row.getCell(c).value;
+          if (typeof v === 'string' && tokenRe.test(v.trim())) {
+            templateRowNum = r;
+            row.eachCell({ includeEmpty: false }, (cell, colNum) => {
+              const m = keyRe.exec(String(cell.value).trim());
+              if (m) colKeyMap[colNum] = m[1];
+            });
+            break outer;
+          }
+        }
+      }
+  if (!templateRowNum) return; // 이 문서에 해당 블록이 없으면 조용히 skip
+
+  const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
+
+  let capacity = 1;
+  let r = templateRowNum + 1;
+  while (r <= sheet.rowCount) {
+    const v = sheet.getRow(r).getCell(checkCol).value;
+    const blank = v === null || v === undefined || v === '';
+    const sameBlock = typeof v === 'string' && v.trim().startsWith(`{{${prefix}.`);
+    if (!blank && !sameBlock) break; // 합계 행 등 경계
+    capacity++;
+    r++;
+  }
+
+  const need = records.length - capacity;
+  if (need > 0) sheet.duplicateRow(templateRowNum + capacity - 1, need, true);
+
+  records.forEach((rec, i) => {
+    const targetRow = sheet.getRow(templateRowNum + i);
+    Object.entries(colKeyMap).forEach(([colNum, key]) => {
+      targetRow.getCell(Number(colNum)).value = rec[key] ?? '';
+    });
+  });
+
+  for (let i = records.length; i < capacity; i++) {
+    const targetRow = sheet.getRow(templateRowNum + i);
+    Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
+  }
+};
+
+const fillPlaceholders = (sheet, context) => {
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
+      const raw = cell.value;
+      const matches = [...raw.matchAll(PLACEHOLDER_RE)];
+      if (matches.length === 0) return;
+
+      if (matches.length === 1 && matches[0][0] === raw.trim()) {
+        const key = matches[0][1];
+        if (key.includes('.')) return; // leave.*, retire.* 는 반복블록에서 이미 처리됨
+        let v = resolvePath(context, key);
+        if (v === undefined) v = 0;
+        cell.value = v;
+        if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
+        return;
+      }
+      cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
+        const v = resolvePath(context, key);
+        return v === undefined ? '' : String(v);
+      });
+    });
+  });
+};
+
+const exportToExcel = async () => {
   if (!hasAnnual.value && !hasRetire.value) { alert('출력할 정산 내역이 없습니다.'); return; }
-  const wb = XLSX.utils.book_new();
-  const siteName = formData.value.siteName || '현장미지정';
-  const fileName = `연차퇴직정산_${siteName}_${formData.value.billingDt}.xlsx`;
-  const rows = [['청 구 공 문'], [], ['수신', formData.value.siteName + ' 관리사무소'], ['문서번호', formData.value.docNo], ['시행일자', formData.value.billingDt], ['제목', formData.value.summary], [], ['1. 귀 소의 무궁한 발전을 기원합니다.'], ['2. 당월 퇴사자 발생으로 연차수당과 퇴직금을 아래와 같이 정산 요청하오니 검토 후 처리하여 주시기 바랍니다.'], [], ['- 아래 -'], []];
-  const header = ['구분','이름','직책','생년월일','입사일','퇴사일','중간정산일','정산기간','산출근거','금액(원)','비고'];
-  if (hasAnnual.value) { rows.push(['[연차수당 정산 내역]'], header); formData.value.annualItems.forEach((item, i) => rows.push([i+1, item.empName, item.position, item.birthDt, item.joinDate, item.endDate, item.middleDt, item.period, item.basis, item.amount, item.note])); rows.push(['','','','','','','','','소계', annualTotal.value]); rows.push([]); }
-  if (hasRetire.value) { rows.push(['[퇴직수당 정산 내역]'], header); formData.value.retireItems.forEach((item, i) => rows.push([i+1, item.empName, item.position, item.birthDt, item.joinDate, item.endDate, item.middleDt, item.period, item.basis, item.amount, item.note])); rows.push(['','','','','','','','','소계', retireTotal.value]); rows.push([]); }
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, '연차퇴직정산');
-  XLSX.writeFile(wb, fileName);
+  if (!formData.value.sIdx) { alert('현장을 선택해주세요.'); return; }
+
+  try {
+    const template = await getSettleTemplate('RETIRE_ANNUAL');
+    if (!template || !template.filePath) {
+      alert('등록된 연차·퇴직금 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
+      return;
+    }
+
+    const fileRes = await fetch(resolveFileUrl(template.filePath));
+    if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
+    const arrayBuffer = await fileRes.arrayBuffer();
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+    const sheet = workbook.worksheets[0];
+
+    // 면적별 산출내역(면세/과세) — 현장 마스터에서 조회, 없으면 0
+    const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+    const under135Area = Number(selectedSite?.areaUnder ?? selectedSite?.area_under ?? 0);
+    const over135Area  = Number(selectedSite?.areaOver  ?? selectedSite?.area_over  ?? 0);
+
+    const context = {
+      docNo: formData.value.docNo || '',
+      billingDt: toDotDate(formData.value.billingDt),
+      siteName: formData.value.siteName || '',
+      summary: formData.value.summary || '',
+      bankInfo: formData.value.bankInfo || '',
+      under135Area,
+      over135Area,
+    };
+
+    const leaveRecords = hasAnnual.value ? formData.value.annualItems.map(item => ({
+      empName: item.empName || '',
+      inDate: toDateOrText(item.joinDate),
+      midDate: item.middleDt ? toDateOrText(item.middleDt) : '',
+      period: item.period || '',
+      formulaText: item.basis || '',
+      amount: Number(item.amount) || 0,
+      note: item.note || '',
+    })) : [];
+
+    const retireRecords = hasRetire.value ? formData.value.retireItems.map(item => ({
+      empName: item.empName || '',
+      inDate: toDateOrText(item.joinDate),
+      outDate: toDateOrText(item.endDate),
+      period: item.period || '',
+      formulaText: item.basis || '',
+      amount: Number(item.amount) || 0,
+      note: item.note || '',
+    })) : [];
+
+    fillRepeatBlock(sheet, 'leave', leaveRecords);
+    fillRepeatBlock(sheet, 'retire', retireRecords);
+    fillPlaceholders(sheet, context);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.xlsx`;
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('엑셀 저장 중 오류 발생:', error);
+    alert('엑셀 파일을 생성하는 중 오류가 발생했습니다.');
+  }
 };
 
 const fc = (v) => Number(v || 0).toLocaleString();
@@ -628,7 +812,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* ── [완벽 복구] 사용자님의 원본 CSS 스타일 100% 유지 ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
 .modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; /*height: 90vh;*/ height: 100%; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-shrink: 0; }
