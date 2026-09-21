@@ -1568,101 +1568,195 @@ const onDragOver = (e, index) => {
   dragIndex.value = index;
 };
 
+// docType: 'SERVICE' = 정산서(청구공문+급여세부내역서), 'RETIRE_ANNUAL' = 연차퇴직정산서
+const getSettleTemplate = async (docType = 'SERVICE') => {
+  const res = await axios.get('/api/v1/settle/template/list', { params: { cIdx } });
+  const list = res.data?.data || [];
+  return list.find(t => t.docType === docType) || null;
+};
+
+// filePath가 상대경로("/uploads/xxx.xlsx")로 오므로, API 서버 origin을 붙여준다.
+// axios.defaults.baseURL이 이미 API 서버로 설정돼 있다면 그걸 재사용하는 게 안전.
+const resolveFileUrl = (filePath) => {
+  if (!filePath) return '';
+  if (/^https?:\/\//.test(filePath)) return filePath;
+  return `/api${filePath}`; // /api + /uploads/xxx.xlsx
+};
+
 // ──────────────────────────────────────────────
 // 8. 엑셀 저장 / 데이터 저장
 // ──────────────────────────────────────────────
 const exportToExcel = async () => {
   try {
-    const response = await fetch('/정산기본양식.xlsx');
-    const arrayBuffer = await response.arrayBuffer();
+    const template = await getSettleTemplate('SERVICE');
+    if (!template || !template.filePath) {
+      alert('등록된 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
+      return;
+    }
+
+    const fileRes = await fetch(resolveFileUrl(template.filePath)); // 상대경로 → 절대 URL 변환
+    if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
+    const arrayBuffer = await fileRes.arrayBuffer();
+
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(arrayBuffer);
+    const sheet = workbook.worksheets[0];
 
-    const sheet = workbook.getWorksheet(1);
-    sheet.pageSetup = { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
-    sheet.rowBreaks = [{ id: 44, min: 0, max: 16383, man: true }];
-
-    const targetDateStr = formData.value.target_month || formData.value.billingDt;
-    let periodStr = '';
-
-    if (targetDateStr) {
-      const parts = targetDateStr.split('-');
-      if (parts.length >= 2) {
-        const yyyy = parseInt(parts[0], 10);
-        const mm = parseInt(parts[1], 10);
-        const lastDay = new Date(yyyy, mm, 0).getDate();
-        periodStr = `${String(yyyy).slice(2)}.${String(mm).padStart(2, '0')}.01~${String(mm).padStart(2, '0')}.${lastDay}`;
-      }
-    }
-
-    sheet.getCell('A5').value = ` 문서번호 : ${formData.value.docNo || ''}`;
-    sheet.getCell('A6').value = ` 시행일자 : ${formData.value.billingDt || ''}`;
-    sheet.getCell('A7').value = ` 수    신 : ${formData.value.siteName || ''} 관리사무소`;
-    sheet.getCell('A8').value = ` 제    목 : ${formData.value.billingData.summary || ''}`;
-    sheet.getCell('A8').alignment = { wrapText: true, vertical: 'middle' };
-
-    [16, 17, 18, 19].forEach(rowNum => {
-      if (periodStr) sheet.getCell(`B${rowNum}`).value = periodStr;
-    });
-
-    sheet.getCell('B27').value = `2) 입금계좌 : ${formData.value.billingData.bankInfo || ''}`;
+    // ── 1. 기본 값 계산 ─────────────────────────────
+    const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+    const [yyyy, mmRaw] = targetDateStr.split('-');
+    const mm = mmRaw ? String(Number(mmRaw)) : '';
 
     const findSummary = (key) => totalSummary.value.find(s => s.key === key);
-    sheet.getCell('J16').value = findSummary('monthlyFee')?.value || 0;
-    sheet.getCell('J17').value = (findSummary('annualLeave')?.value || 0) * (findSummary('annualLeave')?.sign || -1);
-    sheet.getCell('J18').value = (findSummary('severance')?.value || 0) * (findSummary('severance')?.sign || -1);
-    sheet.getCell('J19').value = (findSummary('insuranceDiff')?.value || 0) * (findSummary('insuranceDiff')?.sign || -1);
-    ['J16', 'J17', 'J18', 'J19'].forEach(addr => sheet.getCell(addr).numFmt = '#,##0');
-
-    const payrollData = formData.value.payrollData || [];
-    sheet.getCell('N49').value = `${formData.value.siteName || '현장 미지정'} - ${payrollData.length}명`;
-
-    const maxRows = 10;
-    for (let idx = 0; idx < maxRows; idx++) {
-      const data = payrollData[idx];
-      if (!data) continue;
-
-      const row = sheet.getRow(51 + idx);
-      row.getCell(2).value = idx + 1;
-      row.getCell(3).value = data.empName || '';
-      row.getCell(4).value = data.position || '';
-      row.getCell(5).value = data.personalNo || '';
-      row.getCell(6).value = data.inDate || '';
-      row.getCell(7).value = data.outDate || '';
-      row.getCell(8).value = Number(data.reserves?.annualLeave) || 0;
-      row.getCell(9).value = Number(data.reserves?.severance) || 0;
-      row.getCell(10).value = Number(data.deductionItems?.['04002003']) || 0;
-      row.getCell(11).value = Number(data.deductionItems?.['04002001']) || 0;
-      row.getCell(12).value = Number(data.deductionItems?.['04002002']) || 0;
-      row.getCell(13).value = Number(data.deductionItems?.['04002004']) || 0;
-      row.getCell(14).value = Number(data.reserves?.empInsEmployer) || 0;
-      row.getCell(15).value = Number(data.reserves?.sanjae) || 0;
-      row.getCell(16).value = Number(getInsuranceTotal(data)) || 0;
-      for (let c = 8; c <= 16; c++) row.getCell(c).numFmt = '#,##0';
-    }
-
-    const summaryRowMap = {
-      monthlyFee: 62, annualLeave: 63, severance: 64,
-      estimatedIns: 65, actualIns: 66, insuranceDiff: 67, grandTotal: 69,
+    const signedVal = (key) => {
+      const s = findSummary(key);
+      return s ? s.value * s.sign : 0;
     };
-
-    totalSummary.value.forEach((summary) => {
-      const rowNum = summaryRowMap[summary.key];
-      if (!rowNum) return;
-      const signedValue = summary.sign < 0 ? -Math.abs(summary.value) : Math.abs(summary.value);
-      sheet.getCell(`O${rowNum}`).value = Number(signedValue) || 0;
-      sheet.getCell(`O${rowNum}`).numFmt = '#,##0';
-    });
 
     const customTotal = (formData.value.billingData.customSummaryItems || [])
         .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
-    if (customTotal !== 0) {
-      sheet.getCell('O68').value = customTotal;
-      sheet.getCell('O68').numFmt = '#,##0';
+
+    const vb = formData.value.billingData.vatBreakdown;
+
+    // ── 2. 급여 반복행 데이터 (코드가 아니라 항목명으로 매칭 → 회사마다 코드 달라도 안전) ──
+    const findDeductAmount = (row, keyword) => {
+      const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
+      return entry ? (Number(row.deductionItems?.[entry.itemCd]) || 0) : 0;
+    };
+
+    const payrollRows = formData.value.payrollData.map((row, idx) => ({
+      no: idx + 1,
+      empName: row.empName || '',
+      position: row.position || '',
+      personalNo: row.personalNo || '',
+      inDate: row.inDate || '',
+      outDate: row.outDate || '',
+      nationalPension: findDeductAmount(row, '국민연금'),
+      healthInsurance: findDeductAmount(row, '건강보험'),
+      longTermCare: findDeductAmount(row, '장기요양'),
+      unemployment: findDeductAmount(row, '고용보험'),
+      empStability: Number(row.reserves?.empInsEmployer) || 0,
+      sanjae: Number(row.reserves?.sanjae) || 0,
+      total: Number(getInsuranceTotal(row)) || 0,
+    }));
+
+    const payrollTotal = payrollRows.reduce((acc, r) => {
+      ['nationalPension','healthInsurance','longTermCare','unemployment','empStability','sanjae','total']
+          .forEach(k => { acc[k] = (acc[k] || 0) + r[k]; });
+      return acc;
+    }, {});
+
+    // ── 3. 단일 값 컨텍스트 ─────────────────────────
+    const context = {
+      yyyy, mm,
+      siteName: formData.value.siteName || '',
+      monthlyFee: contractTotalCost.value || 0,
+      annualLeave: signedVal('annualLeave'),
+      severance: signedVal('severance'),
+      insuranceDiff: Number(formData.value.billingData.insuranceDiff) || 0,
+      customTotal,
+      grandTotal: findSummary('grandTotal')?.value || 0,
+      under135Area: vb.under135.area || 0,
+      unitPrice: vb.under135.unitPrice || vb.over135.unitPrice || 0,
+      under135Supply: vb.under135.supply || 0,
+      over135Area: vb.over135.area || 0,
+      over135Supply: vb.over135.supply || 0,
+      over135Vat: vb.over135.vat || 0,
+      over135Total: (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0),
+      billingDt: formData.value.billingDt || '',
+      bankInfo: formData.value.billingData.bankInfo || '',
+      payrollTotal,
+    };
+
+    // ── 4. 급여 반복행 처리 ─────────────────────────
+    let templateRowNum = null;
+    const colKeyMap = {};
+
+    outer:
+        for (let r = 1; r <= sheet.rowCount; r++) {
+          const row = sheet.getRow(r);
+          for (let c = 1; c <= sheet.columnCount; c++) {
+            const v = row.getCell(c).value;
+            if (typeof v === 'string' && /^\{\{payroll\.\w+\}\}$/.test(v.trim())) {
+              templateRowNum = r;
+              row.eachCell({ includeEmpty: false }, (cell, colNum) => {
+                const m = /^\{\{payroll\.(\w+)\}\}$/.exec(String(cell.value).trim());
+                if (m) colKeyMap[colNum] = m[1];
+              });
+              break outer;
+            }
+          }
+        }
+
+    if (templateRowNum) {
+      const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
+
+      // 템플릿 행 아래로, 문자 라벨(=합계 행)이 나오기 전까지가 '빈 자리' 행
+      let staticRows = 1;
+      let r = templateRowNum + 1;
+      while (r <= sheet.rowCount) {
+        const v = sheet.getRow(r).getCell(checkCol).value;
+        if (typeof v === 'string' && v.trim() !== '') break; // '계' 등 라벨 행
+        staticRows++;
+        r++;
+      }
+
+      // 직원이 빈 자리보다 많으면 합계 행 앞에 행을 추가로 복제
+      const need = payrollRows.length - staticRows;
+      if (need > 0) {
+        sheet.duplicateRow(templateRowNum + staticRows - 1, need, true);
+      }
+
+      // 데이터 채우기
+      payrollRows.forEach((p, i) => {
+        const targetRow = sheet.getRow(templateRowNum + i);
+        Object.entries(colKeyMap).forEach(([colNum, key]) => {
+          targetRow.getCell(Number(colNum)).value = p[key] ?? '';
+          targetRow.getCell(Number(colNum)).numFmt =
+              typeof p[key] === 'number' ? '#,##0' : targetRow.getCell(Number(colNum)).numFmt;
+        });
+      });
+
+      // 남는 빈 행은 비우기
+      for (let i = payrollRows.length; i < staticRows; i++) {
+        const targetRow = sheet.getRow(templateRowNum + i);
+        Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
+      }
     }
 
+    // ── 5. 나머지 {{...}} 플레이스홀더 전체 치환 ─────
+    const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
+
+    sheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
+        const raw = cell.value;
+        const matches = [...raw.matchAll(PLACEHOLDER_RE)];
+        if (matches.length === 0) return;
+
+        // 셀 전체가 플레이스홀더 하나뿐이면 숫자 타입 그대로 대입(합계 서식 유지)
+        if (matches.length === 1 && matches[0][0] === raw.trim()) {
+          const key = matches[0][1];
+          if (key.startsWith('payroll.')) return; // 이미 처리됨
+          let v = resolvePath(context, key);
+          if (v === undefined) v = 0;
+          cell.value = v;
+          if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
+          return;
+        }
+
+        // 텍스트 안에 여러 개 섞여 있으면 문자열 치환
+        cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
+          const v = resolvePath(context, key);
+          return v === undefined ? '' : String(v);
+        });
+      });
+    });
+
+    // ── 6. 저장 ─────────────────────────────────────
     const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `정산서_${formData.value.siteName || '현장'}_${formData.value.target_month || ''}.xlsx`;
+    const fileName = `정산서_${formData.value.siteName || '현장'}_${targetDateStr}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
   } catch (error) {
     console.error('엑셀 저장 중 오류 발생:', error);
