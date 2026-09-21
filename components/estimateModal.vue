@@ -88,11 +88,11 @@ const onRetireCalc = (item) => {
   if (item.calcMode === 'LEGAL') {
     const rawAmount = basePay * (tenure.totalDays / 365);
     item.amount = Math.floor(rawAmount / 10) * 10;
-    item.basis = `${fc(basePay)}/365*${tenure.totalDays}일`;
+    item.basis = `${formatCurrency(basePay)}/365*${tenure.totalDays}일`;
   } else {
     const rawAmount = severance * (tenure.totalDays / 30.41);
     item.amount = Math.floor(rawAmount / 10) * 10;
-    item.basis = `(${fc(severance)}*${tenure.text})`; // 이미지 스타일: (단가*개월 일)
+    item.basis = `(${formatCurrency(severance)}*${tenure.text})`; // 이미지 스타일: (단가*개월 일)
   }
 };
 
@@ -282,7 +282,7 @@ const onPositionChange = (item, type) => {
     // 연차수당 = 기본급 / 월소정근로시간 * 일소정근로시간 * 연차일수
     const rawAmount = basePay > 0 ? (basePay / monthlyHours) * dailyHours * annualDays : 0;
     item.amount = Math.floor(rawAmount / 10) * 10;
-    item.basis  = basePay > 0 ? `${fc(basePay)}/${monthlyHours}*${dailyHours}*${annualDays}개` : '';
+    item.basis  = basePay > 0 ? `${formatCurrency(basePay)}/${monthlyHours}*${dailyHours}*${annualDays}개` : '';
 
     // 기간 설정
     if (item.joinDate && formData.value.billingDt) {
@@ -444,7 +444,7 @@ const fillPlaceholders = (sheet, context) => {
     });
   });
 };
-
+/*
 const exportToExcel = async () => {
   if (!hasAnnual.value && !hasRetire.value) { alert('출력할 정산 내역이 없습니다.'); return; }
   if (!formData.value.sIdx) { alert('현장을 선택해주세요.'); return; }
@@ -517,7 +517,122 @@ const exportToExcel = async () => {
   }
 };
 
-const fc = (v) => Number(v || 0).toLocaleString();
+ */
+// ──────────────────────────────────────────────
+// 연차·퇴직금 정산서 워크북 생성 (엑셀 저장 / PDF 저장 공통 사용)
+// ──────────────────────────────────────────────
+const buildEstimateWorkbookBuffer = async () => {
+  if (!hasAnnual.value && !hasRetire.value) {
+    throw new Error('출력할 정산 내역이 없습니다.');
+  }
+  if (!formData.value.sIdx) {
+    throw new Error('현장을 선택해주세요.');
+  }
+
+  const template = await getSettleTemplate('RETIRE_ANNUAL');
+  if (!template || !template.filePath) {
+    throw new Error('등록된 연차·퇴직금 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
+  }
+
+  const fileRes = await fetch(resolveFileUrl(template.filePath));
+  if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
+  const arrayBuffer = await fileRes.arrayBuffer();
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
+  const sheet = workbook.worksheets[0];
+
+  // 면적별 산출내역(면세/과세) — 현장 마스터에서 조회, 없으면 0
+  const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+  const under135Area = Number(selectedSite?.areaUnder ?? selectedSite?.area_under ?? 0);
+  const over135Area  = Number(selectedSite?.areaOver  ?? selectedSite?.area_over  ?? 0);
+
+  const context = {
+    docNo: formData.value.docNo || '',
+    billingDt: toDotDate(formData.value.billingDt),
+    siteName: formData.value.siteName || '',
+    summary: formData.value.summary || '',
+    bankInfo: formData.value.bankInfo || '',
+    under135Area,
+    over135Area,
+  };
+
+  const leaveRecords = hasAnnual.value ? formData.value.annualItems.map(item => ({
+    empName: item.empName || '',
+    inDate: toDateOrText(item.joinDate),
+    midDate: item.middleDt ? toDateOrText(item.middleDt) : '',
+    period: item.period || '',
+    formulaText: item.basis || '',
+    amount: Number(item.amount) || 0,
+    note: item.note || '',
+  })) : [];
+
+  const retireRecords = hasRetire.value ? formData.value.retireItems.map(item => ({
+    empName: item.empName || '',
+    inDate: toDateOrText(item.joinDate),
+    outDate: toDateOrText(item.endDate),
+    period: item.period || '',
+    formulaText: item.basis || '',
+    amount: Number(item.amount) || 0,
+    note: item.note || '',
+  })) : [];
+
+  fillRepeatBlock(sheet, 'leave', leaveRecords);
+  fillRepeatBlock(sheet, 'retire', retireRecords);
+  fillPlaceholders(sheet, context);
+
+  return await workbook.xlsx.writeBuffer();
+};
+
+const exportToExcel = async () => {
+  try {
+    const buffer = await buildEstimateWorkbookBuffer();
+    const fileName = `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.xlsx`;
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('엑셀 저장 중 오류 발생:', error);
+    alert(error.message || '엑셀 파일을 생성하는 중 오류가 발생했습니다.');
+  }
+};
+
+const isExportingPdf = ref(false);
+
+const exportToPdf = async () => {
+  isExportingPdf.value = true;
+  try {
+    const buffer = await buildEstimateWorkbookBuffer();
+
+    const form = new FormData();
+    form.append('file', new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }), 'estimate.xlsx');
+
+    const res = await axios.post('/api/v1/excel-to-pdf', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+      timeout: 30000,
+    });
+
+    const fileName = `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.pdf`;
+    const blob = new Blob([res.data], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('PDF 저장 중 오류 발생:', error);
+    alert(error.message || 'PDF 파일을 생성하는 중 오류가 발생했습니다.');
+  } finally {
+    isExportingPdf.value = false;
+  }
+};
+
 const closeModal = () => emit('close');
 
 onMounted(async () => {
@@ -541,6 +656,10 @@ onMounted(async () => {
           <button class="btn-excel" @click="exportToExcel">
             <i class="mdi mdi-microsoft-excel"></i>
             <span>엑셀 저장</span>
+          </button>
+          <button class="btn-pdf" @click="exportToPdf" :disabled="isExportingPdf">
+            <i class="mdi mdi-file-pdf-box"></i>
+            <span>{{ isExportingPdf ? '변환 중...' : 'PDF 저장' }}</span>
           </button>
           <button class="btn-save" @click="handleSave" :disabled="isSaving">
             <i class="mdi mdi-content-save"></i>
@@ -690,7 +809,7 @@ onMounted(async () => {
                   <td>
                     <input
                         type="text"
-                        :value="fc(item.amount)"
+                        :value="formatCurrency(item.amount)"
                         @input="item.amount = Number($event.target.value.replace(/,/g,'')) || 0"
                         class="cell-input text-right font-bold text-blue"
                     />
@@ -706,7 +825,7 @@ onMounted(async () => {
                 <tfoot>
                 <tr class="tfoot-total">
                   <td colspan="9" class="text-center">연차수당 소계</td>
-                  <td class="text-right text-blue font-bold">{{ fc(annualTotal) }}</td>
+                  <td class="text-right text-blue font-bold">{{ formatCurrency(annualTotal) }}</td>
                   <td colspan="2"></td>
                 </tr>
                 </tfoot>
@@ -784,7 +903,7 @@ onMounted(async () => {
                   <td><input type="date" v-model="item.endDate" @change="onRetireCalc(item)" class="cell-input text-center" /></td>
                   <td><input type="text" v-model="item.period" class="cell-input text-center" readonly /></td>
                   <td><input type="text" v-model="item.basis" class="cell-input" /></td>
-                  <td><input type="text" :value="fc(item.amount)" @input="item.amount = Number($event.target.value.replace(/,/g,'')) || 0" class="cell-input text-right font-bold text-orange" /></td>
+                  <td><input type="text" :value="formatCurrency(item.amount)" @input="item.amount = Number($event.target.value.replace(/,/g,'')) || 0" class="cell-input text-right font-bold text-orange" /></td>
                   <td><input type="text" v-model="item.note" class="cell-input" /></td>
                   <td class="text-center"><button class="btn-delete-row" @click="removeRow('RETIRE', index)"><i class="mdi mdi-minus"></i></button></td>
                 </tr>
@@ -792,7 +911,7 @@ onMounted(async () => {
                 <tfoot>
                 <tr class="tfoot-total tfoot-retire">
                   <td colspan="10" class="text-center">퇴직수당 소계</td>
-                  <td class="text-right font-bold text-orange">{{ fc(retireTotal) }}</td>
+                  <td class="text-right font-bold text-orange">{{ formatCurrency(retireTotal) }}</td>
                   <td></td>
                 </tr>
                 </tfoot>
@@ -800,7 +919,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div v-if="hasAnnual && hasRetire" class="grand-total-box mt-4"><span class="grand-total-label">총 청구 합계액 (연차 + 퇴직수당)</span><span class="grand-total-value">{{ fc(grandTotal) }} 원</span></div>
+          <div v-if="hasAnnual && hasRetire" class="grand-total-box mt-4"><span class="grand-total-label">총 청구 합계액 (연차 + 퇴직수당)</span><span class="grand-total-value">{{ formatCurrency(grandTotal) }} 원</span></div>
           <div class="footer-info mt-5">
             <div class="info-row"><label>3. 입금계좌 :</label><input type="text" v-model="formData.bankInfo" class="meta-input flex-1" /></div>
             <div class="info-row mt-2"><label>첨부 :</label><input type="text" v-model="formData.attachment" class="meta-input flex-1" /></div>
@@ -819,8 +938,29 @@ onMounted(async () => {
 .header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); }
 .badge { padding: 3px 10px; background: var(--primary-soft); color: var(--primary); border-radius: 6px; font-size: 12px; font-weight: 600; }
 .header-actions { display: flex; gap: 10px; }
-.btn-excel { background: rgba(5,150,105,.1); color: #059669; border: 1px solid rgba(5,150,105,.3); padding: 8px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; font-size: 14px; }
-.btn-excel:hover { background: #059669; color: #fff; }
+.btn-pdf {
+  height: 42px;
+  background: rgba(220, 38, 38, .1);
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, .3);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.btn-pdf:hover:not(:disabled) {
+  background: #dc2626;
+  color: #fff;
+}
+.btn-pdf:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
 .btn-save { background: var(--primary); color: var(--text-inverse); border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; font-size: 14px; }
 .btn-save:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); }
 .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }

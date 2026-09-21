@@ -67,7 +67,7 @@ const siteBigoList = ref([]);
 // ──────────────────────────────────────────────
 // 2. 폼 데이터 상태
 // ──────────────────────────────────────────────
-const defaultBankInfo = '기업은행 301-051564-01-017 (예금주: 에코그린티엠)';
+const defaultBankInfo = cIdx == 4 ? '기업은행 301-051564-01-017 (예금주: 에코그린티엠)' : '국민은행 : 879601-01-250607  (주)이지종합관리)';
 const defaultHeaderMessage = '1. 귀 소의 무궁한 발전을 기원합니다.\n2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.\n\n- 아 래 -';
 
 const createEmptyFormData = (overrides = {}) => ({
@@ -1576,6 +1576,8 @@ const resolveFileUrl = (filePath) => {
 // ──────────────────────────────────────────────
 // 8. 엑셀 저장 / 데이터 저장
 // ──────────────────────────────────────────────
+const isExportingPdf = ref(false);
+/*
 const exportToExcel = async () => {
   try {
     const template = await getSettleTemplate('SERVICE');
@@ -1754,6 +1756,305 @@ const exportToExcel = async () => {
   }
 };
 
+ */
+const exportToExcel = async () => {
+  try {
+    const buffer = await buildSettleWorkbookBuffer();
+    const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+    const fileName = `정산서_${formData.value.siteName || '현장'}_${targetDateStr}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
+  } catch (error) {
+    console.error('엑셀 저장 중 오류 발생:', error);
+    alert(error.message || '엑셀 파일을 생성하는 중 오류가 발생했습니다.');
+  }
+};
+
+const exportToPdf = async () => {
+  isExportingPdf.value = true;
+  try {
+    const buffer = await buildSettleWorkbookBuffer();
+
+    const form = new FormData();
+    form.append('file', new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }), 'settle.xlsx');
+
+    const res = await axios.post('/api/v1/excel-to-pdf', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+      timeout: 30000,
+    });
+
+    const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+    const fileName = `정산서_${formData.value.siteName || '현장'}_${targetDateStr}.pdf`;
+    saveAs(new Blob([res.data], { type: 'application/pdf' }), fileName);
+  } catch (error) {
+    console.error('PDF 저장 중 오류 발생:', error);
+    alert(error.message || 'PDF 파일을 생성하는 중 오류가 발생했습니다.');
+  } finally {
+    isExportingPdf.value = false;
+  }
+};
+// ── 병합을 보존하면서 행을 복제하는 안전한 헬퍼 ──
+function duplicateRowPreservingMerges(sheet, sourceRowNum, count) {
+  if (count <= 0) return;
+
+  const parseCellRef = (ref) => {
+    const m = ref.match(/^([A-Z]+)(\d+)$/);
+    return { col: m[1], row: parseInt(m[2], 10) };
+  };
+  const parseRange = (rangeStr) => {
+    const [s, e] = rangeStr.split(':');
+    const start = parseCellRef(s);
+    const end = parseCellRef(e);
+    return { startCol: start.col, startRow: start.row, endCol: end.col, endRow: end.row };
+  };
+
+  // 1) 삽입 지점보다 아래 있는 병합의 값/서식을 미리 저장하고 해제
+  const savedMerges = [];
+  const allMerges = [...sheet.model.merges];
+  for (const rangeStr of allMerges) {
+    const { startRow, endRow, startCol, endCol } = parseRange(rangeStr);
+    if (startRow > sourceRowNum) {
+      const masterCell = sheet.getCell(`${startCol}${startRow}`);
+      savedMerges.push({
+        startCol, endCol, startRow, endRow,
+        value: masterCell.value,
+        style: JSON.parse(JSON.stringify(masterCell.style || {})),
+      });
+      sheet.unMergeCells(rangeStr);
+    }
+  }
+
+  // 2) 행 복제 (병합이 없는 상태라 값 복제 부작용이 안 생김)
+  sheet.duplicateRow(sourceRowNum, count, true);
+
+  // 3) 저장해둔 병합을 count만큼 아래로 옮겨 재적용
+  savedMerges
+      .sort((a, b) => b.startRow - a.startRow)
+      .forEach(({ startCol, endCol, startRow, endRow, value, style }) => {
+        const newStartRow = startRow + count;
+        const newEndRow = endRow + count;
+        const colStart = sheet.getColumn(startCol).number;
+        const colEnd = sheet.getColumn(endCol).number;
+
+        for (let r = newStartRow; r <= newEndRow; r++) {
+          for (let c = colStart; c <= colEnd; c++) {
+            sheet.getRow(r).getCell(c).value = null;
+          }
+        }
+
+        sheet.mergeCells(`${startCol}${newStartRow}:${endCol}${newEndRow}`);
+        const masterCell = sheet.getCell(`${startCol}${newStartRow}`);
+        masterCell.value = value;
+        if (style) masterCell.style = style;
+      });
+}
+// ──────────────────────────────────────────────
+// 정산서 워크북 생성 (엑셀 저장 / PDF 저장 공통 사용)
+// ──────────────────────────────────────────────
+const buildSettleWorkbookBuffer = async () => {
+  const template = await getSettleTemplate('SERVICE');
+  if (!template || !template.filePath) {
+    throw new Error('등록된 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
+  }
+/*
+  const fileRes = await fetch(resolveFileUrl(template.filePath));
+  if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
+  const arrayBuffer = await fileRes.arrayBuffer();
+
+ */
+  const fileRes = await axios.get(resolveFileUrl(template.filePath), {
+    responseType: 'arraybuffer'
+  });
+  const arrayBuffer = fileRes.data;
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
+  const sheet = workbook.worksheets[0];
+
+  // ── 1. 기본 값 계산 ─────────────────────────────
+  const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+  const [yyyy, mmRaw] = targetDateStr.split('-');
+  const mm = mmRaw ? String(Number(mmRaw)) : '';
+
+  const findSummary = (key) => totalSummary.value.find(s => s.key === key);
+  const signedVal = (key) => {
+    const s = findSummary(key);
+    return s ? s.value * s.sign : 0;
+  };
+
+  const customTotal = (formData.value.billingData.customSummaryItems || [])
+      .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
+
+  const vb = formData.value.billingData.vatBreakdown;
+
+  // ── 2. 급여 반복행 데이터 (코드가 아니라 항목명으로 매칭 → 회사마다 코드 달라도 안전) ──
+  const findDeductAmount = (row, keyword) => {
+    const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
+    return entry ? (Number(row.deductionItems?.[entry.itemCd]) || 0) : 0;
+  };
+
+  const payrollRows = formData.value.payrollData.map((row, idx) => ({
+    no: idx + 1,
+    empName: row.empName || '',
+    position: row.position || '',
+    personalNo: row.personalNo || '',
+    inDate: row.inDate || '',
+    outDate: row.outDate || '',
+    nationalPension: findDeductAmount(row, '국민연금'),
+    healthInsurance: findDeductAmount(row, '건강보험'),
+    longTermCare: findDeductAmount(row, '장기요양'),
+    unemployment: findDeductAmount(row, '고용보험'),
+    empStability: Number(row.reserves?.empInsEmployer) || 0,
+    sanjae: Number(row.reserves?.sanjae) || 0,
+    total: Number(getInsuranceTotal(row)) || 0,
+  }));
+
+  const payrollTotal = payrollRows.reduce((acc, r) => {
+    ['nationalPension','healthInsurance','longTermCare','unemployment','empStability','sanjae','total']
+        .forEach(k => { acc[k] = (acc[k] || 0) + r[k]; });
+    return acc;
+  }, {});
+
+  // ── 3. 단일 값 컨텍스트 ─────────────────────────
+  const context = {
+    yyyy, mm,
+    siteName: formData.value.siteName || '',
+    monthlyFee: contractTotalCost.value || 0,
+    annualLeave: signedVal('annualLeave'),
+    severance: signedVal('severance'),
+    insuranceDiff: Number(formData.value.billingData.insuranceDiff) || 0,
+    customTotal,
+    grandTotal: findSummary('grandTotal')?.value || 0,
+    under135Area: vb.under135.area || 0,
+    unitPrice: vb.under135.unitPrice || vb.over135.unitPrice || 0,
+    under135Supply: vb.under135.supply || 0,
+    over135Area: vb.over135.area || 0,
+    over135Supply: vb.over135.supply || 0,
+    over135Vat: vb.over135.vat || 0,
+    over135Total: (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0),
+    billingDt: formData.value.billingDt || '',
+    bankInfo: formData.value.billingData.bankInfo || '',
+    payrollTotal,
+  };
+
+  // ── 4. 급여 반복행 처리 ─────────────────────────
+  let templateRowNum = null;
+  const colKeyMap = {};
+
+  outer:
+      for (let r = 1; r <= sheet.rowCount; r++) {
+        const row = sheet.getRow(r);
+        for (let c = 1; c <= sheet.columnCount; c++) {
+          const v = row.getCell(c).value;
+          if (typeof v === 'string' && /^\{\{payroll\.\w+\}\}$/.test(v.trim())) {
+            templateRowNum = r;
+            row.eachCell({ includeEmpty: false }, (cell, colNum) => {
+              const m = /^\{\{payroll\.(\w+)\}\}$/.exec(String(cell.value).trim());
+              if (m) colKeyMap[colNum] = m[1];
+            });
+            break outer;
+          }
+        }
+      }
+
+  if (templateRowNum) {
+    const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
+
+    // 템플릿 행 아래로, 문자 라벨(=합계 행)이 나오기 전까지가 '빈 자리' 행
+    let staticRows = 1;
+    let r = templateRowNum + 1;
+    while (r <= sheet.rowCount) {
+      const v = sheet.getRow(r).getCell(checkCol).value;
+      if (typeof v === 'string' && v.trim() !== '') break; // '계' 등 라벨 행
+      staticRows++;
+      r++;
+    }
+
+    // 직원이 빈 자리보다 많으면 합계 행 앞에 행을 추가로 복제
+    const need = payrollRows.length - staticRows;
+    duplicateRowPreservingMerges(sheet, templateRowNum + staticRows - 1, need);
+
+    // 데이터 채우기
+    payrollRows.forEach((p, i) => {
+      const targetRow = sheet.getRow(templateRowNum + i);
+      Object.entries(colKeyMap).forEach(([colNum, key]) => {
+        targetRow.getCell(Number(colNum)).value = p[key] ?? '';
+        targetRow.getCell(Number(colNum)).numFmt =
+            typeof p[key] === 'number' ? '#,##0' : targetRow.getCell(Number(colNum)).numFmt;
+      });
+    });
+
+    // 남는 빈 행은 비우기
+    for (let i = payrollRows.length; i < staticRows; i++) {
+      const targetRow = sheet.getRow(templateRowNum + i);
+      Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
+    }
+  }
+
+  // ── 4-1. 면세 사업장이면 면적별 산출내역 표를 값/테두리만 제거해서 숨김 ──
+  if (formData.value.is_vat === 'N') {
+    let areaHeaderRow = null;
+    for (let r = 1; r <= sheet.rowCount; r++) {
+      const cellVal = sheet.getRow(r).getCell(2).value; // B열 기준
+      if (typeof cellVal === 'string' && cellVal.includes('면적') && cellVal.includes('구분')) {
+        areaHeaderRow = r;
+        break;
+      }
+    }
+    if (areaHeaderRow) {
+      // 헤더 + 135㎡ 이하 + 135㎡ 초과 + 스페이서 행까지 총 4행
+      const blockRows = 4;
+      const noBorder = { top: null, left: null, bottom: null, right: null };
+
+      for (let r = areaHeaderRow; r < areaHeaderRow + blockRows; r++) {
+        const row = sheet.getRow(r);ㅇ
+        for (let c = 1; c <= sheet.columnCount; c++) {
+          const cell = row.getCell(c);
+          cell.value = null;
+          cell.border = noBorder;
+          cell.fill = { type: 'pattern', pattern: 'none' };
+        }
+      }
+    }
+  }
+
+  // ── 5. 나머지 {{...}} 플레이스홀더 전체 치환 ─────
+  const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
+
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.isMerged && cell.master !== cell) return;
+      if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
+      const raw = cell.value;
+      const matches = [...raw.matchAll(PLACEHOLDER_RE)];
+      if (matches.length === 0) return;
+
+      // 셀 전체가 플레이스홀더 하나뿐이면 숫자 타입 그대로 대입(합계 서식 유지)
+      if (matches.length === 1 && matches[0][0] === raw.trim()) {
+        const key = matches[0][1];
+        if (key.startsWith('payroll.')) return; // 이미 처리됨
+        let v = resolvePath(context, key);
+        if (v === undefined) v = 0;
+        cell.value = v;
+        // if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
+        return;
+      }
+
+      // 텍스트 안에 여러 개 섞여 있으면 문자열 치환
+      cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
+        const v = resolvePath(context, key);
+        return v === undefined ? '' : String(v);
+      });
+    });
+  });
+
+  // ── 6. buffer 반환 (다운로드는 호출부에서 처리) ──
+  return await workbook.xlsx.writeBuffer();
+};
+
 const handleSave = async () => {
   try {
     const sIdx = formData.value.sIdx;
@@ -1832,6 +2133,10 @@ onMounted(async () => {
             <span class="btn-text">초기화</span>
           </button>
           <button class="btn-excel" @click="exportToExcel"><i class="mdi mdi-microsoft-excel"></i><span class="btn-text">엑셀 저장</span></button>
+          <button class="btn-pdf" @click="exportToPdf" :disabled="isExportingPdf">
+            <i class="mdi mdi-file-pdf-box"></i>
+            <span class="btn-text">{{ isExportingPdf ? '변환 중...' : 'PDF 저장' }}</span>
+          </button>
           <button class="btn-save" @click="handleSave"><i class="mdi mdi-content-save"></i><span class="btn-text">저장하기</span></button>
           <button class="btn-close" @click="closeModal"><i class="mdi mdi-close"></i></button>
         </div>
@@ -2593,8 +2898,30 @@ onMounted(async () => {
 .header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
 .badge { padding: 3px 8px; background: var(--primary-soft); color: var(--primary); border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.btn-excel { background: rgba(5, 150, 105, .1); color: var(--success); border: 1px solid rgba(5, 150, 105, .3); padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap; }
-.btn-excel:hover { background: var(--success); color: #fff; }
+.btn-pdf {
+  height: 42px;
+  background: rgba(220, 38, 38, .1);
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, .3);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.btn-pdf:hover:not(:disabled) {
+  background: #dc2626;
+  color: #fff;
+}
+.btn-pdf:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
 .btn-save { background: var(--primary); color: var(--text-inverse); border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: .2s; display: flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap; }
 .btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
 .btn-close { background: none; border: none; font-size: 22px; color: var(--text-muted); cursor: pointer; transition: .2s; padding: 4px; line-height: 1; border-radius: 6px; }
