@@ -2009,7 +2009,7 @@ const buildSettleWorkbookBuffer = async () => {
       const noBorder = { top: null, left: null, bottom: null, right: null };
 
       for (let r = areaHeaderRow; r < areaHeaderRow + blockRows; r++) {
-        const row = sheet.getRow(r);ㅇ
+        const row = sheet.getRow(r);
         for (let c = 1; c <= sheet.columnCount; c++) {
           const cell = row.getCell(c);
           cell.value = null;
