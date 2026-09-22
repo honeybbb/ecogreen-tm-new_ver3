@@ -791,6 +791,7 @@ const addContractGroup = (category) => {
     cleaningTasks: [],       // 청소 과업 리스트
     tempCleaningCode: '',    // 임시 선택 코드
     tempCleaningCount: 1,    // 임시 입력 횟수
+    tempCleaningDuration: 1,
   });
 
   // activeContractIndex.value = contractGroups.value.length - 1;
@@ -1204,6 +1205,7 @@ const getSiteData = async () => {
           cleaningTasks: item.cleaningConfig || [],
           tempCleaningCode: '',
           tempCleaningCount: 1,
+          tempCleaningDuration: 1,
           files: item.files || [],
           newFiles: [],
           isDragging: false
@@ -1286,21 +1288,25 @@ const addCleaningTaskToGroup = (groupIndex) => {
   const group = contractGroups.value[groupIndex];
   if (!group.tempCleaningCode) { alert('항목을 선택해주세요.'); return; }
   if (group.tempCleaningCount < 1 || group.tempCleaningCount === '') { alert('1회 이상 입력해주세요.'); return; }
+  if (group.tempCleaningDuration < 1 || group.tempCleaningDuration === '') { alert('회당 소요일을 입력해주세요.'); return; }
 
   const taskInfo = cleaningTaskOptions.value.find(p => p.itemCd === group.tempCleaningCode);
   const existing = group.cleaningTasks.find(t => t.code === taskInfo.itemCd);
 
   if (existing) {
     existing.count += Number(group.tempCleaningCount);
+    existing.durationDays = Number(group.tempCleaningDuration);
   } else {
     group.cleaningTasks.push({
       code: taskInfo.itemCd,
       name: taskInfo.itemNm,
-      count: Number(group.tempCleaningCount)
+      count: Number(group.tempCleaningCount),
+      durationDays: Number(group.tempCleaningDuration)
     });
   }
   group.tempCleaningCode = '';
   group.tempCleaningCount = 1;
+  group.tempCleaningDuration = 1;
 };
 
 const removeCleaningTaskFromGroup = (groupIndex, taskIndex) => {
@@ -1314,6 +1320,15 @@ const updateCleaningCount = (task, delta) => {
     return;
   }
   task.count = newVal;
+};
+
+const updateCleaningDuration = (task, delta) => {
+  const newVal = (Number(task.durationDays) || 0) + delta;
+  if (newVal < 1) {
+    alert('소요일은 최소 1일 이상이어야 합니다.');
+    return;
+  }
+  task.durationDays = newVal;
 };
 
 // 메모 수정
@@ -2271,6 +2286,9 @@ onMounted(async () => {
                   <label>/ 연</label>
                   <input type="number" v-model="group.tempCleaningCount" min="1" class="info-input staff-count-input text-right" placeholder="횟수" />
                   <label>회</label>
+                  <label>소요일</label>
+                  <input type="number" v-model="group.tempCleaningDuration" min="1" class="info-input staff-count-input text-right" placeholder="소요일" />
+                  <label>일</label>
                   <button type="button" @click="addCleaningTaskToGroup(idx)" class="btn-add-staff-small">
                     <i class="mdi mdi-plus"></i> 추가
                   </button>
@@ -2291,6 +2309,17 @@ onMounted(async () => {
                             <input type="number" v-model.number="task.count" class="input-stepper" min="1" />
                             <span class="stepper-text">회</span>
                             <button type="button" class="btn-stepper" @click.stop="updateCleaningCount(task, 1)">
+                              <i class="mdi mdi-plus"></i>
+                            </button>
+                          </div>
+                          <div class="staff-count-stepper">
+                            <button type="button" class="btn-stepper" @click.stop="updateCleaningDuration(task, -1)">
+                              <i class="mdi mdi-minus"></i>
+                            </button>
+                            <span class="stepper-text">소요일</span>
+                            <input type="number" v-model.number="task.durationDays" class="input-stepper" min="1" />
+                            <span class="stepper-text">일</span>
+                            <button type="button" class="btn-stepper" @click.stop="updateCleaningDuration(task, 1)">
                               <i class="mdi mdi-plus"></i>
                             </button>
                           </div>

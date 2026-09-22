@@ -10,6 +10,8 @@ const emit = defineEmits(['close', 'update']);
 
 const detailTab = ref('info');
 
+const STATUS_LABEL = { normal: '정상', check: '수리/점검중', fault: '고장', discarded: '폐기' };
+
 const closeDetailModal = () => {
   emit('close');
 };
@@ -41,9 +43,13 @@ const mockTransactions = ref([
   { idx: 4, eqIdx: 4, date: '2024-11-20', type: 'BUY', partner: '클린테크', qty: 3, price: 1500000 },
 ]);
 
+// 요구사항: 폐기 이력도 이 모달 안에서만 관리 (임시 데이터)
+const mockDiscards = ref([]);
+
 const currentMovements = computed(() => mockMovements.value.filter(m => m.eqIdx === props.equipment?.idx));
 const currentRepairs = computed(() => mockRepairs.value.filter(r => r.eqIdx === props.equipment?.idx));
 const currentTransactions = computed(() => mockTransactions.value.filter(t => t.eqIdx === props.equipment?.idx));
+const currentDiscards = computed(() => mockDiscards.value.filter(d => d.eqIdx === props.equipment?.idx));
 
 // ========================================================
 // 장비 이동 폼
@@ -115,20 +121,26 @@ const executeMove = () => {
 const showRepairModal = ref(false);
 const repairForm = ref({
   date: new Date().toISOString().slice(0, 10),
-  type: '수리',
+  startDt: '',
+  endDt: '',
+  type: 'repair',
   content: '',
   center: '',
   cost: 0,
+  expense: 0, //출장비
   updateStatus: false
 });
 
 const openRepairForm = () => {
   repairForm.value = {
     date: new Date().toISOString().slice(0, 10),
-    type: '수리',
+    startDt: '',
+    endDt: '',
+    type: 'repair',
     content: '',
     center: '',
     cost: 0,
+    expense: 0,
     updateStatus: props.equipment?.status !== 'check'
   };
   showRepairModal.value = true;
@@ -153,6 +165,80 @@ const executeRepair = () => {
   showRepairModal.value = false;
 };
 
+// ========================================================
+// 요구사항: 장비 폐기 처리 폼
+//   props.equipment 는 부모(EquipmentListPage)의 equipments 배열 안 객체와 같은 참조이므로,
+//   여기서 직접 mutate 하면 부모 쪽 코드를 건드리지 않아도 목록에 바로 반영된다.
+// ========================================================
+const showDiscardModal = ref(false);
+const discardForm = ref({
+  siteName: '반포 래미안',
+  qty: 1,
+  maxQty: 1,
+  date: new Date().toISOString().slice(0, 10),
+  reason: ''
+});
+
+const openDiscardForm = (assign) => {
+  discardForm.value = {
+    siteName: assign.siteName,
+    qty: assign.qty,   // 기본값은 해당 배치 수량 전체 (가장 흔한 케이스: 전량 폐기)
+    maxQty: assign.qty,
+    date: new Date().toISOString().slice(0, 10),
+    reason: ''
+  };
+  showDiscardModal.value = true;
+};
+
+const executeDiscard = () => {
+  const { siteName, qty, maxQty, date, reason } = discardForm.value;
+
+  if (qty < 1 || qty > maxQty) return alert(`수량은 1에서 ${maxQty} 사이여야 합니다.`);
+  if (!reason.trim()) return alert('폐기 사유를 입력해주세요.');
+
+  const isFullDiscard = props.equipment?.totalQty === qty && props.equipment?.assignments?.length === 1;
+
+  if (!confirm(
+      isFullDiscard
+          ? '이 장비의 남은 수량 전체를 폐기 처리합니다. 폐기 후에는 목록에서 "폐기" 상태로 표시되며 되돌릴 수 없습니다. 계속하시겠습니까?'
+          : `"${siteName}"의 ${qty}개를 폐기 처리합니다. 계속하시겠습니까?`
+  )) return;
+
+  // ── 부모 코드 수정 없이, 공유 참조인 equipment 객체를 여기서 직접 갱신 ──
+  const eq = props.equipment;
+  const targetAssign = eq.assignments.find(a => a.siteName === siteName);
+  if (targetAssign) targetAssign.qty -= qty;
+  eq.assignments = eq.assignments.filter(a => a.qty > 0);
+  eq.totalQty = Math.max(0, eq.totalQty - qty);
+  if (eq.totalQty === 0) {
+    eq.status = 'discarded';
+  }
+
+  // 부모가 별도로 로그를 남기거나 토스트를 띄우고 싶을 경우를 위해 이벤트도 함께 보낸다 (필수 아님)
+  emit('update', { type: 'discard', data: discardForm.value });
+
+  mockDiscards.value.unshift({
+    idx: Date.now(),
+    eqIdx: eq.idx,
+    date: date,
+    siteName: siteName,
+    qty: qty,
+    reason: reason
+  });
+
+  const payload = { eqIdx: eq.idx, siteName, qty, date, reason };
+
+  axios.put(`/api/v1/equipment/discard`, payload)
+      .then(() => {
+        alert('폐기 처리가 완료되었습니다.');
+        showDiscardModal.value = false;
+      })
+      .catch((err) => {
+        console.error(err);
+        alert('폐기 처리 중 오류가 발생했습니다. (화면에는 이미 반영되어 새로고침하면 되돌아갈 수 있습니다)');
+      });
+};
+
 // 모달이 열릴 때 기본 탭 초기화
 import { watch } from 'vue';
 import axios from "axios";
@@ -173,6 +259,7 @@ watch(() => props.show, (newVal) => {
           </span>
           <i v-else class="mdi mdi-toolbox" style="margin-right: 8px;"></i>
           {{ equipment.name }} 상세 정보
+          <span v-if="equipment.status === 'discarded'" class="status-badge status-discarded" style="margin-left: 8px;">폐기됨</span>
         </h3>
         <button class="btn-close" @click="closeDetailModal" style="background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer;"><i class="mdi mdi-close"></i></button>
       </div>
@@ -182,6 +269,7 @@ watch(() => props.show, (newVal) => {
         <button v-if="equipment.assignments" :class="{ active: detailTab === 'assignment' }" @click="detailTab = 'assignment'">현재 배치 현황</button>
         <button :class="{ active: detailTab === 'movement' }" @click="detailTab = 'movement'">단지 이동 이력</button>
         <button :class="{ active: detailTab === 'repair' }" @click="detailTab = 'repair'">수리/점검 대장</button>
+        <button :class="{ active: detailTab === 'discard' }" @click="detailTab = 'discard'">폐기 이력</button>
         <button :class="{ active: detailTab === 'transaction' }" @click="detailTab = 'transaction'">구매/양도 내역</button>
       </div>
 
@@ -192,7 +280,7 @@ watch(() => props.show, (newVal) => {
             <div><strong style="color:var(--text-sub);">모델명:</strong> {{ equipment.model || '-' }}</div>
             <div><strong style="color:var(--text-sub);">고유번호(S/N):</strong> {{ equipment.serialNo || '-' }}</div>
             <div><strong style="color:var(--text-sub);">도입(구매)일:</strong> {{ equipment.purchaseDate || '-' }}</div>
-            <div><strong style="color:var(--text-sub);">현재 상태:</strong> {{ equipment.status === 'normal' ? '정상' : equipment.status === 'check' ? '수리/점검중' : '고장' }}</div>
+            <div><strong style="color:var(--text-sub);">현재 상태:</strong> {{ STATUS_LABEL[equipment.status] || equipment.status || '-' }}</div>
             <div style="grid-column: 1 / -1;"><strong style="color:var(--text-sub);">보관/지급 위치:</strong> {{ equipment.location || '-' }}</div>
             <div style="grid-column: 1 / -1;"><strong style="color:var(--text-sub);">보유 수량:</strong> <span class="fw-bold text-primary">{{ equipment.quantity || equipment.totalQty }}</span></div>
           </div>
@@ -203,20 +291,28 @@ watch(() => props.show, (newVal) => {
           <div class="info-row"><strong>모델명:</strong> {{ equipment.model }}</div>
           <div class="info-row"><strong>고유번호:</strong> {{ equipment.serialNo }}</div>
           <div class="info-row" style="margin-top: 12px;">
-            <strong>현재 투입 현장 (이동 처리):</strong>
+            <strong>현재 투입 현장 (이동 / 폐기 처리):</strong>
             <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
               <div v-for="(assign, i) in equipment.assignments" :key="i" class="assignment-card">
                 <div class="assign-info">
                   <span class="site-badge">{{ assign.siteName }}</span>
                   <strong style="color: var(--primary);">{{ assign.qty }}대(개)</strong>
                 </div>
-                <button class="btn-move" @click="openMoveForm(assign)">
-                  <i class="mdi mdi-truck-delivery-outline"></i> 이동
-                </button>
+                <div class="assign-actions">
+                  <button class="btn-move" @click="openMoveForm(assign)">
+                    <i class="mdi mdi-truck-delivery-outline"></i> 이동
+                  </button>
+                  <button class="btn-discard" @click="openDiscardForm(assign)">
+                    <i class="mdi mdi-trash-can-outline"></i> 폐기
+                  </button>
+                </div>
+              </div>
+              <div v-if="equipment.assignments.length === 0" class="empty-state-mini">
+                남아있는 배치 수량이 없습니다 (전량 폐기됨).
               </div>
             </div>
           </div>
-          <p class="text-sub mt-2" style="margin-top: 8px; font-size: 13px;">※ 이동 버튼을 눌러 타 현장이나 창고로 장비를 탁송 처리할 수 있습니다.</p>
+          <p class="text-sub mt-2" style="margin-top: 8px; font-size: 13px;">※ 이동 버튼을 눌러 타 현장이나 창고로 장비를 탁송하거나, 폐기 버튼으로 사용 종료 처리할 수 있습니다. 폐기는 되돌릴 수 없습니다.</p>
         </div>
 
         <!-- 2) 단지 이동 이력 탭 -->
@@ -277,7 +373,31 @@ watch(() => props.show, (newVal) => {
           </table>
         </div>
 
-        <!-- 4) 구매/양도 내역 탭 -->
+        <!-- 4) 폐기 이력 탭 (신규 추가) -->
+        <div v-else-if="detailTab === 'discard'">
+          <p class="text-sub" style="margin: 0 0 12px; font-size: 13px;">※ 이 장비에 대한 폐기 처리 이력입니다. 배치 현황 탭의 "폐기" 버튼으로 새로 등록할 수 있습니다.</p>
+          <div v-if="currentDiscards.length === 0" class="empty-state-mini">폐기 이력이 없습니다.</div>
+          <table v-else class="modal-table">
+            <thead>
+            <tr>
+              <th>일자</th>
+              <th>현장</th>
+              <th>수량</th>
+              <th>사유</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="item in currentDiscards" :key="item.idx">
+              <td>{{ item.date }}</td>
+              <td>{{ item.siteName }}</td>
+              <td>{{ item.qty }}</td>
+              <td>{{ item.reason }}</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 5) 구매/양도 내역 탭 -->
         <div v-else-if="detailTab === 'transaction'">
           <div v-if="currentTransactions.length === 0" class="empty-state-mini">거래 이력이 없습니다.</div>
           <table v-else class="modal-table">
@@ -310,14 +430,14 @@ watch(() => props.show, (newVal) => {
     </div>
   </div>
 
-  <!-- ── 5) 장비 이동 폼 모달 (신규 추가) ── -->
+  <!-- ── 5) 장비 이동 폼 모달 ── -->
   <div v-if="showMoveModal" class="modal-overlay" style="z-index: 1100;" @click.self="showMoveModal = false">
-    <div class="modal-content" style="max-width: 400px; background: var(--bg-surface); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-      <div class="modal-header" style="padding: 18px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <div class="modal-content">
+      <div class="modal-header">
         <h3 style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center;"><i class="mdi mdi-truck-delivery-outline"></i> 장비 이동 처리</h3>
         <button class="btn-close" @click="showMoveModal = false" style="background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer;"><i class="mdi mdi-close"></i></button>
       </div>
-      <div class="modal-body" style="padding: 24px;">
+      <div class="modal-body">
         <div class="move-form-group">
           <label>출발지</label>
           <!--input type="text" :value="moveForm.fromSite" disabled class="form-input bg-gray" /-->
@@ -353,24 +473,33 @@ watch(() => props.show, (newVal) => {
     </div>
   </div>
 
-  <!-- ── 6) 수리/점검 등록 모달 (신규 추가) ── -->
+  <!-- ── 6) 수리/점검 등록 모달 ── -->
   <div v-if="showRepairModal" class="modal-overlay" style="z-index: 1100;" @click.self="showRepairModal = false">
-    <div class="modal-content" style="max-width: 400px; background: var(--bg-surface); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-      <div class="modal-header" style="padding: 18px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center;"><i class="mdi mdi-wrench-outline" style="margin-right: 4px;"></i> 수리/점검 내역 등록</h3>
+    <div class="modal-content" style="max-width: 600px; background: var(--bg-surface); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center;"><i class="mdi mdi-wrench-outline" style="margin-right: 4px;"></i> 수리 내역 등록</h3>
         <button class="btn-close" @click="showRepairModal = false" style="background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer;"><i class="mdi mdi-close"></i></button>
       </div>
-      <div class="modal-body" style="padding: 24px;">
+      <div class="modal-body">
         <div class="move-form-group">
-          <label>등록 유형</label>
+          <label>수리 유형</label>
           <select v-model="repairForm.type" class="form-input">
-            <option value="수리">고장 수리</option>
-            <option value="점검">정기 점검</option>
+            <option value="repair">고장 수리</option>
+            <option value="change">부품 교체</option>
+            <option value="etc">기타 수리</option>
           </select>
         </div>
         <div class="move-form-group">
           <label>발생 일자</label>
           <input type="date" v-model="repairForm.date" class="form-input" />
+        </div>
+        <div class="move-form-group">
+          <label>수리 시작일</label>
+          <input type="date" v-model="repairForm.startDt" class="form-input" />
+        </div>
+        <div class="move-form-group">
+          <label>수리 종료일</label>
+          <input type="date" v-model="repairForm.endDt" class="form-input" />
         </div>
         <div class="move-form-group">
           <label>점검 및 수리 내용</label>
@@ -384,6 +513,10 @@ watch(() => props.show, (newVal) => {
           <label>발생 비용 (원)</label>
           <input type="number" v-model.number="repairForm.cost" min="0" step="1000" class="form-input" />
         </div>
+        <div class="move-form-group">
+          <label>출장 비용 (원)</label>
+          <input type="number" v-model.number="repairForm.expense" min="0" step="1000" class="form-input" />
+        </div>
         <div class="move-form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 6px;">
           <input type="checkbox" id="updateStatusChk" v-model="repairForm.updateStatus" style="width: 16px; height: 16px; cursor: pointer;" />
           <label for="updateStatusChk" style="margin: 0; cursor: pointer; color: var(--danger, #ef4444);">
@@ -394,6 +527,44 @@ watch(() => props.show, (newVal) => {
       <div class="modal-footer" style="padding: 16px 20px; border-top: 1px solid var(--border-color, #e5e7eb); display: flex; gap: 8px; justify-content: flex-end;">
         <button @click="showRepairModal = false" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #e5e7eb; background: var(--bg-surface); cursor: pointer;">취소</button>
         <button @click="executeRepair" style="padding: 8px 16px; border-radius: 6px; border: none; background: var(--primary, #4f46e5); color: #fff; cursor: pointer; font-weight: 600;">등록 완료</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 7) 장비 폐기 처리 모달 (신규 추가, 요구사항) ── -->
+  <div v-if="showDiscardModal" class="modal-overlay" style="z-index: 1100;" @click.self="showDiscardModal = false">
+    <div class="modal-content" style="max-width: 400px; background: var(--bg-surface); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; color: var(--danger, #ef4444);">
+          <i class="mdi mdi-trash-can-outline" style="margin-right: 4px;"></i> 장비 폐기 처리
+        </h3>
+        <button class="btn-close" @click="showDiscardModal = false" style="background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer;"><i class="mdi mdi-close"></i></button>
+      </div>
+      <div class="modal-body">
+        <p class="discard-warning">
+          <i class="mdi mdi-alert-outline"></i> 폐기 처리는 되돌릴 수 없습니다. 보유 수량이 전부 소진되면 이 장비는 목록에서 "폐기" 상태로 표시됩니다.
+        </p>
+        <div class="move-form-group">
+          <label>대상 현장</label>
+          <!--input type="text" :value="discardForm.siteName" disabled class="form-input bg-gray" /-->
+          <SiteSelect v-model="discardForm.siteName" disabled />
+        </div>
+        <div class="move-form-group">
+          <label>폐기 수량 (최대 {{ discardForm.maxQty }}개)</label>
+          <input type="number" v-model.number="discardForm.qty" min="1" :max="discardForm.maxQty" class="form-input" />
+        </div>
+        <div class="move-form-group">
+          <label>폐기 일자</label>
+          <input type="date" v-model="discardForm.date" class="form-input" />
+        </div>
+        <div class="move-form-group">
+          <label>폐기 사유 <span style="color: var(--danger, #ef4444);">*</span></label>
+          <input type="text" v-model="discardForm.reason" placeholder="예: 노후화로 인한 사용 불가" class="form-input" />
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 16px 20px; border-top: 1px solid var(--border-color, #e5e7eb); display: flex; gap: 8px; justify-content: flex-end;">
+        <button @click="showDiscardModal = false" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #e5e7eb; background: var(--bg-surface); cursor: pointer;">취소</button>
+        <button @click="executeDiscard" style="padding: 8px 16px; border-radius: 6px; border: none; background: var(--danger, #ef4444); color: #fff; cursor: pointer; font-weight: 600;">폐기 확정</button>
       </div>
     </div>
   </div>
@@ -413,6 +584,10 @@ watch(() => props.show, (newVal) => {
 .text-sub { color: var(--text-sub, #4b5563); }
 .text-primary { color: var(--primary); }
 
+/* ── 상태 뱃지 (요구사항: 폐기 상태 표시) ── */
+.status-badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.status-discarded { background: #f3f4f6; color: #6b7280; }
+
 /* ── 빈 상태 (Empty State) ── */
 .empty-state-mini { text-align: center; padding: 40px 0; color: #9ca3af; font-size: 13px; }
 
@@ -430,7 +605,7 @@ watch(() => props.show, (newVal) => {
 .modal-table th, .modal-table td { padding: 12px; border-bottom: 1px solid var(--border-color, #e5e7eb); text-align: left; }
 .modal-table th { background: var(--bg-canvas, #f9fafb); color: var(--text-sub, #4b5563); font-weight: 600; }
 
-/* ── 배치 탭 이동 버튼 & 카드 ── */
+/* ── 배치 탭 이동/폐기 버튼 & 카드 ── */
 .assignment-card {
   display: flex;
   align-items: center;
@@ -441,10 +616,20 @@ watch(() => props.show, (newVal) => {
   background: var(--bg-surface);
 }
 .assign-info { display: flex; align-items: center; gap: 10px; }
+.assign-actions { display: flex; align-items: center; gap: 6px; }
 .btn-move { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: var(--primary); border: 1px solid var(--primary, #4f46e5); color: #fff; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn-move:hover { background: var(--primary-hover); }
+.btn-discard { display: flex; align-items: center; gap: 4px; padding: 6px 12px; background: #fff; border: 1px solid var(--danger, #ef4444); color: var(--danger, #ef4444); border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-discard:hover { background: var(--danger, #ef4444); color: #fff; }
 
-/* ── 장비 이동 폼 (Sub Modal) ── */
+/* ── 폐기 경고 문구 ── */
+.discard-warning {
+  display: flex; align-items: flex-start; gap: 6px; margin: 0 0 16px;
+  padding: 10px 12px; background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.25);
+  border-radius: 8px; font-size: 12px; color: var(--danger, #ef4444); line-height: 1.5;
+}
+
+/* ── 장비 이동/폐기 폼 (Sub Modal) ── */
 .move-form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .move-form-group label { font-size: 12px; font-weight: 600; color: var(--text-main, #111827); }
 .form-input { padding: 10px; border: 1px solid var(--border-color, #e5e7eb); border-radius: 6px; font-size: 13px; outline: none; }

@@ -25,13 +25,16 @@ const pageSizeOptions = [50, 100, 200, 500];
 // 통계 데이터 계산 (stats-card 용)
 // ========================================================
 const stats = computed(() => {
-  let totalQty = 0, normalQty = 0, checkQty = 0, faultQty = 0;
+  let totalQty = 0,
+      normalQty = 0,
+      checkQty = 0,
+      faultQty = 0;
 
   equipments.value.forEach(eq => {
     totalQty += eq.totalQty;
-    if (eq.status === 'normal') normalQty += eq.totalQty;
-    else if (eq.status === 'check') checkQty += eq.totalQty;
-    else if (eq.status === 'fault') faultQty += eq.totalQty;
+    if (eq.status === 0) normalQty += eq.totalQty;
+    else if (eq.status === 1) checkQty += eq.totalQty;
+    else if (eq.status === 2) faultQty += eq.totalQty;
   });
 
   return {
@@ -164,9 +167,8 @@ const getEquipmentList = async () => {
   // isLoading.value = true;
 
   try {
-    const response = await axios.get('/api/v1/equipment/list');
+    const response = await axios.get('/api/v2/equipment/list');
 
-    // 백엔드 응답 구조가 { result: true, data: [...] } 라고 가정
     if (response.data.result) {
       equipments.value = response.data.data;
     } else {
@@ -182,7 +184,7 @@ const getEquipmentList = async () => {
 
 // 3. 컴포넌트 마운트 시 자동 호출
 onMounted(() => {
-  // getEquipmentList();
+  getEquipmentList();
 });
 </script>
 
@@ -220,14 +222,14 @@ onMounted(() => {
       <div class="stat-card" style="--card-color:var(--warning);--card-bg:rgba(245,158,11,.1)">
         <div class="stat-icon"><i class="mdi mdi-progress-wrench"></i></div>
         <div class="stat-content">
-          <span class="stat-label">수리/점검중</span>
+          <span class="stat-label">수리중</span>
           <span class="stat-value text-orange">{{ stats.checkQty }}<small>대</small></span>
         </div>
       </div>
       <div class="stat-card" style="--card-color:var(--danger);--card-bg:rgba(239,68,68,.1)">
         <div class="stat-icon"><i class="mdi mdi-alert-circle-outline"></i></div>
         <div class="stat-content">
-          <span class="stat-label">고장/폐기대기</span>
+          <span class="stat-label">폐기</span>
           <span class="stat-value text-red">{{ stats.faultQty }}<small>대</small></span>
         </div>
       </div>

@@ -62,32 +62,48 @@ const fetchSummaryData = async () => {
 };
 
 // ── 데이터 가공 (그룹핑 및 합계) ─────────────────────────
-// 실제 엑셀 이미지처럼 소계를 넣기 위해 임의로 6개 단위로 분할하여 소계를 계산합니다.
 const processedGroups = computed(() => {
-  const groups = [];
-  const chunkSize = 6;
+  if (!rawData.value || rawData.value.length === 0) return [];
 
-  for (let i = 0; i < rawData.value.length; i += chunkSize) {
-    const chunk = rawData.value.slice(i, i + chunkSize);
-    const subTotal = chunk.reduce((acc, cur) => ({
-      contractCnt: acc.contractCnt + cur.contractCnt,
-      currentCnt: acc.currentCnt + cur.currentCnt,
-      female: acc.female + cur.female,
-      male: acc.male + cur.male,
-      join: acc.join + cur.join,
-      resign: acc.resign + cur.resign,
-      gap: acc.gap + cur.gap,
-      billingAmt: acc.billingAmt + cur.billingAmt,
-      payrollCnt: acc.payrollCnt + cur.payrollCnt,
-      netPay: Number(acc.netPay) + Number(cur.netPay),
+  // 1. payment_day를 기준으로 데이터 그룹핑
+  const groupedData = rawData.value.reduce((acc, row) => {
+    // API 데이터에 payment_day가 없으면 '미지정'으로 분류
+    const date = row.payment_day || '미지정';
+
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(row);
+    return acc;
+  }, {});
+
+  // 2. 날짜 순으로 정렬 (오름차순)
+  const sortedDates = Object.keys(groupedData).sort();
+
+  // 3. 그룹별로 소계 계산하여 배열로 반환
+  return sortedDates.map(date => {
+    const rows = groupedData[date];
+
+    // 해당 날짜(그룹)의 소계 계산
+    const subTotal = rows.reduce((acc, cur) => ({
+      contractCnt: acc.contractCnt + (cur.contractCnt || 0),
+      currentCnt: acc.currentCnt + (cur.currentCnt || 0),
+      female: acc.female + (cur.female || 0),
+      male: acc.male + (cur.male || 0),
+      join: acc.join + (cur.join || 0),
+      resign: acc.resign + (cur.resign || 0),
+      gap: acc.gap + (cur.gap || 0),
+      billingAmt: acc.billingAmt + (cur.billingAmt || 0),
+      payrollCnt: acc.payrollCnt + (cur.payrollCnt || 0),
+      netPay: Number(acc.netPay) + Number(cur.netPay || 0),
     }), { contractCnt: 0, currentCnt: 0, female: 0, male: 0, join: 0, resign: 0, gap: 0, billingAmt: 0, payrollCnt: 0, netPay: 0 });
 
-    groups.push({
-      rows: chunk,
-      subTotal
-    });
-  }
-  return groups;
+    return {
+      paymentDay: date, // 템플릿에서 보여주기 위해 날짜 추가
+      rows: rows,
+      subTotal: subTotal
+    };
+  });
 });
 
 // 전체 총합계
@@ -183,7 +199,7 @@ onMounted(() => {
           <thead>
           <tr>
             <th rowspan="2" style="width: 4%;">No</th>
-            <th rowspan="2" style="width: 26%;">단지</th>
+            <th rowspan="2" style="width: 20%;">단지</th>
             <th colspan="7" style="width: 28%;">인원</th>
             <th rowspan="2" style="width: 12%;">청구액</th>
             <th rowspan="2" style="width: 8%;">급여작업<br>인원</th>
@@ -216,7 +232,7 @@ onMounted(() => {
               <td class="text-center text-red">{{ row.resign || '' }}</td>
               <td class="text-center text-red">{{ row.gap || '' }}</td>
 
-              <td class="text-right cell-pad">{{ formatNum(row.billingAmt) }}</td>
+              <td class="text-right cell-pad">{{ formatCurrency(row.billingAmt) }}</td>
               <td class="text-center">{{ row.payrollCnt || '' }}</td>
               <td class="text-right cell-pad font-bold">{{ formatNum(row.netPay) }}</td>
 
