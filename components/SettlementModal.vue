@@ -1884,6 +1884,12 @@ const buildSettleWorkbookBuffer = async () => {
   await workbook.xlsx.load(arrayBuffer);
   const sheet = workbook.worksheets[0];
 
+  sheet.pageSetup = {
+    ...sheet.pageSetup,
+    horizontalCentered: true,
+    verticalCentered: false,
+  };
+
   // ── 1. 기본 값 계산 ─────────────────────────────
   const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
   const [yyyy, mmRaw] = targetDateStr.split('-');
@@ -1934,6 +1940,13 @@ const buildSettleWorkbookBuffer = async () => {
     return acc;
   }, {});
 
+  // ── 2-2. 계약서(산출내역서) 기준 견적 4대보험 (항목별) ──
+  const estNationalPension = sumByKeyword(contractIndirectLabor.value, '국민연금');
+  const estHealthInsurance = sumByKeyword(contractIndirectLabor.value, '건강보험');
+  const estLongTermCare    = sumByKeyword(contractIndirectLabor.value, '장기요양');
+  const estUnemployment    = sumByKeyword(contractIndirectLabor.value, '고용보험'); // 실업급여+고용안정 합산 1개 항목
+  const estSanjae          = sumByKeyword(contractIndirectLabor.value, '산재');
+
   // ── 3. 단일 값 컨텍스트 ─────────────────────────
   const context = {
     yyyy, mm,
@@ -1958,6 +1971,22 @@ const buildSettleWorkbookBuffer = async () => {
     billingDt: formData.value.billingDt || '',
     bankInfo: formData.value.billingData.bankInfo || '',
     payrollTotal,
+    contract: {
+      nationalPension: estNationalPension,
+      healthInsurance: estHealthInsurance,
+      longTermCare:    estLongTermCare,
+      employment:      estUnemployment,   // 실업급여+고용안정 합산 1개 항목
+      sanjae:          estSanjae,
+      total:           estimatedInsuranceTotal.value || 0,
+    },
+    diff: {
+      nationalPension: (payrollTotal.nationalPension || 0) - estNationalPension,
+      healthInsurance: (payrollTotal.healthInsurance || 0) - estHealthInsurance,
+      longTermCare:    (payrollTotal.longTermCare || 0) - estLongTermCare,
+      employment:      ((payrollTotal.unemployment || 0) + (payrollTotal.empStability || 0)) - estUnemployment,
+      sanjae:          (payrollTotal.sanjae || 0) - estSanjae,
+      total:           (payrollTotal.total || 0) - (estimatedInsuranceTotal.value || 0),
+    },
   };
 
   // ── 4. 급여 반복행 처리 ─────────────────────────
@@ -2082,8 +2111,28 @@ const buildSettleWorkbookBuffer = async () => {
       });
     });
   });
+// ── 5-1. 렌더링 엔진(LibreOffice)이 좁은 열에서 글자를 잘라먹는 문제 방지 ──
+  // wrapText를 끄고 shrinkToFit을 켜서, 변환기가 열 너비를 어떻게 계산하든
+  // 텍스트가 잘리는 대신 폰트 크기가 자동으로 줄어들며 한 줄에 표시되도록 강제합니다.
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      cell.alignment = {
+        ...cell.alignment,
+        wrapText: false,
+        shrinkToFit: true,
+      };
+    });
+  });
+
+  // 시트 확대/축소 배율도 100%로 고정 (뷰어별 확대 상태 차이로 인한 착시 방지)
+  if (sheet.views && sheet.views.length > 0) {
+    sheet.views[0].zoomScale = 100;
+  } else {
+    sheet.views = [{ zoomScale: 100 }];
+  }
 
   // ── 6. buffer 반환 (다운로드는 호출부에서 처리) ──
+  workbook.calcProperties.fullCalcOnLoad = true;
   return await workbook.xlsx.writeBuffer();
 };
 
