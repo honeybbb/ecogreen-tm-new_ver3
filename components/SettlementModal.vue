@@ -67,7 +67,8 @@ const siteBigoList = ref([]);
 // ──────────────────────────────────────────────
 // 2. 폼 데이터 상태
 // ──────────────────────────────────────────────
-const defaultBankInfo = cIdx == 4 ? '기업은행 301-051564-01-017 (예금주: 에코그린티엠)' : '국민은행 : 879601-01-250607  (주)이지종합관리)';
+// const defaultBankInfo = '기업은행 301-051564-01-017 (예금주: 에코그린티엠)';
+const defaultBankInfo = '국민은행 : 879601-01-250607  (주)이지종합관리)';
 const defaultHeaderMessage = '1. 귀 소의 무궁한 발전을 기원합니다.\n2. 당월 용역비를 아래와 같이 청구하오니 검토하시여 결재를 부탁드립니다.\n\n- 아 래 -';
 
 const createEmptyFormData = (overrides = {}) => ({
@@ -1899,6 +1900,12 @@ const buildSettleWorkbookBuffer = async () => {
 
   const vb = formData.value.billingData.vatBreakdown;
 
+  // ── 2-1. 청구내역(billingData.items) 항목별 비고 매핑 ──
+  const findItemNote = (syncKey) => {
+    const item = (formData.value.billingData.items || []).find(i => i._syncKey === syncKey);
+    return item?.note || '';
+  };
+
   // ── 2. 급여 반복행 데이터 (코드가 아니라 항목명으로 매칭 → 회사마다 코드 달라도 안전) ──
   const findDeductAmount = (row, keyword) => {
     const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
@@ -1932,9 +1939,13 @@ const buildSettleWorkbookBuffer = async () => {
     yyyy, mm,
     siteName: formData.value.siteName || '',
     monthlyFee: contractTotalCost.value || 0,
+    monthlyFeeNote: findItemNote('monthlyFee'),
     annualLeave: signedVal('annualLeave'),
+    annualLeaveNote: findItemNote('annualLeave'),
     severance: signedVal('severance'),
+    severanceNote: findItemNote('severance'),
     insuranceDiff: Number(formData.value.billingData.insuranceDiff) || 0,
+    insuranceDiffNote: findItemNote('insuranceDiff'),
     customTotal,
     grandTotal: findSummary('grandTotal')?.value || 0,
     under135Area: vb.under135.area || 0,
