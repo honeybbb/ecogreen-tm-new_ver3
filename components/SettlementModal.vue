@@ -1977,12 +1977,23 @@ const buildSettleWorkbookBuffer = async () => {
     duplicateRowPreservingMerges(sheet, templateRowNum + staticRows - 1, need);
 
     // 데이터 채우기
+    // 0일 때 "해당없음"으로 표시할 컬럼
+    const NA_DISPLAY_KEYS = ['nationalPension', 'healthInsurance', 'longTermCare', 'unemployment'];
+
+    // 데이터 채우기
     payrollRows.forEach((p, i) => {
       const targetRow = sheet.getRow(templateRowNum + i);
       Object.entries(colKeyMap).forEach(([colNum, key]) => {
-        targetRow.getCell(Number(colNum)).value = p[key] ?? '';
-        targetRow.getCell(Number(colNum)).numFmt =
-            typeof p[key] === 'number' ? '#,##0' : targetRow.getCell(Number(colNum)).numFmt;
+        const cell = targetRow.getCell(Number(colNum));
+        const rawVal = p[key];
+
+        if (NA_DISPLAY_KEYS.includes(key) && (Number(rawVal) || 0) === 0) {
+          cell.value = '해당없음';
+          cell.numFmt = '@'; // 숫자 포맷 잔존 방지 (텍스트로 전환)
+        } else {
+          cell.value = rawVal ?? '';
+          if (typeof rawVal === 'number') cell.numFmt = '#,##0';
+        }
       });
     });
 
