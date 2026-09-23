@@ -205,7 +205,7 @@ const selectedItems = computed(() => items.value.filter(s => s.selected));
 // ── 삭제 ─────────────────────────────────────────────
 const deleteSelected = async () => {
   if (!selectedItems.value.length) { alert('삭제할 항목을 선택하세요.'); return; }
-  if (!confirm(`선택한 ${selectedItems.value.length}건의 추계 데이터를 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다.`)) return;
+  if (!await window.customConfirm(`선택한 ${selectedItems.value.length}건의 추계 데이터를 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다.`)) return;
   try {
     isLoading.value = true;
     await Promise.all(selectedItems.value.map(({ id }) => axios.delete(`/api/v1/accrual/sites/${id}`)));
@@ -295,7 +295,7 @@ const saveModal = async () => {
 };
 
 const deleteRow = async (row, section) => {
-  if (!confirm(`'${row.name}' 항목을 삭제하시겠습니까?`)) return;
+  if (!await window.customConfirm(`'${row.name}' 항목을 삭제하시겠습니까?`)) return;
   const target = section === 'annual' ? annualRows.value[activeType.value] : retireRows.value[activeType.value];
   try {
     if (row.idx) await axios.delete(`/api/v1/accrual/${section}/${row.idx}`);

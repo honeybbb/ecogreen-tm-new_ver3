@@ -10,9 +10,12 @@ const { siteOptions, fetchSiteOptions } = useApi();
 const DAY_MS = 86400000;
 const WARN_AFTER_MONTHS = 4; // 요구사항 7: 구간 시작 후 4개월 경과하면 경고
 
-const STATUS_LABEL = { 0: '예정', 1: '확정', 2: '진행중', 3: '완료' };
+const STATUS_LABEL = { 0: '예정', 1: '확정', 2: '진행중', 3: '완료', 4: '취소' };
 const DOC_STATUS_LABEL = { 0: '미발송', 1: '발송', 2: '일부확인', 3: '확인완료' };
-const RECEIPT_TYPE_LABEL = { SITE: '단지', MANAGER: '담당자', TEAM: '팀장' };
+const RECEIPT_TYPE_LABEL = { SITE: '단지', MANAGER: '담당자' };
+
+// 투입 장비 — 여러 개 선택 가능. 항목을 늘리려면 여기에만 추가하면 된다.
+const EQUIPMENT_OPTIONS = ['고압세척기', '사다리차'];
 
 const fmtDate = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -32,9 +35,9 @@ const activeTab = ref('calendar'); // calendar | status | workload | assign | do
 const tabDescriptions = {
   calendar: '날짜를 클릭해 일정을 등록하세요. 공문 확인이 끝나지 않은 일정은 점선으로 표시됩니다.',
   status: '현장별로 계약 주기 안에서 몇 회를 실시했는지, 남은 횟수와 소요일을 확인하세요.',
-  workload: '팀별 월 소요일 합계입니다. 월 15일을 넘긴 팀은 강조되니 추가 편성 판단에 쓰세요.',
-  assign: '미배정 현장을 팀 칸으로 끌어다 놓으면 바로 배정됩니다. 배정된 일정도 옮길 수 있어요.',
-  documents: '발송할 공문을 확인하고, 단지·담당자·팀장 세 곳의 수신확인 상태를 관리하세요.'
+  workload: '현장별 월 소요일 합계와, 계약 소요일 대비 실제 등록/완료 소요일을 비교해서 보여줍니다.',
+  assign: '카드의 "인원 편집"은 일정 전체 날짜에 한 번에 배정합니다. 날짜별로 다르게 넣으려면 카드를 열어 일차별 표에서 편집하세요.',
+  documents: '발송할 공문을 확인하고, 단지·담당자 두 곳의 수신확인 상태를 관리하세요.'
 };
 
 /* =========================================================================
@@ -61,23 +64,28 @@ const calendarDays = computed(() => {
   const lastDate = new Date(year, month + 1, 0).getDate();
   const days = [];
 
+  // 요일/공휴일 플래그를 붙여서 반환 (달력 셀에 시각 표시용)
+  const withDayFlags = (dateStr, extra) => {
+    const { isSat, isSun, isHoliday, holidayName } = getDayFlags(dateStr);
+    return { dateStr, isSaturday: isSat, isSunday: isSun, isHoliday, holidayName, ...extra };
+  };
+
   for (let i = firstDay - 1; i >= 0; i--) {
     const d = new Date(year, month, -i);
-    days.push({ date: d.getDate(), isCurrentMonth: false, dateStr: fmtDate(d) });
+    days.push(withDayFlags(fmtDate(d), { date: d.getDate(), isCurrentMonth: false }));
   }
   for (let i = 1; i <= lastDate; i++) {
     const d = new Date(year, month, i);
-    days.push({
+    days.push(withDayFlags(fmtDate(d), {
       date: i,
       isCurrentMonth: true,
-      isToday: fmtDate(d) === todayStr(),
-      dateStr: fmtDate(d)
-    });
+      isToday: fmtDate(d) === todayStr()
+    }));
   }
   const remaining = 42 - days.length;
   for (let i = 1; i <= remaining; i++) {
     const d = new Date(year, month + 1, i);
-    days.push({ date: i, isCurrentMonth: false, dateStr: fmtDate(d) });
+    days.push(withDayFlags(fmtDate(d), { date: i, isCurrentMonth: false }));
   }
   return days;
 });
@@ -89,21 +97,43 @@ const visibleRange = computed(() => ({
 }));
 
 /* =========================================================================
- * 2. 마스터 데이터 (팀 / 팀원 / 관리자)
+ * 2. 마스터 데이터 (작업자 / 관리자)
+ *    - 이전에는 '팀' 단위(팀장/팀원 편성)로 일정을 배정했지만,
+ *      같은 팀이어도 날마다 투입 인원 수가 달라질 수 있어 이제는
+ *      개인 작업자(cleaningStaff)를 일정에 직접 여러 명 배정하는 방식으로 바꾼다.
  * ========================================================================= */
 const cleaningStaff = ref([]);
-const teams = ref([]);
 const managers = ref([]);
 
-const getTeamName = (teamIdx) => teams.value.find((t) => t.idx === teamIdx)?.teamName || '미배정';
-const getTeamLeaderName = (teamIdx) => teams.value.find((t) => t.idx === teamIdx)?.leaderName || '-';
+const getStaffName = (staffIdx) => cleaningStaff.value.find((s) => s.idx === staffIdx)?.name || '-';
+const getStaffNames = (staffIds) =>
+    (staffIds || []).map(getStaffName).filter((name) => name !== '-').join(', ');
 const getManagerName = (mnIdx) => managers.value.find((m) => m.idx === mnIdx)?.name || '-';
 
-const getTeamMembers = (teamIdx) => {
-  const team = teams.value.find((t) => t.idx === teamIdx);
-  if (!team?.memberIds) return [];
-  return team.memberIds.map((i) => cleaningStaff.value.find((s) => s.idx === i)).filter(Boolean);
+// 일정 전체 합집합만 보면 날마다 인원 수가 다른 게 안 보이므로,
+// "1일차 2명 · 2일차 1명"처럼 날짜별 인원수를 한 줄로 요약해서 보여주기 위한 헬퍼.
+const getDailyStaffSummary = (schedule) => {
+  const days = (schedule.dailyTasks || []).filter((d) => !d.excluded);
+  if (!days.length) return '';
+  return days.map((d) => `${d.dayIndex}일차 ${(d.staffIds || []).length}명`).join(' · ');
 };
+// 날마다 인원 수가 실제로 다른 경우에만 별도 요약을 보여주기 위한 판정
+const hasVaryingDailyStaff = (schedule) => {
+  const counts = (schedule.dailyTasks || []).filter((d) => !d.excluded).map((d) => (d.staffIds || []).length);
+  return new Set(counts).size > 1;
+};
+
+// 팀장 관련 헬퍼 — 팀장은 "그날 배정된 인원 중" 한 명으로 날짜마다 다를 수 있다.
+// 모든 날짜의 팀장이 같은 사람이면 그 이름을, 날짜마다 다르면 안내 문구를, 아예 없으면 빈 문자열을 반환.
+const getScheduleLeaderName = (schedule) => {
+  const days = (schedule.dailyTasks || []).filter((d) => !d.excluded && d.leaderId);
+  if (!days.length) return '';
+  const ids = new Set(days.map((d) => d.leaderId));
+  return ids.size === 1 ? getStaffName([...ids][0]) : '일차별로 다름';
+};
+// 이 사람이 "어느 날짜에라도" 팀장으로 지정돼 있는지 — 목록/카드에서 왕관 표시용
+const isScheduleLeaderAnyDay = (schedule, staffIdx) =>
+    (schedule.dailyTasks || []).some((d) => !d.excluded && d.leaderId === staffIdx);
 
 const fetchCleaningStaff = async () => {
   try {
@@ -112,26 +142,6 @@ const fetchCleaningStaff = async () => {
   } catch (e) {
     console.error('청소 인력 로드 실패:', e);
     cleaningStaff.value = [];
-  }
-};
-
-const fetchCleaningTeam = async () => {
-  try {
-    const { data } = await axios.get('/api/v1/site/cleaning/team');
-    if (!data.result) throw new Error(data.message);
-    teams.value = (data.data || []).map((t) => {
-      const memberIds = t.memberIds ? String(t.memberIds).split(',').map(Number) : [];
-      const leader = cleaningStaff.value.find((s) => s.idx === t.leaderId);
-      return {
-        idx: t.idx,
-        teamName: t.teamName,
-        leaderId: t.leaderId ?? null,
-        leaderName: leader ? leader.name : '-',
-        memberIds
-      };
-    });
-  } catch (e) {
-    console.error('팀 목록 로드 실패:', e);
   }
 };
 
@@ -155,8 +165,70 @@ const fetchManagers = async () => {
 };
 
 /* =========================================================================
+ * 2-1. 공휴일 (요구사항: 토/일/공휴일 포함 여부 체크박스)
+ *      API 우선, 실패 시 폴백 목록 사용 (폴백은 정확하지 않을 수 있음)
+ * ========================================================================= */
+const holidays = ref([]);              // 공휴일 캐시: [{ date: 'YYYY-MM-DD', name: '신정' }, ...]
+const loadedHolidayYears = ref(new Set()); // 이미 요청한 연도 (중복/실패 스팸 방지)
+
+// 백엔드 /api/v1/common/holiday?year=YYYY 는 공공데이터포털
+// "한국천문연구원_특일 정보(getRestDeInfo)" 를 프록시하며,
+// { result: true, data: [{ date: "2026-01-01", name: "신정" }, ...] } 형태로 응답한다고 가정한다.
+// (구버전 백엔드가 문자열 배열만 줄 수도 있어 방어적으로 처리)
+// 해당 API는 월 단위 조회만 지원하므로, 연도 단위 취합/캐싱은 백엔드에서 처리한다.
+const ensureHolidaysLoaded = async (year) => {
+  if (!year || loadedHolidayYears.value.has(year)) return;
+  loadedHolidayYears.value.add(year); // 실패해도 같은 연도로 재요청이 반복되지 않도록 먼저 마킹
+
+  try {
+    const { data } = await axios.get('/api/v1/common/holiday', { params: { year } });
+    const list = (data.data || []).map((h) =>
+        typeof h === 'string'
+            ? { date: h.slice(0, 10), name: '' }
+            : { date: String(h.date).slice(0, 10), name: h.name || '' }
+    );
+    const merged = new Map(holidays.value.map((h) => [h.date, h]));
+    list.forEach((h) => merged.set(h.date, h));
+    holidays.value = Array.from(merged.values());
+  } catch (e) {
+    console.warn(`${year}년 공휴일 API 호출 실패 — 해당 연도는 공휴일이 반영되지 않습니다.`, e);
+  }
+};
+
+// 달력에 표시되는 연도가 바뀔 때마다 그 해의 공휴일을 자동 로드
+watch(currentDate, (d) => ensureHolidaysLoaded(d.getFullYear()), { immediate: true });
+
+// 날짜 하나의 토/일/공휴일 여부 (+ 공휴일이면 이름도 함께 반환)
+const getDayFlags = (dateStr) => {
+  const day = new Date(dateStr).getDay();
+  const holiday = holidays.value.find((h) => h.date === dateStr);
+  return {
+    isSat: day === 6,
+    isSun: day === 0,
+    isHoliday: !!holiday,
+    holidayName: holiday?.name || ''
+  };
+};
+
+// 폼(form)의 포함 여부 체크박스를 기준으로 해당 날짜가 제외 대상인지 판정
+const isDayExcluded = (dateStr, form) => {
+  const { isSat, isSun, isHoliday } = getDayFlags(dateStr);
+  if (isSat && !form.includeSat) return true;
+  if (isSun && !form.includeSun) return true;
+  if (isHoliday && !form.includeHoliday) return true;
+  return false;
+};
+
+const dayTypeLabel = (dateStr) => {
+  const { isSat, isSun, isHoliday } = getDayFlags(dateStr);
+  if (isHoliday) return '공휴일';
+  if (isSun) return '일요일';
+  if (isSat) return '토요일';
+  return '';
+};
+
+/* =========================================================================
  * 3. 일정 데이터
- *    DB는 tIdx, 화면은 teamIdx를 쓰므로 로드 시 한 번만 정규화한다.
  * ========================================================================= */
 const cleaningSchedules = ref([]);
 
@@ -167,22 +239,60 @@ const normalizeSchedule = (s) => {
       Number(s.durationDays) ||
       (startDt && endDt ? Math.floor((new Date(endDt) - new Date(startDt)) / DAY_MS) + 1 : 1);
 
+  // 여러 작업자를 배정할 수 있어 DB에는 "3,7,12"처럼 콤마로 저장하고, 화면에서는 배열로 다룬다.
+  const rawStaffIds = s.staffIds
+      ? String(s.staffIds).split(',').map((v) => Number(v.trim())).filter((n) => !Number.isNaN(n))
+      : [];
+
+  let dailyTasksRaw = [];
+  if (s.dailyTasksJson) {
+    try {
+      dailyTasksRaw = typeof s.dailyTasksJson === 'string' ? JSON.parse(s.dailyTasksJson) : s.dailyTasksJson;
+    } catch { dailyTasksRaw = []; }
+  }
+  if (!Array.isArray(dailyTasksRaw)) dailyTasksRaw = [];
+
+  // 요구사항: "2일 일정인데 1일차엔 김AA, 2일차엔 빠짐" 처럼 날짜별로 투입 인원이 달라질 수 있어
+  // 일차별 작업내용(dailyTasks)에 그날의 staffIds를 함께 저장한다.
+  // 옛 데이터(일차별 staffIds가 없는 경우)는 일정 전체 staffIds를 그대로 물려받게 폴백 처리.
+  // leaderId: 그날 배정된 인원 중 "팀장"으로 지정된 사람 (없으면 null)
+  const dailyTasks = dailyTasksRaw.map((d) => {
+    const staffIds = Array.isArray(d.staffIds) ? d.staffIds : [...rawStaffIds];
+    let leaderId = d.leaderId ?? null;
+    if (leaderId && !staffIds.includes(leaderId)) leaderId = null; // 그날 배정 안 된 사람이 팀장일 수는 없음
+    return { ...d, staffIds, leaderId };
+  });
+
+  // 일정 전체 staffIds는 "일차별로 한 번이라도 투입된 사람 전원" (합집합)으로 계산한다.
+  // 달력/필터/공문/충돌검사처럼 "이 일정에 누가 관여했는지" 개괄적으로 봐야 하는 곳에서 사용.
+  const unionStaffIds = dailyTasks.length
+      ? Array.from(new Set(dailyTasks.filter((d) => !d.excluded).flatMap((d) => d.staffIds || [])))
+      : rawStaffIds;
+
   return {
     ...s,
-    teamIdx: s.teamIdx ?? s.tIdx ?? null,
+    // 같은 A팀이어도 날마다 투입 인원 수가 다를 수 있어, 팀 단위가 아니라 일정마다(그리고 날짜마다) 개인을 배정한다.
+    staffIds: unionStaffIds,
     mnIdx: s.mnIdx ?? null,
     status: Number(s.status ?? 0),
     startDt,
     endDt,
+    startTm: s.startTm || '',
+    endTm: s.endTm || '',
     durationDays,
-    equipment: s.equipment || '',
+    // 여러 장비를 선택할 수 있어 DB에는 "고압세척기,사다리차"처럼 콤마로 저장하고, 화면에서는 배열로 다룬다
+    equipment: s.equipment ? String(s.equipment).split(',').map((v) => v.trim()).filter(Boolean) : [],
     memo: s.memo || '',
     address: s.address || '',
     siteName: s.siteName || '',
     itemName: s.itemName || '',
     docRequired: s.docRequired === 'Y' || s.docRequired === true,
     docStatus: Number(s.docStatus ?? 0),
-    docLeadDays: Number(s.docLeadDays ?? 7)
+    docLeadDays: Number(s.docLeadDays ?? 7),
+    includeSat: s.includeSat === 'N' || s.includeSat === false ? false : true,
+    includeSun: s.includeSun === 'N' || s.includeSun === false ? false : true,
+    includeHoliday: s.includeHoliday === 'N' || s.includeHoliday === false ? false : true,
+    dailyTasks
   };
 };
 
@@ -325,9 +435,10 @@ const cleaningStatusBySite = computed(() => {
     const tasks = site.cleaningConfig.map((config) => {
       const cycleRange = getCycleRange(config.cycleStartDt, config.cycleMonths);
 
-      // 주기 범위 안의 일정만 집계 (요구사항 2)
+      // 주기 범위 안의 일정만 집계 (요구사항 2). 취소된 일정은 실제로 진행되지 않으므로 제외.
       const inCycle = siteSchedules.filter((s) => {
         if (s.itemCd !== config.code) return false;
+        if (Number(s.status) === 4) return false;
         if (!cycleRange) return true;
         return s.startDt >= cycleRange.start && s.startDt <= cycleRange.end;
       });
@@ -424,8 +535,8 @@ const totalWarningCount = computed(
 /* =========================================================================
  * 7. 캘린더 필터 & 레인 배치 (요구사항 3, 4, 6)
  * ========================================================================= */
-const filterMode = ref('all');       // all | team | manager
-const filterTeamIdx = ref('');
+const filterMode = ref('all');       // all | staff | manager
+const filterStaffIdx = ref('');
 const filterManagerIdx = ref('');
 const docFilter = ref('all');        // all | confirmed | pending
 
@@ -434,7 +545,7 @@ const isDocPending = (s) => s.docRequired && s.docStatus < 3;
 const calendarFilteredSchedules = computed(() =>
     cleaningSchedules.value
         .filter((s) => {
-          if (filterMode.value === 'team' && filterTeamIdx.value !== '' && s.teamIdx !== filterTeamIdx.value) return false;
+          if (filterMode.value === 'staff' && filterStaffIdx.value !== '' && !(s.staffIds || []).includes(filterStaffIdx.value)) return false;
           if (filterMode.value === 'manager' && filterManagerIdx.value !== '' && s.mnIdx !== filterManagerIdx.value) return false;
           // 요구사항 6: 3자 확인 완료분만 보기 / 대기분만 보기
           if (docFilter.value === 'confirmed' && isDocPending(s)) return false;
@@ -478,7 +589,18 @@ const schedulesByDate = computed(() => {
     calendarDays.value.forEach((day) => {
       if (day.dateStr < s.startDt || day.dateStr > s.endDt) return;
       const dayIndex = Math.floor((new Date(day.dateStr) - new Date(s.startDt)) / DAY_MS) + 1;
-      byDate[day.dateStr][lane] = { ...s, dayIndex, isStartDay: dayIndex === 1 };
+      // 요구사항: 달력/툴팁도 일정 전체 합집합이 아니라 "그 날짜에" 실제로 투입되는 인원만 정확히 보여준다.
+      const dayTask = (s.dailyTasks || []).find((d) => d.date === day.dateStr);
+      byDate[day.dateStr][lane] = {
+        ...s,
+        dayIndex,
+        isStartDay: dayIndex === 1,
+        isEndDay: day.dateStr === s.endDt,
+        // 이 일정의 토/일/공휴일 포함여부 체크박스 기준으로 그 날이 제외 대상인지 (요구사항: 달력에서도 비워 보이게)
+        isExcludedDay: isDayExcluded(day.dateStr, s),
+        dayStaffIds: dayTask ? (dayTask.staffIds || []) : s.staffIds,
+        dayLeaderId: dayTask ? (dayTask.leaderId || null) : null
+      };
     });
   });
   return byDate;
@@ -488,6 +610,7 @@ const getSchedulesForDate = (dateStr) => schedulesByDate.value[dateStr] || [];
 const cellHasSchedules = (dateStr) => getSchedulesForDate(dateStr).some(Boolean);
 
 const getStatusColor = (status) => {
+  if (Number(status) === 4) return '#9ca3af'; // 취소
   if (Number(status) === 3) return 'var(--success, #22c55e)';
   if (Number(status) === 2) return 'var(--warning, #f59e0b)';
   if (Number(status) === 1) return '#0ea5e9';
@@ -496,158 +619,191 @@ const getStatusColor = (status) => {
 const statusLabel = (status) => STATUS_LABEL[Number(status)] ?? '-';
 
 /* =========================================================================
- * 8. 팀 배정 (Kanban) — teamIdx 로 통일, 롤백 안전
+ * 8. 작업자 배정 (요구사항 개편)
+ *    - 예전엔 일정 하나를 팀 하나에 통째로 배정했지만, 같은 팀이어도
+ *      날마다 투입 인원 수가 다를 수 있어 이제는 일정마다 개인 작업자를
+ *      여러 명 체크해서 넣는 방식으로 바꾼다. (칸반 드래그앤드롭 대신
+ *      일정 카드에서 바로 체크박스로 인원을 편집하는 리스트형 UI)
  * ========================================================================= */
-const draggedTask = ref(null);
+const assignSearch = ref('');
+const assignOnlyUnassigned = ref(false);
+const editingStaffFor = ref(null); // 현재 인원 편집 패널이 열려있는 일정 idx
 
-const onDragStart = (e, task) => {
-  draggedTask.value = task;
-  e.dataTransfer.effectAllowed = 'move';
-  setTimeout(() => e.target.classList.add('is-dragging'), 0);
-};
-const onDragEnd = (e) => {
-  e.target.classList.remove('is-dragging');
-  draggedTask.value = null;
-};
-
-const onDrop = async (e, teamIdx) => {
-  const task = draggedTask.value;
-  if (!task || task.teamIdx === teamIdx) return;
-
-  const prevTeamIdx = task.teamIdx;
-  const prevStatus = task.status;
-
-  task.teamIdx = teamIdx;
-  if (teamIdx !== null && task.status === 0) task.status = 1; // 팀 배정 → 확정
-
-  try {
-    const { data } = await axios.put(`/api/v1/site/cleaning/schedule/${task.idx}`, {
-      itemCd: task.itemCd,
-      startDt: task.startDt,
-      endDt: task.endDt,
-      durationDays: task.durationDays,
-      mnIdx: task.mnIdx,
-      memo: task.memo,
-      teamIdx: teamIdx,
-      tIdx: teamIdx,
-      status: task.status
+// 일자별 실제 투입 인원 인덱스: date -> Map(staffIdx -> [{scheduleIdx, siteName, itemName}])
+// 일정 전체가 아니라 "그 날짜에" 누가 이미 다른 일정에 들어가 있는지 정확히 보기 위함.
+const staffDateIndex = computed(() => {
+  const idx = new Map();
+  cleaningSchedules.value.forEach((s) => {
+    if (Number(s.status) === 4) return; // 취소된 일정은 실제로 진행되지 않으므로 제외
+    (s.dailyTasks || []).forEach((d) => {
+      if (d.excluded) return; // 토/일/공휴일 등 제외일은 겹침 대상 아님
+      (d.staffIds || []).forEach((staffIdx) => {
+        if (!idx.has(d.date)) idx.set(d.date, new Map());
+        const byStaff = idx.get(d.date);
+        if (!byStaff.has(staffIdx)) byStaff.set(staffIdx, []);
+        byStaff.get(staffIdx).push({ scheduleIdx: s.idx, siteName: s.siteName, itemName: s.itemName });
+      });
     });
+  });
+  return idx;
+});
 
-    if (!data.result) throw new Error(data.message || '팀 배정 실패');
-  } catch (error) {
-    console.error('팀 배정 실패:', error);
-    // 실패 시 롤백
-    task.teamIdx = prevTeamIdx;
-    task.status = prevStatus;
-    window.customAlert?.('팀 배정에 실패했습니다. 이전 상태로 되돌렸습니다.', 'error');
-  }
+// 특정 작업자가 주어진 날짜들 중 이미 다른 일정(=excludeIdx 제외)에 배정된 날짜가 있는지.
+// 반환: [{ date, entries: [{scheduleIdx, siteName, itemName}] }, ...]
+const getDayConflicts = (staffIdx, dates, excludeIdx = null) => {
+  const result = [];
+  (dates || []).forEach((date) => {
+    const byStaff = staffDateIndex.value.get(date);
+    if (!byStaff) return;
+    const entries = (byStaff.get(staffIdx) || []).filter((e) => excludeIdx === null || e.scheduleIdx !== excludeIdx);
+    if (entries.length) result.push({ date, entries });
+  });
+  return result;
 };
 
-const getUnassignedTasks = computed(() =>
+const formatDayConflictList = (dayConflicts) =>
+    dayConflicts
+        .map(({ date, entries }) => `- ${date}: ${entries.map((e) => `${e.siteName}·${e.itemName}`).join(', ')}`)
+        .join('\n');
+
+const scheduleListForAssign = computed(() =>
     cleaningSchedules.value
-        .filter((s) => s.teamIdx === null || s.teamIdx === '' || s.teamIdx === undefined)
+        .filter((s) => Number(s.status) !== 4)
+        .filter((s) => !assignOnlyUnassigned.value || !(s.staffIds && s.staffIds.length))
+        .filter((s) => {
+          const kw = assignSearch.value.trim().toLowerCase();
+          if (!kw) return true;
+          return (s.siteName || '').toLowerCase().includes(kw) || (s.itemName || '').toLowerCase().includes(kw);
+        })
         .sort((a, b) => a.startDt.localeCompare(b.startDt))
 );
 
-const getTasksForTeam = (teamIdx) =>
-    cleaningSchedules.value
-        .filter((s) => s.teamIdx === teamIdx)
-        .sort((a, b) => a.startDt.localeCompare(b.startDt));
+const unassignedCount = computed(() =>
+    cleaningSchedules.value.filter((s) => Number(s.status) !== 4 && !(s.staffIds && s.staffIds.length)).length
+);
 
-const getTeamDays = (teamIdx) =>
-    getTasksForTeam(teamIdx).reduce((a, s) => a + (s.durationDays || 0), 0);
-
-/* =========================================================================
- * 9. 팀 편성 모달
- * ========================================================================= */
-const showTeamModal = ref(false);
-const editingTeam = ref(null);
-
-const openTeamModal = (team) => {
-  editingTeam.value = JSON.parse(JSON.stringify(team));
-  editingTeam.value.memberIds ??= [];
-  if (!editingTeam.value.leaderId && editingTeam.value.memberIds.length) {
-    editingTeam.value.leaderId = editingTeam.value.memberIds[0];
-  }
-  showTeamModal.value = true;
+const toggleStaffEditor = (idx) => {
+  editingStaffFor.value = editingStaffFor.value === idx ? null : idx;
 };
-const closeTeamModal = () => {
-  showTeamModal.value = false;
-  editingTeam.value = null;
-};
-const createNewTeam = () => {
-  editingTeam.value = {
-    idx: null,
-    teamName: `${teams.value.length + 1}팀`,
-    leaderId: null,
-    leaderName: '-',
-    memberIds: []
-  };
-  showTeamModal.value = true;
-};
+const isStaffAssigned = (schedule, staffIdx) => (schedule.staffIds || []).includes(staffIdx);
 
-const toggleMember = (mIdx) => {
-  const ids = (editingTeam.value.memberIds ??= []);
-  const i = ids.indexOf(mIdx);
-  if (i > -1) {
-    ids.splice(i, 1);
-    if (editingTeam.value.leaderId === mIdx) editingTeam.value.leaderId = ids[0] ?? null;
-  } else {
-    ids.push(mIdx);
-    if (ids.length === 1) editingTeam.value.leaderId = mIdx;
-  }
-};
-const setLeader = (mIdx) => { editingTeam.value.leaderId = mIdx; };
+// 인원 배정 탭의 "인원 편집" 체크박스는 일정에 걸린 모든 (제외일이 아닌) 날짜에 한번에 넣거나 뺀다.
+// 특정 날짜만 빼고 싶다("2일차엔 빠짐")면 카드를 열어 상세 모달의 일차별 표에서 편집한다.
+// 체크 즉시 저장하고, 실패하면 이전 구성으로 롤백.
+const toggleScheduleStaff = async (schedule, staffIdx) => {
+  const prevDailyTasks = JSON.parse(JSON.stringify(schedule.dailyTasks || []));
+  const prevStaffIds = [...(schedule.staffIds || [])];
+  const prevStatus = schedule.status;
 
-const saveTeamMembers = async () => {
-  const { idx, teamName, memberIds, leaderId } = editingTeam.value;
-  if (!teamName?.trim()) {
-    window.customAlert?.('팀명을 입력해주세요.', 'error');
-    return;
+  const workDates = prevDailyTasks.filter((d) => !d.excluded).map((d) => d.date);
+  const isAdding = !prevStaffIds.includes(staffIdx);
+
+  if (isAdding) {
+    const dayConflicts = getDayConflicts(staffIdx, workDates, schedule.idx);
+    if (dayConflicts.length > 0) {
+      const msg = `${getStaffName(staffIdx)}님은 아래 날짜에 이미 다른 일정에 배정되어 있어 중복으로 배정할 수 없습니다.\n\n${formatDayConflictList(dayConflicts)}`;
+      window.customAlert?.(msg, 'error') ?? alert(msg);
+      return; // 배정하지 않고 종료
+    }
   }
 
-  const members = (memberIds || []).map((mIdx) => ({
-    mIdx,
-    leaderFl: leaderId === mIdx ? 'Y' : 'N'
-  }));
-  if (members.length && !members.some((m) => m.leaderFl === 'Y')) members[0].leaderFl = 'Y';
+  const nextDailyTasks = prevDailyTasks.map((d) => {
+    if (d.excluded) return d;
+    const ids = d.staffIds || [];
+    const has = ids.includes(staffIdx);
+    const nextIds = isAdding ? (has ? ids : [...ids, staffIdx]) : ids.filter((id) => id !== staffIdx);
+    // 체크 해제된 사람이 그날의 팀장이었다면 팀장도 함께 해제
+    const nextLeaderId = !isAdding && d.leaderId === staffIdx ? null : d.leaderId ?? null;
+    return { ...d, staffIds: nextIds, leaderId: nextLeaderId };
+  });
+  const nextStaffIds = Array.from(
+      new Set(nextDailyTasks.filter((d) => !d.excluded).flatMap((d) => d.staffIds || []))
+  );
+
+  schedule.dailyTasks = nextDailyTasks;
+  schedule.staffIds = nextStaffIds;
+  if (nextStaffIds.length > 0 && schedule.status === 0) schedule.status = 1; // 인원 배정 → 확정
 
   try {
-    const url = `/api/v1/member/cleaning/team${idx ? `/${idx}` : ''}`;
-    const method = idx ? 'put' : 'post';
-    const { data } = await axios[method](url, { name: teamName.trim(), members });
-    if (!data.result) throw new Error(data.message);
+    const { data } = await axios.put(`/api/v1/site/cleaning/schedule/${schedule.idx}`, {
+      itemCd: schedule.itemCd,
+      startDt: schedule.startDt,
+      endDt: schedule.endDt,
+      startTm: schedule.startTm,
+      endTm: schedule.endTm,
+      durationDays: schedule.durationDays,
+      mnIdx: schedule.mnIdx,
+      memo: schedule.memo,
+      staffIds: nextStaffIds.length ? nextStaffIds.join(',') : null,
+      status: schedule.status,
+      // DB 컬럼은 enum('Y','N') 이라 boolean을 그대로 보내면 저장이 실패할 수 있어 문자열로 변환
+      includeSat: schedule.includeSat ? 'Y' : 'N',
+      includeSun: schedule.includeSun ? 'Y' : 'N',
+      includeHoliday: schedule.includeHoliday ? 'Y' : 'N',
+      dailyTasksJson: JSON.stringify(nextDailyTasks)
+    });
 
-    closeTeamModal();
-    await fetchCleaningTeam();
+    if (!data.result) throw new Error(data.data?.error || data.message || '인원 배정 실패');
   } catch (error) {
-    console.error('팀 저장 실패:', error);
-    window.customAlert?.('팀 저장에 실패했습니다.', 'error');
+    console.error('인원 배정 실패:', error);
+    schedule.dailyTasks = prevDailyTasks;
+    schedule.staffIds = prevStaffIds;
+    schedule.status = prevStatus;
+    window.customAlert?.('인원 배정에 실패했습니다. 이전 상태로 되돌렸습니다.', 'error');
   }
 };
 
-const deleteTeam = async (teamIdx) => {
-  if (getTasksForTeam(teamIdx).length > 0) {
-    window.customAlert?.('배정된 일정이 있어 삭제할 수 없습니다. 먼저 일정을 다른 팀으로 옮겨주세요.', 'error');
-    return;
-  }
-  if (!(await (window.customConfirm?.('이 팀을 삭제하시겠습니까?') ?? Promise.resolve(confirm('이 팀을 삭제하시겠습니까?'))))) return;
+// 인원 배정 탭에서 "전체 날짜 일괄"로 팀장을 지정/해제한다.
+// 그 사람이 배정되지 않은 날짜(제외일 포함)는 건드리지 않는다.
+const setScheduleLeader = async (schedule, staffIdx) => {
+  if (!(schedule.staffIds || []).includes(staffIdx)) return; // 배정된 사람만 팀장으로 지정 가능
+
+  const prevDailyTasks = JSON.parse(JSON.stringify(schedule.dailyTasks || []));
+  const makeLeader = !isScheduleLeaderAnyDay(schedule, staffIdx); // 토글: 이미 팀장이면 해제, 아니면 지정
+
+  const nextDailyTasks = prevDailyTasks.map((d) => {
+    if (d.excluded) return d;
+    if (!(d.staffIds || []).includes(staffIdx)) return d; // 그날 배정 안 된 사람은 건드리지 않음
+    return { ...d, leaderId: makeLeader ? staffIdx : null };
+  });
+
+  schedule.dailyTasks = nextDailyTasks;
 
   try {
-    await axios.delete(`/api/v1/member/cleaning/team/${teamIdx}`);
-    closeTeamModal();
-    await fetchCleaningTeam();
+    const { data } = await axios.put(`/api/v1/site/cleaning/schedule/${schedule.idx}`, {
+      itemCd: schedule.itemCd,
+      startDt: schedule.startDt,
+      endDt: schedule.endDt,
+      startTm: schedule.startTm,
+      endTm: schedule.endTm,
+      durationDays: schedule.durationDays,
+      mnIdx: schedule.mnIdx,
+      memo: schedule.memo,
+      staffIds: (schedule.staffIds || []).length ? schedule.staffIds.join(',') : null,
+      status: schedule.status,
+      includeSat: schedule.includeSat ? 'Y' : 'N',
+      includeSun: schedule.includeSun ? 'Y' : 'N',
+      includeHoliday: schedule.includeHoliday ? 'Y' : 'N',
+      dailyTasksJson: JSON.stringify(nextDailyTasks)
+    });
+
+    if (!data.result) throw new Error(data.data?.error || data.message || '팀장 지정 실패');
   } catch (error) {
-    console.error('팀 삭제 실패:', error);
-    window.customAlert?.('팀 삭제에 실패했습니다.', 'error');
+    console.error('팀장 지정 실패:', error);
+    schedule.dailyTasks = prevDailyTasks;
+    window.customAlert?.('팀장 지정에 실패했습니다. 이전 상태로 되돌렸습니다.', 'error');
   }
 };
 
 /* =========================================================================
- * 10. 소요일 합산 (요구사항 8)
- *     팀별 + 미배정 + 전체 합계까지 한 표에서 확인
+ * 9. 소요일 합산 (요구사항 8)
+ *    - 현장별 월 소요일 합계 (누가 갔는지가 아니라, 어느 현장에 소요일이
+ *      얼마나 쌓였는지가 인원 추가 편성 판단에 더 직접적인 지표이므로
+ *      작업자 기준이 아니라 현장 기준으로 집계한다)
+ *    - 계약 소요일과 실제(등록) 소요일은 별도 섹션 없이 "N일 / N일" 로
+ *      한 표 안에서 바로 비교되게 한다 (관리자가 한눈에 보기 쉽게)
  * ========================================================================= */
-const teamWorkload = computed(() => {
+const siteWorkload = computed(() => {
   const months = [];
   const base = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth() - 2, 1);
   for (let i = 0; i < 6; i++) {
@@ -657,44 +813,50 @@ const teamWorkload = computed(() => {
 
   const sumFor = (predicate, ym) =>
       cleaningSchedules.value
-          .filter((s) => s.startDt.startsWith(ym) && predicate(s))
+          .filter((s) => s.startDt.startsWith(ym) && Number(s.status) !== 4 && predicate(s))
           .reduce((a, s) => a + (s.durationDays || 0), 0);
 
-  const rows = teams.value.map((team) => {
-    const cells = months.map((ym) => sumFor((s) => s.teamIdx === team.idx, ym));
-    const memberCount = getTeamMembers(team.idx).length;
+  // 계약 소요일 / 실제(등록) 소요일 — 계약 주기 기준으로 정확히 집계된 값을 그대로 가져다 쓴다
+  const contractMap = new Map(
+      cleaningStatusBySite.value.map((site) => [site.sIdx, {
+        contractDays: site.siteTotalDays,
+        actualDays: site.sitePlannedDays
+      }])
+  );
+
+  const rows = siteContracts.value.map((site) => {
+    const cells = months.map((ym) => sumFor((s) => s.sIdx === site.sIdx, ym));
+    const cmp = contractMap.get(site.sIdx) || { contractDays: 0, actualDays: 0 };
     return {
-      key: `team-${team.idx}`,
-      teamIdx: team.idx,
-      teamName: team.teamName,
-      memberCount,
+      key: `site-${site.sIdx}`,
+      sIdx: site.sIdx,
+      siteName: site.siteName,
       cells,
-      rowTotal: cells.reduce((a, b) => a + b, 0)
+      rowTotal: cells.reduce((a, b) => a + b, 0),
+      contractDays: cmp.contractDays,
+      actualDays: cmp.actualDays,
+      isOverContract: cmp.actualDays > cmp.contractDays
     };
   });
 
-  const unassignedCells = months.map((ym) => sumFor((s) => !s.teamIdx, ym));
   const totalCells = months.map((ym) => sumFor(() => true, ym));
 
   return {
     months,
     rows,
-    unassigned: {
-      key: 'unassigned',
-      teamName: '미배정',
-      cells: unassignedCells,
-      rowTotal: unassignedCells.reduce((a, b) => a + b, 0)
-    },
     total: {
       key: 'total',
-      teamName: '전체 합계',
+      siteName: '전체 합계',
       cells: totalCells,
-      rowTotal: totalCells.reduce((a, b) => a + b, 0)
+      rowTotal: totalCells.reduce((a, b) => a + b, 0),
+      contractDays: contractTotalDays.value,
+      actualDays: plannedTotalDays.value,
+      isOverContract: plannedTotalDays.value > contractTotalDays.value
     }
   };
 });
 
-// 계약 기준 총 소요일 (전 단지) — 추가 팀 편성 판단용
+// 계약 기준 총 소요일 (전 단지) — 추가 인원 편성 판단용
 const contractTotalDays = computed(() =>
     cleaningStatusBySite.value.reduce((a, s) => a + s.siteTotalDays, 0)
 );
@@ -703,7 +865,7 @@ const plannedTotalDays = computed(() =>
 );
 
 /* =========================================================================
- * 11. 일정 등록 / 수정 모달 (요구사항 10)
+ * 10. 일정 등록 / 수정 모달 (요구사항 10)
  * ========================================================================= */
 const showAddModal = ref(false);
 const isEditMode = ref(false);
@@ -714,13 +876,20 @@ const blankForm = () => ({
   itemCd: '',
   startDt: '',
   endDt: '',
+  startTm: '',
+  endTm: '',
   status: 0,
-  teamIdx: '',
   mnIdx: '',
-  equipment: '',
+  equipment: [], // 여러 개 선택 가능 (체크박스)
   memo: '',
   docRequired: false,
-  docLeadDays: 7
+  docLeadDays: 7,
+  // 토/일/공휴일 포함 여부 (기본값: 포함) — 체크 해제 시 일정/소요일에서 자동 제외
+  includeSat: true,
+  includeSun: true,
+  includeHoliday: true,
+  // 일차별 작업내용 + 그날의 투입 인원 (JSON으로 저장). 인원의 유일한 정본은 여기다.
+  dailyTasks: []
 });
 
 const addForm = ref(blankForm());
@@ -734,11 +903,28 @@ const selectedSite = computed(() =>
     siteContracts.value.find((s) => s.sIdx === addForm.value.sIdx) || null
 );
 
-const formDuration = computed(() => {
+// 시작일~종료일 사이의 모든 달력일(캘린더 기준) 배열
+const formCalendarDates = computed(() => {
   const { startDt, endDt } = addForm.value;
-  if (!startDt || !endDt) return 0;
-  return Math.floor((new Date(endDt) - new Date(startDt)) / DAY_MS) + 1;
+  if (!startDt || !endDt || endDt < startDt) return [];
+  const dates = [];
+  const cur = new Date(startDt);
+  const end = new Date(endDt);
+  let guard = 0;
+  while (cur <= end && guard++ < 3660) {
+    dates.push(fmtDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
 });
+
+// 전체 달력일 수 (기존 요구사항과의 호환을 위해 유지)
+const formDuration = computed(() => formCalendarDates.value.length);
+
+// 실제 소요일 = 토/일/공휴일 체크를 해제한 날은 제외한 일수 (요구사항: 자동 제외)
+const formWorkingDays = computed(() =>
+    formCalendarDates.value.filter((d) => !isDayExcluded(d, addForm.value)).length
+);
 
 const formDocDueDate = computed(() => {
   if (!addForm.value.startDt || !addForm.value.docRequired) return null;
@@ -747,9 +933,99 @@ const formDocDueDate = computed(() => {
   return fmtDate(d);
 });
 
+// 지금 선택 중인 작업자들 중, 그 사람이 실제로 투입되는 "그 날짜"에 다른 일정과 겹치는 경우만 표시.
+// (예: 2일 일정 중 1일차만 겹쳐도 정확히 1일차만 집어서 알려준다)
+const formStaffConflicts = computed(() => {
+  const rows = [];
+  (addForm.value.dailyTasks || []).forEach((day) => {
+    if (day.excluded) return;
+    (day.staffIds || []).forEach((staffIdx) => {
+      const conflicts = getDayConflicts(staffIdx, [day.date], isEditMode.value ? editingIdx.value : null);
+      if (conflicts.length) rows.push({ date: day.date, staffIdx, conflicts: conflicts[0].entries });
+    });
+  });
+  return rows;
+});
+
 const onSiteChange = () => {
   addForm.value.itemCd = '';
   addForm.value.docRequired = false;
+};
+
+// 시작일 + 필요한 "실제 작업일수" 를 만족하는 종료일을 계산 (토/일/공휴일 제외분 자동으로 뒤로 밀림)
+const calcEndDtForWorkDays = (startDt, workDays, form) => {
+  if (!startDt || workDays <= 0) return startDt;
+  let count = 0;
+  const cur = new Date(startDt);
+  let last = new Date(startDt);
+  for (let i = 0; i < 3660; i++) {
+    const ds = fmtDate(cur);
+    if (!isDayExcluded(ds, form)) {
+      count++;
+      last = new Date(cur);
+      if (count >= workDays) break;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return fmtDate(last);
+};
+
+// 일차별 작업내용 테이블 재계산 — 날짜가 같으면 기존에 입력한 내용/인원/팀장 배정은 보존.
+// 새로 생기는 날짜는 "바로 전날"의 인원·팀장 구성을 그대로 이어받는다 (첫 날은 빈 채로 시작해서 직접 고른다).
+// 이렇게 하면 "기본값 체크 → 적용 버튼"같은 별도 단계 없이, 표에서 바로 체크/해제만 하면 끝난다.
+const rebuildDailyTasks = () => {
+  const existing = new Map((addForm.value.dailyTasks || []).map((r) => [r.date, r]));
+  let dayNo = 0;
+  let lastStaffIds = [];
+  let lastLeaderId = null;
+  addForm.value.dailyTasks = formCalendarDates.value.map((date) => {
+    const excluded = isDayExcluded(date, addForm.value);
+    if (!excluded) dayNo++;
+    const prev = existing.get(date);
+    const staffIds = prev?.staffIds ? [...prev.staffIds] : [...lastStaffIds];
+    let leaderId = prev ? (prev.leaderId ?? null) : lastLeaderId;
+    if (leaderId && !staffIds.includes(leaderId)) leaderId = null; // 팀장이 그날 배정에서 빠지면 무효화
+    if (!excluded) { lastStaffIds = staffIds; lastLeaderId = leaderId; } // 다음 날짜가 이어받을 기준
+    return {
+      date,
+      dayIndex: excluded ? null : dayNo,
+      excluded,
+      dayType: dayTypeLabel(date),
+      content: prev?.content || '',
+      staffIds,
+      leaderId
+    };
+  });
+};
+
+// 특정 날짜의 인원 배정을 토글 — "2일차엔 김AA가 빠진다" 같은 예외를 여기서 처리한다.
+const toggleDayStaff = (date, staffIdx) => {
+  const day = (addForm.value.dailyTasks || []).find((d) => d.date === date);
+  if (!day) return;
+  const ids = day.staffIds || [];
+  const has = ids.includes(staffIdx);
+  if (has) {
+    day.staffIds = ids.filter((id) => id !== staffIdx);
+    if (day.leaderId === staffIdx) day.leaderId = null; // 체크 해제된 사람이 팀장이었다면 함께 해제
+  } else {
+    day.staffIds = [...ids, staffIdx];
+    if (!day.leaderId) day.leaderId = staffIdx; // 그날 처음 체크되는 사람을 기본 팀장으로 (아래에서 바꿀 수 있음)
+  }
+};
+const isDayStaffAssigned = (date, staffIdx) => {
+  const day = (addForm.value.dailyTasks || []).find((d) => d.date === date);
+  return !!day && (day.staffIds || []).includes(staffIdx);
+};
+
+// 특정 날짜의 팀장을 지정/해제 (배정된 인원 중에서만 가능). 같은 사람을 다시 누르면 팀장 해제.
+const setDayLeader = (date, staffIdx) => {
+  const day = (addForm.value.dailyTasks || []).find((d) => d.date === date);
+  if (!day || !(day.staffIds || []).includes(staffIdx)) return;
+  day.leaderId = day.leaderId === staffIdx ? null : staffIdx;
+};
+const isDayLeader = (date, staffIdx) => {
+  const day = (addForm.value.dailyTasks || []).find((d) => d.date === date);
+  return !!day && day.leaderId === staffIdx;
 };
 
 // 항목을 고르면 계약 설정에서 소요일·공문 여부를 상속 (요구사항 1, 5)
@@ -762,16 +1038,63 @@ watch(() => addForm.value.itemCd, (code) => {
   addForm.value.docLeadDays = task.docLeadDays;
 
   if (addForm.value.startDt && task.durationDays > 0) {
-    const end = new Date(addForm.value.startDt);
-    end.setDate(end.getDate() + task.durationDays - 1);
-    addForm.value.endDt = fmtDate(end);
+    addForm.value.endDt = calcEndDtForWorkDays(addForm.value.startDt, task.durationDays, addForm.value);
   }
 });
+
+// 일정 등록 모달의 시작일/종료일이 캘린더에 보이는 달과 다른 연도일 수도 있으므로 함께 로드
+watch(
+    () => [addForm.value.startDt, addForm.value.endDt],
+    ([s, e]) => {
+      if (s) ensureHolidaysLoaded(new Date(s).getFullYear());
+      if (e) ensureHolidaysLoaded(new Date(e).getFullYear());
+    }
+);
+
+// 시작일/종료일/토·일·공휴일 포함 여부가 바뀌면 일차별 표를 다시 만든다
+watch(
+    () => [
+      addForm.value.startDt,
+      addForm.value.endDt,
+      addForm.value.includeSat,
+      addForm.value.includeSun,
+      addForm.value.includeHoliday
+    ],
+    () => { rebuildDailyTasks(); }
+);
+
+// (예전엔 "기본 투입 인원" 체크박스와 그걸 일차별 표에 반영하는 별도 단계가 있었는데,
+//  타이밍 버그의 근원이라 완전히 없앴다. 이제 일차별 표에서 직접 체크/해제하는 게 전부다.)
+
+/* =========================================================================
+ * 10-1. 청소 완료 사진 (요구사항: 완료 처리 전에 사진을 반드시 확인)
+ *    - 사진은 현장/앱 등 다른 경로로 이미 업로드되어 있다고 가정하고,
+ *      여기서는 조회만 한다. 사진이 0장이면 "완료" 상태로 저장할 수 없다.
+ * ========================================================================= */
+const schedulePhotos = ref([]);
+const photosLoading = ref(false);
+
+const fetchSchedulePhotos = async (scheduleIdx) => {
+  if (!scheduleIdx) { schedulePhotos.value = []; return; }
+  photosLoading.value = true;
+  try {
+    // 실제 엔드포인트 경로는 백엔드에 맞게 조정하세요.
+    const { data } = await axios.get(`/api/v1/site/cleaning/schedule/${scheduleIdx}/photo`);
+    schedulePhotos.value = data.data || [];
+  } catch (e) {
+    console.warn('청소 완료 사진 로드 실패:', e);
+    schedulePhotos.value = [];
+  } finally {
+    photosLoading.value = false;
+  }
+};
 
 const openAddModal = (dateStr = '') => {
   isEditMode.value = false;
   editingIdx.value = null;
   addForm.value = { ...blankForm(), startDt: dateStr, endDt: dateStr };
+  rebuildDailyTasks();
+  schedulePhotos.value = []; // 신규 일정은 아직 사진이 있을 수 없음
   showAddModal.value = true;
 };
 
@@ -783,36 +1106,89 @@ const openDetail = (schedule) => {
     itemCd: schedule.itemCd,
     startDt: schedule.startDt,
     endDt: schedule.endDt,
+    startTm: schedule.startTm || '',
+    endTm: schedule.endTm || '',
     status: Number(schedule.status),
-    teamIdx: schedule.teamIdx ?? '',
     mnIdx: schedule.mnIdx ?? '',
-    equipment: schedule.equipment,
+    equipment: Array.isArray(schedule.equipment) ? [...schedule.equipment] : [],
     memo: schedule.memo,
     docRequired: schedule.docRequired,
-    docLeadDays: schedule.docLeadDays
+    docLeadDays: schedule.docLeadDays,
+    includeSat: schedule.includeSat,
+    includeSun: schedule.includeSun,
+    includeHoliday: schedule.includeHoliday,
+    dailyTasks: Array.isArray(schedule.dailyTasks) ? JSON.parse(JSON.stringify(schedule.dailyTasks)) : []
   };
+  rebuildDailyTasks();
+  fetchSchedulePhotos(schedule.idx);
   showAddModal.value = true;
 };
 
 const closeAddModal = () => { showAddModal.value = false; };
 
 const saveAddModal = async () => {
+  console.log('[saveAddModal] 저장 시작', { isEditMode: isEditMode.value, editingIdx: editingIdx.value });
+
   const f = addForm.value;
   if (!f.sIdx || !f.itemCd || !f.startDt || !f.endDt) {
+    console.warn('[saveAddModal] 막힘: 필수값 누락', { sIdx: f.sIdx, itemCd: f.itemCd, startDt: f.startDt, endDt: f.endDt });
     window.customAlert?.('현장, 청소 항목, 시작일, 종료일은 필수입니다.', 'error');
+    alert('현장, 청소 항목, 시작일, 종료일은 필수입니다.');
     return;
   }
   if (f.endDt < f.startDt) {
+    console.warn('[saveAddModal] 막힘: 종료일 < 시작일');
     window.customAlert?.('종료일은 시작일보다 앞설 수 없습니다.', 'error');
+    alert('종료일은 시작일보다 앞설 수 없습니다.');
+    return;
+  }
+  if (f.startTm && f.endTm && f.startDt === f.endDt && f.endTm <= f.startTm) {
+    console.warn('[saveAddModal] 막힘: 종료시간 <= 시작시간');
+    window.customAlert?.('종료 시간은 시작 시간보다 늦어야 합니다.', 'error');
+    alert('종료 시간은 시작 시간보다 늦어야 합니다.');
     return;
   }
 
   const site = selectedSite.value;
   const task = findConfig(f.sIdx, f.itemCd);
   if (!site || !task) {
+    console.warn('[saveAddModal] 막힘: 현장/계약 항목을 못 찾음', { sIdx: f.sIdx, itemCd: f.itemCd, site, task });
     window.customAlert?.('현장 계약 정보를 찾을 수 없습니다.', 'error');
+    alert('현장 계약 정보를 찾을 수 없습니다.');
     return;
   }
+
+  console.log('[saveAddModal] 일차별 인원 현황(dailyTasks):', JSON.parse(JSON.stringify(f.dailyTasks)));
+  console.log('[saveAddModal] 겹침 검사 결과(formStaffConflicts):', formStaffConflicts.value);
+
+  // 같은 날짜에 이미 다른 일정에 배정된 작업자가 있으면 저장을 막고 알려준다
+  if (formStaffConflicts.value.length > 0) {
+    console.warn('[saveAddModal] 막힘: 인원 겹침', formStaffConflicts.value);
+    const detail = formStaffConflicts.value
+        .map(({ date, staffIdx, conflicts }) =>
+            `- ${date} ${getStaffName(staffIdx)}: ${conflicts.map((e) => `${e.siteName}·${e.itemName}`).join(', ')}`)
+        .join('\n');
+    const msg = `같은 날짜에 이미 다른 일정에 배정된 작업자가 있어 저장할 수 없습니다.\n\n${detail}\n\n일차별 표에서 인원을 조정한 뒤 다시 저장해주세요.`;
+    window.customAlert?.(msg, 'error');
+    alert(msg);
+    return;
+  }
+
+  // 요구사항: "완료" 처리 전에 청소 완료 사진을 반드시 확인해야 한다 — 사진이 없으면 완료로 저장 불가
+  if (Number(f.status) === 3 && schedulePhotos.value.length === 0) {
+    console.warn('[saveAddModal] 막힘: 완료 사진 없음');
+    const msg = '청소 완료 사진이 없어 "완료" 상태로 저장할 수 없습니다.\n현장에서 사진이 업로드된 뒤 다시 시도해주세요.';
+    window.customAlert?.(msg, 'error');
+    alert(msg);
+    return;
+  }
+
+  // 일정 전체 staffIds는 "일차별로 한 번이라도 투입된 사람 전원" (합집합)으로 계산해서 저장한다.
+  // 실제 날짜별 배정 내역은 dailyTasksJson 안에 그대로 담긴다.
+  const unionStaffIds = Array.from(
+      new Set((f.dailyTasks || []).filter((d) => !d.excluded).flatMap((d) => d.staffIds || []))
+  );
+  console.log('[saveAddModal] 합집합 staffIds:', unionStaffIds);
 
   const payload = {
     cIdx: useAuthStore().user?.cIdx,
@@ -822,28 +1198,44 @@ const saveAddModal = async () => {
     itemName: task.name,
     startDt: f.startDt,
     endDt: f.endDt,
-    durationDays: formDuration.value,
+    startTm: f.startTm || null,
+    endTm: f.endTm || null,
+    // 요구사항: 토/일/공휴일 미포함 시 소요일에서 자동 제외
+    durationDays: formWorkingDays.value,
     status: Number(f.status),
-    tIdx: f.teamIdx === '' ? null : f.teamIdx,
-    teamIdx: f.teamIdx === '' ? null : f.teamIdx,
+    // 여러 작업자 배정 가능 — DB에는 "3,7,12"처럼 콤마 구분 문자열로 저장 (일차별 상세는 dailyTasksJson에)
+    staffIds: unionStaffIds.length ? unionStaffIds.join(',') : null,
     mnIdx: f.mnIdx === '' ? null : f.mnIdx,
-    equipment: f.equipment || null,
+    // 여러 장비 선택 가능 — DB에는 "고압세척기,사다리차"처럼 콤마 구분 문자열로 저장
+    equipment: (f.equipment && f.equipment.length) ? f.equipment.join(',') : null,
     memo: f.memo || null,
     docRequired: f.docRequired ? 'Y' : 'N',
-    docLeadDays: Number(f.docLeadDays) || 7
+    docLeadDays: Number(f.docLeadDays) || 7,
+    includeSat: f.includeSat ? 'Y' : 'N',
+    includeSun: f.includeSun ? 'Y' : 'N',
+    includeHoliday: f.includeHoliday ? 'Y' : 'N',
+    // 요구사항: 일차별 작업내용(+ 그날의 투입 인원)은 JSON으로 저장
+    dailyTasksJson: JSON.stringify(f.dailyTasks || [])
   };
+
+  console.log('[saveAddModal] 서버로 보낼 payload:', payload);
 
   try {
     const url = `/api/v1/site/cleaning/schedule${isEditMode.value ? `/${editingIdx.value}` : ''}`;
     const method = isEditMode.value ? 'put' : 'post';
+    console.log('[saveAddModal] 요청 전송:', method.toUpperCase(), url);
     const { data } = await axios[method](url, payload);
-    if (!data.result) throw new Error(data.message);
+    console.log('[saveAddModal] 서버 응답:', data);
+    if (!data.result) throw new Error(data.data?.error || data.message || '알 수 없는 오류');
 
+    console.log('[saveAddModal] 저장 성공, 목록 다시 불러오는 중...');
     await fetchSchedules();
     closeAddModal();
   } catch (error) {
-    console.error('일정 저장 실패:', error);
+    console.error('[saveAddModal] 저장 실패:', error);
+    console.error('[saveAddModal] 서버 응답 상세:', error.response?.data);
     window.customAlert?.('일정 저장에 실패했습니다.', 'error');
+    alert('일정 저장에 실패했습니다: ' + (error.response?.data?.data?.error || error.message || '알 수 없는 오류'));
   }
 };
 
@@ -860,7 +1252,7 @@ const deleteSchedule = async () => {
 };
 
 /* =========================================================================
- * 12. 공문 발송 / 수신확인 (요구사항 5, 6)
+ * 11. 공문 발송 / 수신확인 (요구사항 5, 6)
  * ========================================================================= */
 const documents = ref([]);
 
@@ -882,7 +1274,7 @@ const fetchDocuments = async () => {
 const pendingDocSchedules = computed(() => {
   const today = todayStr();
   return cleaningSchedules.value
-      .filter((s) => s.docRequired && s.docStatus === 0)
+      .filter((s) => s.docRequired && s.docStatus === 0 && Number(s.status) !== 4)
       .map((s) => {
         const d = new Date(s.startDt);
         d.setDate(d.getDate() - (s.docLeadDays || 7));
@@ -892,7 +1284,7 @@ const pendingDocSchedules = computed(() => {
       .sort((a, b) => a.startDt.localeCompare(b.startDt));
 });
 
-// 발송했지만 3자 확인이 안 끝난 건
+// 발송했지만 확인이 안 끝난 건
 const awaitingConfirmDocs = computed(() =>
     documents.value.filter((d) => (d.receipts || []).some((r) => r.confirmedYn !== 'Y' && r.confirmedYn !== true))
 );
@@ -906,26 +1298,26 @@ const buildSnapshot = (schedule) => {
     itemName: schedule.itemName,
     startDt: schedule.startDt,
     endDt: schedule.endDt,
+    startTm: schedule.startTm,
+    endTm: schedule.endTm,
     durationDays: schedule.durationDays,
-    teamName: getTeamName(schedule.teamIdx),
-    teamLeader: getTeamLeaderName(schedule.teamIdx),
+    staffNames: getStaffNames(schedule.staffIds),
     managerName: getManagerName(schedule.mnIdx),
-    equipment: schedule.equipment,
+    equipment: Array.isArray(schedule.equipment) ? schedule.equipment.join(', ') : (schedule.equipment || ''),
     memo: schedule.memo
   };
 };
 
 const buildReceipts = (schedule) => [
   { targetType: 'SITE', targetIdx: schedule.sIdx, targetName: schedule.siteName },
-  { targetType: 'MANAGER', targetIdx: schedule.mnIdx, targetName: getManagerName(schedule.mnIdx) },
-  { targetType: 'TEAM', targetIdx: schedule.teamIdx, targetName: getTeamLeaderName(schedule.teamIdx) }
+  { targetType: 'MANAGER', targetIdx: schedule.mnIdx, targetName: getManagerName(schedule.mnIdx) }
 ];
 
 const issuingIdx = ref(null);
 
 const issueDocument = async (schedule) => {
-  if (!schedule.teamIdx || !schedule.mnIdx) {
-    window.customAlert?.('팀과 담당 관리자를 먼저 배정해야 공문을 발송할 수 있습니다.', 'error');
+  if (!(schedule.staffIds && schedule.staffIds.length) || !schedule.mnIdx) {
+    window.customAlert?.('작업자와 담당 관리자를 먼저 배정해야 공문을 발송할 수 있습니다.', 'error');
     return;
   }
   issuingIdx.value = schedule.idx;
@@ -980,7 +1372,7 @@ const docProgress = (doc) => {
 };
 
 /* =========================================================================
- * 13. 완료 점검표 (요구사항 9)
+ * 12. 완료 점검표 (요구사항 9)
  *     여러 날 작업은 일자별로 서명을 받는다.
  * ========================================================================= */
 const checklists = ref([]);
@@ -1003,7 +1395,7 @@ const fetchChecklists = async () => {
 const checklistTargets = computed(() => {
   const rows = [];
   cleaningSchedules.value
-      .filter((s) => s.status >= 2)
+      .filter((s) => s.status >= 2 && Number(s.status) !== 4)
       .forEach((s) => {
         for (let i = 0; i < (s.durationDays || 1); i++) {
           const d = new Date(s.startDt);
@@ -1050,11 +1442,12 @@ const saveChecklist = async () => {
 };
 
 /* =========================================================================
- * 14. 초기 로드
+ * 13. 초기 로드
  * ========================================================================= */
 onMounted(async () => {
+  // 공휴일은 watch(currentDate, ..., { immediate: true }) 에서 현재 연도 기준으로 자동 로드된다.
   await Promise.all([fetchSiteOptions(), fetchCleaningStaff(), fetchManagers()]);
-  await Promise.all([fetchCleaningTeam(), fetchSchedules(), fetchDocuments(), fetchChecklists()]);
+  await Promise.all([fetchSchedules(), fetchDocuments(), fetchChecklists()]);
 });
 </script>
 
@@ -1085,8 +1478,8 @@ onMounted(async () => {
         <i class="mdi mdi-account-group-outline"></i> 소요일 합산
       </button>
       <button :class="['tab-item', { active: activeTab === 'assign' }]" @click="activeTab = 'assign'">
-        <i class="mdi mdi-account-switch"></i> 팀 배정
-        <span v-if="getUnassignedTasks.length > 0" class="tab-badge">{{ getUnassignedTasks.length }}</span>
+        <i class="mdi mdi-account-switch"></i> 인원 배정
+        <span v-if="unassignedCount > 0" class="tab-badge">{{ unassignedCount }}</span>
       </button>
       <!--button :class="['tab-item', { active: activeTab === 'documents' }]" @click="activeTab = 'documents'">
         <i class="mdi mdi-file-document-outline"></i> 공문·점검표
@@ -1103,12 +1496,12 @@ onMounted(async () => {
         <div class="filter-bar">
           <select v-model="filterMode" class="form-control filter-select">
             <option value="all">전체 보기</option>
-            <option value="team">팀별</option>
+            <option value="staff">작업자별</option>
             <option value="manager">담당자별</option>
           </select>
-          <select v-if="filterMode === 'team'" v-model="filterTeamIdx" class="form-control filter-select">
-            <option value="">팀 선택</option>
-            <option v-for="t in teams" :key="t.idx" :value="t.idx">{{ t.teamName }} ({{ t.leaderName }})</option>
+          <select v-if="filterMode === 'staff'" v-model="filterStaffIdx" class="form-control filter-select">
+            <option value="">작업자 선택</option>
+            <option v-for="s in cleaningStaff" :key="s.idx" :value="s.idx">{{ s.name }}</option>
           </select>
           <select v-if="filterMode === 'manager'" v-model="filterManagerIdx" class="form-control filter-select">
             <option value="">담당자 선택</option>
@@ -1146,22 +1539,34 @@ onMounted(async () => {
             <div
                 v-for="(day, index) in calendarDays"
                 :key="index"
-                :class="['calendar-cell', { 'not-current': !day.isCurrentMonth, 'is-today': day.isToday }]"
+                :class="['calendar-cell', { 'not-current': !day.isCurrentMonth, 'is-today': day.isToday, 'is-holiday-cell': day.isHoliday }]"
                 @click="openAddModal(day.dateStr)"
             >
-              <div class="cell-date">{{ day.date }}</div>
+              <div class="cell-date-row">
+                <div
+                    class="cell-date"
+                    :class="{ 'text-danger': day.isHoliday || day.isSunday, 'text-primary': !day.isHoliday && day.isSaturday }"
+                >
+                  {{ day.date }}
+                </div>
+                <div v-if="day.isHoliday && day.holidayName" class="cell-holiday-name" :title="day.holidayName">
+                  {{ day.holidayName }}
+                </div>
+              </div>
               <div class="cell-schedules">
                 <template v-for="(schedule, lane) in getSchedulesForDate(day.dateStr)" :key="lane">
                   <div
                       v-if="schedule"
                       :class="['schedule-bar', {
-                        'is-pending': isDocPending(schedule),
+                        'is-pending': isDocPending(schedule) && !schedule.isExcludedDay,
                         'is-start': schedule.isStartDay,
-                        'is-end': schedule.dayIndex === schedule.durationDays,
-                        'is-middle': !schedule.isStartDay && schedule.dayIndex < schedule.durationDays
+                        'is-end': schedule.isEndDay,
+                        'is-middle': !schedule.isStartDay && !schedule.isEndDay,
+                        'is-excluded-day': schedule.isExcludedDay,
+                        'is-cancelled': Number(schedule.status) === 4
                       }]"
-                      :style="{ backgroundColor: getStatusColor(schedule.status) }"
-                      :title="`${schedule.siteName} · ${schedule.itemName}\n${getTeamName(schedule.teamIdx)} / ${getManagerName(schedule.mnIdx)}\n${schedule.startDt} ~ ${schedule.endDt} (${schedule.durationDays}일)`"
+                      :style="schedule.isExcludedDay ? {} : { backgroundColor: getStatusColor(schedule.status) }"
+                      :title="`${schedule.siteName} · ${schedule.itemName}\n${schedule.dayIndex}일차 인원(${(schedule.dayStaffIds || []).length}명): ${getStaffNames(schedule.dayStaffIds) || '인원 미배정'}${schedule.dayLeaderId ? ' · 팀장 ' + getStaffName(schedule.dayLeaderId) : ''} / ${getManagerName(schedule.mnIdx)}\n${schedule.startDt} ~ ${schedule.endDt} (${schedule.durationDays}일)${schedule.isExcludedDay ? ' · 휴무(제외일)' : ''}`"
                       @click.stop="openDetail(schedule)"
                   >
                     <div class="bar-content" :style="{ opacity: schedule.isStartDay ? 1 : 0 }">
@@ -1186,6 +1591,8 @@ onMounted(async () => {
           <span class="legend-item"><i class="legend-dot" style="background: #0ea5e9;"></i> 확정</span>
           <span class="legend-item"><i class="legend-dot" style="background: var(--warning, #f59e0b);"></i> 진행중</span>
           <span class="legend-item"><i class="legend-dot" style="background: var(--success, #22c55e);"></i> 완료</span>
+          <span class="legend-item"><i class="legend-dot" style="background: #9ca3af;"></i> 취소</span>
+          <span class="legend-item"><i class="legend-dot legend-dot-excluded"></i> 토/일/공휴일 제외일</span>
           <!--span class="legend-item"><i class="legend-dot legend-dot-pending"></i> 공문 수신확인 대기</span-->
         </div>
       </div>
@@ -1368,7 +1775,7 @@ onMounted(async () => {
     <div v-if="activeTab === 'workload'" class="status-card status-card-full">
       <div class="status-header">
         <i class="mdi mdi-account-group-outline"></i>
-        <h3>팀별 월 소요일 합계</h3>
+        <h3>현장별 월 소요일 합계</h3>
       </div>
 
       <div class="workload-summary">
@@ -1381,12 +1788,12 @@ onMounted(async () => {
           <span class="ws-value">{{ plannedTotalDays }}일</span>
         </div>
         <div class="ws-card">
-          <span class="ws-label">운영 팀 수</span>
-          <span class="ws-value">{{ teams.length }}팀</span>
+          <span class="ws-label">등록 작업 인력</span>
+          <span class="ws-value">{{ cleaningStaff.length }}명</span>
         </div>
-        <div class="ws-card" :class="{ 'ws-alert': getUnassignedTasks.length > 0 }">
+        <div class="ws-card" :class="{ 'ws-alert': unassignedCount > 0 }">
           <span class="ws-label">미배정 일정</span>
-          <span class="ws-value">{{ getUnassignedTasks.length }}건</span>
+          <span class="ws-value">{{ unassignedCount }}건</span>
         </div>
       </div>
 
@@ -1394,156 +1801,144 @@ onMounted(async () => {
         <table class="workload-table">
           <thead>
           <tr>
-            <th class="th-team">팀</th>
-            <th v-for="ym in teamWorkload.months" :key="ym">{{ ym }}</th>
+            <th class="th-team">현장</th>
+            <th v-for="ym in siteWorkload.months" :key="ym">{{ ym }}</th>
             <th class="th-total">누적</th>
+            <th class="th-compare">계약 / 실제</th>
           </tr>
           </thead>
           <tbody>
-          <tr v-for="row in teamWorkload.rows" :key="row.key">
-            <td class="team-name-cell">
-              {{ row.teamName }}
-              <small>{{ row.memberCount }}명</small>
-            </td>
+          <tr v-for="row in siteWorkload.rows" :key="row.key">
+            <td class="team-name-cell">{{ row.siteName }}</td>
             <td v-for="(cell, i) in row.cells" :key="i" :class="{ 'cell-overload': cell >= 15, 'cell-zero': cell === 0 }">
               {{ cell }}일
             </td>
             <td class="cell-rowtotal">{{ row.rowTotal }}일</td>
-          </tr>
-          <tr class="row-unassigned">
-            <td class="team-name-cell">{{ teamWorkload.unassigned.teamName }}</td>
-            <td v-for="(cell, i) in teamWorkload.unassigned.cells" :key="i" :class="{ 'cell-zero': cell === 0 }">
-              {{ cell }}일
+            <td class="cell-compare" :class="{ 'is-over': row.isOverContract }">
+              {{ row.contractDays }}일 / {{ row.actualDays }}일
             </td>
-            <td class="cell-rowtotal">{{ teamWorkload.unassigned.rowTotal }}일</td>
           </tr>
           </tbody>
           <tfoot>
           <tr class="row-total">
-            <td class="team-name-cell">{{ teamWorkload.total.teamName }}</td>
-            <td v-for="(cell, i) in teamWorkload.total.cells" :key="i">{{ cell }}일</td>
-            <td class="cell-rowtotal">{{ teamWorkload.total.rowTotal }}일</td>
+            <td class="team-name-cell">{{ siteWorkload.total.siteName }}</td>
+            <td v-for="(cell, i) in siteWorkload.total.cells" :key="i">{{ cell }}일</td>
+            <td class="cell-rowtotal">{{ siteWorkload.total.rowTotal }}일</td>
+            <td class="cell-compare" :class="{ 'is-over': siteWorkload.total.isOverContract }">
+              {{ siteWorkload.total.contractDays }}일 / {{ siteWorkload.total.actualDays }}일
+            </td>
           </tr>
           </tfoot>
         </table>
       </div>
 
       <p class="table-hint">
-        월 15일 이상 배정된 팀은 붉게 표시됩니다. 미배정 행에 소요일이 쌓여 있으면 팀 추가 편성을 검토하세요.
+        월 15일 이상 소요일이 잡힌 현장은 붉게 표시됩니다. "계약 / 실제"는 계약상 소요일 대비 실제 등록된 소요일이며,
+        실제가 계약을 넘으면 붉게 표시됩니다. 미배정 일정이 쌓여 있으면 인원 추가 편성을 검토하세요.
       </p>
     </div>
 
-    <!-- ============ 탭4: 팀 배정 ============ -->
-    <div v-if="activeTab === 'assign'" class="kanban-wrapper">
+    <!-- ============ 탭4: 인원 배정 ============ -->
+    <div v-if="activeTab === 'assign'" class="assign-wrapper">
       <div class="kanban-intro">
         <i class="mdi mdi-information-outline"></i>
-        현장 카드를 팀 칸으로 끌어다 놓으면 배정되고 상태가 '확정'으로 바뀝니다. 저장에 실패하면 원래 자리로 되돌아갑니다.
+        여기서 체크하면 일정에 걸린 모든 날짜에 한 번에 배정되고, 처음 배정되는 순간 상태가 '확정'으로 바뀝니다.
+        "2일차엔 빠짐"처럼 날짜별로 다르게 넣으려면 카드를 눌러 상세 모달의 일차별 표에서 편집하세요.
       </div>
 
-      <div class="kanban-board">
-        <div class="kanban-col unassigned-col" @dragover.prevent @drop="onDrop($event, null)">
-          <div class="col-header">
-            <h4><i class="mdi mdi-clipboard-text-outline"></i> 미배정 현장</h4>
-            <span class="task-count">{{ getUnassignedTasks.length }}</span>
-          </div>
-          <div class="col-body">
-            <div
-                v-for="task in getUnassignedTasks"
-                :key="task.idx"
-                class="task-card"
-                draggable="true"
-                @dragstart="onDragStart($event, task)"
-                @dragend="onDragEnd"
-            >
-              <div class="task-card-header">
-                <span class="task-site">{{ task.siteName }}</span>
-                <span class="task-date">
-                  {{ task.startDt === task.endDt ? task.startDt : `${task.startDt} ~ ${task.endDt}` }}
-                </span>
-              </div>
-              <div class="task-card-body">
-                <p><strong>{{ task.itemName }}</strong> <span class="dur-chip">{{ task.durationDays }}일</span></p>
-                <p v-if="task.address" class="task-address"><i class="mdi mdi-map-marker-outline"></i> {{ task.address }}</p>
-                <p v-if="task.equipment" class="task-equip"><i class="mdi mdi-wrench-outline"></i> {{ task.equipment }}</p>
-                <p v-if="task.memo" class="task-note"><i class="mdi mdi-alert-circle-outline"></i> {{ task.memo }}</p>
-              </div>
-              <div class="task-card-footer"><i class="mdi mdi-drag"></i> 끌어서 팀에 배정</div>
-            </div>
-            <div v-if="getUnassignedTasks.length === 0" class="empty-col">미배정 건이 없습니다.</div>
-          </div>
+      <div class="assign-toolbar">
+        <div class="search-box">
+          <i class="mdi mdi-magnify"></i>
+          <input v-model="assignSearch" type="text" class="search-input" placeholder="현장명 또는 항목명 검색" />
         </div>
+        <label class="form-check-inline"><input v-model="assignOnlyUnassigned" type="checkbox" /> 미배정만 보기</label>
+        <span class="site-count-badge">전체 {{ scheduleListForAssign.length }}건 · 미배정 {{ unassignedCount }}건</span>
+      </div>
+
+      <div class="assign-list">
+        <div v-if="scheduleListForAssign.length === 0" class="empty-state">표시할 일정이 없습니다.</div>
 
         <div
-            v-for="team in teams"
-            :key="team.idx"
-            class="kanban-col team-col"
-            @dragover.prevent
-            @drop="onDrop($event, team.idx)"
+            v-for="task in scheduleListForAssign"
+            :key="task.idx"
+            :class="['assign-card', { 'is-unassigned': !(task.staffIds && task.staffIds.length) }]"
         >
-          <div class="col-header col-header-team">
-            <div class="col-header-top">
-              <h4><i class="mdi mdi-account-group-outline"></i> {{ team.teamName }}</h4>
-              <button class="btn-icon-small" @click="openTeamModal(team)">
-                <i class="mdi mdi-account-cog"></i> 인원편성
-              </button>
+          <div class="assign-card-main" @click="openDetail(task)">
+            <div class="task-card-header">
+              <span class="task-site">{{ task.siteName }}</span>
+              <span class="task-date">
+                {{ task.startDt === task.endDt ? task.startDt : `${task.startDt} ~ ${task.endDt}` }}
+              </span>
             </div>
-            <div class="team-info">
-              <div class="team-member-list">
+            <div class="task-card-body">
+              <p><strong>{{ task.itemName }}</strong> <span class="dur-chip">{{ task.durationDays }}일</span></p>
+              <p v-if="task.startTm || task.endTm" class="task-time">
+                <i class="mdi mdi-clock-outline"></i> {{ task.startTm || '-' }} ~ {{ task.endTm || '-' }}
+              </p>
+              <p v-if="task.address" class="task-address"><i class="mdi mdi-map-marker-outline"></i> {{ task.address }}</p>
+              <p v-if="task.equipment && task.equipment.length" class="task-equip"><i class="mdi mdi-wrench-outline"></i> {{ task.equipment.join(', ') }}</p>
+              <p v-if="task.memo" class="task-note"><i class="mdi mdi-alert-circle-outline"></i> {{ task.memo }}</p>
+              <div class="task-tags">
                 <span
-                    v-for="member in getTeamMembers(team.idx)"
-                    :key="member.idx"
-                    class="member-chip"
-                    :class="{ 'is-leader': member.idx === team.leaderId }"
+                    class="status-badge"
+                    :class="{ 'is-done': task.status === 3, 'is-progress': task.status === 2, 'is-fixed': task.status === 1, 'is-cancelled': task.status === 4 }"
                 >
-                  {{ member.name }}
+                  {{ statusLabel(task.status) }}
                 </span>
-                <span v-if="getTeamMembers(team.idx).length === 0" class="empty-members">편성된 인원 없음</span>
-              </div>
-              <div class="team-metrics">
-                <span class="task-count">{{ getTasksForTeam(team.idx).length }}건</span>
-                <span class="task-count days">{{ getTeamDays(team.idx) }}일</span>
+                <span v-if="task.docRequired" class="status-badge" :class="task.docStatus === 3 ? 'is-done' : 'is-warn'">
+                  공문 {{ DOC_STATUS_LABEL[task.docStatus] }}
+                </span>
               </div>
             </div>
           </div>
-          <div class="col-body">
-            <div
-                v-for="task in getTasksForTeam(team.idx)"
-                :key="task.idx"
-                class="task-card assigned"
-                draggable="true"
-                @dragstart="onDragStart($event, task)"
-                @dragend="onDragEnd"
-            >
-              <div class="task-card-header">
-                <span class="task-site">{{ task.siteName }}</span>
-                <span class="task-date">
-                  {{ task.startDt === task.endDt ? task.startDt : `${task.startDt} ~ ${task.endDt}` }}
-                </span>
-              </div>
-              <div class="task-card-body">
-                <p><strong>{{ task.itemName }}</strong> <span class="dur-chip">{{ task.durationDays }}일</span></p>
-                <div class="task-tags">
-                  <span
-                      class="status-badge"
-                      :class="{ 'is-done': task.status === 3, 'is-progress': task.status === 2, 'is-fixed': task.status === 1 }"
-                  >
-                    {{ statusLabel(task.status) }}
-                  </span>
-                  <span v-if="task.docRequired" class="status-badge" :class="task.docStatus === 3 ? 'is-done' : 'is-warn'">
-                    공문 {{ DOC_STATUS_LABEL[task.docStatus] }}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div v-if="getTasksForTeam(team.idx).length === 0" class="empty-col">
-              배정된 일정이 없습니다.<br />왼쪽에서 카드를 끌어다 놓으세요.
-            </div>
-          </div>
-        </div>
 
-        <div class="kanban-col add-team-col" @click="createNewTeam">
-          <i class="mdi mdi-plus-circle-outline"></i>
-          <span>새 청소팀 추가</span>
+          <div class="assign-card-staff">
+            <div class="assigned-staff-chips">
+              <span
+                  v-for="sIdx in task.staffIds"
+                  :key="sIdx"
+                  class="member-chip"
+                  :class="{ 'is-leader': isScheduleLeaderAnyDay(task, sIdx) }"
+              >
+                <i v-if="isScheduleLeaderAnyDay(task, sIdx)" class="mdi mdi-crown"></i> {{ getStaffName(sIdx) }}
+              </span>
+              <span v-if="!(task.staffIds && task.staffIds.length)" class="empty-members">인원 미배정</span>
+            </div>
+            <div v-if="getScheduleLeaderName(task)" class="leader-summary">
+              <i class="mdi mdi-crown"></i> 팀장: {{ getScheduleLeaderName(task) }}
+            </div>
+            <div v-if="hasVaryingDailyStaff(task)" class="daily-staff-summary">
+              <i class="mdi mdi-calendar-multiselect-outline"></i> {{ getDailyStaffSummary(task) }}
+            </div>
+            <button class="btn-icon-small" @click.stop="toggleStaffEditor(task.idx)">
+              <i class="mdi mdi-account-multiple-plus-outline"></i>
+              {{ editingStaffFor === task.idx ? '닫기' : '인원 편집(전체 날짜 일괄)' }}
+            </button>
+
+            <div v-if="editingStaffFor === task.idx" class="staff-editor-popover" @click.stop>
+              <div v-for="staff in cleaningStaff" :key="staff.idx" class="staff-check-with-leader">
+                <label class="form-check-inline">
+                  <input
+                      type="checkbox"
+                      :checked="isStaffAssigned(task, staff.idx)"
+                      @change="toggleScheduleStaff(task, staff.idx)"
+                  />
+                  {{ staff.name }}
+                </label>
+                <button
+                    v-if="isStaffAssigned(task, staff.idx)"
+                    type="button"
+                    class="btn-leader-toggle"
+                    :class="{ 'is-leader': isScheduleLeaderAnyDay(task, staff.idx) }"
+                    :title="isScheduleLeaderAnyDay(task, staff.idx) ? '팀장 해제' : '전체 날짜 팀장으로 지정'"
+                    @click="setScheduleLeader(task, staff.idx)"
+                >
+                  <i class="mdi mdi-crown"></i>
+                </button>
+              </div>
+              <p v-if="cleaningStaff.length === 0" class="empty-members">등록된 청소 인력이 없습니다.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1576,13 +1971,13 @@ onMounted(async () => {
             </div>
             <div class="doc-snapshot">
               <span><i class="mdi mdi-map-marker-outline"></i> {{ s.address || '주소 미등록' }}</span>
-              <span><i class="mdi mdi-account-group-outline"></i> {{ getTeamName(s.teamIdx) }} / {{ getTeamLeaderName(s.teamIdx) }}</span>
+              <span><i class="mdi mdi-account-group-outline"></i> {{ getStaffNames(s.staffIds) || '인원 미배정' }}</span>
               <span><i class="mdi mdi-account-tie-outline"></i> {{ getManagerName(s.mnIdx) }}</span>
-              <span v-if="s.equipment"><i class="mdi mdi-wrench-outline"></i> {{ s.equipment }}</span>
+              <span v-if="s.equipment && s.equipment.length"><i class="mdi mdi-wrench-outline"></i> {{ s.equipment.join(', ') }}</span>
               <span v-if="s.memo"><i class="mdi mdi-message-alert-outline"></i> {{ s.memo }}</span>
             </div>
-            <p v-if="!s.teamIdx || !s.mnIdx" class="doc-warn">
-              <i class="mdi mdi-alert-outline"></i> 팀 또는 담당자가 비어 있어 발송할 수 없습니다.
+            <p v-if="!(s.staffIds && s.staffIds.length) || !s.mnIdx" class="doc-warn">
+              <i class="mdi mdi-alert-outline"></i> 작업자 또는 담당자가 비어 있어 발송할 수 없습니다.
             </p>
           </div>
         </div>
@@ -1654,7 +2049,7 @@ onMounted(async () => {
               <div class="doc-title">
                 <strong>{{ row.schedule.siteName }} · {{ row.schedule.itemName }}</strong>
                 <span class="doc-meta">
-                  작업일 {{ row.workDt }} · {{ getTeamName(row.schedule.teamIdx) }}
+                  작업일 {{ row.workDt }} · {{ getStaffNames(row.schedule.staffIds) || '인원 미배정' }}
                 </span>
               </div>
               <button v-if="!row.checklist" class="btn-checklist" @click="openChecklistModal(row)">
@@ -1676,68 +2071,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ============ 팀 편성 모달 ============ -->
-    <div v-if="showTeamModal" class="modal-overlay" @click="closeTeamModal">
-      <div class="modal-content modal-wide" @click.stop>
-        <div class="modal-header">
-          <h2>팀 설정 및 인원 편성</h2>
-          <button class="btn-close" @click="closeTeamModal"><i class="mdi mdi-close"></i></button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>팀명</label>
-            <input v-model="editingTeam.teamName" type="text" class="form-control" placeholder="예: 4팀, 외벽특수팀" />
-          </div>
-
-          <div class="form-group">
-            <label>인원 선택 <span class="optional-tag">왕관을 누르면 팀장</span></label>
-            <div class="staff-selection-list">
-              <div
-                  v-for="staff in cleaningStaff"
-                  :key="staff.idx"
-                  class="staff-item"
-                  :class="{ 'is-selected': editingTeam?.memberIds?.includes(staff.idx) }"
-                  @click="toggleMember(staff.idx)"
-              >
-                <div class="staff-info">
-                  <span class="staff-role">{{ staff.position }}</span>
-                  <span class="staff-name">{{ staff.name }}</span>
-                </div>
-                <div class="staff-actions-row">
-                  <button
-                      v-if="editingTeam?.memberIds?.includes(staff.idx)"
-                      type="button"
-                      class="btn-leader-select"
-                      :class="{ 'is-leader': editingTeam.leaderId === staff.idx }"
-                      @click.stop="setLeader(staff.idx)"
-                  >
-                    <i class="mdi mdi-crown"></i>
-                    {{ editingTeam.leaderId === staff.idx ? '팀장' : '팀장 지정' }}
-                  </button>
-                  <i
-                      class="mdi check-icon"
-                      :class="editingTeam?.memberIds?.includes(staff.idx) ? 'mdi-check-circle text-primary' : 'mdi-checkbox-blank-circle-outline text-gray'"
-                  ></i>
-                </div>
-              </div>
-              <div v-if="cleaningStaff.length === 0" class="empty-state">등록된 청소 인력이 없습니다.</div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer modal-footer-split">
-          <button v-if="editingTeam?.idx" class="btn-danger" @click="deleteTeam(editingTeam.idx)">팀 삭제</button>
-          <div v-else></div>
-          <div class="footer-right">
-            <button class="btn-cancel" @click="closeTeamModal">취소</button>
-            <button class="btn-save" @click="saveTeamMembers">저장</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- ============ 일정 등록/수정 모달 ============ -->
     <div v-if="showAddModal" class="modal-overlay" @click="closeAddModal">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content modal-wide" @click.stop>
         <div class="modal-header">
           <h2>{{ isEditMode ? '대청소 일정 수정' : '대청소 일정 등록' }}</h2>
           <button class="btn-close" @click="closeAddModal"><i class="mdi mdi-close"></i></button>
@@ -1777,45 +2113,168 @@ onMounted(async () => {
                 <input v-model="addForm.endDt" type="date" class="form-control" max="9999-12-31" />
               </div>
             </div>
-            <div v-if="formDuration > 0" class="duration-hint">
-              <i class="mdi mdi-calendar-range"></i> 총 {{ formDuration }}일간 진행되는 일정으로 등록됩니다.
-            </div>
-          </div>
 
-          <div class="form-section">
-            <h4 class="form-section-title">3. 누가 담당하나요? <span class="optional-tag">선택</span></h4>
             <div class="form-row">
               <div class="form-group">
-                <label>대청소팀</label>
-                <select v-model="addForm.teamIdx" class="form-control">
-                  <option value="">나중에 배정</option>
-                  <option v-for="t in teams" :key="t.idx" :value="t.idx">{{ t.teamName }} ({{ t.leaderName }})</option>
-                </select>
+                <label>시작 시간</label>
+                <input v-model="addForm.startTm" type="time" class="form-control" />
               </div>
               <div class="form-group">
-                <label>담당 관리자</label>
-                <select v-model="addForm.mnIdx" class="form-control">
-                  <option value="">나중에 배정</option>
-                  <option v-for="m in managers" :key="m.idx" :value="m.idx">{{ m.name }}</option>
-                </select>
+                <label>종료 시간</label>
+                <input v-model="addForm.endTm" type="time" class="form-control" />
               </div>
+            </div>
+
+            <div v-if="formDuration > 0" class="duration-hint">
+              <i class="mdi mdi-calendar-range"></i>
+              전체 {{ formDuration }}일 범위 중 실제 소요일은
+              <b>{{ formWorkingDays }}일</b>입니다.
+              <span v-if="formWorkingDays !== formDuration" class="duration-hint-sub">
+                (토·일·공휴일 미포함분 {{ formDuration - formWorkingDays }}일 제외)
+              </span>
+            </div>
+
+            <!-- 토/일/공휴일 포함 여부 -->
+            <div class="include-day-row">
+              <span class="include-day-label"><i class="mdi mdi-calendar-check-outline"></i> 일정·소요일 포함 여부</span>
+              <label class="form-check-inline"><input v-model="addForm.includeSat" type="checkbox" /> 토요일</label>
+              <label class="form-check-inline"><input v-model="addForm.includeSun" type="checkbox" /> 일요일</label>
+              <label class="form-check-inline"><input v-model="addForm.includeHoliday" type="checkbox" /> 공휴일</label>
             </div>
             <p class="field-hint">
               <i class="mdi mdi-information-outline"></i>
-              공문을 발송하려면 팀과 담당자가 모두 지정돼 있어야 합니다.
+              체크를 해제하면 해당 날짜는 일정·소요일과 아래 일차별 작업표에서 자동으로 빠집니다.
             </p>
           </div>
 
           <div class="form-section">
-            <h4 class="form-section-title">4. 현장에 전달할 내용</h4>
+            <h4 class="form-section-title">3. 담당 관리자</h4>
             <div class="form-group">
-              <label>투입 장비</label>
-              <!--input v-model="addForm.equipment" type="text" class="form-control" placeholder="예: 고압세척기, 사다리차" /-->
-              <select v-model="addForm.equipment" class="form-control">
-                <option value="" disabled>투입 장비가 있다면 선택하세요.</option>
-                <option value="고압세척기">고압세척기</option>
-                <option value="사다리차">사다리차</option>
+              <select v-model="addForm.mnIdx" class="form-control">
+                <option value="">나중에 배정</option>
+                <option v-for="m in managers" :key="m.idx" :value="m.idx">{{ m.name }}</option>
               </select>
+            </div>
+            <p class="field-hint">
+              <i class="mdi mdi-information-outline"></i>
+              공문을 발송하려면 작업자와 담당자가 모두 지정돼 있어야 합니다.
+            </p>
+          </div>
+
+          <div class="form-section">
+            <h4 class="form-section-title">
+              4. 일차별 작업내용 및 인원 <span class="req">*</span>
+              <span class="optional-tag">날짜마다 체크박스로 직접 골라요. 다음 날짜는 자동으로 전날 인원을 이어받아요</span>
+            </h4>
+
+            <div v-if="formStaffConflicts.length > 0" class="conflict-warning">
+              <i class="mdi mdi-alert-outline"></i>
+              <div>
+                <div v-for="row in formStaffConflicts" :key="`${row.date}-${row.staffIdx}`">
+                  <b>{{ row.date }}</b>: <b>{{ getStaffName(row.staffIdx) }}</b>님은 이미 다른 일정에 배정되어 있어요 —
+                  {{ row.conflicts.map(c => `${c.siteName}·${c.itemName}`).join(', ') }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 일차별 작업내용 + 인원 표 (JSON 저장) -->
+            <div v-if="formCalendarDates.length > 0" class="daily-task-table">
+              <div class="daily-task-header">
+                <span>일차별 작업내용 · 인원</span>
+                <span class="daily-task-count">실제 작업일 {{ formWorkingDays }}일</span>
+              </div>
+              <table class="daily-table">
+                <tbody>
+                <tr
+                    v-for="row in addForm.dailyTasks"
+                    :key="row.date"
+                    :class="{ 'row-excluded': row.excluded }"
+                >
+                  <td class="daily-col-day">
+                    <template v-if="!row.excluded">{{ row.dayIndex }}일차</template>
+                    <template v-else>
+                      <span class="daily-off-badge">{{ row.dayType }} 제외</span>
+                    </template>
+                    <span class="daily-date">{{ row.date.slice(5) }}</span>
+                  </td>
+                  <td class="daily-col-content">
+                    <input
+                        v-model="row.content"
+                        type="text"
+                        class="form-control"
+                        :disabled="row.excluded"
+                        :placeholder="row.excluded ? '휴무일 (작업 없음)' : '이 날 진행할 작업 내용을 입력하세요'"
+                    />
+                  </td>
+                  <td class="daily-col-staff">
+                    <template v-if="!row.excluded">
+                      <div class="daily-staff-checks">
+                        <div v-for="staff in cleaningStaff" :key="staff.idx" class="staff-check-with-leader">
+                          <label class="form-check-inline">
+                            <input
+                                type="checkbox"
+                                :checked="isDayStaffAssigned(row.date, staff.idx)"
+                                @change="toggleDayStaff(row.date, staff.idx)"
+                            />
+                            {{ staff.name }}
+                          </label>
+                          <button
+                              v-if="isDayStaffAssigned(row.date, staff.idx)"
+                              type="button"
+                              class="btn-leader-toggle"
+                              :class="{ 'is-leader': isDayLeader(row.date, staff.idx) }"
+                              :title="isDayLeader(row.date, staff.idx) ? '팀장 해제' : '이 날짜 팀장으로 지정'"
+                              @click="setDayLeader(row.date, staff.idx)"
+                          >
+                            <i class="mdi mdi-crown"></i>
+                          </button>
+                        </div>
+                        <span v-if="cleaningStaff.length === 0" class="empty-members">등록된 청소 인력이 없습니다.</span>
+                      </div>
+                    </template>
+                    <span v-else class="empty-members">-</span>
+                  </td>
+                </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4 class="form-section-title">
+              5. 청소 완료 사진
+              <span class="optional-tag">사진이 없으면 "완료" 상태로 저장할 수 없어요</span>
+            </h4>
+
+            <p v-if="!isEditMode" class="field-hint">
+              <i class="mdi mdi-information-outline"></i>
+              사진은 현장에서 작업 완료 후 업로드됩니다. 일정을 먼저 등록한 뒤, 사진이 올라오면 다시 열어 완료 처리하세요.
+            </p>
+            <template v-else>
+              <div v-if="photosLoading" class="empty-state">사진을 불러오는 중...</div>
+              <div v-else-if="schedulePhotos.length === 0" class="photo-empty">
+                <i class="mdi mdi-camera-off-outline"></i>
+                아직 업로드된 사진이 없습니다. 사진이 있어야 "완료" 처리할 수 있어요.
+              </div>
+              <div v-else class="photo-gallery">
+                <a v-for="p in schedulePhotos" :key="p.idx || p.url" :href="p.url" target="_blank" class="photo-thumb">
+                  <img :src="p.url" :alt="p.memo || '청소 완료 사진'" />
+                  <span v-if="p.workDt" class="photo-date">{{ p.workDt }}</span>
+                </a>
+              </div>
+            </template>
+          </div>
+
+          <div class="form-section">
+            <h4 class="form-section-title">6. 현장에 전달할 내용</h4>
+
+            <div class="form-group">
+              <label>투입 장비 <span class="optional-tag">복수 선택 가능</span></label>
+              <div class="equipment-check-row">
+                <label v-for="opt in EQUIPMENT_OPTIONS" :key="opt" class="form-check-inline">
+                  <input type="checkbox" :value="opt" v-model="addForm.equipment" /> {{ opt }}
+                </label>
+              </div>
             </div>
             <div class="form-group">
               <label>단지 요청사항</label>
@@ -1827,16 +2286,17 @@ onMounted(async () => {
                 <option :value="0">예정</option>
                 <option :value="1">확정</option>
                 <option :value="2">진행중</option>
-                <option :value="3">완료</option>
+                <option :value="3" :disabled="schedulePhotos.length === 0">완료{{ schedulePhotos.length === 0 ? ' (사진 필요)' : '' }}</option>
+                <option :value="4">취소</option>
               </select>
             </div>
           </div>
 
           <!--div class="form-section">
-            <h4 class="form-section-title">5. 공문 발송</h4>
+            <h4 class="form-section-title">7. 공문 발송</h4>
             <label class="doc-toggle">
               <input v-model="addForm.docRequired" type="checkbox" />
-              <span>이 작업은 단지·담당자·팀장에게 공문을 보냅니다</span>
+              <span>이 작업은 단지·담당자에게 공문을 보냅니다</span>
             </label>
             <div v-if="addForm.docRequired" class="form-row">
               <div class="form-group">
@@ -2036,9 +2496,19 @@ onMounted(async () => {
 .calendar-body .calendar-cell:nth-last-child(-n+7) { border-bottom: none; }
 .calendar-cell:hover { background: var(--bg-canvas, #f9fafb); }
 .not-current { background: var(--bg-canvas, #f9fafb); opacity: .55; }
-.cell-date { padding: 8px; align-self: flex-end; font-size: 14px; font-weight: 500; color: var(--text-main, #111827); }
+.is-holiday-cell:not(.not-current) { background: rgba(239, 68, 68, .04); }
+.cell-date-row {
+  display: flex; align-items: baseline; justify-content: flex-end;
+  gap: 4px; padding: 8px 8px 0;
+}
+.cell-date { font-size: 14px; font-weight: 500; color: var(--text-main, #111827); }
+.cell-holiday-name {
+  font-size: 10px; font-weight: 700; color: var(--danger, #ef4444);
+  max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .is-today .cell-date {
   display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 8px; border-radius: 4px;
   background: var(--primary, #4f46e5); color: #fff; font-weight: 700;
 }
 .cell-schedules {
@@ -2078,6 +2548,24 @@ onMounted(async () => {
 .schedule-bar.is-start { border-top-left-radius: 4px; border-bottom-left-radius: 4px; margin-left: 4px; }
 .schedule-bar.is-end { border-top-right-radius: 4px; border-bottom-right-radius: 4px; margin-right: 4px; }
 .schedule-bar.is-middle { border-radius: 0; margin: 0; }
+
+/* 요구사항: 토/일/공휴일 체크 해제된 날은 달력에서도 색칠 없이 비워 보이게 */
+.schedule-bar.is-excluded-day {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px dashed var(--border-color, #d1d5db);
+  cursor: pointer;
+}
+.schedule-bar.is-excluded-day:hover { filter: none; background: var(--bg-canvas, #f9fafb) !important; }
+.schedule-bar.is-excluded-day .bar-content { visibility: hidden; }
+
+/* 요구사항: 청소 상황에 "취소" 상태 추가 */
+.schedule-bar.is-cancelled {
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.4), rgba(255,255,255,.4) 6px, transparent 6px, transparent 12px) !important;
+  opacity: .7;
+}
+.schedule-bar.is-cancelled .bar-title { text-decoration: line-through; }
+
 .schedule-bar-empty { height: 22px; }
 
 .bar-content {
@@ -2101,6 +2589,7 @@ onMounted(async () => {
   background: repeating-linear-gradient(45deg, #cbd5e1, #cbd5e1 2px, #fff 2px, #fff 4px);
   border: 1px solid #94a3b8;
 }
+.legend-dot-excluded { background: transparent; border: 1px dashed #94a3b8; }
 
 /* ---------- 실시현황 ---------- */
 .status-list { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 700px; }
@@ -2203,61 +2692,69 @@ onMounted(async () => {
 .row-total td { background: var(--bg-hover, #f3f4f6); font-weight: 700; border-top: 2px solid var(--border-color, #e5e7eb); }
 .table-hint { margin-top: 12px; font-size: 12px; color: var(--text-sub, #4b5563); }
 
-/* ---------- 칸반 ---------- */
-.kanban-wrapper { display: flex; flex-direction: column; }
+.th-compare { min-width: 110px; }
+.cell-compare { font-weight: 700; color: var(--text-sub, #4b5563); background: var(--bg-canvas, #f9fafb); }
+.cell-compare.is-over { color: var(--danger, #ef4444); background: #fef2f2; }
+
+/* ---------- 인원 배정 (리스트형) ---------- */
+.assign-wrapper { display: flex; flex-direction: column; gap: 16px; }
 .kanban-intro {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
   background: var(--bg-canvas, #f9fafb); border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 8px; font-size: 12px; color: var(--text-sub, #4b5563);
 }
 .kanban-intro i { flex-shrink: 0; font-size: 16px; color: var(--primary, #4f46e5); }
-.kanban-board { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
-.kanban-col {
-  display: flex; flex-direction: column; width: 320px; min-width: 320px;
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
-  max-height: calc(100vh - 240px);
+
+.assign-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.assign-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px; align-items: start;
 }
-.unassigned-col { background: #fdf8f6; border-color: #fce7f3; }
-.col-header {
-  display: flex; justify-content: space-between; align-items: center; padding: 16px;
-  background: #fff; border-bottom: 1px solid #e2e8f0; border-radius: 12px 12px 0 0;
+.assign-card {
+  display: flex; flex-direction: column; gap: 10px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.05);
 }
-.col-header-team { flex-direction: column; align-items: stretch; gap: 8px; }
-.col-header-top { display: flex; justify-content: space-between; align-items: center; }
-.unassigned-col .col-header { border-bottom-color: #fce7f3; }
-.col-header h4 {
-  margin: 0; display: flex; align-items: center; gap: 6px;
-  font-size: 15px; font-weight: 700; color: #1e293b;
+.assign-card.is-unassigned { border-left: 3px solid var(--danger, #ef4444); }
+.assign-card-main { cursor: pointer; }
+.assign-card-staff {
+  display: flex; flex-direction: column; gap: 8px;
+  padding-top: 10px; border-top: 1px dashed var(--border-color, #e5e7eb);
 }
-.unassigned-col .col-header h4 { color: #be123c; }
-.team-info { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; width: 100%; }
-.team-member-list { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.assigned-staff-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.daily-staff-summary {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: #b45309;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 4px 8px; width: fit-content;
+}
+.staff-editor-popover {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: var(--bg-canvas, #f9fafb); border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px;
+}
+.staff-check-with-leader { display: flex; align-items: center; gap: 6px; }
+.btn-leader-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border-radius: 4px;
+  background: transparent; border: 1px solid var(--border-color, #e5e7eb);
+  color: #94a3b8; cursor: pointer; font-size: 13px; flex-shrink: 0;
+}
+.btn-leader-toggle:hover { border-color: #fcd34d; color: #d97706; }
+.btn-leader-toggle.is-leader { background: #fffbeb; border-color: #fcd34d; color: #d97706; }
+.leader-summary {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: #b45309; width: fit-content;
+}
+
 .member-chip {
+  display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 6px; background: #f1f5f9; color: #475569;
   border: 1px solid #e2e8f0; border-radius: 4px; font-size: 12px;
 }
-.member-chip.is-leader { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; font-weight: 600; }
+.member-chip.is-leader { background: #fffbeb; color: #b45309; border-color: #fcd34d; font-weight: 700; }
+.member-chip.is-leader i { font-size: 12px; }
 .empty-members { font-size: 11px; color: #94a3b8; }
-.team-metrics { display: flex; gap: 4px; flex-shrink: 0; }
-.task-count {
-  padding: 2px 8px; background: #e2e8f0; color: #475569;
-  border-radius: 12px; font-size: 12px; font-weight: 700; white-space: nowrap;
-}
-.task-count.days { background: #eef2ff; color: #4338ca; }
-.unassigned-col .task-count { background: #ffe4e6; color: #e11d48; }
 
-.col-body {
-  display: flex; flex-direction: column; gap: 12px; flex: 1;
-  padding: 12px; overflow-y: auto; min-height: 180px;
-}
-.task-card {
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px;
-  cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,.05); transition: border-color .2s, box-shadow .2s;
-}
-.task-card:hover { border-color: #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); }
-.task-card:active { cursor: grabbing; }
-.task-card.is-dragging { opacity: .5; background: #f1f5f9; }
-.task-card.assigned { border-left: 4px solid #3b82f6; }
 .task-card-header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .task-site { font-weight: 700; font-size: 14px; color: #0f172a; }
 .task-date { font-size: 12px; color: #64748b; font-weight: 500; white-space: nowrap; }
@@ -2267,7 +2764,7 @@ onMounted(async () => {
   margin-left: 4px; padding: 1px 6px; background: #f1f5f9;
   border-radius: 4px; font-size: 11px; font-weight: 700; color: #475569;
 }
-.task-address, .task-equip { color: #64748b !important; font-size: 12px !important; }
+.task-address, .task-equip, .task-time { color: #64748b !important; font-size: 12px !important; }
 .task-note {
   color: #92400e !important; background: #fefce8; padding: 6px;
   border: 1px dashed #fde047; border-radius: 4px; font-size: 12px !important;
@@ -2280,24 +2777,10 @@ onMounted(async () => {
 .status-badge.is-fixed { background: #e0f2fe; color: #0369a1; }
 .status-badge.is-progress { background: #fef3c7; color: #b45309; }
 .status-badge.is-done { background: #dcfce7; color: #15803d; }
+.status-badge.is-cancelled { background: #e5e7eb; color: #6b7280; text-decoration: line-through; }
 .status-badge.is-warn { background: #fee2e2; color: #b91c1c; }
-.task-card-footer {
-  display: flex; align-items: center; gap: 4px; margin-top: 10px; padding-top: 8px;
-  border-top: 1px dashed #e2e8f0; font-size: 11px; color: #94a3b8;
-}
-.empty-col {
-  padding: 24px 0; text-align: center; color: #94a3b8;
-  font-size: 13px; font-style: italic; line-height: 1.6;
-}
-.add-team-col {
-  justify-content: center; align-items: center; min-height: 200px;
-  background: transparent; border: 2px dashed #cbd5e1; color: #64748b; cursor: pointer;
-}
-.add-team-col:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
-.add-team-col i { font-size: 32px; margin-bottom: 8px; }
-.add-team-col span { font-weight: 600; font-size: 15px; }
 .btn-icon-small {
-  display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  display: flex; align-items: center; gap: 4px; padding: 4px 8px; width: fit-content;
   background: transparent; border: 1px solid #cbd5e1; border-radius: 6px;
   color: #64748b; cursor: pointer; font-size: 13px;
 }
@@ -2355,7 +2838,7 @@ onMounted(async () => {
   max-height: 90vh; overflow-y: auto; background: #fff;
   border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.2);
 }
-.modal-wide { max-width: 560px; }
+.modal-wide { max-width: 720px; }
 .modal-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 16px 20px; border-bottom: 1px solid var(--border-color, #e5e7eb);
@@ -2403,34 +2886,90 @@ textarea.form-control { resize: vertical; font-family: inherit; }
   font-size: 12px; color: var(--text-sub, #4b5563);
 }
 .duration-hint { margin-top: -8px; font-size: 13px; font-weight: 600; color: var(--primary, #4f46e5); }
+.duration-hint-sub { font-weight: 500; color: var(--text-sub, #4b5563); font-size: 12px; margin-left: 4px; }
 .doc-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .lead-input { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-sub, #4b5563); }
 .lead-input .form-control { width: 72px; text-align: right; }
 
-.staff-selection-list {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-  max-height: 360px; overflow-y: auto;
+/* 토/일/공휴일 포함 여부 */
+.include-day-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 12px; background: var(--bg-canvas, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px;
 }
-.staff-item {
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-  padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; transition: all .2s;
+.include-day-label {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 700; color: var(--text-main, #111827); margin-right: 4px;
 }
-.staff-item:hover { border-color: #cbd5e1; background: #f8fafc; }
-.staff-item.is-selected { border-color: #3b82f6; background: #eff6ff; }
-.staff-role {
-  margin-right: 6px; padding: 2px 6px; background: #e2e8f0;
-  border-radius: 4px; font-size: 12px; color: #475569;
+
+/* 투입 인원 / 투입 장비 (복수 선택) */
+.equipment-check-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 12px; background: var(--bg-canvas, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px;
 }
-.staff-name { font-size: 14px; font-weight: 500; color: #1e293b; }
-.staff-actions-row { display: flex; align-items: center; gap: 8px; }
-.check-icon { font-size: 20px; }
-.btn-leader-select {
-  display: flex; align-items: center; gap: 4px; padding: 4px 8px;
-  background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px;
-  color: #64748b; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap;
+
+/* 작업자 일정 겹침 경고 */
+.conflict-warning {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 8px;
+  padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 8px; font-size: 12px; color: #b91c1c; line-height: 1.6;
 }
-.btn-leader-select.is-leader { background: #fffbeb; border-color: #fcd34d; color: #d97706; }
-.btn-leader-select.is-leader i { color: #f59e0b; }
+.conflict-warning i { flex-shrink: 0; font-size: 16px; margin-top: 1px; }
+
+/* 청소 완료 사진 */
+.photo-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 28px 16px; text-align: center; color: #b91c1c;
+  background: #fef2f2; border: 1px dashed #fecaca; border-radius: 8px; font-size: 13px;
+}
+.photo-empty i { font-size: 28px; }
+.photo-gallery {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px;
+}
+.photo-thumb {
+  position: relative; display: block; aspect-ratio: 1 / 1;
+  border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color, #e5e7eb);
+}
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-date {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 11px; padding: 2px 6px; text-align: center;
+}
+
+/* 일차별 작업내용 표 */
+.daily-task-table {
+  border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px; overflow: hidden;
+}
+.daily-task-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; background: var(--bg-canvas, #f9fafb);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  font-size: 13px; font-weight: 700; color: var(--text-main, #111827);
+}
+.daily-task-count { font-size: 12px; font-weight: 600; color: var(--primary, #4f46e5); }
+.daily-table { width: 100%; border-collapse: collapse; }
+.daily-table tr:not(:last-child) td { border-bottom: 1px solid var(--border-color, #e5e7eb); }
+.daily-table td { padding: 10px; vertical-align: top; }
+.daily-col-day {
+  width: 92px; min-width: 92px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  font-size: 13px; font-weight: 700; color: var(--primary, #4f46e5);
+}
+.daily-date { font-size: 11px; font-weight: 500; color: var(--text-sub, #4b5563); }
+.daily-col-content { width: 35%; }
+.daily-col-content .form-control { padding: 6px 10px; font-size: 13px; }
+.daily-col-staff { width: 40%; min-width: 220px; }
+.daily-staff-checks {
+  display: flex; flex-wrap: wrap; gap: 8px 12px;
+  padding: 6px 8px; background: var(--bg-canvas, #f9fafb); border-radius: 6px;
+}
+.row-excluded { background: var(--bg-canvas, #f9fafb); }
+.row-excluded .daily-col-day { color: #9ca3af; }
+.daily-off-badge {
+  display: inline-block; padding: 1px 6px; background: #f3f4f6;
+  border-radius: 4px; font-size: 11px; font-weight: 700; color: #6b7280;
+}
 
 .btn-add, .btn-save {
   display: flex; align-items: center; gap: 6px; padding: 8px 16px;
@@ -2460,7 +2999,7 @@ textarea.form-control { resize: vertical; font-family: inherit; }
     grid-auto-rows: 110px; /* 모바일 화면에서는 달력 한 칸 높이를 110px로 고정 */
   }
   .form-row { grid-template-columns: 1fr; }
-  .staff-selection-list { grid-template-columns: 1fr; }
+  .assign-list { grid-template-columns: 1fr; }
   .bar-title { font-size: 9px; }
   .workload-summary { grid-template-columns: repeat(2, 1fr); }
 }

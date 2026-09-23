@@ -4,16 +4,30 @@ import axios from 'axios';
 import SiteSelect from '~/components/SiteSelect.vue';
 import MemberSelect from '~/components/MemberSelect.vue';
 
+const route = useRoute();
+const router = useRouter();
+
 const { siteOptions, fetchSiteOptions, typeOptions, fetchTypeOptions } = useApi();
 
 // ================================================================
 // 상태
 // ================================================================
-const currentDate   = ref(new Date());
+const initMonth = route.query.month;
+let initialDate = new Date();
+if (initMonth) {
+  const [y, m] = initMonth.split('-');
+  initialDate = new Date(Number(y), Number(m) - 1, 1);
+}
+
+const currentDate   = ref(initialDate);
 const schedules     = ref([]);
 const isLoading     = ref(false);
-const selectedSite = ref('');
+
+const selectedSite  = ref(route.query.site || '');
+const selectedType  = ref(route.query.type || '');
 const staffList     = ref([]);
+const searchTerm    = ref('');
+const isBulkLoading = ref(false);
 
 // 모달
 const modal = ref({
@@ -24,9 +38,6 @@ const modal = ref({
 
 const selectedDay     = ref(null);
 const selectedRecord  = ref(null); // 수정 대상 근태 레코드
-const selectedType  = ref('');
-const searchTerm = ref('');
-const isBulkLoading   = ref(false);
 
 // 폼
 const form = ref({
@@ -208,6 +219,20 @@ watch([currentDate, selectedSite], () => {
   if (selectedSite.value) loadStaffList().then(fetchSchedules);
 });
 
+watch(
+    [selectedSite, selectedType, selectedYearMonth],
+    ([newSite, newType, newMonth]) => {
+      router.replace({
+        query: {
+          ...route.query,
+          site: newSite || undefined,
+          type: newType || undefined,
+          month: newMonth || undefined
+        }
+      }).catch(() => {}); // 동일 라우트 에러 무시
+    }
+);
+
 // ================================================================
 // 달력 클릭 → 일별 현황 모달
 // ================================================================
@@ -328,10 +353,15 @@ const getWorkTypeName = (type) => WORK_TYPE_LABELS[type] || '알수없음';
 
 const getStatusClass = (type) => type === 'annual' ? 'leave' : type;
 
-onMounted(() => {
-  fetchSiteOptions()
-  fetchTypeOptions()
-})
+onMounted(async () => {
+  fetchSiteOptions();
+  fetchTypeOptions();
+
+  if (selectedSite.value) {
+    await loadStaffList();
+    await fetchSchedules();
+  }
+});
 </script>
 
 <template>
