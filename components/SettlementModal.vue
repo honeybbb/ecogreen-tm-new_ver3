@@ -1869,12 +1869,7 @@ const buildSettleWorkbookBuffer = async () => {
   if (!template || !template.filePath) {
     throw new Error('등록된 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
   }
-/*
-  const fileRes = await fetch(resolveFileUrl(template.filePath));
-  if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
-  const arrayBuffer = await fileRes.arrayBuffer();
 
- */
   const fileRes = await axios.get(resolveFileUrl(template.filePath), {
     responseType: 'arraybuffer'
   });
@@ -1970,6 +1965,7 @@ const buildSettleWorkbookBuffer = async () => {
     over135Total: (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0),
     billingDt: formData.value.billingDt || '',
     bankInfo: formData.value.billingData.bankInfo || '',
+    headerMessage: formData.value.billingData.headerMessage || '',
     payrollTotal,
     contract: {
       nationalPension: estNationalPension,
@@ -2026,7 +2022,6 @@ const buildSettleWorkbookBuffer = async () => {
     const need = payrollRows.length - staticRows;
     duplicateRowPreservingMerges(sheet, templateRowNum + staticRows - 1, need);
 
-    // 데이터 채우기
     // 0일 때 "해당없음"으로 표시할 컬럼
     const NA_DISPLAY_KEYS = ['nationalPension', 'healthInsurance', 'longTermCare', 'unemployment'];
 
@@ -2051,6 +2046,23 @@ const buildSettleWorkbookBuffer = async () => {
     for (let i = payrollRows.length; i < staticRows; i++) {
       const targetRow = sheet.getRow(templateRowNum + i);
       Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
+    }
+
+    // ── 5-1. 급여 데이터 셀만 wrapText 끄고 shrinkToFit 적용 (헤더/1페이지는 건드리지 않음) ──
+    // 렌더링 엔진(LibreOffice)이 좁은 열에서 글자를 잘라먹는 문제를 방지하기 위한 것으로,
+    // 실제로 값이 채워진 급여 데이터 행/열에만 적용합니다. 시트 전체에 걸면 헤더의
+    // 줄바꿈(wrapText)이나 1페이지 라벨의 폰트 크기가 의도치 않게 망가집니다.
+    const dataColNums = Object.keys(colKeyMap).map(Number);
+    for (let i = 0; i < payrollRows.length; i++) {
+      const targetRow = sheet.getRow(templateRowNum + i);
+      dataColNums.forEach(colNum => {
+        const cell = targetRow.getCell(colNum);
+        cell.alignment = {
+          ...cell.alignment,
+          wrapText: false,
+          shrinkToFit: true,
+        };
+      });
     }
   }
 
@@ -2093,14 +2105,13 @@ const buildSettleWorkbookBuffer = async () => {
       const matches = [...raw.matchAll(PLACEHOLDER_RE)];
       if (matches.length === 0) return;
 
-      // 셀 전체가 플레이스홀더 하나뿐이면 숫자 타입 그대로 대입(합계 서식 유지)
+      // 셀 전체가 플레이스홀더 하나뿐이면 숫자/문자 타입 그대로 대입(합계 서식 유지)
       if (matches.length === 1 && matches[0][0] === raw.trim()) {
         const key = matches[0][1];
         if (key.startsWith('payroll.')) return; // 이미 처리됨
         let v = resolvePath(context, key);
         if (v === undefined) v = 0;
         cell.value = v;
-        // if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
         return;
       }
 
@@ -2109,18 +2120,6 @@ const buildSettleWorkbookBuffer = async () => {
         const v = resolvePath(context, key);
         return v === undefined ? '' : String(v);
       });
-    });
-  });
-// ── 5-1. 렌더링 엔진(LibreOffice)이 좁은 열에서 글자를 잘라먹는 문제 방지 ──
-  // wrapText를 끄고 shrinkToFit을 켜서, 변환기가 열 너비를 어떻게 계산하든
-  // 텍스트가 잘리는 대신 폰트 크기가 자동으로 줄어들며 한 줄에 표시되도록 강제합니다.
-  sheet.eachRow({ includeEmpty: false }, (row) => {
-    row.eachCell({ includeEmpty: false }, (cell) => {
-      cell.alignment = {
-        ...cell.alignment,
-        wrapText: false,
-        shrinkToFit: true,
-      };
     });
   });
 
