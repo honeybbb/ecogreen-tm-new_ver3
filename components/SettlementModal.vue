@@ -1338,8 +1338,20 @@ const applyViewConfig = (data) => {
     Object.assign(currentConfig.exportConfig, savedConfig.exportConfig || DEFAULT_EXPORT_CONFIG());
 
     if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
-    if (!currentConfig.summarySigns) currentConfig.summarySigns = DEFAULT_SUMMARY_SIGNS();
-    if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
+
+    // ✅ 수정 완료: DB에 저장된 +/- 부호 상태 복원
+    if (savedConfig.summarySigns) {
+      currentConfig.summarySigns = savedConfig.summarySigns;
+    } else if (!currentConfig.summarySigns) {
+      currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+    }
+
+    // ✅ 수정 완료: DB에 저장된 삭제(숨김) 항목 복원
+    if (savedConfig.hiddenSummaryKeys) {
+      currentConfig.hiddenSummaryKeys = savedConfig.hiddenSummaryKeys;
+    } else if (!currentConfig.hiddenSummaryKeys) {
+      currentConfig.hiddenSummaryKeys = [];
+    }
   } catch (e) {
     console.error('viewConfig 파싱 에러:', e);
   }
@@ -2054,6 +2066,277 @@ const exportToPdf = async () => {
 // ──────────────────────────────────────────────
 // 9. 데이터 저장
 // ──────────────────────────────────────────────
+const buildSettleWorkbookBuffer = async () => {
+  const template = await getSettleTemplate('SERVICE');
+  if (!template || !template.filePath) {
+    throw new Error('등록된 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
+  }
+
+  const fileRes = await axios.get(resolveFileUrl(template.filePath), {
+    responseType: 'arraybuffer'
+  });
+  const arrayBuffer = fileRes.data;
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
+  const sheet = workbook.worksheets[0];
+
+  sheet.pageSetup = {
+    ...sheet.pageSetup,
+    horizontalCentered: true,
+    verticalCentered: false,
+  };
+
+  // ── 1. 기본 값 계산 ─────────────────────────────
+  const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+  const [yyyy, mmRaw] = targetDateStr.split('-');
+  const mm = mmRaw ? String(Number(mmRaw)) : '';
+
+  const findSummary = (key) => totalSummary.value.find(s => s.key === key);
+  const signedVal = (key) => {
+    const s = findSummary(key);
+    return s ? s.value * s.sign : 0;
+  };
+
+  const customTotal = (formData.value.billingData.customSummaryItems || [])
+      .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
+
+  const vb = formData.value.billingData.vatBreakdown;
+
+  // ── 2-1. 청구내역(billingData.items) 항목별 비고 매핑 ──
+  const findItemNote = (syncKey) => {
+    const item = (formData.value.billingData.items || []).find(i => i._syncKey === syncKey);
+    return item?.note || '';
+  };
+
+  // ── 2. 급여 반복행 데이터 (코드가 아니라 항목명으로 매칭 → 회사마다 코드 달라도 안전) ──
+  const findDeductAmount = (row, keyword) => {
+    const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
+    return entry ? (Number(row.deductionItems?.[entry.itemCd]) || 0) : 0;
+  };
+
+  const payrollRows = formData.value.payrollData.map((row, idx) => ({
+    no: idx + 1,
+    empName: row.empName || '',
+    position: row.position || '',
+    personalNo: row.personalNo || '',
+    inDate: row.inDate || '',
+    outDate: row.outDate || '',
+    nationalPension: findDeductAmount(row, '국민연금'),
+    healthInsurance: findDeductAmount(row, '건강보험'),
+    longTermCare: findDeductAmount(row, '장기요양'),
+    unemployment: findDeductAmount(row, '고용보험'),
+    empStability: Number(row.reserves?.empInsEmployer) || 0,
+    sanjae: Number(row.reserves?.sanjae) || 0,
+    total: Number(getInsuranceTotal(row)) || 0,
+  }));
+
+  const payrollTotal = payrollRows.reduce((acc, r) => {
+    ['nationalPension','healthInsurance','longTermCare','unemployment','empStability','sanjae','total']
+        .forEach(k => { acc[k] = (acc[k] || 0) + r[k]; });
+    return acc;
+  }, {});
+
+  // ── 2-2. 계약서(산출내역서) 기준 견적 4대보험 (항목별) ──
+  const estNationalPension = sumByKeyword(contractIndirectLabor.value, '국민연금');
+  const estHealthInsurance = sumByKeyword(contractIndirectLabor.value, '건강보험');
+  const estLongTermCare    = sumByKeyword(contractIndirectLabor.value, '장기요양');
+  const estUnemployment    = sumByKeyword(contractIndirectLabor.value, '고용보험'); // 실업급여+고용안정 합산 1개 항목
+  const estSanjae          = sumByKeyword(contractIndirectLabor.value, '산재');
+
+  // ── 3. 단일 값 컨텍스트 ─────────────────────────
+  const context = {
+    yyyy, mm,
+    siteName: formData.value.siteName || '',
+    monthlyFee: contractTotalCost.value || 0,
+    monthlyFeeNote: findItemNote('monthlyFee'),
+    annualLeave: signedVal('annualLeave'),
+    annualLeaveNote: findItemNote('annualLeave'),
+    severance: signedVal('severance'),
+    severanceNote: findItemNote('severance'),
+    insuranceDiff: Number(formData.value.billingData.insuranceDiff) || 0,
+    insuranceDiffNote: findItemNote('insuranceDiff'),
+    customTotal,
+    grandTotal: findSummary('grandTotal')?.value || 0,
+    under135Area: vb.under135.area || 0,
+    unitPrice: vb.under135.unitPrice || vb.over135.unitPrice || 0,
+    under135Supply: vb.under135.supply || 0,
+    over135Area: vb.over135.area || 0,
+    over135Supply: vb.over135.supply || 0,
+    over135Vat: vb.over135.vat || 0,
+    over135Total: (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0),
+    billingDt: formData.value.billingDt || '',
+    bankInfo: formData.value.billingData.bankInfo || '',
+    headerMessage: formData.value.billingData.headerMessage || '',
+    payrollTotal,
+    contract: {
+      nationalPension: estNationalPension,
+      healthInsurance: estHealthInsurance,
+      longTermCare:    estLongTermCare,
+      employment:      estUnemployment,   // 실업급여+고용안정 합산 1개 항목
+      sanjae:          estSanjae,
+      total:           estimatedInsuranceTotal.value || 0,
+    },
+    diff: {
+      nationalPension: (payrollTotal.nationalPension || 0) - estNationalPension,
+      healthInsurance: (payrollTotal.healthInsurance || 0) - estHealthInsurance,
+      longTermCare:    (payrollTotal.longTermCare || 0) - estLongTermCare,
+      employment:      ((payrollTotal.unemployment || 0) + (payrollTotal.empStability || 0)) - estUnemployment,
+      sanjae:          (payrollTotal.sanjae || 0) - estSanjae,
+      total:           (payrollTotal.total || 0) - (estimatedInsuranceTotal.value || 0),
+    },
+  };
+
+  // ── 4. 급여 반복행 처리 ─────────────────────────
+  let templateRowNum = null;
+  const colKeyMap = {};
+
+  outer:
+      for (let r = 1; r <= sheet.rowCount; r++) {
+        const row = sheet.getRow(r);
+        for (let c = 1; c <= sheet.columnCount; c++) {
+          const v = row.getCell(c).value;
+          if (typeof v === 'string' && /^\{\{payroll\.\w+\}\}$/.test(v.trim())) {
+            templateRowNum = r;
+            row.eachCell({ includeEmpty: false }, (cell, colNum) => {
+              const m = /^\{\{payroll\.(\w+)\}\}$/.exec(String(cell.value).trim());
+              if (m) colKeyMap[colNum] = m[1];
+            });
+            break outer;
+          }
+        }
+      }
+
+  if (templateRowNum) {
+    const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
+
+    // 템플릿 행 아래로, 문자 라벨(=합계 행)이 나오기 전까지가 '빈 자리' 행
+    let staticRows = 1;
+    let r = templateRowNum + 1;
+    while (r <= sheet.rowCount) {
+      const v = sheet.getRow(r).getCell(checkCol).value;
+      if (typeof v === 'string' && v.trim() !== '') break; // '계' 등 라벨 행
+      staticRows++;
+      r++;
+    }
+
+    // 직원이 빈 자리보다 많으면 합계 행 앞에 행을 추가로 복제
+    const need = payrollRows.length - staticRows;
+    duplicateRowPreservingMerges(sheet, templateRowNum + staticRows - 1, need);
+
+    // 0일 때 "해당없음"으로 표시할 컬럼
+    const NA_DISPLAY_KEYS = ['nationalPension', 'healthInsurance', 'longTermCare', 'unemployment'];
+
+    // 데이터 채우기
+    payrollRows.forEach((p, i) => {
+      const targetRow = sheet.getRow(templateRowNum + i);
+      Object.entries(colKeyMap).forEach(([colNum, key]) => {
+        const cell = targetRow.getCell(Number(colNum));
+        const rawVal = p[key];
+
+        if (NA_DISPLAY_KEYS.includes(key) && (Number(rawVal) || 0) === 0) {
+          cell.value = '해당없음';
+          cell.numFmt = '@'; // 숫자 포맷 잔존 방지 (텍스트로 전환)
+        } else {
+          cell.value = rawVal ?? '';
+          if (typeof rawVal === 'number') cell.numFmt = '#,##0';
+        }
+      });
+    });
+
+    // 남는 빈 행은 비우기
+    for (let i = payrollRows.length; i < staticRows; i++) {
+      const targetRow = sheet.getRow(templateRowNum + i);
+      Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
+    }
+
+    // ── 5-1. 급여 데이터 셀만 wrapText 끄고 shrinkToFit 적용 (헤더/1페이지는 건드리지 않음) ──
+    // 렌더링 엔진(LibreOffice)이 좁은 열에서 글자를 잘라먹는 문제를 방지하기 위한 것으로,
+    // 실제로 값이 채워진 급여 데이터 행/열에만 적용합니다. 시트 전체에 걸면 헤더의
+    // 줄바꿈(wrapText)이나 1페이지 라벨의 폰트 크기가 의도치 않게 망가집니다.
+    const dataColNums = Object.keys(colKeyMap).map(Number);
+    for (let i = 0; i < payrollRows.length; i++) {
+      const targetRow = sheet.getRow(templateRowNum + i);
+      dataColNums.forEach(colNum => {
+        const cell = targetRow.getCell(colNum);
+        cell.alignment = {
+          ...cell.alignment,
+          wrapText: false,
+          shrinkToFit: true,
+        };
+      });
+    }
+  }
+
+  // ── 4-1. 면세 사업장이면 면적별 산출내역 표를 값/테두리만 제거해서 숨김 ──
+  if (formData.value.is_vat === 'N') {
+    let areaHeaderRow = null;
+    for (let r = 1; r <= sheet.rowCount; r++) {
+      const cellVal = sheet.getRow(r).getCell(2).value; // B열 기준
+      if (typeof cellVal === 'string' && cellVal.includes('면적') && cellVal.includes('구분')) {
+        areaHeaderRow = r;
+        break;
+      }
+    }
+    if (areaHeaderRow) {
+      // 헤더 + 135㎡ 이하 + 135㎡ 초과 + 스페이서 행까지 총 4행
+      const blockRows = 4;
+      const noBorder = { top: null, left: null, bottom: null, right: null };
+
+      for (let r = areaHeaderRow; r < areaHeaderRow + blockRows; r++) {
+        const row = sheet.getRow(r);
+        for (let c = 1; c <= sheet.columnCount; c++) {
+          const cell = row.getCell(c);
+          cell.value = null;
+          cell.border = noBorder;
+          cell.fill = { type: 'pattern', pattern: 'none' };
+        }
+      }
+    }
+  }
+
+  // ── 5. 나머지 {{...}} 플레이스홀더 전체 치환 ─────
+  const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
+
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      if (cell.isMerged && cell.master !== cell) return;
+      if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
+      const raw = cell.value;
+      const matches = [...raw.matchAll(PLACEHOLDER_RE)];
+      if (matches.length === 0) return;
+
+      // 셀 전체가 플레이스홀더 하나뿐이면 숫자/문자 타입 그대로 대입(합계 서식 유지)
+      if (matches.length === 1 && matches[0][0] === raw.trim()) {
+        const key = matches[0][1];
+        if (key.startsWith('payroll.')) return; // 이미 처리됨
+        let v = resolvePath(context, key);
+        if (v === undefined) v = 0;
+        cell.value = v;
+        return;
+      }
+
+      // 텍스트 안에 여러 개 섞여 있으면 문자열 치환
+      cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
+        const v = resolvePath(context, key);
+        return v === undefined ? '' : String(v);
+      });
+    });
+  });
+
+  // 시트 확대/축소 배율도 100%로 고정 (뷰어별 확대 상태 차이로 인한 착시 방지)
+  if (sheet.views && sheet.views.length > 0) {
+    sheet.views[0].zoomScale = 100;
+  } else {
+    sheet.views = [{ zoomScale: 100 }];
+  }
+
+  // ── 6. buffer 반환 (다운로드는 호출부에서 처리) ──
+  workbook.calcProperties.fullCalcOnLoad = true;
+  return await workbook.xlsx.writeBuffer();
+};
+
 const handleSave = async () => {
   try {
     const sIdx = formData.value.sIdx;
