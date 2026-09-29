@@ -1,10 +1,11 @@
 <script setup>
 import { ref, watch, onMounted, computed, reactive, nextTick } from 'vue';
 import axios from 'axios';
-import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import {
+  buildSettleExcelBuffer, loadSettleImages, SETTLE_FORM, SETTLE_FORM_OPTIONS,
+} from '~/utils/settleExcelBuilder.js';
 import { useAuthStore } from '~/stores/auth.js';
-import RichTextEditor from '@/components/RichTextEditor.vue';
 import SunTextEditor from '@/components/SunEditor.vue';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
@@ -24,24 +25,20 @@ const emit = defineEmits(['close', 'save']);
 // ──────────────────────────────────────────────
 const activeTab = ref('statement'); // 'statement' | 'details' | 'payroll'
 
+const DEFAULT_SUMMARY_SIGNS = () => ({ severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 });
+const DEFAULT_EXPORT_CONFIG = () => ({ includeStatement: true, includeDetails: true, includePayroll: true });
+
 const currentConfig = reactive({
   showGrossPay: true,
-  activePayLabels: [],       // 지급항목 배열
-  activeDeductionLabels: [], // 공제항목 배열
+  activePayLabels: [],       // 지급항목 (04001…) : 기본급·수당·연차/퇴직 적립금
+  activeDeductionLabels: [], // 공제항목 (04002…) : 4대보험·산재
+  activeExpenseLabels: [],   // 경비     (04003…) : 피복비·복리후생비·청소용품비 등
+  activeManageLabels: [],    // 관리비   (04004…) : 일반관리비·기업이윤
   activeDeductionCodes: [],
   hiddenSummaryKeys: [],
-  summarySigns: {
-    severance: -1,
-    annualLeave: -1,
-    estimatedIns: -1,
-    actualIns: -1,
-    insuranceDiff: -1
-  },
-  exportConfig: {
-    includeStatement: true,
-    includeDetails: true,
-    includePayroll: true
-  }
+  summarySigns: DEFAULT_SUMMARY_SIGNS(),
+  exportForm: SETTLE_FORM.OFFICIAL, // 출력 양식 (1: 안산고잔형/에코그린, 2: 가락극동형/이지종합관리)
+  exportConfig: DEFAULT_EXPORT_CONFIG(),
 });
 
 const meltOptions = reactive({
@@ -49,6 +46,19 @@ const meltOptions = reactive({
   severance: false,
   workersDay: false,
 });
+
+// 현재 선택된 출력 양식 정보 (헤더 표시·파일명용)
+const currentFormOption = computed(() =>
+    SETTLE_FORM_OPTIONS.find(o => o.value === Number(currentConfig.exportForm)) || SETTLE_FORM_OPTIONS[0]
+);
+
+// 사용자가 이번 화면에서 직접 양식을 골랐는지 여부
+//  → true 이면 현장 기본값(site viewConfig.exportForm)이 선택을 덮어쓰지 않음
+const isFormPickedByUser = ref(false);
+const selectExportForm = (value) => {
+  currentConfig.exportForm = Number(value);
+  isFormPickedByUser.value = true;
+};
 
 // ──────────────────────────────────────────────
 // 초기화 가드
@@ -145,6 +155,8 @@ const allWageCodes = ref([]);  // DB 전체 코드 원본 (이름 찾기 폴백�
 
 const contractIndirectLabor = ref([]);
 const contractIndirectLabels = ref([]);
+// 계약 산출내역서(budget)의 모든 배열 항목 (경비·일반관리비·이윤 등이 어느 배열에 있든 찾을 수 있게)
+const contractBudgetItems = ref([]);
 const contractDirectLabor = ref([]);
 const contractStaffList = ref([]);
 const contractTotalCost = ref(0);
@@ -228,16 +240,66 @@ const getWageCode = async () => {
   }
 };
 
+// is_vat 값 정규화 → 'Y'(과세) | 'N'(면세) | undefined(미확인)
+//   DB/API 에 따라 'Y'/'N', 'y'/'n', 1/0, true/false, '과세'/'면세' 등으로 올 수 있음
+const normalizeVat = (v) => {
+  if (v === undefined || v === null || v === '') return undefined;
+  const s = String(v).trim().toUpperCase();
+  if (['Y', 'YES', '1', 'TRUE', 'T', '과세'].includes(s)) return 'Y';
+  if (['N', 'NO', '0', 'FALSE', 'F', '면세'].includes(s)) return 'N';
+  return undefined;
+};
+
+// 현장 상세의 is_vat / 면적을 정산서에 반영
+//   - 면적은 비어 있을 때만 채움 (저장된 값·직접 수정한 값은 보존)
+//   - 과세 여부가 바뀌었거나 면적을 새로 채웠으면 공급가액·부가세 재계산 (수동 입력 모드 제외)
+const siteVatKnown = ref(false); // 현장 is_vat 를 실제로 확인했는지 (엑셀 과세 판단용)
+const syncSiteVatInfo = (site) => {
+  const vat = normalizeVat(site?.is_vat);
+  if (!site || !vat) return;
+  siteVatKnown.value = true;
+  const vb = formData.value.billingData?.vatBreakdown;
+  if (!vb) return;
+  const changed = formData.value.is_vat !== vat;
+  formData.value.is_vat = vat;
+
+  const rawUnder = String(site.areaUnder ?? site.area_under ?? '0').replace(/,/g, '');
+  const rawOver = String(site.areaOver ?? site.area_over ?? '0').replace(/,/g, '');
+  const isEmpty = !(Number(vb.under135?.area) > 0) && !(Number(vb.over135?.area) > 0);
+  // 저장된 면적이 과세 여부와 어긋난 경우(예: 과세 단지인데 135㎡ 초과 면적이 0으로 저장됨)도 다시 나눔
+  //   → 예전에 면세로 잘못 판단된 채 저장된 정산서 복구. 면적을 직접 수정한 경우(isManual)는 제외
+  const mismatch = !vb.isManual && (
+      (vat === 'Y' && !(Number(vb.over135?.area) > 0) && Number(rawOver) > 0) ||
+      (vat === 'N' && Number(vb.over135?.area) > 0)
+  );
+  if (isEmpty || mismatch) {
+    const total = (Number(rawUnder) + Number(rawOver)).toFixed(4);
+    if (vat === 'Y') {
+      vb.under135.area = Number(rawUnder) > 0 || Number(rawOver) > 0 ? rawUnder : '0';
+      vb.over135.area = Number(rawUnder) > 0 || Number(rawOver) > 0 ? rawOver : total;
+    } else {
+      vb.under135.area = Number(rawUnder) > 0 ? rawUnder : total;
+      vb.over135.area = '0';
+    }
+  }
+  if ((changed || isEmpty || mismatch) && !vb.isManual) calculateBillingTotal();
+};
+
+const resetContractRefs = () => {
+  contractIndirectLabor.value = [];
+  contractIndirectLabels.value = [];
+  contractDirectLabor.value = [];
+  contractBudgetItems.value = [];
+  contractStaffList.value = [];
+  contractTotalCost.value = 0;
+};
+
 const fetchContractData = async () => {
   const sIdx = formData.value.sIdx;
   const type = formData.value.type;
 
   if (!sIdx || !type) {
-    contractIndirectLabor.value = [];
-    contractIndirectLabels.value = [];
-    contractDirectLabor.value = [];
-    contractStaffList.value = [];
-    contractTotalCost.value = 0;
+    resetContractRefs();
     return;
   }
 
@@ -245,6 +307,10 @@ const fetchContractData = async () => {
     const res = await axios.get(`/api/v2/site/data/${sIdx}`);
     const siteData = res.data.data?.[0];
     if (!siteData) return;
+
+    // ── 과세 여부·관리면적 : 현장 목록(siteOptions)이 늦게 로드되거나 필드가 없어도
+    //    현장 상세 기준으로 맞춤 (과세 단지 면적별 산출내역 누락 방지)
+    syncSiteVatInfo(siteData);
 
     // ── 현장 특이사항(정산용, type=2) 파싱 & 알림 ──
     if (siteData.bigoList) {
@@ -274,6 +340,11 @@ const fetchContractData = async () => {
         currentConfig.showSeverance = parsedConfig.showSeverance ?? true;
         currentConfig.showWorkersDay = parsedConfig.showWorkersDay ?? true;
         currentConfig.showSanjae = parsedConfig.showSanjae ?? true;
+        // 현장 설정에 기본 출력 양식이 있으면 새 정산서 작성 시 자동 선택
+        // (사용자가 이미 직접 고른 경우에는 덮어쓰지 않음)
+        if (!props.settlementId && !isFormPickedByUser.value && parsedConfig.exportForm) {
+          currentConfig.exportForm = Number(parsedConfig.exportForm);
+        }
       } catch (e) {
         console.error('현장 viewConfig 파싱 에러:', e);
       }
@@ -320,11 +391,7 @@ const fetchContractData = async () => {
     }
 
     if (!targetContract) {
-      contractIndirectLabor.value = [];
-      contractIndirectLabels.value = [];
-      contractDirectLabor.value = [];
-      contractStaffList.value = [];
-      contractTotalCost.value = 0;
+      resetContractRefs();
       return;
     }
 
@@ -332,6 +399,19 @@ const fetchContractData = async () => {
     contractIndirectLabor.value = iLabor;
     contractIndirectLabels.value = iLabor.map(item => item.label);
     contractDirectLabor.value = (targetContract.budget && Array.isArray(targetContract.budget.directLabor)) ? targetContract.budget.directLabor : [];
+    // budget 안의 모든 { code, label, values } 항목 수집 (directLabor → indirectLabor → 나머지 순)
+    //   - expenses : 배열 (피복비·청소용품비·복리후생비 …)
+    //   - profit(기업이윤), managementFee(일반관리비) : 단일 객체
+    //   - monthlyWorkHours 처럼 label 이 없는 값 묶음은 제외
+    {
+      const budget = targetContract.budget || {};
+      const isItem = (it) => it && typeof it === 'object' && !Array.isArray(it)
+          && (it.code !== undefined || it.label !== undefined) && it.values && typeof it.values === 'object';
+      const others = Object.entries(budget)
+          .filter(([k]) => k !== 'directLabor' && k !== 'indirectLabor')
+          .flatMap(([, v]) => (Array.isArray(v) ? v.filter(isItem) : (isItem(v) ? [v] : [])));
+      contractBudgetItems.value = [...contractDirectLabor.value, ...iLabor, ...others].filter(isItem);
+    }
     contractStaffList.value = Array.isArray(targetContract.staffList) ? targetContract.staffList : [];
     contractTotalCost.value = Number(targetContract.totalCost) || 0;
 
@@ -345,6 +425,9 @@ const fetchContractData = async () => {
           currentConfig.activeDeductionLabels = contractConfig.activeDeductionLabels;
           currentConfig.activeDeductionCodes = contractConfig.activeDeductionLabels;
         }
+        // 정산설정의 경비·관리비 항목 (없으면 빈 배열)
+        currentConfig.activeExpenseLabels = Array.isArray(contractConfig.activeExpenseLabels) ? contractConfig.activeExpenseLabels : [];
+        currentConfig.activeManageLabels = Array.isArray(contractConfig.activeManageLabels) ? contractConfig.activeManageLabels : [];
       } catch (e) {
         console.error('계약 viewConfig 파싱 에러:', e);
       }
@@ -360,13 +443,11 @@ const fetchContractData = async () => {
     }
 
     // 현재 탭이 숨겨진 탭이면 노출된 탭으로 이동
-    if (activeTab.value === 'statement' && !currentConfig.exportConfig.includeStatement) {
-      activeTab.value = currentConfig.exportConfig.includeDetails ? 'details' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'statement');
-    } else if (activeTab.value === 'details' && !currentConfig.exportConfig.includeDetails) {
-      activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'details');
-    } else if (activeTab.value === 'payroll' && !currentConfig.exportConfig.includePayroll) {
-      activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includeDetails ? 'details' : 'payroll');
-    }
+    moveActiveTabToVisible();
+
+    // 계약 정산항목(기업이윤 등) : 값이 없는 행만 계약서 금액으로 채움
+    await nextTick();
+    fillMissingExtras();
 
     // 계약별 melt 옵션 — 새로 작성 중이거나 로딩이 끝난 뒤에만 반영
     if (!props.settlementId || !isInitializing.value) {
@@ -417,6 +498,12 @@ const visibleDeductionItems = computed(() =>
 // 3-1. 동적 컬럼 매핑 (지급/급여/공제 순서로 구성)
 // ──────────────────────────────────────────────
 const RESERVE_KEYWORDS = ['연차', '퇴직', '근로자의날']; // meltOptions 토글용 별도 컬럼
+// 4대보험(+산재)으로 취급하는 항목. 이 외의 정산설정 항목(피복비, 일반관리비, 복리후생비,
+// 청소용품비, 기타대청소, 기업이윤 등)은 '계약 정산항목(extra)'으로 분리합니다.
+//  - 값 : 급여 데이터가 아니라 계약 산출내역서(budget)에서 직책별 금액을 가져옴
+//  - 4대보험 총계·견적/실비 차액 계산에서는 제외
+const INSURANCE_KEYWORDS = ['국민연금', '건강보험', '장기요양', '고용보험', '산재'];
+const isInsuranceName = (name) => INSURANCE_KEYWORDS.some(kw => String(name || '').includes(kw));
 
 const dynamicColumns = computed(() => {
   const cols = [];
@@ -433,9 +520,22 @@ const dynamicColumns = computed(() => {
     cols.push({ type: 'gross', code: 'grossPay', name: '급여' });
   }
 
-  // 3) 공제 항목
+  // 3) 공제 항목(4대보험) / 계약 정산항목
+  const extraCols = [];
+  const seenExtra = new Set();
+  const pushExtra = (code, group) => {
+    if (seenExtra.has(code)) return;
+    seenExtra.add(code);
+    const nm = getCodeName(code);
+    const contractLabel = contractBudgetItems.value.find(d => String(d.code ?? '') === String(code))?.label;
+    extraCols.push({ type: 'extra', code, name: (nm && nm !== code) ? nm : (contractLabel || code), group });
+  };
   dedLabels.forEach(code => {
     const itemName = getCodeName(code);
+    if (!isInsuranceName(itemName)) {
+      pushExtra(code, 'other'); // 공제 설정에 들어 있지만 4대보험이 아닌 항목
+      return;
+    }
     cols.push({
       type: 'deduct',
       code,
@@ -444,7 +544,15 @@ const dynamicColumns = computed(() => {
     });
   });
 
-  return cols;
+  // 4) 정산설정의 경비(activeExpenseLabels) → 관리비(activeManageLabels) 순, 각 그룹은 코드 순
+  const byCode = (a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true });
+  [...(currentConfig.activeExpenseLabels || [])].sort(byCode).forEach(code => pushExtra(code, 'expense'));
+  [...(currentConfig.activeManageLabels || [])].sort(byCode).forEach(code => pushExtra(code, 'manage'));
+
+  // 계약 정산항목은 4대보험 총계 뒤에 그룹(경비 → 관리비 → 기타) 순으로 표시
+  const GROUP_ORDER = { expense: 0, manage: 1, other: 2 };
+  extraCols.sort((a, b) => GROUP_ORDER[a.group] - GROUP_ORDER[b.group]);
+  return cols.concat(extraCols);
 });
 
 // ──────────────────────────────────────────────
@@ -505,32 +613,99 @@ const handleFormulaBlur = (e, obj, key, row, calcType) => {
 // ──────────────────────────────────────────────
 // 5. 급여 계산 핵심 로직
 // ──────────────────────────────────────────────
-const applyContractReserves = (row) => {
-  const findContractValue = (keyword, cd, staffCode) => {
-    const allLabor = [...contractDirectLabor.value, ...contractIndirectLabor.value];
-    const target = allLabor.find(d => {
-      const label = String(d.label ?? '');
-      return label === cd || label === keyword || label.includes(keyword);
-    });
+// 계약 산출내역서(budget)에서 항목 찾기
+//   1순위 code 일치 → 2순위 label 이 코드와 일치(구버전) → 3순위 label 이 이름과 일치/포함
+const findContractItem = (keyword, cd) => {
+  const all = contractBudgetItems.value.length
+      ? contractBudgetItems.value
+      : [...contractDirectLabor.value, ...contractIndirectLabor.value];
+  if (cd) {
+    const byCode = all.find(d => String(d.code ?? '') === String(cd)) || all.find(d => String(d.label ?? '') === String(cd));
+    if (byCode) return byCode;
+  }
+  if (!keyword) return null;
+  return all.find(d => String(d.label ?? '') === keyword)
+      || all.find(d => String(d.label ?? '').includes(keyword))
+      || null;
+};
 
-    if (!target?.values) return 0;
-    if (staffCode != null && target.values[staffCode] != null) return Number(target.values[staffCode]) || 0;
+// 계약 산출내역서에서 직책별 금액 (값이 "" 이면 0)
+const findContractValue = (keyword, cd, staffCode) => {
+  const target = findContractItem(keyword, cd);
+  if (!target?.values) return 0;
+  if (staffCode != null && target.values[staffCode] != null) return Number(target.values[staffCode]) || 0;
 
-    for (const staff of contractStaffList.value) {
-      const val = Number(target.values[staff.code]);
-      if (val > 0) return val;
-    }
-    return Number(Object.values(target.values)[0]) || 0;
-  };
+  for (const staff of contractStaffList.value) {
+    const val = Number(target.values[staff.code]);
+    if (val > 0) return val;
+  }
+  return Number(Object.values(target.values)[0]) || 0;
+};
 
-  let staffCode = null;
+// 직원 직책 → 계약서 인원(staff) 코드
+const resolveStaffCode = (row) => {
   if (row.position && contractStaffList.value.length) {
-    const staffObj = contractStaffList.value.find(s => s.name.trim() === row.position.trim());
-    if (staffObj) staffCode = staffObj.code;
+    const staffObj = contractStaffList.value.find(s => String(s.name || '').trim() === String(row.position).trim());
+    if (staffObj) return staffObj.code;
   }
-  if (!staffCode && contractStaffList.value.length === 1) {
-    staffCode = contractStaffList.value[0].code;
+  if (contractStaffList.value.length === 1) return contractStaffList.value[0].code;
+  return null;
+};
+
+// 계약 정산항목(피복비·일반관리비·복리후생비·기업이윤 등)을 계약서 금액으로 채움
+//   overwrite=false : 이미 값이 있는 항목(저장값·수동 입력값)은 건드리지 않음
+const extraColumns = computed(() => dynamicColumns.value.filter(c => c.type === 'extra'));
+const mainColumns = computed(() => dynamicColumns.value.filter(c => c.type !== 'extra'));
+// 정산항목 그룹 머리글 (경비 / 일반관리비·이윤 / 기타)
+const EXTRA_GROUP_LABEL = { expense: '경비', manage: '일반관리비·이윤', other: '기타 정산항목' };
+const extraGroups = computed(() => {
+  const groups = [];
+  extraColumns.value.forEach(col => {
+    const last = groups[groups.length - 1];
+    if (last && last.key === col.group) last.count++;
+    else groups.push({ key: col.group, label: EXTRA_GROUP_LABEL[col.group] || '정산항목', count: 1 });
+  });
+  return groups;
+});
+
+// 급여 세부 내역서 열 너비(px) : 컬럼이 많아도 글자가 잘리지 않도록 고정 폭 + 가로 스크롤
+const detailsColWidths = computed(() => {
+  const w = [44, 80, 96, 96, 96, 96]; // NO, 이름, 직책, 생년월일, 입사일, 퇴사일
+  mainColumns.value.forEach(col => {
+    if (col.isEmployment) w.push(96, 96);
+    else w.push(col.type === 'deduct' ? 100 : 110);
+  });
+  w.push(110);                                   // 총계(4대보험)
+  if (extraColumns.value.length) {
+    extraColumns.value.forEach(() => w.push(104));
+    w.push(116);                                 // 정산항목 계
   }
+  w.push(80);                                    // 관리
+  return w;
+});
+const detailsTableMinWidth = computed(() => detailsColWidths.value.reduce((a, b) => a + b, 0));
+const applyContractExtras = (row, { overwrite = true } = {}) => {
+  if (!row.extraItems) row.extraItems = {};
+  if (!extraColumns.value.length || !contractStaffList.value.length) return;
+  const staffCode = resolveStaffCode(row);
+  extraColumns.value.forEach(col => {
+    if (!overwrite && row.extraItems[col.code] !== undefined && row.extraItems[col.code] !== null) return;
+    // 코드로 먼저, 없으면 정확한 이름으로 (부분일치는 사용하지 않음)
+    const item = findContractItem(null, col.code) || contractBudgetItems.value.find(d => String(d.label ?? '') === col.name);
+    let v = 0;
+    if (item?.values) {
+      if (staffCode != null && item.values[staffCode] != null) v = Number(item.values[staffCode]) || 0;
+      else v = Number(Object.values(item.values).find(x => Number(x) > 0)) || 0;
+    }
+    row.extraItems[col.code] = v;
+  });
+};
+const fillMissingExtras = () => {
+  formData.value.payrollData.forEach(row => applyContractExtras(row, { overwrite: false }));
+};
+
+const applyContractReserves = (row) => {
+  const staffCode = resolveStaffCode(row);
 
   row.reserves.annualLeave = findContractValue('연차', '04003001', staffCode);
   row.reserves.severance = findContractValue('퇴직', '04003003', staffCode);
@@ -545,6 +720,9 @@ const applyContractReserves = (row) => {
     row.reserves.sanjae = sanjaeAmt;
     row.originalSanjae = sanjaeAmt;
   }
+
+  // 직책이 바뀌면 계약 정산항목도 해당 직책 금액으로 다시 채움
+  applyContractExtras(row, { overwrite: true });
 
   calculateRow(row);
 };
@@ -625,6 +803,12 @@ const getInsuranceTotal = (row) => {
   });
   return total;
 };
+
+// 계약 정산항목 행 합계 (4대보험 총계와 별도로 표시)
+const getExtraTotal = (row) =>
+    extraColumns.value.reduce((sum, col) => sum + (Number(row.extraItems?.[col.code]) || 0), 0);
+const extraGrandTotal = computed(() =>
+    formData.value.payrollData.reduce((sum, row) => sum + getExtraTotal(row), 0));
 
 const onSalaryInput = (row) => {
   if (meltOptions.annualLeave || meltOptions.severance || meltOptions.workersDay) recalculateInsurances(row);
@@ -747,7 +931,7 @@ const estimatedInsuranceTotal = computed(() => {
   let total = 0;
   contractIndirectLabor.value.forEach(item => {
     const isVisible = dynamicColumns.value.some(col =>
-        col.type === 'deduct' && (col.code === item.label || col.name === item.label || item.label.includes(col.name))
+        col.type === 'deduct' && (col.code === item.code || col.code === item.label || col.name === item.label || String(item.label ?? '').includes(col.name))
     );
     if (isVisible && item.values) {
       Object.entries(item.values).forEach(([staffCode, val]) => {
@@ -934,7 +1118,8 @@ const getDynamicTotal = (col) => {
 
   let sum = 0;
   formData.value.payrollData.forEach(row => {
-    if (col.name.includes('연차')) sum += Number(row.reserves?.annualLeave) || 0;
+    if (col.type === 'extra') sum += Number(row.extraItems?.[col.code]) || 0;
+    else if (col.name.includes('연차')) sum += Number(row.reserves?.annualLeave) || 0;
     else if (col.name.includes('퇴직')) sum += Number(row.reserves?.severance) || 0;
     else if (col.name.includes('근로자의날')) sum += Number(row.reserves?.workersDay) || 0;
     else if (col.name.includes('산재')) sum += Number(row.reserves?.sanjae) || 0;
@@ -965,21 +1150,20 @@ const LEDGER_EXCLUDE_PAY = ['04001003', '04001004', '04001002007']; // 연차/�
 const LEDGER_DEDUCT_KEYWORDS = ['국민연금', '건강보험', '장기요양', '고용보험', '소득세', '지방소득세', '기타공제'];
 const LEDGER_DEDUCT_EXCLUDE_KEYWORDS = ['고용안정', '실업급여'];
 
+const isLedgerDeduct = (name) =>
+    LEDGER_DEDUCT_KEYWORDS.some(kw => name.includes(kw)) &&
+    !LEDGER_DEDUCT_EXCLUDE_KEYWORDS.some(ex => name.includes(ex));
+
 const payrollLedgerColumns = computed(() => {
   const payCodeSet = new Set();
+  const deductCodeSet = new Set();
+
   formData.value.payrollData.forEach(row => {
     Object.keys(row.payItems || {}).forEach(cd => {
       if (!LEDGER_EXCLUDE_PAY.includes(cd)) payCodeSet.add(cd);
     });
-  });
-
-  const deductCodeSet = new Set();
-  formData.value.payrollData.forEach(row => {
     Object.keys(row.deductionItems || {}).forEach(cd => {
-      const name = getCodeName(cd);
-      const include = LEDGER_DEDUCT_KEYWORDS.some(kw => name.includes(kw));
-      const exclude = LEDGER_DEDUCT_EXCLUDE_KEYWORDS.some(ex => name.includes(ex));
-      if (include && !exclude) deductCodeSet.add(cd);
+      if (isLedgerDeduct(getCodeName(cd))) deductCodeSet.add(cd);
     });
   });
 
@@ -1002,12 +1186,8 @@ const getLedgerGrossPay = (row) =>
         LEDGER_EXCLUDE_PAY.includes(cd) ? sum : sum + (Number(amt) || 0), 0);
 
 const getLedgerTotalDeduct = (row) =>
-    Object.entries(row.deductionItems || {}).reduce((sum, [cd, amt]) => {
-      const name = getCodeName(cd);
-      const include = LEDGER_DEDUCT_KEYWORDS.some(kw => name.includes(kw));
-      const exclude = LEDGER_DEDUCT_EXCLUDE_KEYWORDS.some(ex => name.includes(ex));
-      return (include && !exclude) ? sum + (Number(amt) || 0) : sum;
-    }, 0);
+    Object.entries(row.deductionItems || {}).reduce((sum, [cd, amt]) =>
+        isLedgerDeduct(getCodeName(cd)) ? sum + (Number(amt) || 0) : sum, 0);
 
 const getLedgerNetPay = (row) => getLedgerGrossPay(row) - getLedgerTotalDeduct(row);
 
@@ -1120,24 +1300,23 @@ const normalizePayrollRow = (row, idx) => {
 
   if (row.groupNo === undefined) row.groupNo = idx + 1;
   if (row.isMidMonthJoiner === undefined) row.isMidMonthJoiner = false;
+  if (!row.extraItems) row.extraItems = {}; // 계약 정산항목 (구버전 데이터 호환)
 };
 
-const applyExportConfig = (savedConfig) => {
-  if (savedConfig.exportConfig) {
-    Object.assign(currentConfig.exportConfig, savedConfig.exportConfig);
-  } else {
-    Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
-  }
+// 신규 작성 / viewConfig 없음 / 초기화 시 공통 기본값
+const resetViewConfigDefaults = () => {
+  currentConfig.summarySigns = DEFAULT_SUMMARY_SIGNS();
+  currentConfig.hiddenSummaryKeys = [];
+  meltOptions.annualLeave = false;
+  meltOptions.severance = false;
+  meltOptions.workersDay = false;
+  Object.assign(currentConfig.exportConfig, DEFAULT_EXPORT_CONFIG());
+  currentConfig.exportForm = SETTLE_FORM.OFFICIAL;
 };
 
 const applyViewConfig = (data) => {
   if (!data.viewConfig) {
-    currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
-    currentConfig.hiddenSummaryKeys = [];
-    meltOptions.annualLeave = false;
-    meltOptions.severance = false;
-    meltOptions.workersDay = false;
-    Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
+    resetViewConfigDefaults();
     return;
   }
 
@@ -1147,16 +1326,19 @@ const applyViewConfig = (data) => {
 
     if (savedConfig.activePayLabels) currentConfig.activePayLabels = savedConfig.activePayLabels;
     if (savedConfig.activeDeductionLabels) currentConfig.activeDeductionLabels = savedConfig.activeDeductionLabels;
+    if (savedConfig.activeExpenseLabels) currentConfig.activeExpenseLabels = savedConfig.activeExpenseLabels;
+    if (savedConfig.activeManageLabels) currentConfig.activeManageLabels = savedConfig.activeManageLabels;
     if (savedConfig.activeDeductionCodes) currentConfig.activeDeductionCodes = savedConfig.activeDeductionCodes;
     if (savedConfig.showGrossPay !== undefined) currentConfig.showGrossPay = savedConfig.showGrossPay;
     if (savedConfig.meltOptions) Object.assign(meltOptions, savedConfig.meltOptions);
 
-    applyExportConfig(savedConfig);
+    // 저장된 출력 양식 복원 (없으면 기본 1번)
+    currentConfig.exportForm = Number(savedConfig.exportForm) || SETTLE_FORM.OFFICIAL;
+
+    Object.assign(currentConfig.exportConfig, savedConfig.exportConfig || DEFAULT_EXPORT_CONFIG());
 
     if (currentConfig.showSanjae === undefined) currentConfig.showSanjae = true;
-    if (!currentConfig.summarySigns) {
-      currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
-    }
+    if (!currentConfig.summarySigns) currentConfig.summarySigns = DEFAULT_SUMMARY_SIGNS();
     if (!currentConfig.hiddenSummaryKeys) currentConfig.hiddenSummaryKeys = [];
   } catch (e) {
     console.error('viewConfig 파싱 에러:', e);
@@ -1164,23 +1346,21 @@ const applyViewConfig = (data) => {
 };
 
 const moveActiveTabToVisible = () => {
-  if (activeTab.value === 'statement' && !currentConfig.exportConfig.includeStatement) {
-    activeTab.value = currentConfig.exportConfig.includeDetails ? 'details' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'statement');
-  } else if (activeTab.value === 'details' && !currentConfig.exportConfig.includeDetails) {
-    activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includePayroll ? 'payroll' : 'details');
-  } else if (activeTab.value === 'payroll' && !currentConfig.exportConfig.includePayroll) {
-    activeTab.value = currentConfig.exportConfig.includeStatement ? 'statement' : (currentConfig.exportConfig.includeDetails ? 'details' : 'payroll');
+  const ec = currentConfig.exportConfig;
+  if (activeTab.value === 'statement' && !ec.includeStatement) {
+    activeTab.value = ec.includeDetails ? 'details' : (ec.includePayroll ? 'payroll' : 'statement');
+  } else if (activeTab.value === 'details' && !ec.includeDetails) {
+    activeTab.value = ec.includeStatement ? 'statement' : (ec.includePayroll ? 'payroll' : 'details');
+  } else if (activeTab.value === 'payroll' && !ec.includePayroll) {
+    activeTab.value = ec.includeStatement ? 'statement' : (ec.includeDetails ? 'details' : 'payroll');
   }
 };
 
 const initForm = async () => {
+  isFormPickedByUser.value = false;
   if (!props.initialData || Object.keys(props.initialData).length === 0) {
     formData.value = createEmptyFormData();
-    currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
-    meltOptions.annualLeave = false;
-    meltOptions.severance = false;
-    meltOptions.workersDay = false;
-    Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
+    resetViewConfigDefaults();
     return;
   }
 
@@ -1219,7 +1399,10 @@ const initForm = async () => {
   data.payrollData.forEach(normalizePayrollRow);
 
   const selectedSite = siteOptions.value.find(s => s.idx === data.sIdx);
-  data.is_vat = selectedSite ? selectedSite.is_vat : (data.vatAmount > 0 ? 'Y' : 'N');
+  const listVat = normalizeVat(selectedSite?.is_vat);
+  data.is_vat = listVat || (data.vatAmount > 0 ? 'Y' : 'N');
+  // 현장 목록에 is_vat 가 없으면 '미확인' → fetchContractData 에서 현장 상세로 다시 맞춤
+  siteVatKnown.value = !!listVat;
 
   applyViewConfig(data);
   delete data.viewConfig;
@@ -1237,27 +1420,33 @@ const initForm = async () => {
   nextTick(() => { isInitializing.value = false; });
 };
 
-watch(() => props.initialData, initForm, { immediate: true });
+// 부모가 같은 내용을 새 객체로 다시 넘겨도(localStorage 재파싱 등) 재초기화하지 않도록
+// 내용이 실제로 바뀐 경우에만 initForm 실행 → 사용자가 고른 양식/입력값이 되돌아가지 않음
+let lastInitKey = null;
+watch(() => props.initialData, (nv) => {
+  const key = JSON.stringify(nv ?? null);
+  if (key === lastInitKey) return;
+  lastInitKey = key;
+  initForm();
+}, { immediate: true });
 
 const resetAll = async () => {
-  if (!await window.customConfirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값은 유지됩니다.')) return;
+  if (!await window.customConfirm('청구 공문과 급여 내역 전체를 초기화하시겠습니까?\n현장/구분/날짜 선택값과 출력 양식은 유지됩니다.')) return;
 
   isInitializing.value = true;
 
   const { sIdx, type, target_month, billingDt } = formData.value;
   formData.value = createEmptyFormData({ sIdx, type, target_month, billingDt });
 
-  // meltOptions.annualLeave = false;
-  // meltOptions.severance = false;
-  // meltOptions.workersDay = false;
   currentConfig.showGrossPay = true;
   currentConfig.showAnnualLeave = true;
   currentConfig.showSeverance = true;
   currentConfig.showWorkersDay = true;
   currentConfig.showSanjae = true;
-  currentConfig.summarySigns = { severance: -1, annualLeave: -1, estimatedIns: -1, actualIns: -1, insuranceDiff: -1 };
+  currentConfig.summarySigns = DEFAULT_SUMMARY_SIGNS();
   currentConfig.hiddenSummaryKeys = [];
-  Object.assign(currentConfig.exportConfig, { includeStatement: true, includeDetails: true, includePayroll: true });
+  Object.assign(currentConfig.exportConfig, DEFAULT_EXPORT_CONFIG());
+  // currentConfig.exportForm 은 사용자가 고른 양식이므로 유지
 
   if (deductionItems.value.length > 0) {
     currentConfig.activeDeductionCodes = deductionItems.value.map(i => i.itemCd);
@@ -1349,6 +1538,7 @@ const loadPayrollData = async () => {
         originalSanjae: 0,
         totalDeduct: 0,
         reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
+        extraItems: {},
         netPay: 0,
         isMidMonthJoiner,
         gapDays: Number(item.gapDays) || 0,
@@ -1366,6 +1556,8 @@ const loadPayrollData = async () => {
         rowObj.reserves.empInsEmployer = 0;
         rowObj.reserves.sanjae = 0;
         rowObj.originalSanjae = 0;
+        // 계약 정산항목도 0 (계약 인원 자리는 기존 근무자와 겹치므로 중복 청구 방지)
+        Object.keys(rowObj.extraItems || {}).forEach(k => { rowObj.extraItems[k] = 0; });
       }
 
       calculateRow(rowObj);
@@ -1402,7 +1594,7 @@ const loadPayrollData = async () => {
       }
     });
 
-    if (formData.value.payrollData.length === 0) customAlert('조건에 맞는 직원 데이터가 없습니다.', 'error');
+    if (formData.value.payrollData.length === 0) window.customAlert('조건에 맞는 직원 데이터가 없습니다.', 'error');
     else alert('직원 급여 데이터를 성공적으로 불러왔습니다.');
   } catch (error) {
     console.error('데이터 로드 에러:', error);
@@ -1458,7 +1650,9 @@ const handleSiteChange = () => {
   }
 
   formData.value.siteName = selectedSite.name;
-  formData.value.is_vat = selectedSite.is_vat || 'N';
+  const listVat = normalizeVat(selectedSite.is_vat);
+  formData.value.is_vat = listVat || 'N';
+  siteVatKnown.value = !!listVat;
 
   if (selectedSite.bankName || selectedSite.accountNumber) {
     const bank = selectedSite.bankName || '';
@@ -1505,6 +1699,7 @@ const addPayrollRow = () => {
     empName: '', position: '', personalNo: '', inDate: '', outDate: '',
     grossPay: 0, deductionItems: {}, originalDeductions: {}, originalSanjae: 0, totalDeduct: 0,
     reserves: { annualLeave: 0, severance: 0, empInsEmployer: 0, sanjae: 0 },
+    extraItems: {},
     netPay: 0, groupNo: maxGroupNo + 1, isMidMonthJoiner: false,
   });
 };
@@ -1550,220 +1745,281 @@ const onDragEnd = () => {
   draggableRowIdx.value = null;
 };
 
-const onDragOver = (e, index) => {
-  e.preventDefault();
-  if (dragIndex.value === null || dragIndex.value === index) return;
-  const list = formData.value.payrollData;
-  const dragged = list.splice(dragIndex.value, 1)[0];
-  list.splice(index, 0, dragged);
-  dragIndex.value = index;
-};
-
-// docType: 'SERVICE' = 정산서(청구공문+급여세부내역서), 'RETIRE_ANNUAL' = 연차퇴직정산서
-const getSettleTemplate = async (docType = 'SERVICE') => {
-  const res = await axios.get('/api/v1/settle/template/list', { params: { cIdx } });
-  const list = res.data?.data || [];
-  return list.find(t => t.docType === docType) || null;
-};
-
-// filePath가 상대경로("/uploads/xxx.xlsx")로 오므로, API 서버 origin을 붙여준다.
-// axios.defaults.baseURL이 이미 API 서버로 설정돼 있다면 그걸 재사용하는 게 안전.
-const resolveFileUrl = (filePath) => {
-  if (!filePath) return '';
-  if (/^https?:\/\//.test(filePath)) return filePath;
-  return `/api${filePath}`; // /api + /uploads/xxx.xlsx
-};
-
 // ──────────────────────────────────────────────
-// 8. 엑셀 저장 / 데이터 저장
+// 8. 엑셀 / PDF 출력 (고정 양식 빌더 사용)
+//    레이아웃은 utils/settleExcelBuilder.js 가 담당하고,
+//    여기서는 화면 데이터를 "순수 데이터"로 모아서 넘기기만 합니다.
 // ──────────────────────────────────────────────
 const isExportingPdf = ref(false);
-/*
-const exportToExcel = async () => {
-  try {
-    const template = await getSettleTemplate('SERVICE');
-    if (!template || !template.filePath) {
-      alert('등록된 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
-      return;
-    }
+const settleImages = ref(null); // 로고/직인 이미지 캐시 (최초 1회 로드)
 
-    const fileRes = await fetch(resolveFileUrl(template.filePath)); // 상대경로 → 절대 URL 변환
-    if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
-    const arrayBuffer = await fileRes.arrayBuffer();
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(arrayBuffer);
-    const sheet = workbook.worksheets[0];
-
-    // ── 1. 기본 값 계산 ─────────────────────────────
-    const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
-    const [yyyy, mmRaw] = targetDateStr.split('-');
-    const mm = mmRaw ? String(Number(mmRaw)) : '';
-
-    const findSummary = (key) => totalSummary.value.find(s => s.key === key);
-    const signedVal = (key) => {
-      const s = findSummary(key);
-      return s ? s.value * s.sign : 0;
-    };
-
-    const customTotal = (formData.value.billingData.customSummaryItems || [])
-        .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
-
-    const vb = formData.value.billingData.vatBreakdown;
-
-    // ── 2. 급여 반복행 데이터 (코드가 아니라 항목명으로 매칭 → 회사마다 코드 달라도 안전) ──
-    const findDeductAmount = (row, keyword) => {
-      const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
-      return entry ? (Number(row.deductionItems?.[entry.itemCd]) || 0) : 0;
-    };
-
-    const payrollRows = formData.value.payrollData.map((row, idx) => ({
-      no: idx + 1,
-      empName: row.empName || '',
-      position: row.position || '',
-      personalNo: row.personalNo || '',
-      inDate: row.inDate || '',
-      outDate: row.outDate || '',
-      nationalPension: findDeductAmount(row, '국민연금'),
-      healthInsurance: findDeductAmount(row, '건강보험'),
-      longTermCare: findDeductAmount(row, '장기요양'),
-      unemployment: findDeductAmount(row, '고용보험'),
-      empStability: Number(row.reserves?.empInsEmployer) || 0,
-      sanjae: Number(row.reserves?.sanjae) || 0,
-      total: Number(getInsuranceTotal(row)) || 0,
-    }));
-
-    const payrollTotal = payrollRows.reduce((acc, r) => {
-      ['nationalPension','healthInsurance','longTermCare','unemployment','empStability','sanjae','total']
-          .forEach(k => { acc[k] = (acc[k] || 0) + r[k]; });
-      return acc;
-    }, {});
-
-    // ── 3. 단일 값 컨텍스트 ─────────────────────────
-    const context = {
-      yyyy, mm,
-      siteName: formData.value.siteName || '',
-      monthlyFee: contractTotalCost.value || 0,
-      annualLeave: signedVal('annualLeave'),
-      severance: signedVal('severance'),
-      insuranceDiff: Number(formData.value.billingData.insuranceDiff) || 0,
-      customTotal,
-      grandTotal: findSummary('grandTotal')?.value || 0,
-      under135Area: vb.under135.area || 0,
-      unitPrice: vb.under135.unitPrice || vb.over135.unitPrice || 0,
-      under135Supply: vb.under135.supply || 0,
-      over135Area: vb.over135.area || 0,
-      over135Supply: vb.over135.supply || 0,
-      over135Vat: vb.over135.vat || 0,
-      over135Total: (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0),
-      billingDt: formData.value.billingDt || '',
-      bankInfo: formData.value.billingData.bankInfo || '',
-      payrollTotal,
-    };
-
-    // ── 4. 급여 반복행 처리 ─────────────────────────
-    let templateRowNum = null;
-    const colKeyMap = {};
-
-    outer:
-        for (let r = 1; r <= sheet.rowCount; r++) {
-          const row = sheet.getRow(r);
-          for (let c = 1; c <= sheet.columnCount; c++) {
-            const v = row.getCell(c).value;
-            if (typeof v === 'string' && /^\{\{payroll\.\w+\}\}$/.test(v.trim())) {
-              templateRowNum = r;
-              row.eachCell({ includeEmpty: false }, (cell, colNum) => {
-                const m = /^\{\{payroll\.(\w+)\}\}$/.exec(String(cell.value).trim());
-                if (m) colKeyMap[colNum] = m[1];
-              });
-              break outer;
-            }
-          }
-        }
-
-    if (templateRowNum) {
-      const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
-
-      // 템플릿 행 아래로, 문자 라벨(=합계 행)이 나오기 전까지가 '빈 자리' 행
-      let staticRows = 1;
-      let r = templateRowNum + 1;
-      while (r <= sheet.rowCount) {
-        const v = sheet.getRow(r).getCell(checkCol).value;
-        if (typeof v === 'string' && v.trim() !== '') break; // '계' 등 라벨 행
-        staticRows++;
-        r++;
-      }
-
-      // 직원이 빈 자리보다 많으면 합계 행 앞에 행을 추가로 복제
-      const need = payrollRows.length - staticRows;
-      if (need > 0) {
-        sheet.duplicateRow(templateRowNum + staticRows - 1, need, true);
-      }
-
-      // 데이터 채우기
-      payrollRows.forEach((p, i) => {
-        const targetRow = sheet.getRow(templateRowNum + i);
-        Object.entries(colKeyMap).forEach(([colNum, key]) => {
-          targetRow.getCell(Number(colNum)).value = p[key] ?? '';
-          targetRow.getCell(Number(colNum)).numFmt =
-              typeof p[key] === 'number' ? '#,##0' : targetRow.getCell(Number(colNum)).numFmt;
-        });
-      });
-
-      // 남는 빈 행은 비우기
-      for (let i = payrollRows.length; i < staticRows; i++) {
-        const targetRow = sheet.getRow(templateRowNum + i);
-        Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
-      }
-    }
-
-    // ── 5. 나머지 {{...}} 플레이스홀더 전체 치환 ─────
-    const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
-    const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
-
-    sheet.eachRow({ includeEmpty: false }, (row) => {
-      row.eachCell({ includeEmpty: false }, (cell) => {
-        if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
-        const raw = cell.value;
-        const matches = [...raw.matchAll(PLACEHOLDER_RE)];
-        if (matches.length === 0) return;
-
-        // 셀 전체가 플레이스홀더 하나뿐이면 숫자 타입 그대로 대입(합계 서식 유지)
-        if (matches.length === 1 && matches[0][0] === raw.trim()) {
-          const key = matches[0][1];
-          if (key.startsWith('payroll.')) return; // 이미 처리됨
-          let v = resolvePath(context, key);
-          if (v === undefined) v = 0;
-          cell.value = v;
-          if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
-          return;
-        }
-
-        // 텍스트 안에 여러 개 섞여 있으면 문자열 치환
-        cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
-          const v = resolvePath(context, key);
-          return v === undefined ? '' : String(v);
-        });
-      });
-    });
-
-    // ── 6. 저장 ─────────────────────────────────────
-    const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `정산서_${formData.value.siteName || '현장'}_${targetDateStr}.xlsx`;
-    saveAs(new Blob([buffer]), fileName);
-  } catch (error) {
-    console.error('엑셀 저장 중 오류 발생:', error);
-    alert('엑셀 파일을 생성하는 중 오류가 발생했습니다.');
-  }
+// SunEditor HTML → 일반 텍스트
+//   <p>, <div>, <li>, <br> 을 줄바꿈으로 바꾸고 태그/엔티티를 정리합니다.
+//   빈 줄(<p><br></p>)도 그대로 한 줄로 유지합니다.
+const htmlToPlainText = (html) => {
+  if (!html) return '';
+  let t = String(html)
+      .replace(/\r\n?/g, '\n')
+      .replace(/<br\s*\/?>\s*<\/(p|div|li)>/gi, '</$1>')   // 빈 문단 자리표시용 <br> 제거
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+      .replace(/<li[^>]*>/gi, '· ')
+      .replace(/<[^>]+>/g, '');
+  const el = typeof document !== 'undefined' ? document.createElement('textarea') : null;
+  if (el) { el.innerHTML = t; t = el.value; } // &nbsp; &amp; &lt; 등 엔티티 복원
+  else t = t.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return t
+      .replace(/\u00a0/g, ' ')
+      .split('\n').map(line => line.replace(/\s+$/, ''))
+      .join('\n')
+      .replace(/^\n+|\n+$/g, ''); // 앞뒤 빈 줄만 제거, 중간 빈 줄은 유지
 };
 
- */
+const collectSettleExcelData = () => {
+  const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+  const [yStr, mStr] = targetDateStr.split('-');
+  const yyyy = Number(yStr);
+  const mm = Number(mStr);
+  if (!yyyy || !mm) throw new Error('시행일자를 먼저 선택해주세요.');
+
+  const findSummary = (key) => totalSummary.value.find(s => s.key === key);
+  const signedVal = (key) => {
+    const s = findSummary(key);
+    return s ? s.value * s.sign : 0;
+  };
+  const findItemNote = (syncKey) =>
+      (formData.value.billingData.items || []).find(i => i._syncKey === syncKey)?.note || '';
+  const findDeductAmount = (row, keyword) => {
+    const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
+    return entry ? (Number(row.deductionItems?.[entry.itemCd]) || 0) : 0;
+  };
+
+  // 정산 추가항목(공백공제 등) : 부호 적용 금액
+  const customItems = totalSummary.value
+      .filter(s => s.isCustom)
+      .map(s => ({ label: s.label || '', amount: s.value * s.sign, note: findItemNote(s.key) }));
+  const customTotal = customItems.reduce((sum, c) => sum + c.amount, 0);
+
+  const vb = formData.value.billingData.vatBreakdown || {};
+  const typeName = typeOptions.value?.find(t => t.itemCd === formData.value.type)?.itemNm || '';
+
+  // 공문 본문: 기본 문구 그대로면 양식 기본 문구, 수정했으면 수정 문구
+  const hm = formData.value.billingData.headerMessage || '';
+  const headerLines = hm && hm !== defaultHeaderMessage
+      ? hm.split('\n').map(s => s.trim()).filter(s => s && !/아\s*래/.test(s))
+      : null;
+
+  const fmtDt = (s) => {
+    if (!s) return '';
+    const [y, m, d] = String(s).substring(0, 10).split('-');
+    return `${y}.  ${m}.  ${d}.`;
+  };
+
+  // 메모(SunEditor HTML) → 엑셀용 일반 텍스트 (전체 내용, 줄바꿈 유지)
+  const memoText = htmlToPlainText(formData.value.billingData.memo);
+
+  // 급여대장 공제항목 → 양식 고정 열로 매핑 (코드명이 회사마다 달라도 이름으로 매칭)
+  const ledgerDeduct = (row) => {
+    const out = { nationalPension: 0, healthInsurance: 0, longTermCare: 0, unemployment: 0, incomeTax: 0, localTax: 0, etcDeduct: 0 };
+    Object.entries(row.deductionItems || {}).forEach(([cd, amt]) => {
+      const name = getCodeName(cd);
+      const v = Number(amt) || 0;
+      if (LEDGER_DEDUCT_EXCLUDE_KEYWORDS.some(ex => name.includes(ex))) return;
+      if (name.includes('국민연금')) out.nationalPension += v;
+      else if (name.includes('장기요양')) out.longTermCare += v;
+      else if (name.includes('건강보험')) out.healthInsurance += v;
+      else if (name.includes('고용보험')) out.unemployment += v;
+      else if (name.includes('지방소득세') || name.includes('주민세')) out.localTax += v;
+      else if (name.includes('소득세') || name.includes('갑근세')) out.incomeTax += v;
+      else if (name.includes('기타공제')) out.etcDeduct += v;
+    });
+    return out;
+  };
+
+  // 급여 지급항목 코드 (연차·퇴직·근로자의날 적립금 제외) / 이름 (코드표 → 계약서 label 순)
+  const generalPayCodes = (currentConfig.activePayLabels || [])
+      .filter(code => !RESERVE_KEYWORDS.some(kw => getCodeName(code).includes(kw)));
+  const payCodeName = (code) => {
+    const nm = getCodeName(code);
+    return (nm && nm !== code) ? nm : (findContractItem(null, code)?.label || code);
+  };
+  const INS_KEY_OF = (name) => name.includes('국민연금') ? 'nationalPension'
+      : name.includes('장기요양') ? 'longTermCare'
+          : name.includes('건강보험') ? 'healthInsurance'
+              : name.includes('고용보험') ? 'employment'
+                  : name.includes('산재') ? 'sanjae' : null;
+
+  // ── 정산설정(급여 세부 내역서 컬럼 구성)을 출력에도 그대로 반영 ──
+  //   계약 viewConfig 의 activePayLabels / activeDeductionLabels → dynamicColumns
+  const payNames = dynamicColumns.value.filter(c => c.type === 'pay').map(c => c.name);
+  const dedNames = dynamicColumns.value.filter(c => c.type === 'deduct').map(c => c.name);
+  const hasCol = (names, kw) => names.some(nm => nm.includes(kw));
+  const columns = {
+    annualLeave:     hasCol(payNames, '연차'),
+    severance:       hasCol(payNames, '퇴직'),
+    nationalPension: hasCol(dedNames, '국민연금'),
+    healthInsurance: hasCol(dedNames, '건강보험'),
+    longTermCare:    hasCol(dedNames, '장기요양'),
+    employment:      hasCol(dedNames, '고용보험'),   // 실업급여 + 고용안정 한 묶음
+    sanjae:          hasCol(dedNames, '산재'),
+  };
+  // 청구표/요약표의 연차·퇴직 적립 행 : 정산 요약에서 삭제했거나,
+  // 정산설정에 해당 컬럼이 없고 금액도 0이면 출력하지 않음
+  const summaryVisible = {
+    annualLeave: !!findSummary('annualLeave') && (columns.annualLeave || signedVal('annualLeave') !== 0),
+    severance:   !!findSummary('severance')   && (columns.severance   || signedVal('severance')   !== 0),
+  };
+
+  return {
+    yyyy, mm,
+    lastDay: new Date(yyyy, mm, 0).getDate(),
+    columns,
+    summaryVisible,
+    // 계약 정산항목 컬럼 (경비 → 일반관리비·이윤 순)
+    //   세로 : 보험표 아래 별도 표 / 가로 : 상세 시트에 제경비(합산)·일반관리비·기업이윤 컬럼
+    extraCols: extraColumns.value.map(c => ({ code: c.code, name: c.name, group: c.group })),
+    // 가로 상세 시트용 : 급여 지급항목(기본급·직책수당 …) 컬럼
+    payCols: generalPayCodes.map(code => ({ code, name: payCodeName(code) })),
+    // 가로 상세 시트 '산출내역서' : 계약서 직책별 단가 (인원수 포함)
+    contractStaff: contractStaffList.value.map(st => {
+      const pays = Object.fromEntries(generalPayCodes.map(code => [code, findContractValue(null, code, st.code)]));
+      const ins = {};
+      dynamicColumns.value.filter(c => c.type === 'deduct').forEach(c => {
+        const key = INS_KEY_OF(c.name);
+        if (key) ins[key] = findContractValue(null, c.code, st.code);
+      });
+      return {
+        name: st.name, count: Number(st.count) || 1,
+        values: {
+          pays,
+          grossPay: Object.values(pays).reduce((a, b) => a + (Number(b) || 0), 0),
+          annualLeave: findContractValue('연차', '04003001', st.code),
+          severance:   findContractValue('퇴직', '04003003', st.code),
+          ...ins,
+          extras: Object.fromEntries(extraColumns.value.map(c => [c.code, findContractValue(null, c.code, st.code)])),
+        },
+      };
+    }),
+    siteName: formData.value.siteName || '',
+    typeName,
+    docNo: formData.value.docNo || '',
+    billingDtText: fmtDt(formData.value.billingDt),
+    title: formData.value.billingData.summary || '',
+    headerLines,
+    bankInfo: formData.value.billingData.bankInfo || '',
+    // 과세 사업장 : 135㎡ 이하/초과 면적별 산출내역 출력 (빌더는 초과면적·부가세가 있어도 과세로 판단)
+    isVat: formData.value.is_vat === 'Y' || (!siteVatKnown.value && (Number(formData.value.vatAmount) > 0 || Number(vb.over135?.vat) > 0)),
+    vatFlag: siteVatKnown.value ? formData.value.is_vat : undefined, // 확인된 경우만 전달 (미확인이면 빌더가 면적·부가세로 추정)
+    memoText,
+
+    // 청구표 / 요약표 (화면의 정산 요약과 동일한 부호 적용값)
+    summary: {
+      monthlyFee:    contractTotalCost.value || 0,
+      annualLeave:   signedVal('annualLeave'),
+      severance:     signedVal('severance'),
+      insuranceDiff: signedVal('insuranceDiff'),
+      customTotal,
+      grandTotal:    findSummary('grandTotal')?.value || 0,
+    },
+    customItems,
+    notes: {
+      monthlyFee:    findItemNote('monthlyFee'),
+      annualLeave:   findItemNote('annualLeave'),
+      severance:     findItemNote('severance'),
+      insuranceDiff: findItemNote('insuranceDiff'),
+    },
+
+    // 면적별 산출내역 (화면에서 계산/수동수정된 값 그대로)
+    area: {
+      underLabel:  vb.under135?.label,
+      overLabel:   vb.over135?.label,
+      underArea:   vb.under135?.area,
+      overArea:    vb.over135?.area,
+      unitPrice:   vb.under135?.unitPrice || vb.over135?.unitPrice,
+      underSupply: vb.under135?.supply,
+      overSupply:  vb.over135?.supply,
+      overVat:     vb.over135?.vat,
+    },
+
+    rates: { ...insuranceRates.value },
+
+    // 정산내역서 (groupNo 가 같으면 NO 셀 병합)
+    payroll: formData.value.payrollData.map(row => ({
+      groupNo:         row.groupNo,
+      empName:         row.empName || '',
+      position:        row.position || '',
+      personalNo:      row.personalNo || '',
+      inDate:          row.inDate || '',
+      outDate:         row.outDate || '',
+      annualLeave:     Number(row.reserves?.annualLeave) || 0,
+      severance:       Number(row.reserves?.severance) || 0,
+      nationalPension: findDeductAmount(row, '국민연금'),
+      healthInsurance: findDeductAmount(row, '건강보험'),
+      longTermCare:    findDeductAmount(row, '장기요양'),
+      unemployment:    findDeductAmount(row, '고용보험'),
+      empStability:    Number(row.reserves?.empInsEmployer) || 0,
+      sanjae:          Number(row.reserves?.sanjae) || 0,
+      extras:          { ...(row.extraItems || {}) }, // 계약 정산항목 금액
+      grossPay:        Number(row.grossPay) || 0,
+      pays: Object.fromEntries(Object.entries(row.payItems || {}).filter(([cd]) => generalPayCodes.includes(cd))),
+    })),
+
+    // 견적서 기준 4대보험 (2번 양식은 항목별, 1번 양식은 합계만 사용)
+    estimate: {
+      nationalPension: sumByKeyword(contractIndirectLabor.value, '국민연금'),
+      healthInsurance: sumByKeyword(contractIndirectLabor.value, '건강보험'),
+      longTermCare:    sumByKeyword(contractIndirectLabor.value, '장기요양'),
+      employment:      sumByKeyword(contractIndirectLabor.value, '고용보험'),
+      sanjae:          sumByKeyword(contractIndirectLabor.value, '산재'),
+      total:           estimatedInsuranceTotal.value || 0,
+    },
+
+    // 1번 양식 급여대장 시트 (화면의 '급여 대장' 탭과 동일 데이터)
+    ledger: {
+      payCols: payrollLedgerColumns.value.payCols.map(c => ({ code: c.code, name: c.name })),
+      rows: formData.value.payrollData.map(row => ({
+        groupNo:    row.groupNo,   // 묶음(join) → 급여대장 NO 셀 병합
+        empName:    row.empName || '',
+        personalNo: row.personalNo || '',
+        inDate:     row.inDate || '',
+        outDate:    row.outDate || '',
+        workDays:   Number(row.workDays ?? row.workersDay) || null, // 급여대장 탭 '근무일수' 입력값
+        pays: Object.fromEntries(
+            Object.entries(row.payItems || {}).filter(([cd]) => !LEDGER_EXCLUDE_PAY.includes(cd))
+        ),
+        ...ledgerDeduct(row),
+      })),
+    },
+  };
+};
+
+// 엑셀 저장 / PDF 저장 공통
+const buildSettleWorkbookBuffer = async () => {
+  if (!settleImages.value) settleImages.value = await loadSettleImages();
+  const form = Number(currentConfig.exportForm) || SETTLE_FORM.OFFICIAL;
+  console.info('[정산서 출력] 양식:', form, currentFormOption.value.desc);
+  {
+    const vb = formData.value.billingData.vatBreakdown || {};
+    const site = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+    console.info('[정산서 출력] 과세판단:', formData.value.is_vat === 'Y' ? '과세 → 면적표 출력' : '면세 → 면적표 생략',
+        { 현장목록_is_vat: site?.is_vat, 확인여부: siteVatKnown.value, 적용값: formData.value.is_vat,
+          '135이하_면적': vb.under135?.area, '135초과_면적': vb.over135?.area, 부가세: vb.over135?.vat });
+  }
+  return buildSettleExcelBuffer(form, collectSettleExcelData(), settleImages.value, {
+    includeLedger: currentConfig.exportConfig.includePayroll !== false, // 계약 exportConfig 따라 급여대장 시트 포함
+    // 상세 출력 방향은 자동 : 경비·일반관리비·기업이윤이 있으면 가로 상세 시트, 없으면 세로
+  });
+};
+
+const getExportFileName = (ext) => {
+  const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
+  return `정산서_${formData.value.siteName || '현장'}_${targetDateStr}_${currentFormOption.value.label.replace(/\s/g, '')}.${ext}`;
+};
+
 const exportToExcel = async () => {
   try {
     const buffer = await buildSettleWorkbookBuffer();
-    const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
-    const fileName = `정산서_${formData.value.siteName || '현장'}_${targetDateStr}.xlsx`;
-    saveAs(new Blob([buffer]), fileName);
+    saveAs(new Blob([buffer]), getExportFileName('xlsx'));
   } catch (error) {
     console.error('엑셀 저장 중 오류 발생:', error);
     alert(error.message || '엑셀 파일을 생성하는 중 오류가 발생했습니다.');
@@ -1786,9 +2042,7 @@ const exportToPdf = async () => {
       timeout: 30000,
     });
 
-    const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
-    const fileName = `정산서_${formData.value.siteName || '현장'}_${targetDateStr}.pdf`;
-    saveAs(new Blob([res.data], { type: 'application/pdf' }), fileName);
+    saveAs(new Blob([res.data], { type: 'application/pdf' }), getExportFileName('pdf'));
   } catch (error) {
     console.error('PDF 저장 중 오류 발생:', error);
     alert(error.message || 'PDF 파일을 생성하는 중 오류가 발생했습니다.');
@@ -1796,342 +2050,16 @@ const exportToPdf = async () => {
     isExportingPdf.value = false;
   }
 };
-// ── 병합을 보존하면서 행을 복제하는 안전한 헬퍼 ──
-function duplicateRowPreservingMerges(sheet, sourceRowNum, count) {
-  if (count <= 0) return;
 
-  const parseCellRef = (ref) => {
-    const m = ref.match(/^([A-Z]+)(\d+)$/);
-    return { col: m[1], row: parseInt(m[2], 10) };
-  };
-  const parseRange = (rangeStr) => {
-    const [s, e] = rangeStr.split(':');
-    const start = parseCellRef(s);
-    const end = parseCellRef(e);
-    return { startCol: start.col, startRow: start.row, endCol: end.col, endRow: end.row };
-  };
-
-  // 1) 삽입 지점보다 아래 있는 병합의 값/서식을 미리 저장하고 해제
-  const savedMerges = [];
-  const allMerges = [...sheet.model.merges];
-  for (const rangeStr of allMerges) {
-    const { startRow, endRow, startCol, endCol } = parseRange(rangeStr);
-    if (startRow > sourceRowNum) {
-      const masterCell = sheet.getCell(`${startCol}${startRow}`);
-      savedMerges.push({
-        startCol, endCol, startRow, endRow,
-        value: masterCell.value,
-        style: JSON.parse(JSON.stringify(masterCell.style || {})),
-      });
-      sheet.unMergeCells(rangeStr);
-    }
-  }
-
-  // 2) 행 복제 (병합이 없는 상태라 값 복제 부작용이 안 생김)
-  sheet.duplicateRow(sourceRowNum, count, true);
-
-  // 3) 저장해둔 병합을 count만큼 아래로 옮겨 재적용
-  savedMerges
-      .sort((a, b) => b.startRow - a.startRow)
-      .forEach(({ startCol, endCol, startRow, endRow, value, style }) => {
-        const newStartRow = startRow + count;
-        const newEndRow = endRow + count;
-        const colStart = sheet.getColumn(startCol).number;
-        const colEnd = sheet.getColumn(endCol).number;
-
-        for (let r = newStartRow; r <= newEndRow; r++) {
-          for (let c = colStart; c <= colEnd; c++) {
-            sheet.getRow(r).getCell(c).value = null;
-          }
-        }
-
-        sheet.mergeCells(`${startCol}${newStartRow}:${endCol}${newEndRow}`);
-        const masterCell = sheet.getCell(`${startCol}${newStartRow}`);
-        masterCell.value = value;
-        if (style) masterCell.style = style;
-      });
-}
 // ──────────────────────────────────────────────
-// 정산서 워크북 생성 (엑셀 저장 / PDF 저장 공통 사용)
+// 9. 데이터 저장
 // ──────────────────────────────────────────────
-const buildSettleWorkbookBuffer = async () => {
-  const template = await getSettleTemplate('SERVICE');
-  if (!template || !template.filePath) {
-    throw new Error('등록된 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
-  }
-/*
-  const fileRes = await fetch(resolveFileUrl(template.filePath));
-  if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
-  const arrayBuffer = await fileRes.arrayBuffer();
-
- */
-  const fileRes = await axios.get(resolveFileUrl(template.filePath), {
-    responseType: 'arraybuffer'
-  });
-  const arrayBuffer = fileRes.data;
-
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(arrayBuffer);
-  const sheet = workbook.worksheets[0];
-
-  sheet.pageSetup = {
-    ...sheet.pageSetup,
-    horizontalCentered: true,
-    verticalCentered: false,
-  };
-
-  // ── 1. 기본 값 계산 ─────────────────────────────
-  const targetDateStr = formData.value.target_month || formData.value.billingDt || '';
-  const [yyyy, mmRaw] = targetDateStr.split('-');
-  const mm = mmRaw ? String(Number(mmRaw)) : '';
-
-  const findSummary = (key) => totalSummary.value.find(s => s.key === key);
-  const signedVal = (key) => {
-    const s = findSummary(key);
-    return s ? s.value * s.sign : 0;
-  };
-
-  const customTotal = (formData.value.billingData.customSummaryItems || [])
-      .reduce((sum, item) => sum + (Number(item.amount) || 0) * (item.sign || 1), 0);
-
-  const vb = formData.value.billingData.vatBreakdown;
-
-  // ── 2-1. 청구내역(billingData.items) 항목별 비고 매핑 ──
-  const findItemNote = (syncKey) => {
-    const item = (formData.value.billingData.items || []).find(i => i._syncKey === syncKey);
-    return item?.note || '';
-  };
-
-  // ── 2. 급여 반복행 데이터 (코드가 아니라 항목명으로 매칭 → 회사마다 코드 달라도 안전) ──
-  const findDeductAmount = (row, keyword) => {
-    const entry = deductionItems.value.find(i => i.itemNm.includes(keyword));
-    return entry ? (Number(row.deductionItems?.[entry.itemCd]) || 0) : 0;
-  };
-
-  const payrollRows = formData.value.payrollData.map((row, idx) => ({
-    no: idx + 1,
-    empName: row.empName || '',
-    position: row.position || '',
-    personalNo: row.personalNo || '',
-    inDate: row.inDate || '',
-    outDate: row.outDate || '',
-    nationalPension: findDeductAmount(row, '국민연금'),
-    healthInsurance: findDeductAmount(row, '건강보험'),
-    longTermCare: findDeductAmount(row, '장기요양'),
-    unemployment: findDeductAmount(row, '고용보험'),
-    empStability: Number(row.reserves?.empInsEmployer) || 0,
-    sanjae: Number(row.reserves?.sanjae) || 0,
-    total: Number(getInsuranceTotal(row)) || 0,
-  }));
-
-  const payrollTotal = payrollRows.reduce((acc, r) => {
-    ['nationalPension','healthInsurance','longTermCare','unemployment','empStability','sanjae','total']
-        .forEach(k => { acc[k] = (acc[k] || 0) + r[k]; });
-    return acc;
-  }, {});
-
-  // ── 2-2. 계약서(산출내역서) 기준 견적 4대보험 (항목별) ──
-  const estNationalPension = sumByKeyword(contractIndirectLabor.value, '국민연금');
-  const estHealthInsurance = sumByKeyword(contractIndirectLabor.value, '건강보험');
-  const estLongTermCare    = sumByKeyword(contractIndirectLabor.value, '장기요양');
-  const estUnemployment    = sumByKeyword(contractIndirectLabor.value, '고용보험'); // 실업급여+고용안정 합산 1개 항목
-  const estSanjae          = sumByKeyword(contractIndirectLabor.value, '산재');
-
-  // ── 3. 단일 값 컨텍스트 ─────────────────────────
-  const context = {
-    yyyy, mm,
-    siteName: formData.value.siteName || '',
-    monthlyFee: contractTotalCost.value || 0,
-    monthlyFeeNote: findItemNote('monthlyFee'),
-    annualLeave: signedVal('annualLeave'),
-    annualLeaveNote: findItemNote('annualLeave'),
-    severance: signedVal('severance'),
-    severanceNote: findItemNote('severance'),
-    insuranceDiff: Number(formData.value.billingData.insuranceDiff) || 0,
-    insuranceDiffNote: findItemNote('insuranceDiff'),
-    customTotal,
-    grandTotal: findSummary('grandTotal')?.value || 0,
-    under135Area: vb.under135.area || 0,
-    unitPrice: vb.under135.unitPrice || vb.over135.unitPrice || 0,
-    under135Supply: vb.under135.supply || 0,
-    over135Area: vb.over135.area || 0,
-    over135Supply: vb.over135.supply || 0,
-    over135Vat: vb.over135.vat || 0,
-    over135Total: (Number(vb.over135.supply) || 0) + (Number(vb.over135.vat) || 0),
-    billingDt: formData.value.billingDt || '',
-    bankInfo: formData.value.billingData.bankInfo || '',
-    payrollTotal,
-    contract: {
-      nationalPension: estNationalPension,
-      healthInsurance: estHealthInsurance,
-      longTermCare:    estLongTermCare,
-      employment:      estUnemployment,   // 실업급여+고용안정 합산 1개 항목
-      sanjae:          estSanjae,
-      total:           estimatedInsuranceTotal.value || 0,
-    },
-    diff: {
-      nationalPension: (payrollTotal.nationalPension || 0) - estNationalPension,
-      healthInsurance: (payrollTotal.healthInsurance || 0) - estHealthInsurance,
-      longTermCare:    (payrollTotal.longTermCare || 0) - estLongTermCare,
-      employment:      ((payrollTotal.unemployment || 0) + (payrollTotal.empStability || 0)) - estUnemployment,
-      sanjae:          (payrollTotal.sanjae || 0) - estSanjae,
-      total:           (payrollTotal.total || 0) - (estimatedInsuranceTotal.value || 0),
-    },
-  };
-
-  // ── 4. 급여 반복행 처리 ─────────────────────────
-  let templateRowNum = null;
-  const colKeyMap = {};
-
-  outer:
-      for (let r = 1; r <= sheet.rowCount; r++) {
-        const row = sheet.getRow(r);
-        for (let c = 1; c <= sheet.columnCount; c++) {
-          const v = row.getCell(c).value;
-          if (typeof v === 'string' && /^\{\{payroll\.\w+\}\}$/.test(v.trim())) {
-            templateRowNum = r;
-            row.eachCell({ includeEmpty: false }, (cell, colNum) => {
-              const m = /^\{\{payroll\.(\w+)\}\}$/.exec(String(cell.value).trim());
-              if (m) colKeyMap[colNum] = m[1];
-            });
-            break outer;
-          }
-        }
-      }
-
-  if (templateRowNum) {
-    const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
-
-    // 템플릿 행 아래로, 문자 라벨(=합계 행)이 나오기 전까지가 '빈 자리' 행
-    let staticRows = 1;
-    let r = templateRowNum + 1;
-    while (r <= sheet.rowCount) {
-      const v = sheet.getRow(r).getCell(checkCol).value;
-      if (typeof v === 'string' && v.trim() !== '') break; // '계' 등 라벨 행
-      staticRows++;
-      r++;
-    }
-
-    // 직원이 빈 자리보다 많으면 합계 행 앞에 행을 추가로 복제
-    const need = payrollRows.length - staticRows;
-    duplicateRowPreservingMerges(sheet, templateRowNum + staticRows - 1, need);
-
-    // 데이터 채우기
-    // 0일 때 "해당없음"으로 표시할 컬럼
-    const NA_DISPLAY_KEYS = ['nationalPension', 'healthInsurance', 'longTermCare', 'unemployment'];
-
-    // 데이터 채우기
-    payrollRows.forEach((p, i) => {
-      const targetRow = sheet.getRow(templateRowNum + i);
-      Object.entries(colKeyMap).forEach(([colNum, key]) => {
-        const cell = targetRow.getCell(Number(colNum));
-        const rawVal = p[key];
-
-        if (NA_DISPLAY_KEYS.includes(key) && (Number(rawVal) || 0) === 0) {
-          cell.value = '해당없음';
-          cell.numFmt = '@'; // 숫자 포맷 잔존 방지 (텍스트로 전환)
-        } else {
-          cell.value = rawVal ?? '';
-          if (typeof rawVal === 'number') cell.numFmt = '#,##0';
-        }
-      });
-    });
-
-    // 남는 빈 행은 비우기
-    for (let i = payrollRows.length; i < staticRows; i++) {
-      const targetRow = sheet.getRow(templateRowNum + i);
-      Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
-    }
-  }
-
-  // ── 4-1. 면세 사업장이면 면적별 산출내역 표를 값/테두리만 제거해서 숨김 ──
-  if (formData.value.is_vat === 'N') {
-    let areaHeaderRow = null;
-    for (let r = 1; r <= sheet.rowCount; r++) {
-      const cellVal = sheet.getRow(r).getCell(2).value; // B열 기준
-      if (typeof cellVal === 'string' && cellVal.includes('면적') && cellVal.includes('구분')) {
-        areaHeaderRow = r;
-        break;
-      }
-    }
-    if (areaHeaderRow) {
-      // 헤더 + 135㎡ 이하 + 135㎡ 초과 + 스페이서 행까지 총 4행
-      const blockRows = 4;
-      const noBorder = { top: null, left: null, bottom: null, right: null };
-
-      for (let r = areaHeaderRow; r < areaHeaderRow + blockRows; r++) {
-        const row = sheet.getRow(r);
-        for (let c = 1; c <= sheet.columnCount; c++) {
-          const cell = row.getCell(c);
-          cell.value = null;
-          cell.border = noBorder;
-          cell.fill = { type: 'pattern', pattern: 'none' };
-        }
-      }
-    }
-  }
-
-  // ── 5. 나머지 {{...}} 플레이스홀더 전체 치환 ─────
-  const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
-  const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
-
-  sheet.eachRow({ includeEmpty: false }, (row) => {
-    row.eachCell({ includeEmpty: false }, (cell) => {
-      if (cell.isMerged && cell.master !== cell) return;
-      if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
-      const raw = cell.value;
-      const matches = [...raw.matchAll(PLACEHOLDER_RE)];
-      if (matches.length === 0) return;
-
-      // 셀 전체가 플레이스홀더 하나뿐이면 숫자 타입 그대로 대입(합계 서식 유지)
-      if (matches.length === 1 && matches[0][0] === raw.trim()) {
-        const key = matches[0][1];
-        if (key.startsWith('payroll.')) return; // 이미 처리됨
-        let v = resolvePath(context, key);
-        if (v === undefined) v = 0;
-        cell.value = v;
-        // if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
-        return;
-      }
-
-      // 텍스트 안에 여러 개 섞여 있으면 문자열 치환
-      cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
-        const v = resolvePath(context, key);
-        return v === undefined ? '' : String(v);
-      });
-    });
-  });
-// ── 5-1. 렌더링 엔진(LibreOffice)이 좁은 열에서 글자를 잘라먹는 문제 방지 ──
-  // wrapText를 끄고 shrinkToFit을 켜서, 변환기가 열 너비를 어떻게 계산하든
-  // 텍스트가 잘리는 대신 폰트 크기가 자동으로 줄어들며 한 줄에 표시되도록 강제합니다.
-  sheet.eachRow({ includeEmpty: false }, (row) => {
-    row.eachCell({ includeEmpty: false }, (cell) => {
-      cell.alignment = {
-        ...cell.alignment,
-        wrapText: false,
-        shrinkToFit: true,
-      };
-    });
-  });
-
-  // 시트 확대/축소 배율도 100%로 고정 (뷰어별 확대 상태 차이로 인한 착시 방지)
-  if (sheet.views && sheet.views.length > 0) {
-    sheet.views[0].zoomScale = 100;
-  } else {
-    sheet.views = [{ zoomScale: 100 }];
-  }
-
-  // ── 6. buffer 반환 (다운로드는 호출부에서 처리) ──
-  workbook.calcProperties.fullCalcOnLoad = true;
-  return await workbook.xlsx.writeBuffer();
-};
-
 const handleSave = async () => {
   try {
     const sIdx = formData.value.sIdx;
     if (!sIdx) { alert('현장을 선택해주세요.'); return; }
 
-    const [year, month] = (formData.value.target_month || formData.value.billingDt).split('-');
+    const [year, month] = (formData.value.target_month || formData.value.billingDt || '').split('-');
     if (!year || !month) { alert('날짜를 선택해주세요.'); return; }
 
     const payload = {
@@ -2146,6 +2074,7 @@ const handleSave = async () => {
       grandTotal: formData.value.grandTotal,
       billingData: formData.value.billingData,
       payrollData: formData.value.payrollData,
+      // exportForm(출력 양식)도 currentConfig 안에 함께 저장됨
       viewConfig: JSON.parse(JSON.stringify({ ...currentConfig, meltOptions })),
       cIdx: authStore.user?.cIdx || 0,
     };
@@ -2199,6 +2128,20 @@ onMounted(async () => {
           </button>
         </div>
         <div class="header-actions">
+          <!-- 출력 양식 선택 : 탭 표시 여부와 관계없이 항상 노출 -->
+          <div class="form-switch" role="radiogroup" aria-label="정산서 출력 양식">
+            <span class="form-switch-label">출력 양식</span>
+            <button
+                v-for="opt in SETTLE_FORM_OPTIONS"
+                :key="'hdr-form-'+opt.value"
+                type="button"
+                role="radio"
+                :aria-checked="Number(currentConfig.exportForm) === opt.value"
+                :class="['form-switch-btn', { active: Number(currentConfig.exportForm) === opt.value }]"
+                :title="opt.desc"
+                @click="selectExportForm(opt.value)"
+            >{{ opt.label }}</button>
+          </div>
           <button class="btn-refresh" @click="resetAll">
             <i class="mdi mdi-refresh"></i>
             <span class="btn-text">초기화</span>
@@ -2229,11 +2172,30 @@ onMounted(async () => {
 
       <div class="modal-body">
 
+        <!-- ═══════════════ 청구 공문 ═══════════════ -->
         <div v-show="activeTab === 'statement'" class="tab-content">
           <div class="document-paper">
             <div class="doc-header text-center"><h1>청 구 공 문</h1></div>
 
             <div class="form-grid">
+              <!-- 정산서 출력 양식 선택 -->
+              <div class="form-group form-type-group">
+                <label>정산서 양식 <span class="text-red">*</span></label>
+                <div class="form-type-options">
+                  <button
+                      v-for="opt in SETTLE_FORM_OPTIONS"
+                      :key="opt.value"
+                      type="button"
+                      :class="['form-type-btn', { active: Number(currentConfig.exportForm) === opt.value }]"
+                      @click="selectExportForm(opt.value)"
+                  >
+                    <i :class="['mdi', Number(currentConfig.exportForm) === opt.value ? 'mdi-radiobox-marked' : 'mdi-radiobox-blank']"></i>
+                    <span class="ft-label">{{ opt.label }}</span>
+                    <span class="ft-desc">{{ opt.desc }}</span>
+                  </button>
+                </div>
+              </div>
+
               <div class="form-group">
                 <label>현장 선택 <span class="text-red">*</span></label>
                 <SiteSelect
@@ -2474,6 +2436,7 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!-- ═══════════════ 급여 세부 내역서 ═══════════════ -->
         <div v-show="activeTab === 'details'" class="tab-content">
           <div class="table-actions">
             <h4><i class="mdi mdi-table-account"></i> 직원별 정산 내역</h4>
@@ -2513,7 +2476,10 @@ onMounted(async () => {
           </div>
 
           <div class="excel-table-wrapper">
-            <table class="excel-table">
+            <table class="excel-table details-table" :style="{ minWidth: detailsTableMinWidth + 'px' }">
+              <colgroup>
+                <col v-for="(w, ci) in detailsColWidths" :key="'dcol-'+ci" :style="{ width: w + 'px' }">
+              </colgroup>
               <thead>
               <tr>
                 <th rowspan="2" style="width:40px; min-width:40px;">NO</th>
@@ -2523,7 +2489,7 @@ onMounted(async () => {
                 <th rowspan="2" style="width:80px; min-width:80px;">입사일</th>
                 <th rowspan="2" style="width:80px; min-width:80px;">퇴사일</th>
 
-                <template v-for="col in dynamicColumns" :key="'th1-'+col.code">
+                <template v-for="col in mainColumns" :key="'th1-'+col.code">
                   <th v-if="col.isEmployment" colspan="2" class="bg-red-light" style="min-width:200px;">
                     고용보험({{ insuranceRates.employmentInsurance }}%)
                   </th>
@@ -2532,17 +2498,29 @@ onMounted(async () => {
                   </th>
                 </template>
 
-                <th rowspan="2" class="bg-red-light" style="min-width:120px;">총계</th>
-                <th rowspan="2" style="width:50px;min-width:20px;">관리</th>
+                <th rowspan="2" class="bg-red-light" title="4대보험(산재 포함) 합계">총계</th>
+
+                <!-- 계약 정산항목 (피복비·일반관리비·복리후생비·기업이윤 등) : 계약서 금액 -->
+                <template v-if="extraColumns.length">
+                  <th v-for="g in extraGroups" :key="'th1g-'+g.key" :colspan="g.count" :class="g.key === 'manage' ? 'bg-purple-light' : 'bg-green-light'" title="계약 산출내역서 금액">
+                    {{ g.label }}
+                  </th>
+                  <th rowspan="2" class="bg-green-light">정산항목 계</th>
+                </template>
+
+                <th rowspan="2">관리</th>
               </tr>
 
               <tr>
-                <template v-for="col in dynamicColumns" :key="'th2-'+col.code">
+                <template v-for="col in mainColumns" :key="'th2-'+col.code">
                   <template v-if="col.isEmployment">
                     <th class="bg-red-light" style="min-width:100px; font-size:11px;">실업급여<br>{{ insuranceRates.employmentInsurance }}%</th>
                     <th class="bg-red-light" style="min-width:100px; font-size:11px;">고용안정 등<br>0.45%</th>
                   </template>
                 </template>
+                <th v-for="col in extraColumns" :key="'th2x-'+col.code" :class="col.group === 'manage' ? 'bg-purple-light' : 'bg-green-light'" style="font-size:12px;">
+                  {{ col.name }}
+                </th>
               </tr>
               </thead>
 
@@ -2604,7 +2582,7 @@ onMounted(async () => {
                   </td>
                   <td><input type="text" v-model="row.outDate" class="cell-input text-center" /></td>
 
-                  <template v-for="col in dynamicColumns" :key="'td-'+col.code">
+                  <template v-for="col in mainColumns" :key="'td-'+col.code">
                     <td v-if="col.type === 'pay'">
                       <input v-if="col.name.includes('연차')" type="text" :value="formatCurrency(row.reserves.annualLeave)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'annualLeave', row, 'salary')" @blur="handleFormulaBlur($event, row.reserves, 'annualLeave', row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
                       <input v-else-if="col.name.includes('퇴직')" type="text" :value="formatCurrency(row.reserves.severance)" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.reserves, 'severance', row, 'salary')" @blur="handleFormulaBlur($event, row.reserves, 'severance', row, 'salary')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
@@ -2631,6 +2609,13 @@ onMounted(async () => {
                   </template>
 
                   <td class="text-right font-bold bg-gray-50">{{ formatCurrency(getInsuranceTotal(row)) }}</td>
+
+                  <template v-if="extraColumns.length">
+                    <td v-for="col in extraColumns" :key="'tdx-'+col.code">
+                      <input type="text" :value="formatCurrency(row.extraItems?.[col.code])" @focus="$event.target.select()" @input="handleCurrencyInput($event, row.extraItems, col.code, row, 'none')" @blur="handleFormulaBlur($event, row.extraItems, col.code, row, 'none')" @keyup.enter="$event.target.blur()" class="cell-input text-right" />
+                    </td>
+                    <td class="text-right font-bold bg-green-soft">{{ formatCurrency(getExtraTotal(row)) }}</td>
+                  </template>
                   <td class="text-center" style="white-space: nowrap;">
                     <button
                         v-if="rowIndex === 0 && getRowFlatIndex(row) > 0"
@@ -2658,7 +2643,7 @@ onMounted(async () => {
               </template>
 
               <tr v-if="formData.payrollData.length === 0">
-                <td :colspan="7 + dynamicColumns.length" class="empty-row">등록된 데이터가 없습니다.</td>
+                <td :colspan="detailsColWidths.length" class="empty-row">등록된 데이터가 없습니다.</td>
               </tr>
               </tbody>
 
@@ -2666,7 +2651,7 @@ onMounted(async () => {
               <tr class="bg-gray-50 font-bold" style="font-size:14px;">
                 <td colspan="6" class="text-center">총 계</td>
 
-                <template v-for="col in dynamicColumns" :key="'foot-'+col.code">
+                <template v-for="col in mainColumns" :key="'foot-'+col.code">
                   <template v-if="col.isEmployment">
                     <td class="text-right">{{ formatCurrency(getDynamicTotal(col)) }}</td>
                     <td class="text-right">{{ formatCurrency(payrollTotals.empInsEmployer) }}</td>
@@ -2679,6 +2664,11 @@ onMounted(async () => {
                 </template>
 
                 <td class="text-right text-red bg-red-light">{{ formatCurrency(payrollTotals.insuranceTotal) }}</td>
+
+                <template v-if="extraColumns.length">
+                  <td v-for="col in extraColumns" :key="'footx-'+col.code" class="text-right">{{ formatCurrency(getDynamicTotal(col)) }}</td>
+                  <td class="text-right bg-green-light">{{ formatCurrency(extraGrandTotal) }}</td>
+                </template>
                 <td></td>
               </tr>
               </tfoot>
@@ -2690,6 +2680,7 @@ onMounted(async () => {
                 <div class="memo-header">
                   <i class="mdi mdi-note-edit-outline"></i>
                   <span>정산 특이사항 및 메모</span>
+                  <span class="memo-hint">(입력한 내용 전체가 엑셀 정산내역서 하단에 표시됩니다)</span>
                 </div>
                 <ClientOnly>
                   <SunTextEditor v-model="formData.billingData.memo" />
@@ -2700,7 +2691,7 @@ onMounted(async () => {
             <div class="summary-area">
               <table class="excel-table" style="background: var(--bg-surface)">
                 <tbody>
-                <template v-for="(summary, sIdx) in totalSummary" :key="'summary-'+summary.key">
+                <template v-for="summary in totalSummary" :key="'summary-'+summary.key">
                   <tr v-if="summary.key === 'grandTotal'">
                     <td colspan="2" class="text-right" style="border: none; background: transparent; padding: 6px 0;">
                       <button @click="addCustomSummaryItem" class="btn-add-row" style="font-size: 12px; padding: 4px 10px; display: inline-flex; float: right;">
@@ -2784,6 +2775,7 @@ onMounted(async () => {
 
         </div>
 
+        <!-- ═══════════════ 급여 대장 ═══════════════ -->
         <div v-show="activeTab === 'payroll'" class="tab-content">
           <div class="table-actions">
             <h4><i class="mdi mdi-table-account"></i> 급여 대장</h4>
@@ -3012,14 +3004,43 @@ onMounted(async () => {
 .form-input, .form-select { width: 100%; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; color: var(--text-main); background: var(--bg-canvas); box-sizing: border-box; outline: none; transition: border-color .2s; }
 .form-input:focus, .form-select:focus { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary-soft); background: var(--bg-surface); }
 .bg-gray { background-color: var(--bg-hover) !important; color: var(--text-muted); cursor: not-allowed; border-color: transparent; }
-.doc-message { margin: 20px 0; line-height: 1.8; color: var(--text-main); font-size: 14px; }
+
+/* 헤더 출력 양식 스위치 */
+.form-switch {
+  display: flex; align-items: center; gap: 2px;
+  padding: 3px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-surface);
+}
+.form-switch-label { font-size: 12px; font-weight: 700; color: var(--text-sub); padding: 0 6px 0 4px; white-space: nowrap; }
+.form-switch-btn {
+  height: 34px; padding: 0 12px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-sub); font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: .15s; white-space: nowrap; font-family: inherit;
+}
+.form-switch-btn:hover { background: var(--bg-hover); color: var(--text-main); }
+.form-switch-btn.active { background: var(--primary); color: var(--text-inverse, #fff); }
+@media (max-width: 768px) { .form-switch-label { display: none; } .form-switch-btn { height: 30px; padding: 0 8px; font-size: 12px; } }
+
+/* 정산서 양식 선택 */
+.form-type-group { grid-column: 1 / -1; }
+.form-type-options { display: flex; gap: 10px; flex-wrap: wrap; }
+.form-type-btn {
+  flex: 1; min-width: 220px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--bg-canvas); color: var(--text-sub);
+  cursor: pointer; transition: .2s; text-align: left; font-family: inherit;
+}
+.form-type-btn:hover { border-color: var(--primary); }
+.form-type-btn.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+.form-type-btn i { font-size: 18px; flex-shrink: 0; }
+.ft-label { font-size: 14px; font-weight: 700; white-space: nowrap; }
+.ft-desc { font-size: 12px; color: var(--text-muted); }
+.form-type-btn.active .ft-desc { color: var(--primary); opacity: .8; }
+
 .vat-badge { font-size: 12px; margin-left: 6px; font-weight: normal; }
 .vat-free  { color: var(--danger); }
 .vat-taxed { color: var(--primary); }
-.deduction-toggles { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; padding: 12px 16px; background: var(--bg-surface); border-radius: 8px; border: 1px dashed var(--border-focus); flex-wrap: wrap; }
-.toggle-label { font-size: 13px; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 4px; }
-.toggle-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; color: var(--text-main); font-weight: 500; }
-.toggle-checkbox input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; }
 .table-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
 .table-actions h4 { margin: 0; font-size: 15px; color: var(--text-main); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .table-actions h4 i { color: var(--primary); font-size: 18px; }
@@ -3069,14 +3090,15 @@ onMounted(async () => {
   border-top: 1px solid var(--border-color);
 }
 .statement-table tfoot td { padding: 10px; }
-.bank-info { display: flex; align-items: center; gap: 10px; background: var(--bg-canvas); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; }
-.bank-info label { font-weight: 600; color: var(--text-main); white-space: nowrap; }
-.bank-input { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border-focus); border-radius: 6px; font-size: 14px; font-weight: bold; color: var(--text-main); background: var(--bg-surface); outline: none; transition: .2s; }
-.bank-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
 .bg-blue-light   { background-color: rgba(59, 130, 246, .1)  !important; color: #2563eb !important; }
 .bg-red-light    { background-color: rgba(239, 68, 68, .1)   !important; color: #dc2626 !important; }
 .bg-yellow-light { background-color: rgba(245, 158, 11, .1)  !important; color: #b45309 !important; }
 .bg-gray-50      { background-color: var(--bg-canvas); }
+.bg-green-light  { background-color: rgba(16, 185, 129, .1)  !important; color: #047857 !important; }
+.bg-green-soft   { background-color: rgba(16, 185, 129, .05); }
+.bg-purple-light { background-color: rgba(139, 92, 246, .1)  !important; color: #6d28d9 !important; }
+/* 급여 세부 내역서 : 열 너비는 colgroup 기준, 부족하면 가로 스크롤 (글자 잘림 방지) */
+.details-table thead th { white-space: normal; word-break: keep-all; }
 .cell-input { width: 100%; border: 1px solid transparent; background: transparent; padding: 4px; outline: none; transition: .2s; border-radius: 4px; box-sizing: border-box; font-size: 13px; color: var(--text-main); }
 .cell-input:focus, .cell-input:hover { border-color: var(--primary); background: var(--bg-surface); }
 .drag-handle { cursor: grab; user-select: none; }
@@ -3103,11 +3125,12 @@ input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-app
   .modal-tabs { padding: 0 8px; }
   .tab-btn { padding: 12px 12px; font-size: 13px; }
   .tab-text { display: none; }
-  .switcher-label { display: none; }
   .modal-body { padding: 12px; }
   .document-paper { padding: 16px 14px; }
   .doc-header h1 { font-size: 18px; letter-spacing: 4px; margin-bottom: 20px; }
   .form-grid { grid-template-columns: 1fr; gap: 12px; }
+  .ft-desc { display: none; }
+  .form-type-btn { min-width: 0; }
   .btn-text { display: none; }
   .action-btns { gap: 6px; }
   .btn-add-row, .btn-load-data { padding: 7px 10px; }
@@ -3115,7 +3138,6 @@ input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-app
   .excel-table thead th { padding: 6px; font-size: 11px; }
   .excel-table td { padding: 6px; }
   .cell-input { font-size: 12px; padding: 3px; }
-  .deduction-toggles { gap: 8px; padding: 10px; }
 }
 @media (max-width: 480px) { .header-title h2 { font-size: 14px; } .modal-body { padding: 8px; } .document-paper { padding: 12px 10px; } .doc-header h1 { font-size: 16px; letter-spacing: 3px; } .tab-btn { padding: 10px 10px; } }
 
@@ -3161,13 +3183,6 @@ input:checked + .slider:before { transform: translateX(14px); }
 .bg-red-badge { background-color: #ef4444; }
 .bg-blue-badge { background-color: #3b82f6; }
 
-.memo-container-cell {
-  background: var(--bg-surface);
-  padding: 16px 20px;
-  vertical-align: top;
-  border-bottom: none !important;
-  border-left: none !important;
-}
 .memo-wrapper {
   display: flex;
   flex-direction: column;
@@ -3201,33 +3216,17 @@ input:checked + .slider:before { transform: translateX(14px); }
   padding: 4px;
   border-radius: 6px;
 }
-.memo-textarea {
-  flex: 1;
-  width: 100%;
-  min-height: 120px;
-  resize: none;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-main);
-  outline: none;
-}
-.memo-textarea::placeholder {
+.memo-hint {
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-muted);
-  font-style: italic;
 }
 @media (max-width: 768px) {
-  .memo-container-cell {
-    padding: 12px;
-  }
   .memo-wrapper {
     min-height: 160px;
     min-width: 300px;
   }
-  .memo-textarea {
-    font-size: 12px;
-  }
+  .memo-hint { display: none; }
 }
 
 .bottom-flex-layout {

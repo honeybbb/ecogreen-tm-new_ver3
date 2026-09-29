@@ -1,12 +1,12 @@
 <script setup>
 /**
  * EstimateModal.vue — 퇴직금·연차 정산 요청서 모달
- * [최종 통합본] 원본 코드/디자인 100% 보존 + 날짜 형식(yy.mm.dd) + 산출근거 포맷 수정
+ * 엑셀/PDF 출력 : DB 템플릿({{치환}}) 방식 → 고정 양식 빌더(utils/settleExcelBuilder.js 의 buildEstimateExcelBuffer)
+ *   양식 원본 : 이지연차퇴직금양식.xlsx (1페이지 청구공문 + 2페이지 연차/퇴직금 청구내역)
  */
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
-import * as XLSX from 'xlsx';
-import ExcelJS from 'exceljs';
+import { buildEstimateExcelBuffer, loadSettleImages } from '~/utils/settleExcelBuilder.js';
 import { useAuthStore } from '~/stores/auth.js';
 
 const { siteOptions, typeOptions, fetchSiteOptions, fetchTypeOptions } = useApi();
@@ -22,7 +22,7 @@ const contractDailyHours = ref({});
 const contractMonthlyHours = ref({});
 
 // ─────────────────────────────────────────────────────────────
-// [추가] 날짜 및 텍스트 포맷 유틸리티 (이미지 스타일 준수)
+// 날짜 및 텍스트 포맷 유틸리티
 // ─────────────────────────────────────────────────────────────
 const toYYMMDD = (dateStr) => {
   if (!dateStr || dateStr === '재직중') return dateStr;
@@ -76,14 +76,14 @@ const calculateTenureInfo = (start, end) => {
   return { totalDays, text: text.trim() || '0일', start: toYYMMDD(start), end: toYYMMDD(end) };
 };
 
-// 퇴직금 산출 실행 (LEGAL: 법정산식, CONTRACT: 이미지의 적립금형)
+// 퇴직금 산출 실행 (LEGAL: 법정산식, CONTRACT: 적립금형)
 const onRetireCalc = (item) => {
   if (!item.joinDate || !item.endDate || !item.position) return;
   const tenure = calculateTenureInfo(item.joinDate, item.endDate);
   if (!tenure) return;
 
   const { basePay, severance } = getContractAmounts(item.position);
-  item.period = `${tenure.start}~${tenure.end}`; // 이미지 스타일: yy.mm.dd~yy.mm.dd
+  item.period = `${tenure.start}~${tenure.end}`; // yy.mm.dd~yy.mm.dd
 
   if (item.calcMode === 'LEGAL') {
     const rawAmount = basePay * (tenure.totalDays / 365);
@@ -92,7 +92,7 @@ const onRetireCalc = (item) => {
   } else {
     const rawAmount = severance * (tenure.totalDays / 30.41);
     item.amount = Math.floor(rawAmount / 10) * 10;
-    item.basis = `(${formatCurrency(severance)}*${tenure.text})`; // 이미지 스타일: (단가*개월 일)
+    item.basis = `(${formatCurrency(severance)}*${tenure.text})`; // (단가*개월 일)
   }
 };
 
@@ -108,9 +108,10 @@ const selectEmployee = (item, emp, type) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// 계약 데이터 (산출내역서) - [원본 유지]
+// 계약 데이터 (산출내역서)
 // ─────────────────────────────────────────────────────────────
 const contractStaffList    = ref([]);
+const siteDetail           = ref(null);  // 현장 상세 (과세 여부·관리면적)
 const contractDirectLabor  = ref([]);
 const contractIndirectLabor = ref([]);
 const isLoadingContract    = ref(false);
@@ -119,12 +120,14 @@ const fetchContractData = async () => {
   const sIdx = formData.value.sIdx;
   const type = formData.value.type;
   contractStaffList.value = []; contractDirectLabor.value = []; contractIndirectLabor.value = [];
-  if (!sIdx || !type) return;
+  if (!sIdx) return;
   isLoadingContract.value = true;
   try {
     const res = await axios.get(`/api/v1/site/data/${sIdx}`);
     const siteData = res.data.data?.[0];
-    if (!siteData?.contractList) return;
+    // 과세 여부·면적은 구분(직종) 선택과 무관하게 현장 상세에서 보관
+    siteDetail.value = siteData ? { ...siteData, _sIdx: sIdx } : null;
+    if (!type || !siteData?.contractList) return;
     const parsed = typeof siteData.contractList === 'string' ? JSON.parse(siteData.contractList) : siteData.contractList;
     const target = parsed.find(c => c.type === type);
 
@@ -138,7 +141,6 @@ const fetchContractData = async () => {
       contractDailyHours.value = cb.dailyWorkHours || {};
       contractMonthlyHours.value = cb.monthlyWorkHours || {};
 
-      // 기존 구조 호환 바인딩
       contractDirectLabor.value = Array.isArray(cb.directLabor) ? cb.directLabor : (Array.isArray(target.budget?.directLabor) ? target.budget.directLabor : []);
       contractIndirectLabor.value = Array.isArray(cb.indirectLabor) ? cb.indirectLabor : (Array.isArray(target.budget?.indirectLabor) ? target.budget.indirectLabor : []);
     }
@@ -158,9 +160,17 @@ const getContractAmounts = (staffName) => {
   };
   const code = staffObj.code;
   const all = [...contractDirectLabor.value, ...contractIndirectLabor.value];
-  const findVal = (key) => {
-    const item = all.find(d => d.label === key || String(d.label).includes(key));
-    return item?.values?.[code] ? Number(item.values[code]) : 0;
+
+  // 계약서 항목 찾기
+  //   계약 데이터는 { code: '04001001001', label: '기본급' } 형태 (구버전은 label 에 코드)
+  //   → code 일치/접두 일치 → label 코드 일치 → label 이름 포함 순으로 찾음
+  const findVal = (codes, nameKw) => {
+    const hit = (d) => {
+      const c = String(d.code ?? ''), l = String(d.label ?? '');
+      return codes.some(k => c === k || c.startsWith(k) || l === k || l.startsWith(k));
+    };
+    const item = all.find(hit) || (nameKw ? all.find(d => String(d.label ?? '').includes(nameKw)) : null);
+    return item?.values?.[code] ? Number(item.values[code]) || 0 : 0;
   };
 
   // 세팅된 시간 숫자로 변환 (값이 없거나 공백이면 표준 기본값 8, 209 적용)
@@ -168,16 +178,16 @@ const getContractAmounts = (staffName) => {
   const monthlyHours = contractMonthlyHours.value[code] ? Number(contractMonthlyHours.value[code]) : 209;
 
   return {
-    basePay: findVal('04001001'),//기본급
-    annualLeave: findVal('04003001'),//연차적립금
-    severance: findVal('04003003'),//퇴직적립금
-    dailyHours,   //일 소정근로시간
-    monthlyHours  //월 소정근로시간
+    basePay:     findVal(['04001001'], '기본급'),              // 기본급
+    annualLeave: findVal(['04001003', '04003001'], '연차'),    // 연차적립금 (신/구 코드)
+    severance:   findVal(['04001004', '04003003'], '퇴직'),    // 퇴직적립금 (신/구 코드)
+    dailyHours,   // 일 소정근로시간
+    monthlyHours  // 월 소정근로시간
   };
 };
 
 // ─────────────────────────────────────────────────────────────
-// 행 템플릿 및 초기화 - [원본 유지]
+// 행 템플릿 및 초기화
 // ─────────────────────────────────────────────────────────────
 const newItem = (type) => ({
   itemType: type,
@@ -313,7 +323,7 @@ const handleSave = async () => {
   const sIdx = formData.value.sIdx;
   if (!sIdx) { window.customAlert('현장을 선택해주세요.','error'); return; }
 
-  const [year, month] = (formData.value.target_month || formData.value.billingDt).split('-');
+  const [year, month] = (formData.value.target_month || formData.value.billingDt || '').split('-');
   if (!year || !month) { alert('날짜를 선택해주세요.'); return; }
 
   isSaving.value = true;
@@ -334,266 +344,104 @@ const handleSave = async () => {
   } catch (e) { console.error(e); alert('서버 통신 오류'); } finally { isSaving.value = false; }
 };
 
-// ── 회사 양식(토큰화 xlsx) 다운로드 → 데이터 치환 ──────────────────
-const getSettleTemplate = async (docType) => {
-  const res = await axios.get('/api/v1/settle/template/list', {
-    params: { cIdx: authStore.user?.cIdx },
-  });
-  const list = res.data?.data || [];
-  return list.find(t => t.docType === docType) || null;
-};
-
-const resolveFileUrl = (filePath) => {
-  if (!filePath) return '';
-  if (/^https?:\/\//.test(filePath)) return filePath;
-  return `/api${filePath}`; // 지난번 SERVICE 양식과 동일한 프록시 규칙
-};
-
-const toDotDate = (dateStr) => {
+// ─────────────────────────────────────────────────────────────
+// 엑셀 / PDF 출력 (고정 양식 빌더)
+// ─────────────────────────────────────────────────────────────
+const toDotDate = (dateStr) => {   // 2026. 08. 10.
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d)) return dateStr;
   return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}.`;
 };
-
-// 날짜 문자열이 유효하면 Date 객체 그대로 반환 → 템플릿 셀의 날짜서식(mm-dd-yy)이 그대로 적용됨
-const toDateOrText = (dateStr) => {
-  if (!dateStr || dateStr === '재직중') return dateStr || '';
+const toShortDate = (dateStr) => {  // 2026.08.10
+  if (!dateStr) return '';
   const d = new Date(dateStr);
-  return isNaN(d) ? dateStr : d;
+  if (isNaN(d)) return dateStr;
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const resolvePath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
-const PLACEHOLDER_RE = /\{\{([\w.]+)\}\}/g;
+// 이름도 금액도 없는 빈 행은 출력하지 않음
+const isFilledRow = (it) => !!(String(it.empName || '').trim() || Number(it.amount));
 
-// prefix(leave./retire.)별 반복블록을 찾아 필요한 만큼 복제 후 채운다 (여러 블록 지원 버전)
-const fillRepeatBlock = (sheet, prefix, records) => {
-  const tokenRe = new RegExp(`^\\{\\{${prefix}\\.\\w+\\}\\}$`);
-  const keyRe = new RegExp(`^\\{\\{${prefix}\\.(\\w+)\\}\\}$`);
+const estimateImages = ref(null); // 로고·직인 캐시
 
-  let templateRowNum = null;
-  const colKeyMap = {};
+const collectEstimateExcelData = () => {
+  if (!hasAnnual.value && !hasRetire.value) throw new Error('출력할 정산 내역이 없습니다.');
+  if (!formData.value.sIdx) throw new Error('현장을 선택해주세요.');
 
-  outer:
-      for (let r = 1; r <= sheet.rowCount; r++) {
-        const row = sheet.getRow(r);
-        for (let c = 1; c <= sheet.columnCount; c++) {
-          const v = row.getCell(c).value;
-          if (typeof v === 'string' && tokenRe.test(v.trim())) {
-            templateRowNum = r;
-            row.eachCell({ includeEmpty: false }, (cell, colNum) => {
-              const m = keyRe.exec(String(cell.value).trim());
-              if (m) colKeyMap[colNum] = m[1];
-            });
-            break outer;
-          }
-        }
-      }
-  if (!templateRowNum) return; // 이 문서에 해당 블록이 없으면 조용히 skip
+  // 현장 상세(API) 우선, 없으면 현장 목록
+  const listSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+  const site = siteDetail.value?._sIdx === formData.value.sIdx ? siteDetail.value : listSite;
+  const pick = (...keys) => { for (const k of keys) { const v = site?.[k] ?? listSite?.[k]; if (v !== undefined && v !== null && v !== '') return v; } return 0; };
+  const underArea = Number(String(pick('areaUnder', 'area_under')).replace(/,/g, '')) || 0;
+  const overArea  = Number(String(pick('areaOver', 'area_over')).replace(/,/g, '')) || 0;
+  const isVatFlag = site?.is_vat ?? listSite?.is_vat;
 
-  const checkCol = Math.min(...Object.keys(colKeyMap).map(Number));
+  const annualItems = hasAnnual.value ? formData.value.annualItems.filter(isFilledRow).map(it => ({
+    empName:    it.empName || '',
+    joinDate:   it.joinDate || '',
+    middleText: it.middleDt ? toYYMMDD(it.middleDt) : '첫정산', // 중간정산일 없으면 원본 양식처럼 '첫정산'
+    period:     it.period || '',
+    basis:      it.basis || '',
+    amount:     Number(it.amount) || 0,
+    note:       it.note || '',
+  })) : [];
 
-  let capacity = 1;
-  let r = templateRowNum + 1;
-  while (r <= sheet.rowCount) {
-    const v = sheet.getRow(r).getCell(checkCol).value;
-    const blank = v === null || v === undefined || v === '';
-    const sameBlock = typeof v === 'string' && v.trim().startsWith(`{{${prefix}.`);
-    if (!blank && !sameBlock) break; // 합계 행 등 경계
-    capacity++;
-    r++;
-  }
+  const retireItems = hasRetire.value ? formData.value.retireItems.filter(isFilledRow).map(it => ({
+    empName:  it.empName || '',
+    joinDate: it.joinDate || '',
+    endDate:  it.endDate || '',
+    period:   it.period || '',
+    basis:    it.basis || '',
+    amount:   Number(it.amount) || 0,
+    note:     it.note || '',
+  })) : [];
 
-  const need = records.length - capacity;
-  if (need > 0) sheet.duplicateRow(templateRowNum + capacity - 1, need, true);
+  if (!annualItems.length && !retireItems.length) throw new Error('출력할 정산 내역이 없습니다. 직원 이름 또는 금액을 입력해주세요.');
 
-  records.forEach((rec, i) => {
-    const targetRow = sheet.getRow(templateRowNum + i);
-    Object.entries(colKeyMap).forEach(([colNum, key]) => {
-      targetRow.getCell(Number(colNum)).value = rec[key] ?? '';
-    });
-  });
-
-  for (let i = records.length; i < capacity; i++) {
-    const targetRow = sheet.getRow(templateRowNum + i);
-    Object.keys(colKeyMap).forEach(c => { targetRow.getCell(Number(c)).value = null; });
-  }
-};
-
-const fillPlaceholders = (sheet, context) => {
-  sheet.eachRow({ includeEmpty: false }, (row) => {
-    row.eachCell({ includeEmpty: false }, (cell) => {
-      if (typeof cell.value !== 'string' || !cell.value.includes('{{')) return;
-      const raw = cell.value;
-      const matches = [...raw.matchAll(PLACEHOLDER_RE)];
-      if (matches.length === 0) return;
-
-      if (matches.length === 1 && matches[0][0] === raw.trim()) {
-        const key = matches[0][1];
-        if (key.includes('.')) return; // leave.*, retire.* 는 반복블록에서 이미 처리됨
-        let v = resolvePath(context, key);
-        if (v === undefined) v = 0;
-        cell.value = v;
-        if (typeof v === 'number' && !cell.numFmt) cell.numFmt = '#,##0';
-        return;
-      }
-      cell.value = raw.replace(PLACEHOLDER_RE, (_, key) => {
-        const v = resolvePath(context, key);
-        return v === undefined ? '' : String(v);
-      });
-    });
-  });
-};
-/*
-const exportToExcel = async () => {
-  if (!hasAnnual.value && !hasRetire.value) { alert('출력할 정산 내역이 없습니다.'); return; }
-  if (!formData.value.sIdx) { alert('현장을 선택해주세요.'); return; }
-
-  try {
-    const template = await getSettleTemplate('RETIRE_ANNUAL');
-    if (!template || !template.filePath) {
-      alert('등록된 연차·퇴직금 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
-      return;
-    }
-
-    const fileRes = await fetch(resolveFileUrl(template.filePath));
-    if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
-    const arrayBuffer = await fileRes.arrayBuffer();
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(arrayBuffer);
-    const sheet = workbook.worksheets[0];
-
-    // 면적별 산출내역(면세/과세) — 현장 마스터에서 조회, 없으면 0
-    const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
-    const under135Area = Number(selectedSite?.areaUnder ?? selectedSite?.area_under ?? 0);
-    const over135Area  = Number(selectedSite?.areaOver  ?? selectedSite?.area_over  ?? 0);
-
-    const context = {
-      docNo: formData.value.docNo || '',
-      billingDt: toDotDate(formData.value.billingDt),
-      siteName: formData.value.siteName || '',
-      summary: formData.value.summary || '',
-      bankInfo: formData.value.bankInfo || '',
-      under135Area,
-      over135Area,
-    };
-
-    const leaveRecords = hasAnnual.value ? formData.value.annualItems.map(item => ({
-      empName: item.empName || '',
-      inDate: toDateOrText(item.joinDate),
-      midDate: item.middleDt ? toDateOrText(item.middleDt) : '',
-      period: item.period || '',
-      formulaText: item.basis || '',
-      amount: Number(item.amount) || 0,
-      note: item.note || '',
-    })) : [];
-
-    const retireRecords = hasRetire.value ? formData.value.retireItems.map(item => ({
-      empName: item.empName || '',
-      inDate: toDateOrText(item.joinDate),
-      outDate: toDateOrText(item.endDate),
-      period: item.period || '',
-      formulaText: item.basis || '',
-      amount: Number(item.amount) || 0,
-      note: item.note || '',
-    })) : [];
-
-    fillRepeatBlock(sheet, 'leave', leaveRecords);
-    fillRepeatBlock(sheet, 'retire', retireRecords);
-    fillPlaceholders(sheet, context);
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.xlsx`;
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error('엑셀 저장 중 오류 발생:', error);
-    alert('엑셀 파일을 생성하는 중 오류가 발생했습니다.');
-  }
-};
-
- */
-// ──────────────────────────────────────────────
-// 연차·퇴직금 정산서 워크북 생성 (엑셀 저장 / PDF 저장 공통 사용)
-// ──────────────────────────────────────────────
-const buildEstimateWorkbookBuffer = async () => {
-  if (!hasAnnual.value && !hasRetire.value) {
-    throw new Error('출력할 정산 내역이 없습니다.');
-  }
-  if (!formData.value.sIdx) {
-    throw new Error('현장을 선택해주세요.');
-  }
-
-  const template = await getSettleTemplate('RETIRE_ANNUAL');
-  if (!template || !template.filePath) {
-    throw new Error('등록된 연차·퇴직금 정산서 양식이 없습니다. 관리자에게 문의해주세요.');
-  }
-
-  const fileRes = await fetch(resolveFileUrl(template.filePath));
-  if (!fileRes.ok) throw new Error('양식 파일을 불러올 수 없습니다.');
-  const arrayBuffer = await fileRes.arrayBuffer();
-
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(arrayBuffer);
-  const sheet = workbook.worksheets[0];
-
-  // 면적별 산출내역(면세/과세) — 현장 마스터에서 조회, 없으면 0
-  const selectedSite = siteOptions.value.find(s => s.idx === formData.value.sIdx);
-  const under135Area = Number(selectedSite?.areaUnder ?? selectedSite?.area_under ?? 0);
-  const over135Area  = Number(selectedSite?.areaOver  ?? selectedSite?.area_over  ?? 0);
-
-  const context = {
-    docNo: formData.value.docNo || '',
-    billingDt: toDotDate(formData.value.billingDt),
-    siteName: formData.value.siteName || '',
-    summary: formData.value.summary || '',
-    bankInfo: formData.value.bankInfo || '',
-    under135Area,
-    over135Area,
+  return {
+    docNo:          formData.value.docNo || '',
+    billingDtText:  toDotDate(formData.value.billingDt),
+    billingDtShort: toShortDate(formData.value.billingDt),
+    siteName:       formData.value.siteName || '',
+    receiver:       formData.value.siteName ? `${formData.value.siteName}관리사무소` : '',
+    title:          formData.value.summary || '',
+    bankInfo:       formData.value.bankInfo || '',
+    // 과세 사업장 : 135㎡ 이하/초과 면적별 산출내역 표시
+    //   is_vat 확인되면 그 값, 미확인이면 135㎡ 초과 면적이 있을 때 과세로 추정
+    vatFlag:        (isVatFlag === 'Y' || isVatFlag === 'N') ? isVatFlag : undefined,
+    isVat:          isVatFlag === 'Y' || ((isVatFlag !== 'N') && overArea > 0),
+    underArea,
+    overArea,
+    annualItems,
+    retireItems,
   };
+};
 
-  const leaveRecords = hasAnnual.value ? formData.value.annualItems.map(item => ({
-    empName: item.empName || '',
-    inDate: toDateOrText(item.joinDate),
-    midDate: item.middleDt ? toDateOrText(item.middleDt) : '',
-    period: item.period || '',
-    formulaText: item.basis || '',
-    amount: Number(item.amount) || 0,
-    note: item.note || '',
-  })) : [];
+// 엑셀 저장 / PDF 저장 공통
+const buildEstimateWorkbookBuffer = async () => {
+  // 현장 상세(과세 여부·면적)가 아직 없으면 먼저 조회
+  if (formData.value.sIdx && siteDetail.value?._sIdx !== formData.value.sIdx) await fetchContractData();
+  const data = collectEstimateExcelData();
+  if (!estimateImages.value) estimateImages.value = await loadSettleImages();
+  return buildEstimateExcelBuffer(data, estimateImages.value);
+};
 
-  const retireRecords = hasRetire.value ? formData.value.retireItems.map(item => ({
-    empName: item.empName || '',
-    inDate: toDateOrText(item.joinDate),
-    outDate: toDateOrText(item.endDate),
-    period: item.period || '',
-    formulaText: item.basis || '',
-    amount: Number(item.amount) || 0,
-    note: item.note || '',
-  })) : [];
+const getExportFileName = (ext) =>
+    `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.${ext}`;
 
-  fillRepeatBlock(sheet, 'leave', leaveRecords);
-  fillRepeatBlock(sheet, 'retire', retireRecords);
-  fillPlaceholders(sheet, context);
-
-  return await workbook.xlsx.writeBuffer();
+const downloadBlob = (blob, fileName) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 };
 
 const exportToExcel = async () => {
   try {
     const buffer = await buildEstimateWorkbookBuffer();
-    const fileName = `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.xlsx`;
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), getExportFileName('xlsx'));
   } catch (error) {
     console.error('엑셀 저장 중 오류 발생:', error);
     alert(error.message || '엑셀 파일을 생성하는 중 오류가 발생했습니다.');
@@ -618,13 +466,7 @@ const exportToPdf = async () => {
       timeout: 30000,
     });
 
-    const fileName = `연차퇴직정산_${formData.value.siteName || '현장'}_${formData.value.billingDt || ''}.pdf`;
-    const blob = new Blob([res.data], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([res.data], { type: 'application/pdf' }), getExportFileName('pdf'));
   } catch (error) {
     console.error('PDF 저장 중 오류 발생:', error);
     alert(error.message || 'PDF 파일을 생성하는 중 오류가 발생했습니다.');
@@ -677,12 +519,7 @@ onMounted(async () => {
 
           <div class="form-grid">
             <div class="form-group">
-              <label>현장 선택 <span class="text-red">*</span>'
-              </label>
-              <!--select v-model="formData.sIdx" @change="handleSiteChange" class="form-select">
-                <option value="" disabled>현장을 선택해주세요</option>
-                <option v-for="site in siteOptions" :key="site.idx" :value="site.idx">{{ site.name }}</option>
-              </select-->
+              <label>현장 선택 <span class="text-red">*</span></label>
               <SiteSelect
                   v-model="formData.sIdx"
                   @update:modelValue="handleSiteChange"
@@ -803,7 +640,7 @@ onMounted(async () => {
                   <td><input type="text" v-model="item.birthDt" class="cell-input text-center" /></td>
                   <td><input type="date" v-model="item.joinDate" @change="onPositionChange(item, 'ANNUAL')" class="cell-input text-center" /></td>
                   <td><input type="date" v-model="item.endDate" class="cell-input text-center" /></td>
-                  <td><input type="date" v-model="item.middleDt" class="cell-input text-center" /></td>
+                  <td><input type="date" v-model="item.middleDt" class="cell-input text-center" title="비워두면 엑셀에 '첫정산'으로 표시됩니다" /></td>
                   <td><input type="text" v-model="item.period" class="cell-input text-center" /></td>
                   <td><input type="text" v-model="item.basis" class="cell-input" /></td>
                   <td>
@@ -932,7 +769,7 @@ onMounted(async () => {
 
 <style scoped>
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
-.modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; /*height: 90vh;*/ height: 100%; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
+.modal-container { background: var(--bg-surface); width: 100%; max-width: 1400px; height: 100%; border-radius: 16px; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.15); overflow: hidden; border: 1px solid var(--border-color); }
 .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: var(--bg-canvas); gap: 12px; flex-shrink: 0; }
 .header-title { display: flex; align-items: center; gap: 10px; }
 .header-title h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-main); }
@@ -977,9 +814,6 @@ onMounted(async () => {
 .form-input:focus, .form-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); background: var(--bg-surface); }
 .doc-message { line-height: 1.9; color: var(--text-main); font-size: 14px; }
 .contract-loading { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--bg-canvas); border-radius: 8px; font-size: 13px; color: var(--text-sub); border: 1px dashed var(--border-color); }
-.contract-preview { background: var(--bg-canvas); border: 1px solid var(--border-focus); border-radius: 10px; overflow: hidden; }
-.preview-header { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--primary-soft); font-size: 13px; font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border-color); }
-.preview-table td { padding: 7px 10px !important; }
 .table-add-controls { padding: 20px; border: 2px dashed var(--border-color); border-radius: 8px; background: var(--bg-canvas); }
 .btn-outline-primary { border: 1px solid var(--primary); color: var(--primary); background: transparent; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 14px; }
 .btn-outline-primary:hover { background: var(--primary-soft); }
@@ -1012,7 +846,7 @@ onMounted(async () => {
 .meta-input { flex: 1; border: none; border-bottom: 1px solid transparent; padding: 4px 8px; font-size: 14px; outline: none; transition: 0.2s; color: var(--text-main); background: transparent; font-family: inherit; }
 .meta-input:hover, .meta-input:focus { border-bottom-color: var(--primary); background: var(--bg-canvas); }
 
-/* [추가] 검색 자동완성 전용 스타일 (기존 디자인 유지용) */
+/* 검색 자동완성 */
 .search-container { position: relative; overflow: visible !important; }
 .excel-table td.search-container { overflow: visible !important; }
 .search-dropdown { position: absolute; top: 100%; left: 0; width: 220px; background: #fff; border: 1px solid var(--primary); border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; }
@@ -1021,7 +855,7 @@ onMounted(async () => {
 .search-dropdown li:hover { background: var(--primary-soft); }
 .search-dropdown li strong { color: var(--primary); }
 
-/* 반응형 [유지] */
+/* 반응형 */
 @media (max-width: 1024px) {
   .form-grid { grid-template-columns: repeat(2, 1fr); }
 }
