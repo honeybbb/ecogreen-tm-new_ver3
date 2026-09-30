@@ -2694,9 +2694,9 @@ onMounted(async () => {
             <span>{{ item.phone }}</span>
           </template>
           <template #cell-status="{ item }">
-            <span :class="['status-badge', site.status === 'Y' ? 'status-active' : 'status-inactive']">
-              <i :class="['mdi', site.status === 'Y' ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline']"></i>
-              {{ site.status === 'Y' ? '운영 중' : '계약 종료' }}
+            <span :class="['status-badge', item.status == 0 ? 'status-active' : item.status == 1 ? 'status-inactive' : 'status-pending']">
+              <i :class="['mdi', item.status == 0 ? 'mdi-check-circle' : item.status == 1 ? 'mdi-close-circle' : (item.status == 2 || item.status == 3) ? 'mdi-calendar-check' : 'mdi-swap-horizontal']"></i>
+              {{ item.status == 0 ? '재직' : item.status == 1 ? '퇴사' : item.status == 2 ? '일용직' : item.status == 3 ? '대근' : '휴직' }}
             </span>
           </template>
           <template #cell-actions="{ item }">
