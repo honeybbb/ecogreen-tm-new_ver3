@@ -4,6 +4,9 @@ import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import SiteSelect from '~/components/SiteSelect.vue';
+import { useTableResize } from '~/composables/useTableResize.js';
+
+const { startResize } = useTableResize();
 
 const route = useRoute();
 const router = useRouter();
@@ -41,6 +44,44 @@ const FIXED_COL_COUNT = 13;
 const totalColspan = computed(
     () => FIXED_COL_COUNT + (showPersonnelCols.value ? PERSONNEL_COL_COUNT : 0)
 );
+
+// ── 컬럼 리사이즈용 col 정의 ─────────────────────────
+// col의 순서와 인덱스는 실제 데이터 컬럼 순서와 일치해야 함
+const colDefs = computed(() => {
+  const base = [
+    { key: 'no',        width: '2%'  },
+    { key: 'payDay',    width: '2%'  },
+    { key: 'site',      width: '8%'  },
+    { key: 'memo1',     width: '4%'  },
+  ];
+  const personnel = [
+    { key: 'contract',  width: '3%'  },
+    { key: 'current',   width: '3%'  },
+    { key: 'female',    width: '3%'  },
+    { key: 'male',      width: '3%'  },
+    { key: 'join',      width: '4%'  },
+    { key: 'resign',    width: '4%'  },
+    { key: 'gap',       width: '3%'  },
+  ];
+  const rest = [
+    { key: 'billing',   width: '12%' },
+    { key: 'payrollCnt',width: '2%'  },
+    { key: 'invoiceDt', width: '6%'  },
+    { key: 'invoiceAmt',width: '2%'  },
+    { key: 'netPay',    width: '12%' },
+    { key: 'bank',      width: '5%'  },
+    { key: 'depositDt', width: '6%'  },
+    { key: 'depositAmt',width: '9%'  },
+    { key: 'memo2',     width: '12%' },
+  ];
+  return showPersonnelCols.value ? [...base, ...personnel, ...rest] : [...base, ...rest];
+});
+
+const colIdx = computed(() => {
+  const map = {};
+  colDefs.value.forEach((c, i) => { map[c.key] = i; });
+  return map;
+});
 
 // ── 2. 데이터 및 모달 상태 ────────────────────────────────────
 const rawData = ref([]);
@@ -395,39 +436,73 @@ onMounted(async () => {
 
       <div class="table-scroll-container">
         <table class="excel-table">
+          <colgroup>
+            <col v-for="(c, i) in colDefs" :key="'col-' + i" :style="{ width: c.width }" />
+          </colgroup>
           <thead>
           <tr>
-            <th rowspan="2" style="width: 2%;">No</th>
-            <th rowspan="2" style="width: 2%;" @click="toggleSort('payment_day')" class="sortable">
+            <th rowspan="2" :data-col-index="colIdx.no" class="resizable">
+              No
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.payDay" @click="toggleSort('payment_day')" class="sortable resizable">
               급여일 <i v-if="sortKey === 'payment_day'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
             </th>
-            <th rowspan="2" style="width: 8%;" @click="toggleSort('siteName')" class="sortable">
+            <th rowspan="2" :data-col-index="colIdx.site" @click="toggleSort('siteName')" class="sortable resizable">
               단지 <i v-if="sortKey === 'siteName'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
             </th>
-            <th rowspan="2" style="width: 4%;">비고</th>
-            <th v-if="showPersonnelCols" :colspan="PERSONNEL_COL_COUNT" style="width: 20%;">인원</th>
-            <th rowspan="2" style="width: 12%;" @click="toggleSort('billingAmt')" class="sortable">
+            <th rowspan="2" :data-col-index="colIdx.memo1" class="resizable">
+              비고
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th v-if="showPersonnelCols" :colspan="PERSONNEL_COL_COUNT">인원</th>
+            <th rowspan="2" :data-col-index="colIdx.billing" @click="toggleSort('billingAmt')" class="sortable resizable">
               청구액 (기준 / 실청구) <i v-if="sortKey === 'billingAmt'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
             </th>
-            <th rowspan="2" style="width: 2%;">급여<br>인원</th>
-            <th rowspan="2" style="width: 6%;">계산서 작성일</th>
-            <th rowspan="2" style="width: 2%;">매수</th>
-            <th rowspan="2" style="width: 12%;" @click="toggleSort('netPay')" class="sortable">
+            <th rowspan="2" :data-col-index="colIdx.payrollCnt" class="resizable">
+              급여<br>인원
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.invoiceDt" class="resizable">
+              계산서 작성일
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.invoiceAmt" class="resizable">
+              매수
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.netPay" @click="toggleSort('netPay')" class="sortable resizable">
               급여총액 <i v-if="sortKey === 'netPay'" :class="['mdi', sortOrder === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down']"></i>
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
             </th>
-            <th rowspan="2" style="width: 5%;">은행</th>
-            <th rowspan="2" style="width: 6%;">입금일</th>
-            <th rowspan="2" style="width: 9%;">입금액</th>
-            <th rowspan="2" style="width: 12%;">비고</th>
+            <th rowspan="2" :data-col-index="colIdx.bank" class="resizable">
+              은행
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.depositDt" class="resizable">
+              입금일
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.depositAmt" class="resizable">
+              입금액
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
+            <th rowspan="2" :data-col-index="colIdx.memo2" class="resizable">
+              비고
+              <div class="resize-handle" @mousedown.stop="startResize" @click.stop></div>
+            </th>
           </tr>
           <tr v-if="showPersonnelCols">
-            <th style="width: 3%;">계약</th>
-            <th style="width: 3%;">현재</th>
-            <th style="width: 3%;">여</th>
-            <th style="width: 3%;">남</th>
-            <th style="width: 4%;">입사</th>
-            <th style="width: 4%;">퇴사</th>
-            <th style="width: 3%;">공백</th>
+            <th :data-col-index="colIdx.contract" class="resizable">계약<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
+            <th :data-col-index="colIdx.current" class="resizable">현재<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
+            <th :data-col-index="colIdx.female" class="resizable">여<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
+            <th :data-col-index="colIdx.male" class="resizable">남<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
+            <th :data-col-index="colIdx.join" class="resizable">입사<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
+            <th :data-col-index="colIdx.resign" class="resizable">퇴사<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
+            <th :data-col-index="colIdx.gap" class="resizable">공백<div class="resize-handle" @mousedown.stop="startResize" @click.stop></div></th>
           </tr>
           </thead>
 
@@ -653,11 +728,32 @@ onMounted(async () => {
 .table-header { padding: 14px 20px; border-bottom: 1px solid var(--border-color); }
 .table-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; color: var(--text-main); }
 .table-scroll-container { overflow-x: auto; }
-.excel-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; min-width: 1200px; }
+.excel-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+/* max-width: 0 트릭 — table-layout: fixed 상태에서 컬럼 폭보다 큰 셀 내용이 컬럼을 밀어내지 못하게 하고 text-overflow가 동작하도록 함 */
+.excel-table td, .excel-table th { box-sizing: border-box; max-width: 0; overflow: hidden; }
 .excel-table thead { position: sticky; top: 0; z-index: 10; background-color: var(--bg-canvas); border-bottom: 2px solid var(--border-color); }
-.excel-table thead th { padding: 12px 10px; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-main); border: 1px solid var(--border-color); white-space: nowrap; }
+.excel-table thead th { padding: 12px 10px; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-main); border: 1px solid var(--border-color); white-space: nowrap; text-overflow: ellipsis; }
+.excel-table tbody td { text-overflow: ellipsis; white-space: nowrap; }
 .excel-table thead th.sortable { cursor: pointer; }
 .excel-table thead th.sortable:hover { background: var(--bg-hover); }
+
+/* 컬럼 리사이즈 핸들 */
+.excel-table thead th.resizable { position: relative; }
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+  user-select: none;
+}
+.resize-handle:hover,
+.is-resizing .resize-handle {
+  background: var(--primary);
+  opacity: 0.6;
+}
 .excel-table td { padding: 8px 6px; border: 1px solid var(--border-color); color: var(--text-main); vertical-align: middle; font-size: 13px; }
 
 /* 행 배경색 제어 */
