@@ -1020,6 +1020,64 @@ const moveToLeft = () => {
 };
 
 // =============================================
+// 정산서 표시 항목 드래그앤드롭 재정렬
+// (같은 카테고리 뱃지 그룹 내에서만 재정렬 허용)
+// =============================================
+const dragCd = ref(null);
+const dragOverCd = ref(null);
+
+const getCategoryArray = (cd) => {
+  const type = getItemGroupType(cd);
+  if (type === 'pay') return settlementConfig.value.activePayLabels;
+  if (type === 'deduction') return settlementConfig.value.activeDeductionLabels;
+  if (type === 'expense') return settlementConfig.value.activeExpenseLabels;
+  if (type === 'manage') return settlementConfig.value.activeManageLabels;
+  return null;
+};
+
+const onSelectedDragStart = (item, e) => {
+  dragCd.value = item.cd;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.cd);
+  }
+};
+
+const onSelectedDragOver = (item, e) => {
+  if (!dragCd.value) return;
+  if (getItemGroupType(dragCd.value) !== getItemGroupType(item.cd)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  dragOverCd.value = item.cd;
+};
+
+const onSelectedDragLeave = (item) => {
+  if (dragOverCd.value === item.cd) dragOverCd.value = null;
+};
+
+const onSelectedDrop = (item, e) => {
+  e.preventDefault();
+  const srcCd = dragCd.value;
+  const tgtCd = item.cd;
+  dragCd.value = null;
+  dragOverCd.value = null;
+  if (!srcCd || srcCd === tgtCd) return;
+  if (getItemGroupType(srcCd) !== getItemGroupType(tgtCd)) return;
+  const arr = getCategoryArray(srcCd);
+  if (!arr) return;
+  const from = arr.indexOf(srcCd);
+  const to = arr.indexOf(tgtCd);
+  if (from < 0 || to < 0) return;
+  arr.splice(from, 1);
+  arr.splice(to, 0, srcCd);
+};
+
+const onSelectedDragEnd = () => {
+  dragCd.value = null;
+  dragOverCd.value = null;
+};
+
+// =============================================
 // 데이터 로드 / 저장 / 삭제
 // =============================================
 let originalData = {};
@@ -2462,7 +2520,8 @@ onMounted(async () => {
             </div>
             <p class="info-helper-text" style="margin-bottom:20px;">
               * 정산 세부내역서 작성 시 포함할 항목을 직접 커스텀할 수 있습니다.<br>
-              * <strong>[사용 가능 항목]</strong>에서 원하는 코드를 선택 후 <strong>[추가]</strong> 버튼을 눌러주세요.
+              * <strong>[사용 가능 항목]</strong>에서 원하는 코드를 선택 후 <strong>[추가]</strong> 버튼을 눌러주세요.<br>
+              * <strong>[정산서 표시 항목]</strong>의 좌측 핸들(<i class="mdi mdi-drag"></i>)을 드래그하면 같은 그룹(지급/공제/제경/관리) 내에서 순서를 조정할 수 있습니다.
             </p>
 
             <div class="excel-transfer-ui">
@@ -2512,9 +2571,20 @@ onMounted(async () => {
                       v-for="item in filteredSelected"
                       :key="'sel-'+item.cd"
                       class="list-item"
-                      :class="{ active: selectedRightItems.includes(item.cd) }"
+                      :class="{
+                        active: selectedRightItems.includes(item.cd),
+                        'drag-source': dragCd === item.cd,
+                        'drag-over': dragOverCd === item.cd && dragCd !== item.cd,
+                      }"
+                      draggable="true"
                       @click="toggleRight(item)"
+                      @dragstart="onSelectedDragStart(item, $event)"
+                      @dragover="onSelectedDragOver(item, $event)"
+                      @dragleave="onSelectedDragLeave(item)"
+                      @drop="onSelectedDrop(item, $event)"
+                      @dragend="onSelectedDragEnd"
                   >
+                    <i class="mdi mdi-drag drag-handle" title="드래그하여 순서 변경"></i>
                     <span class="item-badge" :class="'badge-' + getItemGroupType(item.cd)">
                       {{ getBadgeName(item.cd) }}
                     </span>
@@ -3778,6 +3848,24 @@ input:checked + .slider:before { transform: translateX(18px); }
   background: var(--primary-soft);
   color: var(--primary);
   font-weight: 700;
+}
+
+.drag-handle {
+  color: var(--text-muted);
+  cursor: grab;
+  font-size: 18px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.list-item:hover .drag-handle {
+  opacity: 1;
+}
+.list-item.drag-source {
+  opacity: 0.4;
+}
+.list-item.drag-over {
+  border-top: 2px solid var(--primary);
+  background: var(--primary-soft);
 }
 
 .item-badge {

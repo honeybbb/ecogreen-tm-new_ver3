@@ -58,6 +58,15 @@ export const useTabStore = defineStore('tab', {
                 this.tabs.splice(index, 1);
                 this.saveTabs(); // 탭 닫을 때 저장
             }
+        },
+        reorderTab(from, to) {
+            // Home 탭(index 0)은 항상 첫 위치 고정
+            if (from <= 0 || to <= 0) return;
+            if (from >= this.tabs.length || to >= this.tabs.length) return;
+            if (from === to) return;
+            const [moved] = this.tabs.splice(from, 1);
+            this.tabs.splice(to, 0, moved);
+            this.saveTabs();
         }
     }
 });

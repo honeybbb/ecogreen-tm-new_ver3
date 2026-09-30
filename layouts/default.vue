@@ -3,6 +3,7 @@ import { ref, watch, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from '#app';
 import { useAuthStore } from '@/stores/auth';
 import { useTabStore } from '@/stores/tab';
+import { useFavoriteStore } from '@/stores/favorite';
 import axios from "axios";
 
 import Header from '@/components/layout/Header.vue';
@@ -14,6 +15,7 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const tabStore = useTabStore();
+const favoriteStore = useFavoriteStore();
 
 const miniVariant = ref(false);
 const mobileMenuOpen = ref(false);
@@ -106,6 +108,12 @@ const getMenus = (companyNo) => {
 
 watch(() => cIdx.value, (val) => {
   if (val) getMenus(val);
+  // 관리자(managerId 보유) 로그인 시점에 즐겨찾기 목록을 로드한다.
+  if (val && authStore.user?.managerId) {
+    favoriteStore.loadFavorites();
+  } else {
+    favoriteStore.clear();
+  }
 }, { immediate: true });
 
 watch(() => route.path, (newPath) => {

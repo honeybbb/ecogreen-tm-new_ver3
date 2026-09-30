@@ -116,6 +116,7 @@ export const useAuthStore = defineStore('auth', () => {
         showWarningModal.value = false;
         isExpired.value        = false;
         clearTimer();
+        // 즐겨찾기 정리는 default layout 의 cIdx watcher 가 처리한다.
     };
 
     // =============================================
