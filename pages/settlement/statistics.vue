@@ -128,7 +128,7 @@ const fetchSummaryData = async () => {
 
       return {
         ...row,
-        gap: payroll - contract, //공백인원 계산 공식 (급여작업인원 - 계약인원)
+        gap: contract - current, //공백인원 계산 공식 (계약인원 - 현재인원)
         estBilledAmount: Number(row.estBilledAmount) || Number(row.billingAmt) || 0,
         estNetPay: Number(row.estNetPay) || Number(row.netPay) || 0,
         billingAmt: Number(row.billingAmt) || 0,
@@ -188,7 +188,7 @@ const emptyTotal = () => ({
 });
 
 const addRow = (acc, cur) => ({
-  contractCnt: acc.contractCnt + (cur.contractCnt || 0),
+  contractCnt: Number(acc.contractCnt) + Number(cur.contractCnt || 0),
   currentCnt: Number(acc.currentCnt) + Number(cur.currentCnt || 0),
   female: Number(acc.female) + Number(cur.female || 0),
   male: Number(acc.male) + Number(cur.male || 0),
