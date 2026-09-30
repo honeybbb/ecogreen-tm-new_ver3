@@ -544,10 +544,9 @@ const dynamicColumns = computed(() => {
     });
   });
 
-  // 4) 정산설정의 경비(activeExpenseLabels) → 관리비(activeManageLabels) 순, 각 그룹은 코드 순
-  const byCode = (a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true });
-  [...(currentConfig.activeExpenseLabels || [])].sort(byCode).forEach(code => pushExtra(code, 'expense'));
-  [...(currentConfig.activeManageLabels || [])].sort(byCode).forEach(code => pushExtra(code, 'manage'));
+  // 4) 정산설정의 경비(activeExpenseLabels) → 관리비(activeManageLabels) 순, 각 그룹은 사용자 지정 순서
+  (currentConfig.activeExpenseLabels || []).forEach(code => pushExtra(code, 'expense'));
+  (currentConfig.activeManageLabels || []).forEach(code => pushExtra(code, 'manage'));
 
   // 계약 정산항목은 4대보험 총계 뒤에 그룹(경비 → 관리비 → 기타) 순으로 표시
   const GROUP_ORDER = { expense: 0, manage: 1, other: 2 };
