@@ -9,9 +9,13 @@ export const useTableResize = () => {
 
         // Find corresponding col
         const tr = th.closest('tr');
-        const thIndex = Array.from(tr.children).indexOf(th);
         const table = th.closest('table');
-        const col = table.querySelectorAll('col')[thIndex];
+        // colspan/rowspan이 있는 헤더의 경우 th의 tr 내 index로는 col 매칭이 안 되므로
+        // th에 data-col-index가 지정돼 있으면 그것을 우선 사용
+        const colIndex = th.dataset.colIndex !== undefined
+            ? Number(th.dataset.colIndex)
+            : Array.from(tr.children).indexOf(th);
+        const col = table.querySelectorAll('col')[colIndex];
 
         const startX     = e.clientX;
         const startWidth = th.offsetWidth;
@@ -23,8 +27,8 @@ export const useTableResize = () => {
             if (Math.abs(moveEvent.clientX - startX) > 2) {
                 hasMoved = true;
             }
-            // Math.max 최솟값을 1px로 낮춰 거의 무제한 축소 허용
-            const newWidth = Math.max(16, startWidth + (moveEvent.clientX - startX));
+            // 엑셀처럼 자유롭게 좁힐 수 있도록 하한을 매우 낮게 (2px)
+            const newWidth = Math.max(2, startWidth + (moveEvent.clientX - startX));
             th.style.width    = newWidth + 'px';
             th.style.minWidth = newWidth + 'px';
             th.style.maxWidth = newWidth + 'px';
