@@ -753,4 +753,5 @@ onMounted(async () => { await fetchAllCodes(); });
 }
 .input-edit:disabled:hover,
 .input-edit:disabled:focus { border-color: var(--border-color); box-shadow: none; outline: none; }
+
 </style>

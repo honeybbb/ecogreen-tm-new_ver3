@@ -39,7 +39,7 @@ const memoColLabelMap = {
   gender: '성별', birthDt: '나이', rrn: '주민번호', foreigner: '내/외국인', disability: '장애여부',
   inDate: '입사일', outDate: '퇴사일', outReason: '퇴직사유',
   four_ins: '4대보험', retire_pension: '퇴직연금',
-  accountNumber: '계좌번호', phone: '연락처', status: '상태'
+  accountNumber: '계좌번호', phone: '연락처', status: '상태', mngYn: '관리권한'
 };
 
 const memberColumns = [
@@ -61,6 +61,7 @@ const memberColumns = [
   { key: 'accountNumber', label: '계좌번호', visible: true, sortable: false, width: '10%' },
   { key: 'phone', label: '연락처', visible: true, sortable: false, width: '8%' },
   { key: 'status', label: '상태', visible: true, sortable: true, width: '5%', align: 'center' },
+  { key: 'mngYn', label: '관리권한', visible: true, sortable: true, width: '6%', align: 'center' },
   { key: 'actions', label: '관리', visible: true, sortable: false, width: '5%', align: 'center' }
 ];
 
@@ -359,6 +360,23 @@ const goRemove = async (id) => {
     await fetchMembers();
   } catch (error) {
     window.customAlert('삭제에 실패했습니다.','error');
+  }
+}
+
+// 관리 권한 원클릭 토글 — 즉시 저장, 실패 시 롤백
+const toggleMemberMngYn = async (member) => {
+  if (member._mngSaving) return;
+  const next = member.mngYn === 'Y' ? 'N' : 'Y';
+  const prev = member.mngYn;
+  member._mngSaving = true;
+  member.mngYn = next;
+  try {
+    await axios.put(`/api/v1/member/mngyn/${member.idx}`, { mngYn: next });
+  } catch (err) {
+    member.mngYn = prev;
+    window.customAlert('권한 변경에 실패했습니다.', 'error');
+  } finally {
+    member._mngSaving = false;
   }
 }
 
@@ -693,6 +711,19 @@ onActivated(async () => { await fetchMembers(); });
           </span>
         </template>
 
+        <template #cell-mngYn="{ item }">
+          <button
+              type="button"
+              :class="['mng-toggle', item.mngYn === 'Y' ? 'mng-toggle--on' : 'mng-toggle--off']"
+              :disabled="item._mngSaving"
+              :title="item.mngYn === 'Y' ? '클릭하면 관리 권한 해제' : '클릭하면 관리 권한 부여'"
+              @click.stop="toggleMemberMngYn(item)"
+          >
+            <span class="mng-toggle__knob"></span>
+            <span class="mng-toggle__label">{{ item.mngYn === 'Y' ? '관리자' : '일반' }}</span>
+          </button>
+        </template>
+
         <template #cell-actions="{ item }">
           <div style="display: flex; gap:4px; justify-content: center;">
             <button @click="goToDetail(item.id)" class="btn-detail"><i class="mdi mdi-eye"></i></button>
@@ -816,4 +847,21 @@ onActivated(async () => { await fetchMembers(); });
 
 .memo-dot { position: absolute; top: 4px; left: 4px; width: 8px; height: 8px; border-radius: 50%; z-index: 2; }
 :deep(.has-memo) { background-color: rgba(250, 204, 21, 0.05); }
+
+/* 관리 권한 원클릭 토글 */
+.mng-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 5px; border-radius: 999px; border: none;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.mng-toggle__knob {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2);
+}
+.mng-toggle__label { line-height: 1; }
+.mng-toggle--on  { background: #2563eb; color: #fff; padding: 3px 5px 3px 10px; flex-direction: row-reverse; }
+.mng-toggle--off { background: #e5e7eb; color: #64748b; }
+.mng-toggle:hover:not(:disabled) { filter: brightness(1.05); }
+.mng-toggle:disabled { opacity: .5; cursor: not-allowed; }
 </style>
