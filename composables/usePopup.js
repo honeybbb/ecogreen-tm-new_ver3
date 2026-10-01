@@ -4,6 +4,7 @@ import { ref } from 'vue';
 const isVisible = ref(false);
 const message = ref('');
 const type = ref('info');
+const variant = ref('info'); // confirm/prompt 시 색상(info/warning/error/success)
 const promptValue = ref('');
 let resolvePromise = null;
 
@@ -11,6 +12,7 @@ export const usePopup = () => {
     const show = (msg, t = 'info') => {
         message.value = msg;
         type.value = t;
+        variant.value = 'info';
         isVisible.value = true;
 
         return new Promise((resolve) => {
@@ -21,6 +23,7 @@ export const usePopup = () => {
     const showPrompt = (msg, defaultVal = '') => {
         message.value = msg;
         type.value = 'prompt';
+        variant.value = 'info';
         promptValue.value = defaultVal;
         isVisible.value = true;
 
@@ -29,9 +32,10 @@ export const usePopup = () => {
         });
     };
 
-    const showConfirm = (msg) => {
+    const showConfirm = (msg, v = 'info') => {
         message.value = msg;
         type.value = 'confirm';
+        variant.value = v;
         isVisible.value = true;
 
         return new Promise((resolve) => {
@@ -60,6 +64,7 @@ export const usePopup = () => {
         isVisible,
         message,
         type,
+        variant,
         promptValue,
         show,
         showPrompt,

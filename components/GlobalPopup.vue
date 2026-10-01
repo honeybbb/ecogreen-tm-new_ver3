@@ -2,7 +2,7 @@
   <Transition name="popup-fade">
     <div v-if="isVisible" class="popup-overlay" @click.self="hide">
       <div class="popup-container">
-        <div class="popup-header" :class="[`header--${(type === 'prompt' || type === 'confirm') ? 'info' : type}`]">
+        <div class="popup-header" :class="[`header--${colorKey}`]">
           <h3 class="popup-title">{{ title }}</h3>
           <button class="popup-close" @click="hide">×</button>
         </div>
@@ -19,7 +19,7 @@
         </div>
         <div class="popup-footer">
           <button v-if="type === 'prompt' || type === 'confirm'" class="popup-btn-cancel" @click="hide">취소</button>
-          <button class="popup-btn" :class="[`btn--${(type === 'prompt' || type === 'confirm') ? 'info' : type}`]" @click="confirm">확인</button>
+          <button class="popup-btn" :class="[`btn--${colorKey}`]" @click="confirm">확인</button>
         </div>
       </div>
     </div>
@@ -30,16 +30,24 @@
 import { computed, watch, nextTick, ref } from 'vue';
 import { usePopup } from '#imports';
 
-const { isVisible, message, type, promptValue, confirm, hide } = usePopup();
+const { isVisible, message, type, variant, promptValue, confirm, hide } = usePopup();
 const promptInput = ref(null);
 
+const colorKey = computed(() => {
+  // confirm/prompt는 variant로 색상 결정, 그 외는 type 자체가 색상
+  if (type.value === 'confirm' || type.value === 'prompt') return variant.value || 'info';
+  return type.value;
+});
+
 const title = computed(() => {
+  if (type.value === 'confirm') {
+    return variant.value === 'warning' ? '경고' : variant.value === 'error' ? '주의' : '확인';
+  }
   switch (type.value) {
     case 'success': return '성공';
     case 'error': return '오류';
     case 'warning': return '경고';
     case 'prompt': return '입력';
-    case 'confirm': return '확인';
     case 'special': return '특이사항';
     default: return '알림';
   }

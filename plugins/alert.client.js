@@ -17,9 +17,9 @@ export default defineNuxtPlugin((nuxtApp) => {
             return await showPrompt(msg, defaultVal);
         };
 
-        // 커스텀 confirm 추가 (Promise 반환)
-        window.customConfirm = async (msg) => {
-            return await showConfirm(msg);
+        // 커스텀 confirm 추가 (Promise 반환, variant로 색상 지정 가능: info/warning/error/success)
+        window.customConfirm = async (msg, variant = 'info') => {
+            return await showConfirm(msg, variant);
         };
     }
 });

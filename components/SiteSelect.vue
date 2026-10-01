@@ -22,6 +22,7 @@ const props = defineProps({
   placeholder: { type: String,  default: '현장을 검색하세요...' },
   multiple:    { type: Boolean, default: false },
   allowEmpty:  { type: Boolean, default: true },
+  includeHq:   { type: Boolean, default: false }, // 본사(idx=0) 옵션 포함 여부
   disabled:    { type: Boolean, default: false },
   width:       { type: String,  default: '250px' }
 })
@@ -33,17 +34,17 @@ const emit = defineEmits(['update:modelValue'])
 // ────────────────────────────────────────────────────────────
 const { siteOptions, fetchSiteOptions } = useApi()
 
-// '전체' 옵션을 리스트 맨 앞에 추가
+// '전체' / '본사' 옵션을 리스트 맨 앞에 추가
 const options = computed(() => {
   const base = siteOptions.value.map(s => ({
     idx:   s.idx,
     name:  s.name,
     label: s.name,   // multiselect label 필드
   }))
-  if (props.allowEmpty) {
-    return [{ idx: null, name: '전체', label: '전체 현장' }, ...base]
-  }
-  return base
+  const prepend = []
+  if (props.allowEmpty) prepend.push({ idx: null, name: '전체', label: '전체 현장' })
+  if (props.includeHq)  prepend.push({ idx: 0,    name: '본사', label: '본사 (본부/창고)' })
+  return [...prepend, ...base]
 })
 
 // 외부는 sIdx(숫자) 또는 '전체' 문자열을 쓰고
