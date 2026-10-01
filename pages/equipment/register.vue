@@ -1,14 +1,97 @@
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'nuxt/app';
 import axios from 'axios';
+import { useAuthStore } from '~/stores/auth.js';
 
 const router = useRouter();
+const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
 
 // =============================================
 // 상태 및 옵션 관리
 // =============================================
-const EQUIP_CATEGORIES = ['청소기계 (탑승/보행)', '일반 청소용구', '경비/통신장비', '안전/제설장비', '기타'];
+const equipCodes = ref([]);
+
+const fetchEquipCategories = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    equipCodes.value = (res.data?.data || []).filter(c =>
+        c.useFl === 'Y' && (c.groupCd === '06' || c.itemCd?.startsWith('06'))
+    );
+  } catch (e) {
+    console.error('장비 분류 코드를 불러오지 못했습니다.', e);
+    equipCodes.value = [];
+  }
+};
+
+// 선택된 분류 (itemCd, 모든 레벨 통합)
+const selectedTypeCd = ref('');
+
+// 트리 메뉴 상태
+const isCategoryMenuOpen = ref(false);
+const expandedBaseCd = ref(null);
+const expandedMidCd = ref(null);
+
+const equipTree = computed(() => {
+  const bases = equipCodes.value
+      .filter(c => c.groupCd === '06' && c.itemCd?.length === 5)
+      .sort((a, b) => (a.sort || 0) - (b.sort || 0));
+
+  return bases.map(base => {
+    const mids = equipCodes.value
+        .filter(c => c.groupCd === base.itemCd)
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+        .map(mid => {
+          const subs = equipCodes.value
+              .filter(c => c.groupCd === mid.itemCd)
+              .sort((a, b) => (a.sort || 0) - (b.sort || 0));
+          return { ...mid, children: subs };
+        });
+    return { ...base, children: mids };
+  });
+});
+
+const selectedTypeLabel = computed(() => {
+  const cd = selectedTypeCd.value;
+  if (!cd) return '선택하세요';
+  const path = [];
+  if (cd.length >= 5) {
+    const b = equipCodes.value.find(c => c.itemCd === cd.substring(0, 5));
+    if (b) path.push(b.itemNm);
+  }
+  if (cd.length >= 8) {
+    const m = equipCodes.value.find(c => c.itemCd === cd.substring(0, 8));
+    if (m) path.push(m.itemNm);
+  }
+  if (cd.length >= 11) {
+    const s = equipCodes.value.find(c => c.itemCd === cd.substring(0, 11));
+    if (s) path.push(s.itemNm);
+  }
+  return path.length ? path.join(' > ') : '선택하세요';
+});
+
+const toggleBase = (itemCd) => {
+  expandedBaseCd.value = expandedBaseCd.value === itemCd ? null : itemCd;
+  expandedMidCd.value = null;
+};
+const toggleMid = (itemCd) => {
+  expandedMidCd.value = expandedMidCd.value === itemCd ? null : itemCd;
+};
+const selectType = (node) => {
+  selectedTypeCd.value = node.itemCd;
+  form.value.type = node.itemCd;
+  isCategoryMenuOpen.value = false;
+};
+// 자식이 있으면 자동 확장, 없으면 선택
+const handleBaseClick = (base) => {
+  if (base.children.length > 0) toggleBase(base.itemCd);
+  else selectType(base);
+};
+const handleMidClick = (mid) => {
+  if (mid.children.length > 0) toggleMid(mid.itemCd);
+  else selectType(mid);
+};
 
 const form = ref({
   name: '',
@@ -150,6 +233,8 @@ const scrollToSection = (id) => {
 let scrollHandler = null;
 
 onMounted(() => {
+  fetchEquipCategories();
+
   const container = document.querySelector('.content-area');
   if (container) {
     scrollHandler = () => {
@@ -194,7 +279,7 @@ const saveEquipment = async () => {
     scrollToSection('sec-basic');
     return;
   }
-  if (!form.value.sIdx) {
+  if (form.value.sIdx === '' || form.value.sIdx === null || form.value.sIdx === undefined) {
     alert('투입 단지를 선택해주세요.');
     scrollToSection('sec-basic');
     return;
@@ -321,17 +406,42 @@ const saveEquipment = async () => {
             <div class="card-body">
               <div class="form-grid">
 
-                <div class="form-group">
+                <div class="form-group category-dropdown-container full-width">
                   <label class="form-label required">장비 분류</label>
-                  <select v-model="form.type" required class="form-select">
-                    <option value="">선택하세요</option>
-                    <option v-for="cat in EQUIP_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
-                  </select>
+                  <div class="custom-select-btn" @click="isCategoryMenuOpen = !isCategoryMenuOpen">
+                    <span>{{ selectedTypeLabel }}</span>
+                    <i class="mdi mdi-chevron-down"></i>
+                  </div>
+                  <div v-if="isCategoryMenuOpen" class="dropdown-overlay" @click="isCategoryMenuOpen = false"></div>
+                  <ul v-if="isCategoryMenuOpen" class="custom-dropdown-menu">
+                    <li v-for="base in equipTree" :key="base.itemCd" class="menu-item">
+                      <div class="menu-label" @click.stop="handleBaseClick(base)">
+                        <i v-if="base.children.length > 0" class="mdi tree-chevron" :class="expandedBaseCd === base.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                        <i v-else class="mdi tree-chevron tree-chevron-leaf mdi-circle-small"></i>
+                        <span class="menu-text">{{ base.itemNm }}</span>
+                      </div>
+                      <ul v-show="expandedBaseCd === base.itemCd" class="custom-submenu">
+                        <li v-for="mid in base.children" :key="mid.itemCd" class="submenu-item-wrap">
+                          <div class="submenu-label" @click.stop="handleMidClick(mid)">
+                            <i v-if="mid.children.length > 0" class="mdi tree-chevron" :class="expandedMidCd === mid.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                            <i v-else class="mdi tree-chevron tree-chevron-leaf mdi-circle-small"></i>
+                            <span class="menu-text">{{ mid.itemNm }}</span>
+                          </div>
+                          <ul v-show="expandedMidCd === mid.itemCd" class="custom-subsubmenu">
+                            <li v-for="sub in mid.children" :key="sub.itemCd" class="subsubmenu-item" @click.stop="selectType(sub)">
+                              <i class="mdi tree-chevron tree-chevron-leaf mdi-circle-small"></i>
+                              {{ sub.itemNm }}
+                            </li>
+                          </ul>
+                        </li>
+                      </ul>
+                    </li>
+                  </ul>
                 </div>
 
                 <div class="form-group">
                   <label class="form-label required">투입 단지</label>
-                  <SiteSelect v-model="form.sIdx" required></SiteSelect>
+                  <SiteSelect v-model="form.sIdx" :include-hq="true" :allow-empty="false" required></SiteSelect>
                 </div>
 
                 <div class="form-group">
@@ -555,4 +665,23 @@ body, #__nuxt, #__layout, .v-application { overflow: visible !important; }
 .btn-delete-doc { background: none; border: none; cursor: pointer; color: #94a3b8; padding: 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
 .btn-delete-doc:hover { background: #fee2e2; color: #ef4444; }
 .btn-delete-doc i { font-size: 18px; }
+
+/* 커스텀 트리 메뉴 (장비 분류) */
+.category-dropdown-container { position: relative; }
+.dropdown-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99; cursor: default; }
+.custom-select-btn { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--border-focus); border-radius: 6px; background: #fff; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.2s; height: 41px; box-sizing: border-box; }
+.custom-select-btn:hover { border-color: var(--primary); }
+.category-dropdown-container:focus-within .custom-select-btn { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.custom-dropdown-menu { position: absolute; top: calc(100% + 4px); left: 0; width: 100%; background: #fff; border: 1px solid var(--border-focus); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 6px 0; margin: 0; list-style: none; z-index: 100; max-height: 360px; overflow-y: auto; }
+.menu-label { display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.15s; }
+.menu-label:hover { background: var(--bg-hover); color: var(--primary); font-weight: 700; }
+.menu-text { flex: 1; }
+.tree-chevron { font-size: 18px; color: var(--text-sub); width: 20px; text-align: center; flex-shrink: 0; }
+.tree-chevron-leaf { font-size: 14px; opacity: 0.5; }
+.custom-submenu { width: 100%; background: var(--bg-canvas); padding: 4px 0; margin: 0; list-style: none; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+.submenu-label { display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 32px; font-size: 12px; color: var(--text-sub); cursor: pointer; transition: 0.15s; }
+.submenu-label:hover { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.custom-subsubmenu { width: 100%; background: #fff; padding: 2px 0; margin: 0; list-style: none; border-top: 1px dashed var(--border-color); border-bottom: 1px dashed var(--border-color); }
+.subsubmenu-item { display: flex; align-items: center; gap: 6px; padding: 7px 16px 7px 52px; font-size: 12px; color: var(--text-sub); cursor: pointer; transition: 0.15s; }
+.subsubmenu-item:hover { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 </style>

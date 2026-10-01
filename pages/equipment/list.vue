@@ -1,20 +1,146 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'nuxt/app';
 const router = useRouter()
 import Pagination from '@/components/common/Pagination.vue'
 import EquipmentDetailModal from '@/components/modal/EquipmentDetailModal.vue'
 import FilterSearchGroup from "~/components/common/FilterSearchGroup.vue";
 import axios from "axios";
+import { useAuthStore } from '~/stores/auth.js';
+
+const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
 
 // ========================================================
 // 1. 상태 및 상수 정의
 // ========================================================
-const EQUIP_TYPES = ['차량', '장비', '소모품'];
+const equipCodes = ref([]); // '06' 트리 전체 코드 (대/중/소)
 
 const searchTerm = ref('');
-const selectedType = ref('전체');
-const selectedStatus = ref('전체'); // 마스터 레벨에서의 상태 (정상/수리중 등 확장용)
+const selectedBaseType = ref('전체'); // 대분류 itemCd (5자리)
+const selectedMidType = ref('전체');  // 중분류 itemCd (8자리)
+const selectedSubType = ref('전체');  // 소분류 itemCd (11자리)
+const selectedStatus = ref('전체');
+
+// 현장(단지) 목록 & 이름 lookup (sIdx=0 = 본사)
+const siteList = ref([]);
+const siteNameMap = computed(() => {
+  const m = { 0: '본사' };
+  siteList.value.forEach(s => { m[s.idx] = s.name; });
+  return m;
+});
+const fetchSiteList = async () => {
+  try {
+    const res = await axios.get(`/api/v1/site/list`);
+    siteList.value = res.data?.data || [];
+  } catch (e) {
+    console.error('현장 목록 로드 실패:', e);
+  }
+};
+
+// 이동 이력(assignments) + 폐기 이력(discards)을 집계해 현재 위치별 수량 산출
+// assignment: fromSidx 에서 sIdx 로 assignQty 만큼 이동 (fromSidx === sIdx는 자가 입고)
+// discard: sIdx 에서 qty 만큼 소실
+const currentAssignments = (assignments, discards) => {
+  const map = {}; // sIdx -> qty
+  (assignments || []).forEach(a => {
+    const qty = Number(a.assignQty) || 0;
+    const from = a.fromSidx;
+    const to = a.sIdx;
+    if (from !== null && from !== undefined && String(from) === String(to)) {
+      if (to !== null && to !== undefined) map[to] = (map[to] || 0) + qty;
+      return;
+    }
+    if (from !== null && from !== undefined) map[from] = (map[from] || 0) - qty;
+    if (to !== null && to !== undefined) map[to] = (map[to] || 0) + qty;
+  });
+  (discards || []).forEach(d => {
+    const qty = Number(d.qty) || 0;
+    if (d.sIdx !== null && d.sIdx !== undefined) map[d.sIdx] = (map[d.sIdx] || 0) - qty;
+  });
+  return Object.entries(map)
+      .filter(([, qty]) => qty > 0)
+      .map(([sIdx, qty]) => ({ sIdx: Number(sIdx), qty }));
+};
+
+const fetchEquipCategories = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    equipCodes.value = (res.data?.data || []).filter(c =>
+        c.useFl === 'Y' && (c.groupCd === '06' || c.itemCd?.startsWith('06'))
+    );
+  } catch (e) {
+    console.error('장비 분류 코드를 불러오지 못했습니다.', e);
+    equipCodes.value = [];
+  }
+};
+
+// 레벨별 옵션 (cascade)
+const baseOptions = computed(() =>
+    equipCodes.value
+        .filter(c => c.groupCd === '06' && c.itemCd?.length === 5)
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+);
+
+const midOptions = computed(() => {
+  if (selectedBaseType.value === '전체') return [];
+  return equipCodes.value
+      .filter(c => c.groupCd === selectedBaseType.value)
+      .sort((a, b) => (a.sort || 0) - (b.sort || 0));
+});
+
+const subOptions = computed(() => {
+  if (selectedMidType.value === '전체') return [];
+  return equipCodes.value
+      .filter(c => c.groupCd === selectedMidType.value)
+      .sort((a, b) => (a.sort || 0) - (b.sort || 0));
+});
+
+watch(selectedBaseType, () => {
+  selectedMidType.value = '전체';
+  selectedSubType.value = '전체';
+});
+watch(selectedMidType, () => {
+  selectedSubType.value = '전체';
+});
+
+// 선택된 가장 깊은 레벨의 itemCd prefix (eq.type matches when starts with this)
+const matchingPrefix = computed(() => {
+  if (selectedBaseType.value === '전체') return null;
+  if (selectedSubType.value !== '전체') return selectedSubType.value;
+  if (selectedMidType.value !== '전체') return selectedMidType.value;
+  return selectedBaseType.value;
+});
+
+// itemCd → itemNm 룩업 맵 (테이블 표시용)
+const typeNameMap = computed(() => {
+  const m = {};
+  equipCodes.value.forEach(c => { m[c.itemCd] = c.itemNm; });
+  return m;
+});
+
+// itemCd → 브레드크럼 (예: 청소장비 > 바닥청소장비 > 탑승식청소차량)
+const typeLabel = (cd) => {
+  if (!cd) return '-';
+  const path = [];
+  if (cd.length >= 5) path.push(typeNameMap.value[cd.substring(0, 5)]);
+  if (cd.length >= 8) path.push(typeNameMap.value[cd.substring(0, 8)]);
+  if (cd.length >= 11) path.push(typeNameMap.value[cd.substring(0, 11)]);
+  const names = path.filter(Boolean);
+  return names.length ? names.join(' > ') : cd;
+};
+
+// 리프 이름만 표시 (가장 깊은 레벨)
+const typeLeafName = (cd) => {
+  if (!cd) return '-';
+  return typeNameMap.value[cd] || cd;
+};
+
+// 전량 폐기 여부 — 현재 배치가 비어있거나 장비 마스터 status=2
+const isDiscarded = (eq) => {
+  if (eq?.status === 2) return true;
+  return currentAssignments(eq?.assignments, eq?.discards).length === 0;
+};
 
 // ── 페이지네이션 상태 ──────────────────────────────
 const currentPage     = ref(1);
@@ -31,10 +157,20 @@ const stats = computed(() => {
       faultQty = 0;
 
   equipments.value.forEach(eq => {
-    totalQty += eq.totalQty;
-    if (eq.status === 0) normalQty += eq.totalQty;
-    else if (eq.status === 1) checkQty += eq.totalQty;
-    else if (eq.status === 2) faultQty += eq.totalQty;
+    const t = Number(eq.totalQty) || 0;
+    totalQty += t;
+
+    // 폐기 수량: discards 합계 (또는 장비 마스터 status=2면 전량 폐기로 간주)
+    const discardedQty = (eq.discards || []).reduce((s, d) => s + (Number(d.qty) || 0), 0);
+    const fullyDiscarded = eq.status === 2 ? t : 0;
+    faultQty += Math.min(t, discardedQty + fullyDiscarded);
+
+    // 수리/점검중 (현재 추적 필드 없음)
+    if (eq.status === 1) checkQty += t;
+
+    // 운영 정상 = 전체 - (폐기 + 수리중)
+    const operating = Math.max(0, t - discardedQty - fullyDiscarded - (eq.status === 1 ? t : 0));
+    normalQty += operating;
   });
 
   return {
@@ -101,10 +237,11 @@ const equipments = ref([
 // ========================================================
 const filteredList = computed(() => {
   return equipments.value.filter(eq => {
-    // 1) 분류 필터
-    const typeOk = selectedType.value === '전체' || eq.type === selectedType.value;
+    // 1) 분류 필터 (eq.type이 선택된 레벨의 itemCd prefix로 시작하는지)
+    const prefix = matchingPrefix.value;
+    const typeOk = !prefix || (eq.type && String(eq.type).startsWith(prefix));
 
-    // 2) 검색어 필터 (장비명, 모델명, 시리얼번호 통합 검색)
+    // 2) 검색어 필터
     const keyword = searchTerm.value.toLowerCase();
     const searchOk = !keyword ||
         eq.name.toLowerCase().includes(keyword) ||
@@ -117,7 +254,9 @@ const filteredList = computed(() => {
 
 const resetFilters = () => {
   searchTerm.value = '';
-  selectedType.value = '전체';
+  selectedBaseType.value = '전체';
+  selectedMidType.value = '전체';
+  selectedSubType.value = '전체';
   selectedStatus.value = '전체';
 };
 
@@ -137,29 +276,13 @@ const closeDetailModal = () => {
   selectedEq.value = null;
 };
 
-const handleEquipmentUpdate = (payload) => {
-  if (payload.type === 'move') {
-    const { fromSite, toSite, qty } = payload.data;
-    const eq = equipments.value.find(e => e.idx === selectedEq.value.idx);
-    if (!eq) return;
-
-    const fromAssign = eq.assignments.find(a => a.siteName === fromSite);
-    if (fromAssign) fromAssign.qty -= qty;
-
-    const toAssign = eq.assignments.find(a => a.siteName === toSite);
-    if (toAssign) {
-      toAssign.qty += qty;
-    } else {
-      eq.assignments.push({ siteName: toSite, qty: qty });
-    }
-    eq.assignments = eq.assignments.filter(a => a.qty > 0);
-  } else if (payload.type === 'repair') {
-    if (payload.data.updateStatus) {
-      const eq = equipments.value.find(e => e.idx === selectedEq.value.idx);
-      if (eq) {
-        eq.status = 'check';
-      }
-    }
+const handleEquipmentUpdate = async (payload) => {
+  // 이동/폐기/수리 등 변경 발생 시 서버에서 최신 데이터 재조회
+  const prevIdx = selectedEq.value?.idx;
+  await getEquipmentList();
+  if (prevIdx) {
+    const refreshed = equipments.value.find(e => e.idx === prevIdx);
+    if (refreshed) selectedEq.value = refreshed;
   }
 };
 
@@ -185,6 +308,8 @@ const getEquipmentList = async () => {
 // 3. 컴포넌트 마운트 시 자동 호출
 onMounted(() => {
   getEquipmentList();
+  fetchEquipCategories();
+  fetchSiteList();
 });
 </script>
 
@@ -239,10 +364,26 @@ onMounted(() => {
     <div class="filter-panel">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label">장비 분류</label>
-          <select v-model="selectedType" class="filter-select">
+          <label class="filter-label">대분류</label>
+          <select v-model="selectedBaseType" class="filter-select">
             <option value="전체">전체</option>
-            <option v-for="type in EQUIP_TYPES" :key="type" :value="type">{{ type }}</option>
+            <option v-for="c in baseOptions" :key="c.itemCd" :value="c.itemCd">{{ c.itemNm }}</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">중분류</label>
+          <select v-model="selectedMidType" class="filter-select" :disabled="selectedBaseType === '전체'">
+            <option value="전체">전체</option>
+            <option v-for="c in midOptions" :key="c.itemCd" :value="c.itemCd">{{ c.itemNm }}</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">소분류</label>
+          <select v-model="selectedSubType" class="filter-select" :disabled="selectedMidType === '전체'">
+            <option value="전체">전체</option>
+            <option v-for="c in subOptions" :key="c.itemCd" :value="c.itemCd">{{ c.itemNm }}</option>
           </select>
         </div>
 
@@ -284,11 +425,17 @@ onMounted(() => {
           </tr>
           </thead>
           <tbody>
-          <tr v-for="eq in filteredList" :key="eq.idx" @click="openEquipmentDetail(eq)" class="cursor-pointer">
+          <tr v-for="eq in filteredList" :key="eq.idx" @click="openEquipmentDetail(eq)"
+              class="cursor-pointer" :class="{ 'row-discarded': isDiscarded(eq) }">
             <td>
-                <span :class="['type-badge', `type-${eq.type === '차량' ? 'car' : (eq.type === '소모품' ? 'consumable' : 'equip')}`]">
-                  {{ eq.type }}
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="type-badge type-equip" :title="typeLabel(eq.type)">
+                  {{ typeLeafName(eq.type) }}
                 </span>
+                <span v-if="isDiscarded(eq)" class="discarded-badge">
+                  <i class="mdi mdi-trash-can-outline"></i> 폐기
+                </span>
+              </div>
             </td>
             <td class="font-weight-bold">{{ eq.name }}</td>
             <td>{{ eq.model }}</td>
@@ -297,9 +444,12 @@ onMounted(() => {
 
             <td>
               <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                <span v-for="(assign, i) in eq.assignments" :key="i" class="site-badge">
-                  {{ assign.siteName }}
-                  <small v-if="eq.totalQty > 1" style="opacity: 0.8; margin-left: 2px;">({{ assign.qty }})</small>
+                <span v-for="(assign, i) in currentAssignments(eq.assignments, eq.discards)" :key="i" class="site-badge">
+                  {{ siteNameMap[assign.sIdx] || `#${assign.sIdx}` }}
+                  <small style="opacity: 0.8; margin-left: 2px;">({{ assign.qty }})</small>
+                </span>
+                <span v-if="currentAssignments(eq.assignments, eq.discards).length === 0" style="color: var(--text-muted); font-size: 12px;">
+                  미배치
                 </span>
               </div>
             </td>
@@ -328,6 +478,8 @@ onMounted(() => {
     <EquipmentDetailModal
         :show="showDetailModal"
         :equipment="selectedEq"
+        :typeNameMap="typeNameMap"
+        :siteNameMap="siteNameMap"
         @close="closeDetailModal"
         @update="handleEquipmentUpdate"
     />
@@ -346,6 +498,33 @@ onMounted(() => {
 .text-muted { color: #9ca3af; }
 .text-right { text-align: right !important; }
 .text-lg { font-size: 18px; }
+
+/* ── 폐기 상태 표시 ── */
+.discarded-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 4px;
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger, #ef4444);
+  font-size: 10px; font-weight: 700;
+}
+.discarded-badge i { font-size: 12px; }
+
+.row-discarded td {
+  background: var(--bg-canvas, #f9fafb);
+  color: var(--text-muted, #9ca3af);
+  opacity: 0.75;
+}
+.row-discarded .font-weight-bold {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-muted, #9ca3af);
+  color: var(--text-muted, #9ca3af);
+}
+.row-discarded .type-badge,
+.row-discarded .site-badge {
+  opacity: 0.6;
+  filter: grayscale(0.8);
+}
+.row-discarded:hover td { background: var(--bg-hover, #f3f4f6); }
 
 /* ── 빈 상태 (Empty State) ── */
 .empty-state { text-align: center; padding: 60px 20px; color: #9ca3af; }
