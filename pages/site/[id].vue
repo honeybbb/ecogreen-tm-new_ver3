@@ -185,69 +185,82 @@ const getDisabilityStyle = (grade) => {
 };
 
 // =============================================
-// 장비 관리
+// 장비 관리 — 신규 데이터 구조 (new_tb_equipment + assignments + discards)
 // =============================================
-const equipmentList    = ref([]);
-const isEquipLoaded    = ref(false);
-const isEquipModalOpen = ref(false);
-const editingEquip     = ref(null);
+const equipmentList = ref([]);  // /api/v2/equipment/list 원본
+const isEquipLoaded = ref(false);
+const equipCodes    = ref([]);  // 분류 코드 (06 트리)
 
-const EQUIP_CATEGORIES = ['주요 장비', '기타 장비'];
-const EQUIP_STATUS_OPTIONS = [
-  { value: 'normal',   label: '정상',   color: 'success' },
-  { value: 'check',    label: '수리/점검중', color: 'warning' },
-  { value: 'fault',    label: '고장/폐기대기', color: 'danger'  },
-];
-
-const equipStatusMap = Object.fromEntries(EQUIP_STATUS_OPTIONS.map(o => [o.value, o]));
-
-const equipColumns = [
-  { key: 'name', label: '장비명 (모델명)' },
-  { key: 'quantity', label: '배치 수량', align: 'center', width: '100px' },
-  { key: 'status', label: '상태', align: 'center', width: '120px' },
-  { key: 'purchaseDate', label: '도입(구매)일', width: '120px' },
-  // { key: 'nextCheckDate', label: '다음 점검일', width: '120px' },
-  { key: 'note', label: '특이사항' },
-  { key: 'actions', label: '관리', align: 'center', width: '100px' }
-];
-
-const equipRowClass = (item) => {
-  if (item.status === 'fault') return 'row-fault';
-  if (item.status === 'check') return 'row-check';
-  return '';
+// itemCd → itemNm 룩업
+const typeNameMap = computed(() => {
+  const m = {};
+  equipCodes.value.forEach(c => { m[c.itemCd] = c.itemNm; });
+  return m;
+});
+const typeLeafName = (cd) => (cd ? (typeNameMap.value[cd] || cd) : '-');
+const typeLabel = (cd) => {
+  if (!cd) return '-';
+  const path = [];
+  if (cd.length >= 5)  path.push(typeNameMap.value[cd.substring(0, 5)]);
+  if (cd.length >= 8)  path.push(typeNameMap.value[cd.substring(0, 8)]);
+  if (cd.length >= 11) path.push(typeNameMap.value[cd.substring(0, 11)]);
+  const names = path.filter(Boolean);
+  return names.length ? names.join(' > ') : cd;
 };
 
-
-const getEquipIcon = (category) => {
-  const icons = {
-    '주요 장비': 'mdi-car-wash',
-    '기타 장비': 'mdi-toolbox-outline'
-  };
-  return icons[category] || 'mdi-cog-outline';
+// 사이트별 배치 수량/비고 집계 (eq 1개 기준)
+const computeSiteQty = (eq, sIdx) => {
+  const assignments = eq?.assignments || [];
+  const discards = eq?.discards || [];
+  let qty = 0;
+  let latestBigo = '';
+  const sorted = [...assignments].sort((a, b) => {
+    const ad = a.regDt || a.assignDt || '';
+    const bd = b.regDt || b.assignDt || '';
+    return ad.localeCompare(bd);
+  });
+  sorted.forEach(a => {
+    const q = Number(a.assignQty) || 0;
+    const from = a.fromSidx;
+    const to = a.sIdx;
+    if (from !== null && from !== undefined && String(from) === String(to)) {
+      if (String(to) === String(sIdx)) { qty += q; if (a.bigo) latestBigo = a.bigo; }
+      return;
+    }
+    if (String(from) === String(sIdx)) qty -= q;
+    if (String(to) === String(sIdx)) { qty += q; if (a.bigo) latestBigo = a.bigo; }
+  });
+  discards.forEach(d => {
+    if (String(d.sIdx) === String(sIdx)) qty -= (Number(d.qty) || 0);
+  });
+  return { qty, bigo: latestBigo };
 };
 
-const defaultEquipForm = () => ({
-  name: '',
-  category: '',
-  quantity: 1,
-  location: '',
-  purchaseDate: '',
-  // nextCheckDate: '',
-  status: 'normal', note: '',
+// 현재 이 사이트에 배치된 장비 리스트
+const siteEquipmentList = computed(() => {
+  const sIdx = route.params.id || route.query.idx;
+  if (!sIdx) return [];
+  return equipmentList.value
+      .map(eq => {
+        const { qty, bigo } = computeSiteQty(eq, sIdx);
+        return { ...eq, siteQty: qty, siteBigo: bigo };
+      })
+      .filter(eq => eq.siteQty > 0);
 });
 
-const equipForm = ref(defaultEquipForm());
-
-const equipStats = computed(() => {
-  const total  = equipmentList.value.length;
-  const totalQuantity = equipmentList.value.reduce((acc, cur) => acc + (Number(cur.quantity) || 0), 0);
-  const normal = equipmentList.value.filter(e => e.status === 'normal').length;
-  const check  = equipmentList.value.filter(e => e.status === 'check').length;
-  const fault  = equipmentList.value.filter(e => e.status === 'fault').length;
-  return { total, totalQuantity, normal, check, fault };
+// 대분류별 그룹핑 (itemCd 앞 5자리)
+const equipByCategory = computed(() => {
+  const map = {};
+  siteEquipmentList.value.forEach(eq => {
+    const baseCd = (eq.type || '').substring(0, 5);
+    const catName = typeNameMap.value[baseCd] || '미분류';
+    if (!map[catName]) map[catName] = [];
+    map[catName].push(eq);
+  });
+  return map;
 });
 
-const collapsedEquipCategories = ref(['기타 장비']);
+const collapsedEquipCategories = ref([]);
 const toggleEquipCategory = (cat) => {
   if (collapsedEquipCategories.value.includes(cat)) {
     collapsedEquipCategories.value = collapsedEquipCategories.value.filter(c => c !== cat);
@@ -256,21 +269,67 @@ const toggleEquipCategory = (cat) => {
   }
 };
 
-const equipByCategory = computed(() => {
-  const map = {};
-  for (const cat of EQUIP_CATEGORIES) {
-    map[cat] = [];
-  }
-  for (const item of equipmentList.value) {
-    const cat = EQUIP_CATEGORIES.includes(item.category) ? item.category : '기타 장비';
-    if (!map[cat]) map[cat] = [];
-    map[cat].push(item);
-  }
-  for (const cat in map) {
-    if (map[cat].length === 0) delete map[cat];
-  }
-  return map;
+const getEquipIcon = (category) => {
+  const icons = {
+    '청소장비': 'mdi-broom',
+    '제설장비': 'mdi-snowflake',
+    '경비/통신장비': 'mdi-shield-account-outline',
+    '안전장비': 'mdi-hard-hat',
+    '차량/작업장비': 'mdi-car-wash',
+    '가전': 'mdi-washing-machine',
+    '부속품': 'mdi-cog-outline',
+  };
+  return icons[category] || 'mdi-toolbox-outline';
+};
+
+// 장비 상태: 폐기 여부, 수리중 여부
+const equipRowStatus = (eq) => {
+  if (eq.status === 2) return { key: 'discarded', label: '폐기', color: 'danger' };
+  if (eq.status === 1) return { key: 'check', label: '수리/점검중', color: 'warning' };
+  return { key: 'normal', label: '정상', color: 'success' };
+};
+const equipRowClass = (eq) => {
+  const s = equipRowStatus(eq);
+  if (s.key === 'discarded') return 'row-fault';
+  if (s.key === 'check') return 'row-check';
+  return '';
+};
+
+const equipColumns = [
+  { key: 'category', label: '분류', width: '160px' },
+  { key: 'name', label: '장비명 (모델명)' },
+  { key: 'serialNo', label: '고유번호', width: '140px' },
+  { key: 'siteQty', label: '배치 수량', align: 'center', width: '100px' },
+  { key: 'status', label: '상태', align: 'center', width: '110px' },
+  { key: 'purchaseDt', label: '도입일', width: '110px' },
+  { key: 'bigo', label: '특이사항' },
+  { key: 'actions', label: '', align: 'center', width: '70px' }
+];
+
+const equipStats = computed(() => {
+  const list = siteEquipmentList.value;
+  const total = list.length;
+  const totalQuantity = list.reduce((s, e) => s + (Number(e.siteQty) || 0), 0);
+  const check = list.filter(e => e.status === 1).length;
+  const fault = list.filter(e => e.status === 2).length;
+  return { total, totalQuantity, normal: total - check - fault, check, fault };
 });
+
+// 사이트명 매핑 (모달에 전달)
+const siteList = ref([]);
+const siteNameMap = computed(() => {
+  const m = { 0: '본사' };
+  siteList.value.forEach(s => { m[s.idx] = s.name; });
+  return m;
+});
+const fetchSiteList = async () => {
+  try {
+    const res = await axios.get(`/api/v1/site/list`);
+    siteList.value = res.data?.data || [];
+  } catch (e) {
+    console.error('현장 목록 로드 실패:', e);
+  }
+};
 
 
 // ========================================================
@@ -290,16 +349,21 @@ const closeDetailModal = () => {
   selectedEq.value = null;
 };
 
-const handleEquipmentUpdate = (payload) => {
-  if (payload.type === 'repair') {
-    if (payload.data.updateStatus) {
-      const eq = equipmentList.value.find(e => e.idx === selectedEq.value?.idx);
-      if (eq) {
-        eq.status = 'check'; // 기안 시 수리/점검중으로 변경
-      }
-    }
+const handleEquipmentUpdate = async () => {
+  // 이동/폐기/수리 등 변경 발생 시 서버 재조회
+  const prevIdx = selectedEq.value?.idx;
+  await fetchEquipmentList();
+  if (prevIdx) {
+    const refreshed = equipmentList.value.find(e => e.idx === prevIdx);
+    if (refreshed) selectedEq.value = refreshed;
   }
 };
+
+// (레거시 - 구 구조. 현재 템플릿에서 미사용)
+const isEquipModalOpen = ref(false);
+const editingEquip     = ref(null);
+const defaultEquipForm = () => ({ name: '', category: '', quantity: 1, location: '', purchaseDate: '', status: 'normal', note: '' });
+const equipForm = ref(defaultEquipForm());
 
 const openEquipModal = (equip = null) => {
   editingEquip.value = equip;
@@ -348,23 +412,29 @@ const deleteEquip = async (equip) => {
 };
 
 const fetchEquipmentList = async () => {
-  const sIdx = route.params.id || route.query.idx;
-  if (!sIdx) return;
   try {
-    const res = await axios.get(`/api/v1/site/equipment/${sIdx}`);
-    equipmentList.value = res.data.data || [];
-  } catch {
-    equipmentList.value = [
-      { idx: 1, name: '탑승식 바닥세정기', category: '주요 장비', quantity: 2, location: '지하 1층 미화창고', purchaseDate: '2023-05-10', nextCheckDate: '2024-11-10', status: 'normal', note: '배터리 상태 양호' },
-      { idx: 2, name: '보행식 바닥세정기', category: '주요 장비', quantity: 1, location: '각 동 미화휴게실', purchaseDate: '2024-01-15', nextCheckDate: '2024-12-15', status: 'check', note: 'A/S 입고' },
-      { idx: 3, name: '전기카트 / 전동카트', category: '주요 장비', quantity: 2, location: '방재실 / 초소', purchaseDate: '2022-11-01', nextCheckDate: '2024-05-01', status: 'fault', note: '배터리 교체 요망' },
-      { idx: 4, name: '고압세척기', category: '주요 장비', quantity: 1, location: '정문 초소 옆 창고', purchaseDate: '2021-10-20', nextCheckDate: '2024-10-01', status: 'normal', note: '' },
-      { idx: 5, name: '전동송풍기', category: '기타 장비', quantity: 4, location: '자재창고', purchaseDate: '2022-01-10', nextCheckDate: '2024-08-01', status: 'normal', note: '' },
-      { idx: 6, name: '미화카트', category: '기타 장비', quantity: 19, location: '각 동 미화창고', purchaseDate: '2023-02-15', nextCheckDate: '', status: 'normal', note: '' },
-      { idx: 7, name: '돌돌이 / 신주청소기 / 주차장진공청소기', category: '기타 장비', quantity: 3, location: '지하주차장', purchaseDate: '2023-05-20', nextCheckDate: '', status: 'normal', note: '' },
-    ];
+    // 분류 코드 (06 트리) + 사이트 목록을 함께 로드
+    await Promise.all([fetchEquipCodes(), fetchSiteList()]);
+    const res = await axios.get(`/api/v2/equipment/list`);
+    equipmentList.value = res.data?.data || [];
+  } catch (e) {
+    console.error('장비 목록 로드 실패:', e);
+    equipmentList.value = [];
   }
   isEquipLoaded.value = true;
+};
+
+const fetchEquipCodes = async () => {
+  try {
+    const cIdx = useAuthStore().user?.cIdx;
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    equipCodes.value = (res.data?.data || []).filter(c =>
+        c.useFl === 'Y' && (c.groupCd === '06' || c.itemCd?.startsWith('06'))
+    );
+  } catch (e) {
+    console.error('장비 분류 코드 로드 실패:', e);
+    equipCodes.value = [];
+  }
 };
 
 // =============================================
@@ -1825,7 +1895,7 @@ onMounted(async () => {
           </div>
           <div class="stat-item">
             <div class="stat-icon stat-purple"><i class="mdi mdi-wrench-outline"></i></div>
-            <div class="stat-content"><span class="stat-label">등록장비</span><span class="stat-value">{{ equipmentList.length }}종</span></div>
+            <div class="stat-content"><span class="stat-label">배치장비</span><span class="stat-value">{{ equipStats.total }}종</span></div>
           </div>
         </div>
       </div>
@@ -2720,7 +2790,7 @@ onMounted(async () => {
           <div class="equip-stat-card">
             <div class="equip-stat-icon esi-blue"><i class="mdi mdi-toolbox-outline"></i></div>
             <div class="equip-stat-body">
-              <span class="equip-stat-label">총 보유 장비</span>
+              <span class="equip-stat-label">배치 장비</span>
               <span class="equip-stat-value">{{ equipStats.total }}종 <small>({{ equipStats.totalQuantity }}대)</small></span>
             </div>
           </div>
@@ -2728,29 +2798,29 @@ onMounted(async () => {
             <div class="equip-stat-icon esi-green"><i class="mdi mdi-check-circle-outline"></i></div>
             <div class="equip-stat-body">
               <span class="equip-stat-label">운영 정상</span>
-              <span class="equip-stat-value text-green">{{ equipStats.normal }}건</span>
+              <span class="equip-stat-value text-green">{{ equipStats.normal }}종</span>
             </div>
           </div>
           <div class="equip-stat-card">
             <div class="equip-stat-icon esi-orange"><i class="mdi mdi-progress-wrench"></i></div>
             <div class="equip-stat-body">
               <span class="equip-stat-label">수리/점검중</span>
-              <span class="equip-stat-value text-orange">{{ equipStats.check }}건</span>
+              <span class="equip-stat-value text-orange">{{ equipStats.check }}종</span>
             </div>
           </div>
           <div class="equip-stat-card" :class="{ 'card-alert': equipStats.fault > 0 }">
             <div class="equip-stat-icon esi-red"><i class="mdi mdi-alert-circle-outline"></i></div>
             <div class="equip-stat-body">
-              <span class="equip-stat-label">고장/폐기대기</span>
-              <span class="equip-stat-value text-red">{{ equipStats.fault }}건</span>
+              <span class="equip-stat-label">폐기</span>
+              <span class="equip-stat-value text-red">{{ equipStats.fault }}종</span>
             </div>
           </div>
         </div>
 
-        <div v-if="equipmentList.length === 0" class="empty-state">
+        <div v-if="siteEquipmentList.length === 0" class="empty-state">
           <i class="mdi mdi-car-wash"></i>
-          <p>등록된 미화/경비 장비가 없습니다</p>
-          <span>장비 등록 버튼을 눌러 관리할 실물 장비를 추가해주세요</span>
+          <p>이 현장에 배치된 장비가 없습니다</p>
+          <span>장비 관리 페이지에서 장비를 등록하거나 다른 현장에서 이동시킬 수 있습니다</span>
         </div>
 
         <div v-else class="equip-sections">
@@ -2764,28 +2834,29 @@ onMounted(async () => {
               </div>
               <div class="equip-table-wrap" v-show="!collapsedEquipCategories.includes(cat)">
                 <DataTable :items="items" :columns="equipColumns" :rowClass="equipRowClass">
+                  <template #cell-category="{ item }">
+                    <span class="equip-status-badge esb-gray" :title="typeLabel(item.type)">{{ typeLeafName(item.type) }}</span>
+                  </template>
                   <template #cell-name="{ item }">
                     <span class="equip-name-cell">{{ item.name }}</span>
+                    <span v-if="item.model" class="text-muted small-text" style="margin-left: 6px;">({{ item.model }})</span>
                   </template>
-                  <template #cell-quantity="{ item }">
-                    <span class="fw-bold text-primary">{{ item.quantity }}대</span>
+                  <template #cell-serialNo="{ item }">
+                    <span class="text-muted small-text">{{ item.serialNo || '-' }}</span>
+                  </template>
+                  <template #cell-siteQty="{ item }">
+                    <span class="fw-bold text-primary">{{ item.siteQty }}대</span>
                   </template>
                   <template #cell-status="{ item }">
-                    <span :class="['equip-status-badge', `esb-${equipStatusMap[item.status]?.color || 'gray'}`]">
-                      {{ equipStatusMap[item.status]?.label || item.status }}
+                    <span :class="['equip-status-badge', `esb-${equipRowStatus(item).color}`]">
+                      {{ equipRowStatus(item).label }}
                     </span>
                   </template>
-                  <template #cell-purchaseDate="{ item }">
-                    <span class="text-muted">{{ item.purchaseDate || '-' }}</span>
+                  <template #cell-purchaseDt="{ item }">
+                    <span class="text-muted">{{ item.purchaseDt || '-' }}</span>
                   </template>
-                  <!--template #cell-nextCheckDate="{ item }">
-                    <span :class="isCheckOverdue(item.nextCheckDate) ? 'text-red fw-bold' : 'text-muted'">
-                      {{ item.nextCheckDate || '-' }}
-                      <span v-if="isCheckOverdue(item.nextCheckDate)" class="overdue-chip">기한초과</span>
-                    </span>
-                  </template-->
-                  <template #cell-note="{ item }">
-                    <span class="text-muted small-text">{{ item.note || '-' }}</span>
+                  <template #cell-bigo="{ item }">
+                    <span class="text-muted small-text">{{ item.siteBigo || '-' }}</span>
                   </template>
                   <template #cell-actions="{ item }">
                     <div class="equip-action-btns justify-center">
@@ -2977,6 +3048,8 @@ onMounted(async () => {
     <EquipmentDetailModal
         :show="showDetailModal"
         :equipment="selectedEq"
+        :typeNameMap="typeNameMap"
+        :siteNameMap="siteNameMap"
         @close="closeDetailModal"
         @update="handleEquipmentUpdate"
     />

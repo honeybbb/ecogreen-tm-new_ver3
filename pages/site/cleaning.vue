@@ -8,14 +8,51 @@ const { siteOptions, fetchSiteOptions } = useApi();
  * 상수
  * ========================================================================= */
 const DAY_MS = 86400000;
-const WARN_AFTER_MONTHS = 4; // 요구사항 7: 구간 시작 후 4개월 경과하면 경고
+const WARN_AFTER_MONTHS = 4; // 구간 시작 후 4개월 경과하면 미실시 경고 표시
 
-const STATUS_LABEL = { 0: '예정', 1: '확정', 2: '진행중', 3: '완료', 4: '취소' };
-const DOC_STATUS_LABEL = { 0: '미발송', 1: '발송', 2: '일부확인', 3: '확인완료' };
-const RECEIPT_TYPE_LABEL = { SITE: '단지', MANAGER: '담당자' };
+const STATUS_LABEL = { 0: '예정', 1: '확정', 2: '진행중', 3: '완료', 4: '취소', 5: '확정대기' };
+const DOC_STATUS_LABEL = { 0: '미발송', 1: '발송완료' };
 
-// 투입 장비 — 여러 개 선택 가능. 항목을 늘리려면 여기에만 추가하면 된다.
-const EQUIPMENT_OPTIONS = ['고압세척기', '사다리차'];
+// 투입 장비 — new_tb_equipment 에서 동적 로드
+const equipmentOptions = ref([]); // { idx, name, model, serialNo }
+
+const fetchEquipmentOptions = async () => {
+  try {
+    const res = await axios.get('/api/v2/equipment/list');
+    equipmentOptions.value = (res.data?.data || [])
+        .filter(eq => eq.status !== 2) // 폐기(마스터 전량 폐기) 제외
+        .map(eq => ({ idx: eq.idx, name: eq.name, model: eq.model, serialNo: eq.serialNo }));
+  } catch (e) {
+    console.error('장비 목록 로드 실패:', e);
+    equipmentOptions.value = [];
+  }
+};
+
+// select → chip 추가/제거
+const onEquipmentPick = (e) => {
+  const val = Number(e.target.value);
+  if (!val || Number.isNaN(val)) return;
+  if (!Array.isArray(addForm.value.equipment)) addForm.value.equipment = [];
+  if (!addForm.value.equipment.some(v => Number(v) === val)) {
+    addForm.value.equipment.push(val);
+  }
+  e.target.value = ''; // select 리셋
+};
+const removeEquipmentPick = (idx) => {
+  addForm.value.equipment.splice(idx, 1);
+};
+
+// idx(또는 과거 이름 문자열) 를 표시용 라벨로 변환
+const equipLabel = (val) => {
+  if (val === null || val === undefined || val === '') return '';
+  const asNum = Number(val);
+  if (!Number.isNaN(asNum)) {
+    const found = equipmentOptions.value.find(eq => Number(eq.idx) === asNum);
+    if (found) return found.name + (found.model ? ` (${found.model})` : '');
+  }
+  return String(val); // 과거 이름 문자열 그대로
+};
+const equipDisplayList = (arr) => (arr || []).map(equipLabel).filter(Boolean);
 
 const fmtDate = (d) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -37,7 +74,7 @@ const tabDescriptions = {
   status: '현장별로 계약 주기 안에서 몇 회를 실시했는지, 남은 횟수와 소요일을 확인하세요.',
   workload: '현장별 월 소요일 합계와, 계약 소요일 대비 실제 등록/완료 소요일을 비교해서 보여줍니다.',
   assign: '카드의 "인원 편집"은 일정 전체 날짜에 한 번에 배정합니다. 날짜별로 다르게 넣으려면 카드를 열어 일차별 표에서 편집하세요.',
-  documents: '발송할 공문을 확인하고, 단지·담당자 두 곳의 수신확인 상태를 관리하세요.'
+  documents: '발송이 필요한 공문을 확인하고, 발송 이력을 관리하세요.'
 };
 
 /* =========================================================================
@@ -148,10 +185,12 @@ const fetchCleaningStaff = async () => {
 // 관리자 목록: API 우선, 실패 시 최소 동작을 위한 폴백
 const fetchManagers = async () => {
   try {
-    const { data } = await axios.get('/api/v1/member/manager');
+    const cIdx = useAuthStore().user?.cIdx;
+    if (!cIdx) throw new Error('cIdx 없음');
+    const { data } = await axios.get(`/api/v1/manager/list/${cIdx}`);
     const list = data.data || [];
     if (list.length) {
-      managers.value = list.map((m) => ({ idx: m.idx, name: m.name }));
+      managers.value = list.map((m) => ({ idx: m.idx, name: m.managerNm || m.name || m.managerId }));
       return;
     }
     throw new Error('empty');
@@ -165,13 +204,13 @@ const fetchManagers = async () => {
 };
 
 /* =========================================================================
- * 2-1. 공휴일 (요구사항: 토/일/공휴일 포함 여부 체크박스)
+ * 2-1. 공휴일 (토/일/공휴일 포함 여부 체크박스와 연동)
  *      API 우선, 실패 시 폴백 목록 사용 (폴백은 정확하지 않을 수 있음)
  * ========================================================================= */
 const holidays = ref([]);              // 공휴일 캐시: [{ date: 'YYYY-MM-DD', name: '신정' }, ...]
 const loadedHolidayYears = ref(new Set()); // 이미 요청한 연도 (중복/실패 스팸 방지)
 
-// 백엔드 /api/v1/common/holiday?year=YYYY 는 공공데이터포털
+// 백엔드 /api/v1/config/holiday?year=YYYY 는 공공데이터포털
 // "한국천문연구원_특일 정보(getRestDeInfo)" 를 프록시하며,
 // { result: true, data: [{ date: "2026-01-01", name: "신정" }, ...] } 형태로 응답한다고 가정한다.
 // (구버전 백엔드가 문자열 배열만 줄 수도 있어 방어적으로 처리)
@@ -181,7 +220,7 @@ const ensureHolidaysLoaded = async (year) => {
   loadedHolidayYears.value.add(year); // 실패해도 같은 연도로 재요청이 반복되지 않도록 먼저 마킹
 
   try {
-    const { data } = await axios.get('/api/v1/common/holiday', { params: { year } });
+    const { data } = await axios.get('/api/v1/config/holiday', { params: { year } });
     const list = (data.data || []).map((h) =>
         typeof h === 'string'
             ? { date: h.slice(0, 10), name: '' }
@@ -252,7 +291,7 @@ const normalizeSchedule = (s) => {
   }
   if (!Array.isArray(dailyTasksRaw)) dailyTasksRaw = [];
 
-  // 요구사항: "2일 일정인데 1일차엔 김AA, 2일차엔 빠짐" 처럼 날짜별로 투입 인원이 달라질 수 있어
+  // "2일 일정인데 1일차엔 김AA, 2일차엔 빠짐" 처럼 날짜별로 투입 인원이 달라질 수 있어
   // 일차별 작업내용(dailyTasks)에 그날의 staffIds를 함께 저장한다.
   // 옛 데이터(일차별 staffIds가 없는 경우)는 일정 전체 staffIds를 그대로 물려받게 폴백 처리.
   // leaderId: 그날 배정된 인원 중 "팀장"으로 지정된 사람 (없으면 null)
@@ -280,8 +319,14 @@ const normalizeSchedule = (s) => {
     startTm: s.startTm || '',
     endTm: s.endTm || '',
     durationDays,
-    // 여러 장비를 선택할 수 있어 DB에는 "고압세척기,사다리차"처럼 콤마로 저장하고, 화면에서는 배열로 다룬다
-    equipment: s.equipment ? String(s.equipment).split(',').map((v) => v.trim()).filter(Boolean) : [],
+    // 여러 장비를 선택할 수 있어 DB에는 "10,11"처럼 콤마로 저장하고, 화면에서는 숫자(idx) 배열로 다룬다.
+    // 과거 이름 문자열 데이터와의 호환을 위해 숫자 변환 시도 후 실패하면 원본 유지.
+    equipment: s.equipment
+        ? String(s.equipment).split(',').map(v => v.trim()).filter(Boolean).map(v => {
+            const n = Number(v);
+            return Number.isNaN(n) ? v : n;
+          })
+        : [],
     memo: s.memo || '',
     address: s.address || '',
     siteName: s.siteName || '',
@@ -368,7 +413,7 @@ const findConfig = (sIdx, itemCd) => {
 };
 
 /* =========================================================================
- * 5. 계약 주기 & 실시/미실시 판정 (요구사항 2, 7)
+ * 5. 계약 주기 & 실시/미실시 판정
  *    - 달력연도가 아니라 "계약 실시일 ~ +cycleMonths" 를 기준으로 판정
  *    - 주기를 count 등분해 구간별로 실시 여부를 본다 (연 2회 → 상/하반기)
  *    - 구간 시작 후 4개월이 지났는데 미실시면 경고
@@ -424,7 +469,7 @@ const buildCycleSegments = (range, count) => {
 };
 
 /* =========================================================================
- * 6. 현장별 실시현황 (요구사항 1, 2, 7)
+ * 6. 현장별 실시현황
  * ========================================================================= */
 const cleaningStatusBySite = computed(() => {
   const today = todayStr();
@@ -435,7 +480,7 @@ const cleaningStatusBySite = computed(() => {
     const tasks = site.cleaningConfig.map((config) => {
       const cycleRange = getCycleRange(config.cycleStartDt, config.cycleMonths);
 
-      // 주기 범위 안의 일정만 집계 (요구사항 2). 취소된 일정은 실제로 진행되지 않으므로 제외.
+      // 주기 범위 안의 일정만 집계. 취소된 일정은 실제로 진행되지 않으므로 제외.
       const inCycle = siteSchedules.filter((s) => {
         if (s.itemCd !== config.code) return false;
         if (Number(s.status) === 4) return false;
@@ -465,7 +510,7 @@ const cleaningStatusBySite = computed(() => {
         isService: config.isService,
         docRequired: config.docRequired,
 
-        // 요구사항 1: 횟수 + 회당 소요일 + 누적 소요일
+        // 횟수 + 회당 소요일 + 누적 소요일
         total: config.count,
         plannedCount: planned.length,
         doneCount: done.length,
@@ -475,7 +520,6 @@ const cleaningStatusBySite = computed(() => {
         plannedDurationDays: planned.reduce((a, s) => a + (s.durationDays || 0), 0),
         doneDurationDays: done.reduce((a, s) => a + (s.durationDays || 0), 0),
 
-        // 요구사항 2, 7
         cycleRange,
         segments,
         warnings,
@@ -491,7 +535,7 @@ const cleaningStatusBySite = computed(() => {
       isAllCompleted: tasks.length > 0 && tasks.every((t) => t.doneCount >= t.total),
       remainCount: tasks.filter((t) => t.remain > 0).length,
       warningCount: tasks.filter((t) => t.warning).length,
-      // 요구사항 8: 현장 단위 소요일 합계
+      // 현장 단위 소요일 합계
       siteTotalDays: tasks.reduce((a, t) => a + t.totalDurationDays, 0),
       sitePlannedDays: tasks.reduce((a, t) => a + t.plannedDurationDays, 0)
     };
@@ -533,21 +577,21 @@ const totalWarningCount = computed(
 );
 
 /* =========================================================================
- * 7. 캘린더 필터 & 레인 배치 (요구사항 3, 4, 6)
+ * 7. 캘린더 필터 & 레인 배치
  * ========================================================================= */
 const filterMode = ref('all');       // all | staff | manager
 const filterStaffIdx = ref('');
 const filterManagerIdx = ref('');
 const docFilter = ref('all');        // all | confirmed | pending
 
-const isDocPending = (s) => s.docRequired && s.docStatus < 3;
+const isDocPending = (s) => s.docRequired && s.docStatus === 0;
 
 const calendarFilteredSchedules = computed(() =>
     cleaningSchedules.value
         .filter((s) => {
           if (filterMode.value === 'staff' && filterStaffIdx.value !== '' && !(s.staffIds || []).includes(filterStaffIdx.value)) return false;
           if (filterMode.value === 'manager' && filterManagerIdx.value !== '' && s.mnIdx !== filterManagerIdx.value) return false;
-          // 요구사항 6: 3자 확인 완료분만 보기 / 대기분만 보기
+          // 공문 발송 완료분만 / 대기분만 보기
           if (docFilter.value === 'confirmed' && isDocPending(s)) return false;
           if (docFilter.value === 'pending' && !isDocPending(s)) return false;
           return true;
@@ -589,14 +633,14 @@ const schedulesByDate = computed(() => {
     calendarDays.value.forEach((day) => {
       if (day.dateStr < s.startDt || day.dateStr > s.endDt) return;
       const dayIndex = Math.floor((new Date(day.dateStr) - new Date(s.startDt)) / DAY_MS) + 1;
-      // 요구사항: 달력/툴팁도 일정 전체 합집합이 아니라 "그 날짜에" 실제로 투입되는 인원만 정확히 보여준다.
+      // 달력/툴팁도 일정 전체 합집합이 아니라 "그 날짜에" 실제로 투입되는 인원만 정확히 보여준다.
       const dayTask = (s.dailyTasks || []).find((d) => d.date === day.dateStr);
       byDate[day.dateStr][lane] = {
         ...s,
         dayIndex,
         isStartDay: dayIndex === 1,
         isEndDay: day.dateStr === s.endDt,
-        // 이 일정의 토/일/공휴일 포함여부 체크박스 기준으로 그 날이 제외 대상인지 (요구사항: 달력에서도 비워 보이게)
+        // 이 일정의 토/일/공휴일 포함여부 체크박스 기준으로 그 날이 제외 대상인지 (달력에서도 비워 보이게)
         isExcludedDay: isDayExcluded(day.dateStr, s),
         dayStaffIds: dayTask ? (dayTask.staffIds || []) : s.staffIds,
         dayLeaderId: dayTask ? (dayTask.leaderId || null) : null
@@ -613,13 +657,14 @@ const getStatusColor = (status) => {
   if (Number(status) === 4) return '#9ca3af'; // 취소
   if (Number(status) === 3) return 'var(--success, #22c55e)';
   if (Number(status) === 2) return 'var(--warning, #f59e0b)';
+  if (Number(status) === 5) return '#a855f7'; // 확정대기 (보라)
   if (Number(status) === 1) return '#0ea5e9';
   return 'var(--primary, #4f46e5)';
 };
 const statusLabel = (status) => STATUS_LABEL[Number(status)] ?? '-';
 
 /* =========================================================================
- * 8. 작업자 배정 (요구사항 개편)
+ * 8. 작업자 배정
  *    - 예전엔 일정 하나를 팀 하나에 통째로 배정했지만, 같은 팀이어도
  *      날마다 투입 인원 수가 다를 수 있어 이제는 일정마다 개인 작업자를
  *      여러 명 체크해서 넣는 방식으로 바꾼다. (칸반 드래그앤드롭 대신
@@ -701,9 +746,9 @@ const toggleScheduleStaff = async (schedule, staffIdx) => {
   if (isAdding) {
     const dayConflicts = getDayConflicts(staffIdx, workDates, schedule.idx);
     if (dayConflicts.length > 0) {
-      const msg = `${getStaffName(staffIdx)}님은 아래 날짜에 이미 다른 일정에 배정되어 있어 중복으로 배정할 수 없습니다.\n\n${formatDayConflictList(dayConflicts)}`;
-      window.customAlert?.(msg, 'error') ?? alert(msg);
-      return; // 배정하지 않고 종료
+      // 안내만 하고 배정은 그대로 진행 — 중복 배정도 허용한다
+      const msg = `${getStaffName(staffIdx)}님은 아래 날짜에 일정이 배정되어 있습니다.\n\n${formatDayConflictList(dayConflicts)}`;
+      window.customAlert?.(msg, 'warning') ?? alert(msg);
     }
   }
 
@@ -796,7 +841,7 @@ const setScheduleLeader = async (schedule, staffIdx) => {
 };
 
 /* =========================================================================
- * 9. 소요일 합산 (요구사항 8)
+ * 9. 소요일 합산
  *    - 현장별 월 소요일 합계 (누가 갔는지가 아니라, 어느 현장에 소요일이
  *      얼마나 쌓였는지가 인원 추가 편성 판단에 더 직접적인 지표이므로
  *      작업자 기준이 아니라 현장 기준으로 집계한다)
@@ -865,11 +910,22 @@ const plannedTotalDays = computed(() =>
 );
 
 /* =========================================================================
- * 10. 일정 등록 / 수정 모달 (요구사항 10)
+ * 10. 일정 등록 / 수정 모달
  * ========================================================================= */
 const showAddModal = ref(false);
 const isEditMode = ref(false);
 const editingIdx = ref(null);
+
+// 상세 모달에서 "공문 발송" 버튼이 참조하는 저장된 스케줄. 폼에서 수정 중인 값이 아니라
+// 이미 서버에 저장된 상태 기준으로 공문 스냅샷이 만들어진다.
+const editingSchedule = computed(() =>
+    editingIdx.value == null ? null : cleaningSchedules.value.find((s) => s.idx === editingIdx.value)
+);
+
+const issueDocumentFromModal = async () => {
+  if (!editingSchedule.value) return;
+  await issueDocument(editingSchedule.value);
+};
 
 const blankForm = () => ({
   sIdx: '',
@@ -918,10 +974,10 @@ const formCalendarDates = computed(() => {
   return dates;
 });
 
-// 전체 달력일 수 (기존 요구사항과의 호환을 위해 유지)
+// 전체 달력일 수 (이전 코드와의 호환을 위해 유지)
 const formDuration = computed(() => formCalendarDates.value.length);
 
-// 실제 소요일 = 토/일/공휴일 체크를 해제한 날은 제외한 일수 (요구사항: 자동 제외)
+// 실제 소요일 = 토/일/공휴일 체크를 해제한 날은 제외한 일수 (자동 제외)
 const formWorkingDays = computed(() =>
     formCalendarDates.value.filter((d) => !isDayExcluded(d, addForm.value)).length
 );
@@ -1028,7 +1084,7 @@ const isDayLeader = (date, staffIdx) => {
   return !!day && day.leaderId === staffIdx;
 };
 
-// 항목을 고르면 계약 설정에서 소요일·공문 여부를 상속 (요구사항 1, 5)
+// 항목을 고르면 계약 설정에서 소요일·공문 여부를 상속
 watch(() => addForm.value.itemCd, (code) => {
   if (!code || isEditMode.value) return;
   const task = availableTasks.value.find((t) => t.code === code);
@@ -1067,7 +1123,7 @@ watch(
 //  타이밍 버그의 근원이라 완전히 없앴다. 이제 일차별 표에서 직접 체크/해제하는 게 전부다.)
 
 /* =========================================================================
- * 10-1. 청소 완료 사진 (요구사항: 완료 처리 전에 사진을 반드시 확인)
+ * 10-1. 청소 완료 사진 (완료 처리 전에 반드시 확인)
  *    - 사진은 현장/앱 등 다른 경로로 이미 업로드되어 있다고 가정하고,
  *      여기서는 조회만 한다. 사진이 0장이면 "완료" 상태로 저장할 수 없다.
  * ========================================================================= */
@@ -1161,20 +1217,18 @@ const saveAddModal = async () => {
   console.log('[saveAddModal] 일차별 인원 현황(dailyTasks):', JSON.parse(JSON.stringify(f.dailyTasks)));
   console.log('[saveAddModal] 겹침 검사 결과(formStaffConflicts):', formStaffConflicts.value);
 
-  // 같은 날짜에 이미 다른 일정에 배정된 작업자가 있으면 저장을 막고 알려준다
+  // 같은 날짜에 다른 일정에 배정된 작업자가 있어도 저장은 허용 — 안내만 띄운다
   if (formStaffConflicts.value.length > 0) {
-    console.warn('[saveAddModal] 막힘: 인원 겹침', formStaffConflicts.value);
+    console.warn('[saveAddModal] 인원 겹침 (허용, 안내만)', formStaffConflicts.value);
     const detail = formStaffConflicts.value
         .map(({ date, staffIdx, conflicts }) =>
             `- ${date} ${getStaffName(staffIdx)}: ${conflicts.map((e) => `${e.siteName}·${e.itemName}`).join(', ')}`)
         .join('\n');
-    const msg = `같은 날짜에 이미 다른 일정에 배정된 작업자가 있어 저장할 수 없습니다.\n\n${detail}\n\n일차별 표에서 인원을 조정한 뒤 다시 저장해주세요.`;
-    window.customAlert?.(msg, 'error');
-    alert(msg);
-    return;
+    const msg = `아래 작업자는 같은 날짜에 다른 일정에도 배정되어 있습니다.\n\n${detail}`;
+    window.customAlert?.(msg, 'warning') ?? alert(msg);
   }
 
-  // 요구사항: "완료" 처리 전에 청소 완료 사진을 반드시 확인해야 한다 — 사진이 없으면 완료로 저장 불가
+  // "완료" 처리 전에 청소 완료 사진을 반드시 확인해야 한다 — 사진이 없으면 완료로 저장 불가
   if (Number(f.status) === 3 && schedulePhotos.value.length === 0) {
     console.warn('[saveAddModal] 막힘: 완료 사진 없음');
     const msg = '청소 완료 사진이 없어 "완료" 상태로 저장할 수 없습니다.\n현장에서 사진이 업로드된 뒤 다시 시도해주세요.';
@@ -1200,7 +1254,7 @@ const saveAddModal = async () => {
     endDt: f.endDt,
     startTm: f.startTm || null,
     endTm: f.endTm || null,
-    // 요구사항: 토/일/공휴일 미포함 시 소요일에서 자동 제외
+    // 토/일/공휴일 미포함 시 소요일에서 자동 제외
     durationDays: formWorkingDays.value,
     status: Number(f.status),
     // 여러 작업자 배정 가능 — DB에는 "3,7,12"처럼 콤마 구분 문자열로 저장 (일차별 상세는 dailyTasksJson에)
@@ -1214,7 +1268,7 @@ const saveAddModal = async () => {
     includeSat: f.includeSat ? 'Y' : 'N',
     includeSun: f.includeSun ? 'Y' : 'N',
     includeHoliday: f.includeHoliday ? 'Y' : 'N',
-    // 요구사항: 일차별 작업내용(+ 그날의 투입 인원)은 JSON으로 저장
+    // 일차별 작업내용(+ 그날의 투입 인원)은 JSON으로 저장
     dailyTasksJson: JSON.stringify(f.dailyTasks || [])
   };
 
@@ -1252,20 +1306,20 @@ const deleteSchedule = async () => {
 };
 
 /* =========================================================================
- * 11. 공문 발송 / 수신확인 (요구사항 5, 6)
+ * 11. 공문 발송 / 이력
  * ========================================================================= */
 const documents = ref([]);
+const issuingIdx = ref(null);
 
 const fetchDocuments = async () => {
   try {
     const { data } = await axios.get('/api/v1/site/cleaning/doc');
     documents.value = (data.data || []).map((d) => ({
       ...d,
-      snapshot: typeof d.snapshotJson === 'string' ? JSON.parse(d.snapshotJson || '{}') : (d.snapshotJson || {}),
-      receipts: d.receipts || []
+      snapshot: typeof d.snapshotJson === 'string' ? JSON.parse(d.snapshotJson || '{}') : (d.snapshotJson || {})
     }));
   } catch (e) {
-    console.warn('공문 목록 API 미연동');
+    console.error('공문 목록 조회 실패:', e);
     documents.value = [];
   }
 };
@@ -1284,12 +1338,7 @@ const pendingDocSchedules = computed(() => {
       .sort((a, b) => a.startDt.localeCompare(b.startDt));
 });
 
-// 발송했지만 확인이 안 끝난 건
-const awaitingConfirmDocs = computed(() =>
-    documents.value.filter((d) => (d.receipts || []).some((r) => r.confirmedYn !== 'Y' && r.confirmedYn !== true))
-);
-
-// 요구사항 10: 공문에 실릴 내용 스냅샷
+// 공문에 실릴 스냅샷: 발송 시점의 현장/일정 정보를 그대로 박제해 둔다
 const buildSnapshot = (schedule) => {
   const site = siteContracts.value.find((s) => s.sIdx === schedule.sIdx);
   return {
@@ -1303,17 +1352,10 @@ const buildSnapshot = (schedule) => {
     durationDays: schedule.durationDays,
     staffNames: getStaffNames(schedule.staffIds),
     managerName: getManagerName(schedule.mnIdx),
-    equipment: Array.isArray(schedule.equipment) ? schedule.equipment.join(', ') : (schedule.equipment || ''),
+    equipment: Array.isArray(schedule.equipment) ? equipDisplayList(schedule.equipment).join(', ') : (schedule.equipment || ''),
     memo: schedule.memo
   };
 };
-
-const buildReceipts = (schedule) => [
-  { targetType: 'SITE', targetIdx: schedule.sIdx, targetName: schedule.siteName },
-  { targetType: 'MANAGER', targetIdx: schedule.mnIdx, targetName: getManagerName(schedule.mnIdx) }
-];
-
-const issuingIdx = ref(null);
 
 const issueDocument = async (schedule) => {
   if (!(schedule.staffIds && schedule.staffIds.length) || !schedule.mnIdx) {
@@ -1327,8 +1369,7 @@ const issueDocument = async (schedule) => {
       scheduleIdx: schedule.idx,
       docType: 'NOTICE',
       title: `${schedule.siteName} ${schedule.itemName} 작업 안내`,
-      snapshotJson: JSON.stringify(buildSnapshot(schedule)),
-      receipts: buildReceipts(schedule)
+      snapshotJson: JSON.stringify(buildSnapshot(schedule))
     });
     if (!data.result) throw new Error(data.message);
 
@@ -1341,113 +1382,13 @@ const issueDocument = async (schedule) => {
   }
 };
 
-const isConfirmed = (r) => r.confirmedYn === 'Y' || r.confirmedYn === true;
-
-// 담당자가 유선으로 확인받은 경우를 기록 (요구사항 6이 실무를 막지 않게)
-const confirmReceipt = async (doc, receipt) => {
-  if (isConfirmed(receipt)) return;
-
-  const memo = await (window.customPrompt?.('수신확인 방법을 남겨주세요. (예: 9/8 14시 김소장 유선 확인)', '')
-      ?? Promise.resolve(prompt('수신확인 방법을 남겨주세요.')));
-  if (memo === null) return;
-
-  try {
-    const { data } = await axios.put(`/api/v1/site/cleaning/doc/receipt/${receipt.idx}`, {
-      confirmedYn: 'Y',
-      proxyYn: 'Y',
-      proxyMemo: memo || '관리자 대행 확인'
-    });
-    if (!data.result) throw new Error(data.message);
-
-    await Promise.all([fetchDocuments(), fetchSchedules()]);
-  } catch (error) {
-    console.error('수신확인 처리 실패:', error);
-    window.customAlert?.('수신확인 처리에 실패했습니다.', 'error');
-  }
-};
-
-const docProgress = (doc) => {
-  const rs = doc.receipts || [];
-  return `${rs.filter(isConfirmed).length}/${rs.length}`;
-};
-
 /* =========================================================================
- * 12. 완료 점검표 (요구사항 9)
- *     여러 날 작업은 일자별로 서명을 받는다.
- * ========================================================================= */
-const checklists = ref([]);
-const showChecklistModal = ref(false);
-const checklistForm = ref({
-  scheduleIdx: null, workDt: '', signerName: '', rating: 5, issues: '', nextDayMemo: ''
-});
-
-const fetchChecklists = async () => {
-  try {
-    const { data } = await axios.get('/api/v1/site/cleaning/checklist');
-    checklists.value = data.data || [];
-  } catch (e) {
-    console.warn('점검표 API 미연동');
-    checklists.value = [];
-  }
-};
-
-// 진행중/완료 일정의 작업일을 모두 펼쳐서 점검 대상 목록을 만든다
-const checklistTargets = computed(() => {
-  const rows = [];
-  cleaningSchedules.value
-      .filter((s) => s.status >= 2 && Number(s.status) !== 4)
-      .forEach((s) => {
-        for (let i = 0; i < (s.durationDays || 1); i++) {
-          const d = new Date(s.startDt);
-          d.setDate(d.getDate() + i);
-          const workDt = fmtDate(d);
-          if (workDt > todayStr()) continue;
-          const found = checklists.value.find(
-              (c) => c.scheduleIdx === s.idx && String(c.workDt).slice(0, 10) === workDt
-          );
-          rows.push({ schedule: s, workDt, checklist: found || null });
-        }
-      });
-  return rows.sort((a, b) => b.workDt.localeCompare(a.workDt));
-});
-
-const checklistPendingCount = computed(() => checklistTargets.value.filter((r) => !r.checklist).length);
-
-const openChecklistModal = (row) => {
-  checklistForm.value = {
-    scheduleIdx: row.schedule.idx,
-    workDt: row.workDt,
-    signerName: '',
-    rating: 5,
-    issues: '',
-    nextDayMemo: ''
-  };
-  showChecklistModal.value = true;
-};
-
-const saveChecklist = async () => {
-  if (!checklistForm.value.signerName.trim()) {
-    window.customAlert?.('소장 또는 책임자 성명을 입력해주세요.', 'error');
-    return;
-  }
-  try {
-    const { data } = await axios.post('/api/v1/site/cleaning/checklist', checklistForm.value);
-    if (!data.result) throw new Error(data.message);
-    await fetchChecklists();
-    showChecklistModal.value = false;
-  } catch (error) {
-    console.error('점검표 저장 실패:', error);
-    window.customAlert?.('점검표 저장에 실패했습니다.', 'error');
-  }
-};
-
-/* =========================================================================
- * 13. 초기 로드
+ * 12. 초기 로드
  * ========================================================================= */
 onMounted(async () => {
   // 공휴일은 watch(currentDate, ..., { immediate: true }) 에서 현재 연도 기준으로 자동 로드된다.
-  await Promise.all([fetchSiteOptions(), fetchCleaningStaff(), fetchManagers()]);
-  await Promise.all([fetchSchedules(), fetchDocuments(), fetchChecklists()]);
+  await Promise.all([fetchSiteOptions(), fetchCleaningStaff(), fetchManagers(), fetchEquipmentOptions()]);
+  await Promise.all([fetchSchedules(), fetchDocuments()]);
 });
 </script>
 
@@ -1481,12 +1422,10 @@ onMounted(async () => {
         <i class="mdi mdi-account-switch"></i> 인원 배정
         <span v-if="unassignedCount > 0" class="tab-badge">{{ unassignedCount }}</span>
       </button>
-      <!--button :class="['tab-item', { active: activeTab === 'documents' }]" @click="activeTab = 'documents'">
-        <i class="mdi mdi-file-document-outline"></i> 공문·점검표
-        <span v-if="pendingDocSchedules.length + checklistPendingCount > 0" class="tab-badge">
-          {{ pendingDocSchedules.length + checklistPendingCount }}
-        </span>
-      </button-->
+      <button :class="['tab-item', { active: activeTab === 'documents' }]" @click="activeTab = 'documents'">
+        <i class="mdi mdi-file-document-outline"></i> 공문
+        <span v-if="pendingDocSchedules.length > 0" class="tab-badge">{{ pendingDocSchedules.length }}</span>
+      </button>
     </div>
     <p class="tab-desc"><i class="mdi mdi-arrow-right-thin"></i> {{ tabDescriptions[activeTab] }}</p>
 
@@ -1571,8 +1510,8 @@ onMounted(async () => {
                   >
                     <div class="bar-content" :style="{ opacity: schedule.isStartDay ? 1 : 0 }">
                       <span class="bar-title">{{ schedule.siteName }} · {{ schedule.itemName }}</span>
-                      <span v-if="schedule.docRequired" class="bar-badge" :class="{ 'doc-ok': schedule.docStatus === 3 }">
-                        {{ schedule.docStatus === 3 ? '공문✓' : '공문' }}
+                      <span v-if="schedule.docRequired" class="bar-badge" :class="{ 'doc-ok': schedule.docStatus === 1 }">
+                        {{ schedule.docStatus === 1 ? '공문✓' : '공문' }}
                       </span>
                     </div>
                   </div>
@@ -1751,7 +1690,7 @@ onMounted(async () => {
                 계약주기 {{ task.cycleRange.start }} ~ {{ task.cycleRange.end }} ({{ task.cycleRange.label }})
               </div>
 
-              <!-- 요구사항 7: 구간별 실시 여부 -->
+              <!-- 구간별 실시 여부 -->
               <div v-if="task.segments.length > 1" class="segment-row">
                 <span
                     v-for="seg in task.segments"
@@ -1876,16 +1815,16 @@ onMounted(async () => {
                 <i class="mdi mdi-clock-outline"></i> {{ task.startTm || '-' }} ~ {{ task.endTm || '-' }}
               </p>
               <p v-if="task.address" class="task-address"><i class="mdi mdi-map-marker-outline"></i> {{ task.address }}</p>
-              <p v-if="task.equipment && task.equipment.length" class="task-equip"><i class="mdi mdi-wrench-outline"></i> {{ task.equipment.join(', ') }}</p>
+              <p v-if="task.equipment && task.equipment.length" class="task-equip"><i class="mdi mdi-wrench-outline"></i> {{ equipDisplayList(task.equipment).join(', ') }}</p>
               <p v-if="task.memo" class="task-note"><i class="mdi mdi-alert-circle-outline"></i> {{ task.memo }}</p>
               <div class="task-tags">
                 <span
                     class="status-badge"
-                    :class="{ 'is-done': task.status === 3, 'is-progress': task.status === 2, 'is-fixed': task.status === 1, 'is-cancelled': task.status === 4 }"
+                    :class="{ 'is-done': task.status === 3, 'is-progress': task.status === 2, 'is-fixed': task.status === 1, 'is-cancelled': task.status === 4, 'is-pending': task.status === 5 }"
                 >
                   {{ statusLabel(task.status) }}
                 </span>
-                <span v-if="task.docRequired" class="status-badge" :class="task.docStatus === 3 ? 'is-done' : 'is-warn'">
+                <span v-if="task.docRequired" class="status-badge" :class="task.docStatus === 1 ? 'is-done' : 'is-warn'">
                   공문 {{ DOC_STATUS_LABEL[task.docStatus] }}
                 </span>
               </div>
@@ -1943,7 +1882,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- ============ 탭5: 공문 · 점검표 ============ -->
+    <!-- ============ 탭5: 공문 ============ -->
     <div v-if="activeTab === 'documents'" class="doc-tab">
 
       <!-- 발송 대기 -->
@@ -1973,7 +1912,7 @@ onMounted(async () => {
               <span><i class="mdi mdi-map-marker-outline"></i> {{ s.address || '주소 미등록' }}</span>
               <span><i class="mdi mdi-account-group-outline"></i> {{ getStaffNames(s.staffIds) || '인원 미배정' }}</span>
               <span><i class="mdi mdi-account-tie-outline"></i> {{ getManagerName(s.mnIdx) }}</span>
-              <span v-if="s.equipment && s.equipment.length"><i class="mdi mdi-wrench-outline"></i> {{ s.equipment.join(', ') }}</span>
+              <span v-if="s.equipment && s.equipment.length"><i class="mdi mdi-wrench-outline"></i> {{ equipDisplayList(s.equipment).join(', ') }}</span>
               <span v-if="s.memo"><i class="mdi mdi-message-alert-outline"></i> {{ s.memo }}</span>
             </div>
             <p v-if="!(s.staffIds && s.staffIds.length) || !s.mnIdx" class="doc-warn">
@@ -1983,12 +1922,12 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 수신확인 현황 -->
+      <!-- 발송 이력 -->
       <div class="status-card status-card-full">
         <div class="status-header">
-          <i class="mdi mdi-file-document-check-outline"></i>
-          <h3>수신확인 현황</h3>
-          <span class="site-count-badge">대기 {{ awaitingConfirmDocs.length }}건</span>
+          <i class="mdi mdi-history"></i>
+          <h3>공문 발송 이력</h3>
+          <span class="site-count-badge">{{ documents.length }}건</span>
         </div>
 
         <div v-if="documents.length === 0" class="empty-state">발송된 공문이 없습니다.</div>
@@ -1998,74 +1937,17 @@ onMounted(async () => {
             <div class="doc-header">
               <div class="doc-title">
                 <strong>{{ doc.snapshot.siteName }} · {{ doc.snapshot.itemName }}</strong>
-                <span class="doc-meta">발송 {{ doc.sentAt }} · 확인 {{ docProgress(doc) }}</span>
+                <span class="doc-meta">발송 {{ doc.sentAt }}</span>
               </div>
               <a v-if="doc.fileUrl" :href="`/api${doc.fileUrl}`" target="_blank" class="btn-mini">
                 <i class="mdi mdi-file-pdf-box"></i> 공문 보기
               </a>
             </div>
-
-            <div class="receipt-row">
-              <div
-                  v-for="r in doc.receipts"
-                  :key="r.idx || r.targetType"
-                  :class="['receipt-chip', { confirmed: isConfirmed(r) }]"
-                  @click="confirmReceipt(doc, r)"
-              >
-                <i :class="['mdi', isConfirmed(r) ? 'mdi-check-circle' : 'mdi-clock-outline']"></i>
-                {{ RECEIPT_TYPE_LABEL[r.targetType] || r.targetType }} ({{ r.targetName || '-' }})
-                <span v-if="isConfirmed(r)" class="receipt-time">
-                  {{ r.confirmedAt }}<template v-if="r.proxyYn === 'Y'"> · 대행</template>
-                </span>
-              </div>
+            <div class="doc-snapshot">
+              <span v-if="doc.snapshot.startDt"><i class="mdi mdi-calendar-outline"></i> {{ doc.snapshot.startDt }} ~ {{ doc.snapshot.endDt }}</span>
+              <span v-if="doc.snapshot.staffNames"><i class="mdi mdi-account-group-outline"></i> {{ doc.snapshot.staffNames }}</span>
+              <span v-if="doc.snapshot.managerName"><i class="mdi mdi-account-tie-outline"></i> {{ doc.snapshot.managerName }}</span>
             </div>
-            <p v-if="doc.receipts?.some(r => r.proxyYn === 'Y')" class="doc-note">
-              <i class="mdi mdi-phone-outline"></i>
-              {{ doc.receipts.find(r => r.proxyYn === 'Y')?.proxyMemo }}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 완료 점검표 -->
-      <div class="status-card status-card-full">
-        <div class="status-header">
-          <i class="mdi mdi-clipboard-check-outline"></i>
-          <h3>작업 완료 점검표</h3>
-          <span class="site-count-badge">미작성 {{ checklistPendingCount }}건</span>
-        </div>
-
-        <div v-if="checklistTargets.length === 0" class="empty-state">
-          진행중 또는 완료 상태의 작업일이 없습니다.
-        </div>
-
-        <div v-else class="doc-list">
-          <div
-              v-for="row in checklistTargets"
-              :key="`${row.schedule.idx}-${row.workDt}`"
-              class="doc-item"
-          >
-            <div class="doc-header">
-              <div class="doc-title">
-                <strong>{{ row.schedule.siteName }} · {{ row.schedule.itemName }}</strong>
-                <span class="doc-meta">
-                  작업일 {{ row.workDt }} · {{ getStaffNames(row.schedule.staffIds) || '인원 미배정' }}
-                </span>
-              </div>
-              <button v-if="!row.checklist" class="btn-checklist" @click="openChecklistModal(row)">
-                점검표 작성
-              </button>
-              <span v-else class="checklist-done-badge">
-                <i class="mdi mdi-check-decagram"></i>
-                {{ row.checklist.signerName }} 확인 · {{ '★'.repeat(row.checklist.rating) }}
-              </span>
-            </div>
-            <p v-if="row.checklist?.issues" class="doc-note">
-              <i class="mdi mdi-alert-outline"></i> 미비: {{ row.checklist.issues }}
-            </p>
-            <p v-if="row.checklist?.nextDayMemo" class="doc-note">
-              <i class="mdi mdi-calendar-arrow-right"></i> 익일 지시: {{ row.checklist.nextDayMemo }}
-            </p>
           </div>
         </div>
       </div>
@@ -2270,11 +2152,30 @@ onMounted(async () => {
 
             <div class="form-group">
               <label>투입 장비 <span class="optional-tag">복수 선택 가능</span></label>
-              <div class="equipment-check-row">
-                <label v-for="opt in EQUIPMENT_OPTIONS" :key="opt" class="form-check-inline">
-                  <input type="checkbox" :value="opt" v-model="addForm.equipment" /> {{ opt }}
-                </label>
+              <div v-if="equipmentOptions.length === 0" class="text-muted small-text">
+                등록된 장비가 없습니다. 장비 관리 페이지에서 먼저 등록해주세요.
               </div>
+              <template v-else>
+                <select class="form-control" :value="''" @change="onEquipmentPick($event)">
+                  <option value="" disabled>장비를 선택하세요</option>
+                  <option
+                      v-for="eq in equipmentOptions"
+                      :key="eq.idx"
+                      :value="eq.idx"
+                      :disabled="(addForm.equipment || []).some(v => Number(v) === Number(eq.idx))"
+                  >
+                    {{ eq.name }}{{ eq.model ? ` (${eq.model})` : '' }}{{ eq.serialNo ? ` · ${eq.serialNo}` : '' }}
+                  </option>
+                </select>
+                <div v-if="addForm.equipment && addForm.equipment.length" class="equipment-chip-row">
+                  <span v-for="(val, i) in addForm.equipment" :key="`${val}-${i}`" class="equipment-chip">
+                    {{ equipLabel(val) }}
+                    <button type="button" class="equipment-chip-del" @click="removeEquipmentPick(i)" title="제거">
+                      <i class="mdi mdi-close"></i>
+                    </button>
+                  </span>
+                </div>
+              </template>
             </div>
             <div class="form-group">
               <label>단지 요청사항</label>
@@ -2321,53 +2222,30 @@ onMounted(async () => {
 
         <div class="modal-footer">
           <button v-if="isEditMode" class="btn-danger btn-left" @click="deleteSchedule">삭제</button>
+          <template v-if="isEditMode && editingSchedule">
+            <span
+                class="modal-doc-status"
+                :class="editingSchedule.docStatus === 1 ? 'is-sent' : 'is-pending'"
+                :title="editingSchedule.docStatus === 1 ? '이 일정에는 이미 공문 발송 이력이 있습니다' : '아직 공문이 발송되지 않았습니다'"
+            >
+              <i class="mdi" :class="editingSchedule.docStatus === 1 ? 'mdi-check-decagram' : 'mdi-email-fast-outline'"></i>
+              공문 {{ DOC_STATUS_LABEL[editingSchedule.docStatus] }}
+            </span>
+            <button
+                class="btn-checklist"
+                :disabled="issuingIdx === editingSchedule.idx"
+                @click="issueDocumentFromModal"
+            >
+              <i class="mdi mdi-send"></i>
+              {{ issuingIdx === editingSchedule.idx ? '발송 중' : (editingSchedule.docStatus === 1 ? '재발송' : '공문 발송') }}
+            </button>
+          </template>
           <button class="btn-cancel" @click="closeAddModal">취소</button>
           <button class="btn-save" @click="saveAddModal">저장</button>
         </div>
       </div>
     </div>
 
-    <!-- ============ 점검표 모달 ============ -->
-    <div v-if="showChecklistModal" class="modal-overlay" @click="showChecklistModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h2>작업 완료 점검표</h2>
-          <button class="btn-close" @click="showChecklistModal = false"><i class="mdi mdi-close"></i></button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>작업일</label>
-            <input v-model="checklistForm.workDt" type="date" class="form-control" readonly />
-          </div>
-          <div class="form-group">
-            <label>소장 또는 책임자 성명 <span class="req">*</span></label>
-            <input v-model="checklistForm.signerName" type="text" class="form-control" placeholder="확인자 성명" />
-          </div>
-          <div class="form-group">
-            <label>만족도</label>
-            <select v-model.number="checklistForm.rating" class="form-control">
-              <option :value="5">★★★★★ 매우만족</option>
-              <option :value="4">★★★★ 만족</option>
-              <option :value="3">★★★ 보통</option>
-              <option :value="2">★★ 미흡</option>
-              <option :value="1">★ 매우미흡</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>미비사항</label>
-            <textarea v-model="checklistForm.issues" class="form-control" rows="2" placeholder="청소상태 미비사항이 있으면 기재"></textarea>
-          </div>
-          <div class="form-group">
-            <label>익일 지시사항</label>
-            <textarea v-model="checklistForm.nextDayMemo" class="form-control" rows="2" placeholder="미비 시 다음날 조치 지시사항"></textarea>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="showChecklistModal = false">취소</button>
-          <button class="btn-save" @click="saveChecklist">저장</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -2549,7 +2427,7 @@ onMounted(async () => {
 .schedule-bar.is-end { border-top-right-radius: 4px; border-bottom-right-radius: 4px; margin-right: 4px; }
 .schedule-bar.is-middle { border-radius: 0; margin: 0; }
 
-/* 요구사항: 토/일/공휴일 체크 해제된 날은 달력에서도 색칠 없이 비워 보이게 */
+/* 토/일/공휴일 체크 해제된 날은 달력에서도 색칠 없이 비워 보이게 */
 .schedule-bar.is-excluded-day {
   background: transparent !important;
   background-image: none !important;
@@ -2559,7 +2437,7 @@ onMounted(async () => {
 .schedule-bar.is-excluded-day:hover { filter: none; background: var(--bg-canvas, #f9fafb) !important; }
 .schedule-bar.is-excluded-day .bar-content { visibility: hidden; }
 
-/* 요구사항: 청소 상황에 "취소" 상태 추가 */
+/* 청소 상황에 "취소" 상태 추가 */
 .schedule-bar.is-cancelled {
   background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.4), rgba(255,255,255,.4) 6px, transparent 6px, transparent 12px) !important;
   opacity: .7;
@@ -2779,6 +2657,7 @@ onMounted(async () => {
 .status-badge.is-done { background: #dcfce7; color: #15803d; }
 .status-badge.is-cancelled { background: #e5e7eb; color: #6b7280; text-decoration: line-through; }
 .status-badge.is-warn { background: #fee2e2; color: #b91c1c; }
+.status-badge.is-pending { background: #f3e8ff; color: #7e22ce; }
 .btn-icon-small {
   display: flex; align-items: center; gap: 4px; padding: 4px 8px; width: fit-content;
   background: transparent; border: 1px solid #cbd5e1; border-radius: 6px;
@@ -2804,28 +2683,12 @@ onMounted(async () => {
 }
 .doc-note { color: var(--text-sub, #4b5563); }
 
-.receipt-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.receipt-chip {
-  display: flex; align-items: center; gap: 4px; padding: 4px 10px;
-  border: 1px solid var(--border-color, #e5e7eb); border-radius: 999px;
-  font-size: 12px; color: var(--text-sub, #4b5563); cursor: pointer; transition: all .2s;
-}
-.receipt-chip:hover { border-color: var(--primary, #4f46e5); }
-.receipt-chip.confirmed {
-  border-color: var(--success, #22c55e); color: var(--success, #22c55e);
-  background: #f0fdf4; cursor: default;
-}
-.receipt-time { font-size: 10px; opacity: .8; }
 .btn-checklist {
   display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px;
   background: var(--primary, #4f46e5); color: #fff; border: none; border-radius: 6px;
   font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .btn-checklist:disabled { opacity: .5; cursor: not-allowed; }
-.checklist-done-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; font-weight: 700; color: var(--success, #22c55e); white-space: nowrap;
-}
 .empty-state { padding: 24px; text-align: center; color: var(--text-sub, #4b5563); font-size: 13px; }
 
 /* ---------- 모달 ---------- */
@@ -2853,6 +2716,14 @@ onMounted(async () => {
 .modal-footer-split { justify-content: space-between; }
 .footer-right { display: flex; gap: 8px; }
 .btn-left { margin-right: auto; }
+
+.modal-doc-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+.modal-doc-status.is-pending { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.modal-doc-status.is-sent    { color: #15803d; background: #dcfce7; border-color: #86efac; }
 
 .form-section {
   display: flex; flex-direction: column; gap: 16px;
@@ -2908,6 +2779,35 @@ textarea.form-control { resize: vertical; font-family: inherit; }
   padding: 10px 12px; background: var(--bg-canvas, #f9fafb);
   border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px;
 }
+
+/* 선택된 장비 chip 리스트 */
+.equipment-chip-row {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 8px;
+}
+.equipment-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 6px 5px 10px;
+  background: var(--primary-soft, #eef2ff);
+  color: var(--primary, #4f46e5);
+  border: 1px solid rgba(79, 70, 229, 0.25);
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+  max-width: 320px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.equipment-chip-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--primary, #4f46e5);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  padding: 0; opacity: 0.75; transition: all .15s;
+}
+.equipment-chip-del:hover {
+  background: rgba(79, 70, 229, 0.15);
+  opacity: 1;
+}
+.equipment-chip-del i { font-size: 14px; }
 
 /* 작업자 일정 겹침 경고 */
 .conflict-warning {
