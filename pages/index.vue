@@ -107,10 +107,14 @@ const cleaningStats = ref({
 
 const cleaningSchedules = ref([]);
 
+const CLEANING_STATUS_LABEL = { 0: '예정', 1: '확정', 2: '진행중', 3: '완료', 4: '취소', 5: '확정대기' };
+
 // 유틸리티 함수 (테마 컬러와 연동)
 const getCleaningStatusClass = (status) => {
   if (status === '완료') return 'status-complete';
-  if (status === '예정') return 'status-upcoming';
+  if (status === '진행중') return 'status-progress';
+  if (status === '취소') return 'status-cancelled';
+  if (status === '예정' || status === '확정' || status === '확정대기') return 'status-upcoming';
   return 'status-delayed';
 };
 
@@ -245,6 +249,37 @@ const fetchNotices = () => {
       .catch(err => console.error(err));
 };
 
+const fetchCleaningSchedules = async () => {
+  try {
+    const { data } = await axios.get('/api/v1/site/cleaning/schedule');
+    const list = data?.data || [];
+
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const monthly = list
+        .filter(s => s.startDt && String(s.startDt).startsWith(ym))
+        .map(s => ({
+          id: s.idx,
+          date: String(s.startDt).slice(0, 10),
+          site: s.siteName || '-',
+          type: s.itemName || '대청소',
+          statusCode: Number(s.status ?? 0),
+          status: CLEANING_STATUS_LABEL[Number(s.status ?? 0)] || '-'
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    cleaningSchedules.value = monthly;
+    cleaningStats.value = {
+      total: monthly.length,
+      completed: monthly.filter(s => s.statusCode === 3).length,
+      upcoming: monthly.filter(s => [0, 1, 5].includes(s.statusCode)).length
+    };
+  } catch (err) {
+    console.error('대청소 일정 로드 실패:', err);
+  }
+};
+
 const setDefaultDate = () => {
   const today = new Date();
   const end = today.toISOString().slice(0, 10);
@@ -330,7 +365,8 @@ onMounted(async () => {
     fetchDashboardData(),
     getSiteData(),
     fetchNotices(),
-    getPayrollMonth()
+    getPayrollMonth(),
+    fetchCleaningSchedules()
   ]);
 });
 
@@ -420,7 +456,7 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
                 </div>
               </div>
               <div class="item-action">
-                <button class="btn-detail" @click="goDetail(item.type)">상세보기</button>
+                <button class="btn-detail" @click="goDetail(item.type)"><i class="mdi mdi-eye"></i></button>
               </div>
             </div>
           </div>
@@ -474,12 +510,21 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
         </div>
 
         <div class="table-card">
-          <div class="table-header">
-            <h3 class="table-title">이번 달 대청소 일정</h3>
-            <span class="stat-footer-text">완료 {{ cleaningStats.completed }} / 총 {{ cleaningStats.total }}</span>
+          <div class="table-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 class="table-title">
+              이번 달 대청소 일정
+              <span class="stat-footer-text" style="margin-left: 8px; font-weight: 500;">완료 {{ cleaningStats.completed }} / 총 {{ cleaningStats.total }}</span>
+            </h3>
+            <button class="btn-more" @click="router.push('/site/cleaning')">
+              더보기 <i class="mdi mdi-chevron-right"></i>
+            </button>
           </div>
           <div class="list-body">
-            <div v-for="item in cleaningSchedules" :key="item.id" class="cleaning-row">
+            <div v-if="cleaningSchedules.length === 0" class="empty-state">
+              <i class="mdi mdi-broom"></i>
+              <p>이번 달 등록된 대청소 일정이 없습니다.</p>
+            </div>
+            <div v-for="item in cleaningSchedules" :key="item.id" class="cleaning-row" @click="router.push('/site/cleaning')">
               <div class="date-chip">
                 <span class="d-day">{{ item.date.split('-')[2] }}</span>
                 <span class="d-month">{{ item.date.split('-')[1] }}월</span>
@@ -805,6 +850,12 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
   gap: 16px;
   padding: 14px 24px;
   border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.cleaning-row:hover {
+  background-color: var(--bg-hover);
 }
 
 .cleaning-row:last-child {
@@ -862,6 +913,8 @@ const currentTime = ref(new Date().toLocaleString('ko-KR', {
 
 .status-complete { background-color: rgba(16, 185, 129, 0.1); color: var(--success); }
 .status-upcoming { background-color: var(--primary-soft); color: var(--primary); }
+.status-progress { background-color: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.status-cancelled { background-color: var(--bg-hover); color: var(--text-sub); }
 .status-delayed { background-color: rgba(239, 68, 68, 0.1); color: var(--danger); }
 
 /* 상태 아이콘 색상 보정 */
