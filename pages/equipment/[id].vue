@@ -1,668 +1,637 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter, useRoute } from 'nuxt/app';
 import axios from 'axios';
+import { useAuthStore } from '~/stores/auth.js';
 
 const router = useRouter();
 const route = useRoute();
+const authStore = useAuthStore();
+const cIdx = authStore.user?.cIdx;
+
+const equipIdx = route.params.id;
 
 // =============================================
-// 상태 관리
+// 상태 및 옵션 관리
 // =============================================
-const activeTab = ref(route.query.tab || 'distribution');
-const isEditing = ref(false);
-const isLoading = ref(false);
+const equipCodes = ref([]);
+const isLoading = ref(true);
 
-const EQUIP_CATEGORIES = ['청소기계 (탑승/보행)', '일반 청소용구', '경비/통신장비', '안전/제설장비', '기타'];
-const EQUIP_STATUS_OPTIONS = [
-  { value: 'normal', label: '정상', color: 'success' },
-  { value: 'check', label: '수리/점검중', color: 'warning' },
-  { value: 'fault', label: '고장/폐기대기', color: 'danger' }
-];
-const equipStatusMap = Object.fromEntries(EQUIP_STATUS_OPTIONS.map(o => [o.value, o]));
+const fetchEquipCategories = async () => {
+  try {
+    const res = await axios.get(`/api/v1/config/code/wage/new/${cIdx}`);
+    equipCodes.value = (res.data?.data || []).filter(c =>
+        c.useFl === 'Y' && (c.groupCd === '06' || c.itemCd?.startsWith('06'))
+    );
+  } catch (e) {
+    console.error('장비 분류 코드를 불러오지 못했습니다.', e);
+    equipCodes.value = [];
+  }
+};
 
-// =============================================
-// 마스터 장비 데이터 (목업)
-// =============================================
-const equipment = ref({
-  idx: 0,
-  category: '',
-  name: '',
-  model: '',
-  totalQty: 0,
-  purchaseDate: '',
-  price: 0,
-  note: '',
-  imageUrl: null
+// 선택된 분류 (itemCd, 모든 레벨 통합)
+const selectedTypeCd = ref('');
+
+// 트리 메뉴 상태
+const isCategoryMenuOpen = ref(false);
+const expandedBaseCd = ref(null);
+const expandedMidCd = ref(null);
+
+const equipTree = computed(() => {
+  const bases = equipCodes.value
+      .filter(c => c.groupCd === '06' && c.itemCd?.length === 5)
+      .sort((a, b) => (a.sort || 0) - (b.sort || 0));
+
+  return bases.map(base => {
+    const mids = equipCodes.value
+        .filter(c => c.groupCd === base.itemCd)
+        .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+        .map(mid => {
+          const subs = equipCodes.value
+              .filter(c => c.groupCd === mid.itemCd)
+              .sort((a, b) => (a.sort || 0) - (b.sort || 0));
+          return { ...mid, children: subs };
+        });
+    return { ...base, children: mids };
+  });
 });
 
-// 현장 배치(분배) 데이터
-const distributions = ref([]);
+const selectedTypeLabel = computed(() => {
+  const cd = selectedTypeCd.value;
+  if (!cd) return '선택하세요';
+  const path = [];
+  if (cd.length >= 5) {
+    const b = equipCodes.value.find(c => c.itemCd === cd.substring(0, 5));
+    if (b) path.push(b.itemNm);
+  }
+  if (cd.length >= 8) {
+    const m = equipCodes.value.find(c => c.itemCd === cd.substring(0, 8));
+    if (m) path.push(m.itemNm);
+  }
+  if (cd.length >= 11) {
+    const s = equipCodes.value.find(c => c.itemCd === cd.substring(0, 11));
+    if (s) path.push(s.itemNm);
+  }
+  return path.length ? path.join(' > ') : '선택하세요';
+});
 
-// 이력(히스토리) 데이터
-const historyLogs = ref([]);
+const toggleBase = (itemCd) => {
+  expandedBaseCd.value = expandedBaseCd.value === itemCd ? null : itemCd;
+  expandedMidCd.value = null;
+};
+const toggleMid = (itemCd) => {
+  expandedMidCd.value = expandedMidCd.value === itemCd ? null : itemCd;
+};
+const selectType = (node) => {
+  selectedTypeCd.value = node.itemCd;
+  form.value.type = node.itemCd;
+  isCategoryMenuOpen.value = false;
+};
+const handleBaseClick = (base) => {
+  if (base.children.length > 0) toggleBase(base.itemCd);
+  else selectType(base);
+};
+const handleMidClick = (mid) => {
+  if (mid.children.length > 0) toggleMid(mid.itemCd);
+  else selectType(mid);
+};
+
+const form = ref({
+  name: '',
+  model: '',
+  serialNo: '',
+  type: '',
+  supplyPrice: 0,
+  vat: 0,
+  totalPrice: 0,
+  purchaseDate: '',
+  note: ''
+});
+
+const isAutoVat = ref(false);
 
 // =============================================
-// 통계 및 계산 (Computed)
+// 가격 계산 로직 (Watch)
 // =============================================
-const assignedQty = computed(() => distributions.value.reduce((acc, cur) => acc + cur.qty, 0));
-const remainQty = computed(() => equipment.value.totalQty - assignedQty.value);
-const faultQty = computed(() => distributions.value.filter(d => d.status === 'fault').reduce((acc, cur) => acc + cur.qty, 0));
-const totalValue = computed(() => (equipment.value.price * equipment.value.totalQty).toLocaleString());
+watch(
+    () => form.value.supplyPrice,
+    (newVal) => {
+      if (isAutoVat.value) {
+        form.value.vat = Math.floor(newVal * 0.1);
+      }
+      form.value.totalPrice = newVal + form.value.vat;
+    }
+);
+
+watch(
+    () => form.value.vat,
+    (newVal) => {
+      form.value.totalPrice = form.value.supplyPrice + (newVal || 0);
+    }
+);
+
+watch(isAutoVat, (newVal) => {
+  if (newVal) {
+    form.value.vat = Math.floor(form.value.supplyPrice * 0.1);
+  }
+});
+
+// =============================================
+// 이미지 관리 (기존 유지 + 신규 추가)
+// =============================================
+// 유지할 기존 이미지 (서버에 이미 저장된 경로)
+const keptImages = ref([]); // [{ path: '/uploads/x.png', url: '/api/uploads/x.png' }]
+// 신규 업로드 파일
+const fileInput = ref(null);
+const newFiles = ref([]); // [{ file, previewUrl }]
+
+const triggerFileInput = () => {
+  fileInput.value.click();
+};
+
+const handleFileChange = (event) => {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+
+    if (!file.type.startsWith('image/')) {
+      alert(`${file.name}은(는) 이미지 파일이 아닙니다.`);
+      continue;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert(`${file.name}의 크기가 5MB를 초과합니다.`);
+      continue;
+    }
+
+    newFiles.value.push({
+      file,
+      previewUrl: URL.createObjectURL(file)
+    });
+  }
+  if (fileInput.value) fileInput.value.value = '';
+};
+
+const removeKeptImage = (index) => {
+  keptImages.value.splice(index, 1);
+};
+
+const removeNewFile = (index) => {
+  const removed = newFiles.value.splice(index, 1)[0];
+  if (removed) URL.revokeObjectURL(removed.previewUrl);
+};
+
+// =============================================
+// 퀵 네비게이션
+// =============================================
+const activeSection = ref('sec-basic');
+const navItems = [
+  { id: 'sec-image', title: '장비 사진', icon: 'mdi-image-outline' },
+  { id: 'sec-basic', title: '기본 정보', icon: 'mdi-text-box-outline' }
+];
+
+const scrollToSection = (id) => {
+  activeSection.value = id;
+  const el = document.getElementById(id);
+  const container = document.querySelector('.content-area');
+
+  if (el && container) {
+    const topPos = el.offsetTop - 24;
+    container.scrollTo({ top: topPos, behavior: 'smooth' });
+  }
+};
+
+let scrollHandler = null;
 
 // =============================================
 // 데이터 로드
 // =============================================
-let originalData = {};
-
-const loadEquipmentDetail = async () => {
-  isLoading.value = true;
-  const equipIdx = route.params.id; // URL의 ID 값
-
+const loadEquipment = async () => {
   try {
-    // API 호출 연동 (예시)
-    // const res = await axios.get(`/api/v1/equipment/master/${equipIdx}`);
-    // equipment.value = res.data.master;
-    // distributions.value = res.data.distributions;
+    const res = await axios.get(`/api/v1/equipment/${equipIdx}`);
+    if (!res.data?.result) {
+      alert(res.data?.msg || '장비 정보를 불러오지 못했습니다.');
+      return router.push('/equipment/list');
+    }
+    const eq = res.data.data;
 
-    // 목업 데이터 세팅
-    equipment.value = {
-      idx: equipIdx,
-      category: '청소기계 (탑승/보행)',
-      name: '탑승식 습식 바닥세정기',
-      model: 'T-1000 PRO',
-      totalQty: 5,
-      purchaseDate: '2023-05-10',
-      price: 3500000,
-      note: '메인 브러시 교체 주기: 6개월\n지정 A/S 센터: 클린테크 (1588-0000)',
-      imageUrl: '' // 이미지가 없으면 기본 아이콘 표시
-    };
+    form.value.name = eq.name || '';
+    form.value.model = eq.model || '';
+    form.value.serialNo = eq.serialNo || '';
+    form.value.type = eq.type || '';
+    selectedTypeCd.value = eq.type || '';
+    form.value.supplyPrice = Number(eq.supplyPrice) || 0;
+    form.value.vat = Number(eq.vat) || 0;
+    form.value.totalPrice = Number(eq.totalPrice) || 0;
+    form.value.purchaseDate = eq.purchaseDt ? String(eq.purchaseDt).slice(0, 10) : '';
+    form.value.note = eq.bigo || '';
 
-    distributions.value = [
-      { assignIdx: 101, sIdx: 1, siteName: 'LH 위례 6단지', qty: 2, status: 'normal', assignDate: '2023-05-15', nextCheckDate: '2024-11-15', note: '배터리 상태 양호' },
-      { assignIdx: 102, sIdx: 2, siteName: '강서 대명 강동', qty: 1, status: 'check', assignDate: '2023-06-01', nextCheckDate: '2024-05-01', note: '흡입 모터 소음으로 점검 중' },
-    ];
-
-    historyLogs.value = [
-      { date: '2023-06-01', type: '배치', content: '[강서 대명 강동] 1대 현장 배치 완료' },
-      { date: '2023-05-15', type: '배치', content: '[LH 위례 6단지] 2대 현장 배치 완료' },
-      { date: '2023-05-10', type: '등록', content: '본사 자산 신규 등록 (총 5대 도입)' },
-    ];
-
-    originalData = JSON.parse(JSON.stringify(equipment.value));
-  } catch (error) {
-    console.error('장비 상세 로드 실패:', error);
-    alert('데이터를 불러오는데 실패했습니다.');
+    // 기존 이미지 파싱
+    if (eq.imgPath) {
+      keptImages.value = String(eq.imgPath)
+          .split(',')
+          .map(p => p.trim())
+          .filter(Boolean)
+          .map(p => ({
+            path: p,
+            url: p.startsWith('http') ? p : `/api${p.startsWith('/') ? '' : '/'}${p}`
+          }));
+    }
+  } catch (e) {
+    console.error('장비 로드 실패:', e);
+    alert('장비 정보를 불러오지 못했습니다.');
+    router.push('/equipment/list');
   } finally {
     isLoading.value = false;
   }
 };
 
-// =============================================
-// 액션 핸들러
-// =============================================
-const goBack = () => router.push('/equipment/list');
+onMounted(async () => {
+  await fetchEquipCategories();
+  await loadEquipment();
 
-const changeTab = async (tabId) => {
-  activeTab.value = tabId;
-  await router.replace({ query: { ...route.query, tab: tabId } });
-};
+  const container = document.querySelector('.content-area');
+  if (container) {
+    scrollHandler = () => {
+      const sections = navItems.map(item => document.getElementById(item.id));
+      let current = 'sec-basic';
+      sections.forEach(section => {
+        if (section && container.scrollTop >= (section.offsetTop - 150)) {
+          current = section.getAttribute('id');
+        }
+      });
+      activeSection.value = current;
+    };
+    container.addEventListener('scroll', scrollHandler);
+  }
+});
 
-const toggleEdit = () => {
-  if (isEditing.value) {
-    if (confirm('수정을 취소하시겠습니까?')) {
-      equipment.value = JSON.parse(JSON.stringify(originalData));
-      isEditing.value = false;
-    }
-  } else {
-    isEditing.value = true;
-    activeTab.value = 'info'; // 수정 모드 시 기본정보 탭으로 이동
+onBeforeUnmount(() => {
+  const container = document.querySelector('.content-area');
+  if (container && scrollHandler) {
+    container.removeEventListener('scroll', scrollHandler);
+  }
+  newFiles.value.forEach(item => URL.revokeObjectURL(item.previewUrl));
+});
+
+// =============================================
+// 저장
+// =============================================
+const goBack = () => {
+  if (confirm('변경 사항이 저장되지 않을 수 있습니다. 목록으로 돌아가시겠습니까?')) {
+    router.push('/equipment/list');
   }
 };
 
 const saveEquipment = async () => {
-  if (!confirm('장비 마스터 정보를 수정하시겠습니까?')) return;
-  try {
-    // await axios.put(`/api/v1/equipment/master/${equipment.value.idx}`, equipment.value);
-    alert('저장되었습니다.');
-    isEditing.value = false;
-    originalData = JSON.parse(JSON.stringify(equipment.value));
-  } catch (error) {
-    alert('저장 실패');
+  if (!form.value.name) {
+    alert('장비명을 입력해주세요.');
+    scrollToSection('sec-basic');
+    return;
   }
-};
-
-// 배치 회수
-const returnToHQ = async (assignIdx) => {
-  if (!confirm('해당 현장에서 장비를 회수하시겠습니까?\n(잔여 수량으로 복귀합니다)')) return;
-  try {
-    // await axios.put(`/api/v1/equipment/assign/${assignIdx}/return`);
-    distributions.value = distributions.value.filter(d => d.assignIdx !== assignIdx);
-    alert('본사 회수 완료');
-  } catch (error) {
-    alert('회수 처리 실패');
+  if (!form.value.type) {
+    alert('장비 분류를 선택해주세요.');
+    scrollToSection('sec-basic');
+    return;
   }
-};
 
-// =============================================
-// 분배 상태 변경 모달
-// =============================================
-const isStatusModalOpen = ref(false);
-const statusForm = ref({ assignIdx: null, status: '', note: '', nextCheckDate: '' });
+  if (!confirm('장비 정보를 수정하시겠습니까?')) return;
 
-const openStatusModal = (dist) => {
-  statusForm.value = {
-    assignIdx: dist.assignIdx,
-    status: dist.status,
-    note: dist.note,
-    nextCheckDate: dist.nextCheckDate
-  };
-  isStatusModalOpen.value = true;
-};
+  const formData = new FormData();
+  formData.append('name', form.value.name);
+  formData.append('type', form.value.type);
+  formData.append('model', form.value.model);
+  formData.append('serialNo', form.value.serialNo);
+  formData.append('supplyPrice', form.value.supplyPrice);
+  formData.append('vat', form.value.vat);
+  formData.append('totalPrice', form.value.totalPrice);
+  formData.append('purchaseDt', form.value.purchaseDate);
+  formData.append('bigo', form.value.note);
+  // 유지할 기존 이미지 경로 (CSV)
+  formData.append('keptImgPath', keptImages.value.map(k => k.path).join(','));
 
-const saveDistStatus = async () => {
+  // 신규 업로드 파일
+  newFiles.value.forEach(item => {
+    formData.append('imgPath', item.file);
+  });
+
   try {
-    // await axios.put(`/api/v1/equipment/assign/${statusForm.value.assignIdx}/status`, statusForm.value);
-    const target = distributions.value.find(d => d.assignIdx === statusForm.value.assignIdx);
-    if (target) {
-      target.status = statusForm.value.status;
-      target.note = statusForm.value.note;
-      target.nextCheckDate = statusForm.value.nextCheckDate;
+    const res = await axios.put(`/api/v1/equipment/${equipIdx}`, formData);
+    if (res.data?.result) {
+      alert('장비 정보가 수정되었습니다.');
+      await router.push('/equipment/list');
+    } else {
+      alert(res.data?.msg || '수정에 실패했습니다.');
     }
-    isStatusModalOpen.value = false;
-    alert('상태가 업데이트 되었습니다.');
-  } catch (error) {
-    alert('상태 업데이트 실패');
+  } catch (e) {
+    console.error(e);
+    alert('수정 중 문제가 발생했습니다.');
   }
 };
-
-const isCheckOverdue = (dateStr) => {
-  if (!dateStr) return false;
-  return new Date(dateStr) < new Date();
-};
-
-onMounted(() => {
-  loadEquipmentDetail();
-});
 </script>
 
 <template>
-  <div class="equipment-detail-page">
+  <div class="equip-register-page">
 
-    <div class="page-header">
+    <div class="page-header sticky-header">
       <div class="header-left">
-        <button @click="goBack" class="btn-back"><i class="mdi mdi-arrow-left"></i></button>
+        <button type="button" @click="goBack" class="btn-back">
+          <i class="mdi mdi-arrow-left"></i>
+        </button>
         <div>
-          <h1 class="page-title"><i class="mdi mdi-text-box-search-outline"></i> 장비 정보 상세</h1>
-          <p class="page-subtitle">장비의 세부 스펙과 전 현장 배치 상황을 확인합니다.</p>
+          <h1 class="page-title"><i class="mdi mdi-pencil-box-outline text-primary"></i> 장비 정보 수정</h1>
+          <p class="page-subtitle">기본 정보, 단가, 사진 등을 수정합니다. 수량·배치·폐기는 목록 모달에서 관리하세요.</p>
         </div>
       </div>
-      <div class="header-actions">
-        <template v-if="!isEditing">
-          <button @click="toggleEdit" class="btn-edit"><i class="mdi mdi-pencil-outline"></i> 수정</button>
-        </template>
-        <template v-else>
-          <button @click="toggleEdit" class="btn-cancel"><i class="mdi mdi-close"></i> 취소</button>
-          <button @click="saveEquipment" class="btn-save"><i class="mdi mdi-check"></i> 저장</button>
-        </template>
+      <div class="header-right">
+        <button type="button" @click="goBack" class="btn-cancel">취소</button>
+        <button type="button" @click="saveEquipment" class="btn-submit" :disabled="isLoading">
+          <i class="mdi mdi-check"></i> 수정 저장
+        </button>
       </div>
     </div>
 
-    <div class="integrated-paper">
-      <div class="profile-section">
-        <div class="profile-banner"></div>
-        <div class="profile-content">
-          <div class="profile-photo-wrapper">
-            <div class="profile-photo">
-              <img v-if="equipment.imageUrl" :src="equipment.imageUrl" alt="장비 사진" />
-              <i v-else class="mdi mdi-toolbox-outline"></i>
-            </div>
-          </div>
+    <div v-if="isLoading" class="loading-state">
+      <i class="mdi mdi-loading mdi-spin"></i> 장비 정보를 불러오는 중...
+    </div>
 
-          <div class="profile-info">
-            <div class="profile-main">
-              <span class="category-badge">{{ equipment.category }}</span>
-              <h2 class="profile-name">{{ equipment.name }} <small class="text-muted">({{ equipment.model || '모델명 없음' }})</small></h2>
-            </div>
-            <div class="profile-details">
-              <div class="detail-item"><i class="mdi mdi-barcode"></i> ID: EQ-{{ String(equipment.idx).padStart(4, '0') }}</div>
-              <div class="detail-item"><i class="mdi mdi-calendar-check-outline"></i> 도입일: {{ equipment.purchaseDate || '-' }}</div>
-            </div>
-          </div>
-
-          <div class="profile-stats">
-            <div class="stat-item">
-              <div class="stat-icon blue"><i class="mdi mdi-package-variant-closed"></i></div>
-              <div class="stat-text">
-                <span class="label">총 구매 수량</span>
-                <span class="value">{{ equipment.totalQty }}대</span>
-              </div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-icon green"><i class="mdi mdi-truck-delivery-outline"></i></div>
-              <div class="stat-text">
-                <span class="label">현장 배치됨</span>
-                <span class="value text-primary">{{ assignedQty }}대</span>
-              </div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-icon" :class="remainQty > 0 ? 'orange' : 'gray'"><i class="mdi mdi-warehouse"></i></div>
-              <div class="stat-text">
-                <span class="label">본사 잔여(예비)</span>
-                <span class="value" :class="{'text-warning': remainQty > 0, 'text-red': remainQty === 0}">{{ remainQty }}대</span>
-              </div>
-            </div>
-          </div>
+    <div v-else class="register-layout">
+      <!-- 좌측 퀵 네비 -->
+      <aside class="quick-nav-sidebar">
+        <div class="nav-wrapper">
+          <h3 class="nav-title">입력 항목</h3>
+          <ul class="nav-list">
+            <li v-for="nav in navItems" :key="nav.id"
+                :class="['nav-item', { active: activeSection === nav.id }]"
+                @click="scrollToSection(nav.id)">
+              <i :class="['mdi', nav.icon]"></i>
+              <span>{{ nav.title }}</span>
+            </li>
+          </ul>
         </div>
-      </div>
+      </aside>
 
-      <div class="integrated-tabs">
-        <button :class="['tab-button', { active: activeTab === 'distribution' }]" @click="changeTab('distribution')">
-          <i class="mdi mdi-map-marker-multiple-outline"></i> 현장 배치 현황
-        </button>
-        <button :class="['tab-button', { active: activeTab === 'info' }]" @click="changeTab('info')">
-          <i class="mdi mdi-information-outline"></i> 자산 상세 정보
-        </button>
-        <button :class="['tab-button', { active: activeTab === 'history' }]" @click="changeTab('history')">
-          <i class="mdi mdi-history"></i> 장비 이력
-        </button>
-      </div>
+      <!-- 우측 메인 폼 -->
+      <main class="content-area">
+        <form @submit.prevent="saveEquipment" id="editForm">
 
-      <div class="integrated-content">
-
-      <div v-show="activeTab === 'distribution'" class="tab-panel">
-
-        <!--div class="action-bar-right mb-3">
-          <button class="btn-primary-outline" @click="router.push('/equipment/list')">
-            <i class="mdi mdi-plus-box-outline"></i> 잔여 수량 신규 배치하기
-          </button>
-        </div-->
-
-        <div v-if="distributions.length === 0" class="empty-state">
-          <i class="mdi mdi-warehouse"></i>
-          <p>현장에 배치된 내역이 없습니다.</p>
-          <span>현재 총 {{ remainQty }}대가 모두 본사 창고에 보관 중입니다.</span>
-        </div>
-
-        <div v-else class="table-scroll-container">
-          <table class="data-table">
-            <thead>
-            <tr>
-              <th>배치된 현장명</th>
-              <th class="text-center">배치 수량</th>
-              <th class="text-center">현장 지급일</th>
-              <th class="text-center">다음 점검일</th>
-              <th class="text-center">현재 상태</th>
-              <th>비고 (수리내역 등)</th>
-              <th class="text-center">관리 액션</th>
-            </tr>
-            </thead>
-            <tbody>
-            <tr v-for="dist in distributions" :key="dist.assignIdx" :class="{ 'row-fault': dist.status === 'fault' }">
-              <td class="fw-bold"><i class="mdi mdi-office-building-marker text-primary"></i> {{ dist.siteName }}</td>
-              <td class="text-center fw-bold">{{ dist.qty }}대</td>
-              <td class="text-center text-muted">{{ dist.assignDate }}</td>
-              <td class="text-center" :class="{ 'text-red fw-bold': isCheckOverdue(dist.nextCheckDate) }">
-                {{ dist.nextCheckDate || '-' }}
-                <span v-if="isCheckOverdue(dist.nextCheckDate)" class="overdue-chip">지연</span>
-              </td>
-              <td class="text-center">
-                  <span :class="['dist-status', `dist-${equipStatusMap[dist.status].color}`]">
-                    {{ equipStatusMap[dist.status].label }}
-                  </span>
-              </td>
-              <td class="text-muted small-text">{{ dist.note || '-' }}</td>
-              <td class="text-center">
-                <div class="action-btns">
-                  <button class="btn-sm btn-edit-status" @click="openStatusModal(dist)" title="상태 및 점검일 변경"><i class="mdi mdi-pencil-outline"></i></button>
-                  <button class="btn-sm btn-return" @click="returnToHQ(dist.assignIdx)" title="본사 회수">회수</button>
+          <!-- 카드 1: 장비 사진 -->
+          <section id="sec-image" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-image-outline text-primary"></i>
+              <h2>장비 사진</h2>
+            </div>
+            <div class="card-body">
+              <input type="file" ref="fileInput" @change="handleFileChange" accept="image/png, image/jpeg, image/jpg" multiple hidden />
+              <div class="image-gallery-grid">
+                <!-- 기존 이미지 -->
+                <div v-for="(img, index) in keptImages" :key="`kept-${index}`" class="image-preview-box">
+                  <img :src="img.url" alt="기존 장비 사진" @error="e => e.target.style.display='none'" />
+                  <div class="image-badge">기존</div>
+                  <div class="image-overlay">
+                    <button type="button" @click="removeKeptImage(index)" class="btn-img-action btn-danger">
+                      <i class="mdi mdi-trash-can-outline"></i> 삭제
+                    </button>
+                  </div>
                 </div>
-              </td>
-            </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div v-show="activeTab === 'info'" class="tab-panel">
-        <div class="info-section">
-          <div class="section-header"><i class="mdi mdi-clipboard-text-outline"></i><h3>마스터 자산 정보</h3></div>
-          <div class="info-grid">
-            <div class="info-item">
-              <label>장비명</label>
-              <input v-if="isEditing" type="text" v-model="equipment.name" class="info-input" />
-              <span v-else class="info-value">{{ equipment.name }}</span>
-            </div>
-            <div class="info-item">
-              <label>모델명</label>
-              <input v-if="isEditing" type="text" v-model="equipment.model" class="info-input" />
-              <span v-else class="info-value">{{ equipment.model || '-' }}</span>
-            </div>
-            <div class="info-item">
-              <label>장비 분류</label>
-              <select v-if="isEditing" v-model="equipment.category" class="info-select">
-                <option v-for="cat in EQUIP_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
-              </select>
-              <span v-else class="info-value">{{ equipment.category }}</span>
-            </div>
-            <div class="info-item">
-              <label>도입(구매)일</label>
-              <input v-if="isEditing" type="date" v-model="equipment.purchaseDate" class="info-input" />
-              <span v-else class="info-value">{{ equipment.purchaseDate || '-' }}</span>
-            </div>
-            <div class="info-item">
-              <label>총 구매 수량 (대)</label>
-              <input v-if="isEditing" type="number" v-model.number="equipment.totalQty" :min="assignedQty" class="info-input" />
-              <span v-else class="info-value">{{ equipment.totalQty }} 대</span>
-            </div>
-            <div class="info-item">
-              <label>개당 구매 단가 (원)</label>
-              <input v-if="isEditing" type="number" v-model.number="equipment.price" step="10000" class="info-input" />
-              <span v-else class="info-value">{{ equipment.price.toLocaleString() }} 원</span>
-            </div>
-            <div class="info-item full-width">
-              <label>총 자산 가치 (도입가 기준)</label>
-              <span class="info-value fw-bold text-primary">{{ totalValue }} 원</span>
-            </div>
-            <div class="info-item full-width">
-              <label>비고 (스펙, A/S 정보 등)</label>
-              <textarea v-if="isEditing" v-model="equipment.note" class="info-textarea" rows="4"></textarea>
-              <div v-else class="info-value note-box">{{ equipment.note || '-' }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-show="activeTab === 'history'" class="tab-panel">
-        <div v-if="historyLogs.length > 0" class="memo-timeline">
-          <div v-for="(log, idx) in historyLogs" :key="idx" class="timeline-item">
-            <div class="timeline-marker"></div>
-            <div class="timeline-content">
-              <div class="timeline-header">
-                <i class="mdi mdi-clock-outline"></i>
-                <span class="timeline-date">{{ log.date }}</span>
-                <span class="timeline-type-badge">{{ log.type }}</span>
+                <!-- 신규 이미지 -->
+                <div v-for="(img, index) in newFiles" :key="`new-${index}`" class="image-preview-box">
+                  <img :src="img.previewUrl" alt="장비 미리보기" />
+                  <div class="image-badge new">신규</div>
+                  <div class="image-overlay">
+                    <button type="button" @click="removeNewFile(index)" class="btn-img-action btn-danger">
+                      <i class="mdi mdi-trash-can-outline"></i> 삭제
+                    </button>
+                  </div>
+                </div>
+                <div class="image-empty-box" @click="triggerFileInput">
+                  <i class="mdi mdi-plus-box-outline"></i>
+                  <p>사진 추가</p>
+                  <span>(최대 5MB)</span>
+                </div>
               </div>
-              <p class="timeline-text">{{ log.content }}</p>
             </div>
-          </div>
-        </div>
-        <div v-else class="empty-state">
-          <i class="mdi mdi-history"></i><p>등록된 장비 이력이 없습니다</p>
-        </div>
-      </div>
+          </section>
+
+          <!-- 카드 2: 기본 정보 -->
+          <section id="sec-basic" class="category-card">
+            <div class="card-header">
+              <i class="mdi mdi-text-box-outline text-primary"></i>
+              <h2>기본 정보 수정</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-grid">
+
+                <div class="form-group category-dropdown-container full-width">
+                  <label class="form-label required">장비 분류</label>
+                  <div class="custom-select-btn" @click="isCategoryMenuOpen = !isCategoryMenuOpen">
+                    <span>{{ selectedTypeLabel }}</span>
+                    <i class="mdi mdi-chevron-down"></i>
+                  </div>
+                  <div v-if="isCategoryMenuOpen" class="dropdown-overlay" @click="isCategoryMenuOpen = false"></div>
+                  <ul v-if="isCategoryMenuOpen" class="custom-dropdown-menu">
+                    <li v-for="base in equipTree" :key="base.itemCd" class="menu-item">
+                      <div class="menu-label" @click.stop="handleBaseClick(base)">
+                        <i v-if="base.children.length > 0" class="mdi tree-chevron" :class="expandedBaseCd === base.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                        <i v-else class="mdi tree-chevron tree-chevron-leaf mdi-circle-small"></i>
+                        <span class="menu-text">{{ base.itemNm }}</span>
+                      </div>
+                      <ul v-show="expandedBaseCd === base.itemCd" class="custom-submenu">
+                        <li v-for="mid in base.children" :key="mid.itemCd" class="submenu-item-wrap">
+                          <div class="submenu-label" @click.stop="handleMidClick(mid)">
+                            <i v-if="mid.children.length > 0" class="mdi tree-chevron" :class="expandedMidCd === mid.itemCd ? 'mdi-chevron-down' : 'mdi-chevron-right'"></i>
+                            <i v-else class="mdi tree-chevron tree-chevron-leaf mdi-circle-small"></i>
+                            <span class="menu-text">{{ mid.itemNm }}</span>
+                          </div>
+                          <ul v-show="expandedMidCd === mid.itemCd" class="custom-subsubmenu">
+                            <li v-for="sub in mid.children" :key="sub.itemCd" class="subsubmenu-item" @click.stop="selectType(sub)">
+                              <i class="mdi tree-chevron tree-chevron-leaf mdi-circle-small"></i>
+                              {{ sub.itemNm }}
+                            </li>
+                          </ul>
+                        </li>
+                      </ul>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label required">장비명</label>
+                  <input type="text" v-model="form.name" required class="form-input" placeholder="예: 탑승식 습식 바닥세정기" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">모델명</label>
+                  <input type="text" v-model="form.model" class="form-input" placeholder="예: T-1000 PRO" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">일련번호</label>
+                  <input type="text" v-model="form.serialNo" class="form-input" placeholder="ASA23180" />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">도입(구매)일</label>
+                  <input type="date" v-model="form.purchaseDate" class="form-input" />
+                </div>
+
+                <div class="form-group full-width price-group-container">
+                  <label class="form-label">단가 정보 (원)</label>
+                  <div class="price-inputs-wrapper">
+                    <div class="price-box">
+                      <label class="sub-label">공급가</label>
+                      <div class="input-with-unit">
+                        <input type="number" v-model.number="form.supplyPrice" min="0" step="1000" class="form-input text-right" />
+                        <span class="unit">원</span>
+                      </div>
+                    </div>
+                    <div class="math-sign"><i class="mdi mdi-plus"></i></div>
+                    <div class="price-box">
+                      <div class="sub-label-wrap">
+                        <label class="sub-label">부가세</label>
+                        <label class="checkbox-label">
+                          <input type="checkbox" v-model="isAutoVat" /> 자동 (10%)
+                        </label>
+                      </div>
+                      <div class="input-with-unit">
+                        <input type="number" v-model.number="form.vat" min="0" step="10" :readonly="isAutoVat" :class="['form-input text-right', { 'bg-readonly': isAutoVat }]" />
+                        <span class="unit">원</span>
+                      </div>
+                    </div>
+                    <div class="math-sign"><i class="mdi mdi-equal"></i></div>
+                    <div class="price-box total-box">
+                      <label class="sub-label">단가(합계)</label>
+                      <div class="input-with-unit">
+                        <input type="number" :value="form.totalPrice" readonly class="form-input text-right bg-readonly text-primary-bold" />
+                        <span class="unit">원</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="form-label">비고 및 특이사항</label>
+                  <textarea v-model="form.note" class="form-textarea" rows="4" placeholder="구매처, 기본 사양, 보증(A/S) 기간 등 필요한 메모를 남겨주세요."></textarea>
+                </div>
+
+              </div>
+              <p class="helper-text-sm" style="margin-top:16px;">
+                <i class="mdi mdi-information-outline"></i>
+                총 수량·투입 단지·폐기·수리 이력은 장비 목록의 상세 모달에서 관리됩니다.
+              </p>
+            </div>
+          </section>
+
+          <div style="height: 100px;"></div>
+        </form>
+      </main>
 
     </div>
-    </div>
-      <div v-if="isStatusModalOpen" class="modal-overlay" @click.self="isStatusModalOpen = false">
-    <div class="modal-box" style="max-width: 450px;">
-      <div class="modal-header">
-        <h3><i class="mdi mdi-clipboard-text-outline"></i> 배치 상태 및 점검일 변경</h3>
-        <button class="modal-close" @click="isStatusModalOpen = false"><i class="mdi mdi-close"></i></button>
-      </div>
-      <div class="modal-body">
-        <div class="modal-form-item">
-          <label>현재 상태</label>
-          <select v-model="statusForm.status" class="info-select">
-            <option v-for="opt in EQUIP_STATUS_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
-        </div>
-        <div class="modal-form-item">
-          <label>다음 점검 예정일</label>
-          <input type="date" v-model="statusForm.nextCheckDate" class="info-input" />
-        </div>
-        <div class="modal-form-item">
-          <label>비고 (고장 증상, 수리 이력 등)</label>
-          <textarea v-model="statusForm.note" class="info-textarea" rows="3"></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-cancel" @click="isStatusModalOpen = false">취소</button>
-        <button class="btn-save" @click="saveDistStatus">변경 저장</button>
-      </div>
-    </div>
-  </div>
-
   </div>
 </template>
 
+<style>
+body, #__nuxt, #__layout, .v-application { overflow: visible !important; }
+</style>
+
 <style scoped>
-/* =========================================
-   Layout & Header
-========================================= */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
+.equip-register-page { background-color: var(--bg-canvas, #f1f5f9); margin: -24px; height: calc(100vh - 60px); display: flex; flex-direction: column; overflow: hidden; }
+.sticky-header { flex-shrink: 0; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(8px); padding: 16px 32px; border-bottom: 1px solid var(--border-color, #e2e8f0); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); display: flex; justify-content: space-between; align-items: center; z-index: 50; margin: 0; }
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.page-title { font-size: 20px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; display:flex; align-items:center; gap:8px; }
+.page-subtitle { font-size: 13px; color: var(--text-sub, #475569); margin: 4px 0 0 0; }
 
-.header-left {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
+.btn-back { width: 40px; height: 40px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; cursor: pointer; transition: 0.2s; display:flex; align-items:center; justify-content:center; }
+.btn-back:hover { background: var(--bg-hover, #f8fafc); }
+.btn-back i { font-size: 20px; color: var(--text-sub); }
+.btn-cancel { padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border-color, #e2e8f0); background: #fff; font-weight: 600; cursor: pointer; color: var(--text-sub); transition: 0.2s; }
+.btn-cancel:hover { background: var(--bg-hover); color: var(--text-main); }
+.btn-submit { padding: 10px 20px; border-radius: 8px; border: none; background: var(--primary, #3b82f6); color: #fff; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2); transition: 0.2s; display:flex; align-items:center; gap:6px; }
+.btn-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3); }
+.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-edit, .btn-cancel, .btn-save { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; height: 42px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm); white-space: nowrap; }
-.btn-edit { background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-main); }
-.btn-edit:hover { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
-.btn-cancel { background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-sub); }
-.btn-save { background: var(--primary); border: 1px solid var(--primary); color: #fff; }
-.btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
+.loading-state { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-sub); font-size: 14px; gap: 8px; }
+.loading-state i { font-size: 20px; color: var(--primary); }
 
-/* =========================================
-   Profile Card (Master Equipment Info)
-========================================= */
-.integrated-paper {
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-  margin-bottom: 24px;
-  display: flex;
-  flex-direction: column;
-}
-/* === 상단 프로필 영역 === */
-.profile-section {
-  position: relative;
-}
-.profile-banner {
-  height: 100px;
-  background-color: var(--primary);
-  opacity: 0.9;
-}
+.register-layout { display: flex; flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding-top: 24px; overflow: hidden; }
+.quick-nav-sidebar { width: 220px; flex-shrink: 0; height: 100%; overflow-y: auto; padding: 0 16px; }
+.nav-title { font-size: 12px; font-weight: 800; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; padding-left: 12px; }
+.nav-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--text-sub, #475569); cursor: pointer; transition: all 0.2s; background: transparent; }
+.nav-item i { font-size: 18px; opacity: 0.6; }
+.nav-item:hover { background: rgba(0,0,0,0.04); color: var(--text-main, #1e293b); }
+.nav-item.active { background: #fff; color: var(--primary, #3b82f6); box-shadow: 0 2px 8px rgba(0,0,0,0.05); font-weight: 700; }
+.nav-item.active i { opacity: 1; }
 
-.profile-content {
-  padding: 0 32px 24px;
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
-}
+.content-area { flex: 1; height: 100%; overflow-y: auto; position: relative; padding: 0 24px 80px 24px; scroll-behavior: smooth; }
 
-.profile-photo-wrapper {
-  position: relative;
-  margin-top: -40px;
-  flex-shrink: 0;
-}
+.category-card { background: #ffffff; border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); overflow: visible; margin-bottom: 24px; }
+.card-header { padding: 20px 24px; border-bottom: 1px solid var(--border-color, #e2e8f0); background: #fff; display: flex; align-items: center; gap: 12px; border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.card-header i { font-size: 24px; }
+.card-header h2 { font-size: 18px; font-weight: 800; color: var(--text-main, #1e293b); margin: 0; }
+.card-body { padding: 24px; }
 
-.profile-photo {
-  width: 110px; height: 110px;
-  border-radius: 20px;
-  background: var(--bg-surface);
-  border: 4px solid var(--bg-surface);
-  box-shadow: var(--shadow-md);
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-}
-.profile-photo img { width: 100%; height: 100%; object-fit: cover; }
-.profile-photo i { font-size: 60px; color: var(--text-muted); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 20px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.full-width { grid-column: 1 / -1; }
+.form-label { font-size: 13px; font-weight: 700; color: var(--text-sub, #475569); }
+.form-label.required::after { content: '*'; color: var(--danger, #ef4444); margin-left: 4px; }
+.form-input, .form-select, .form-textarea { padding: 10px 12px; border: 1px solid var(--border-focus, #cbd5e1); border-radius: 6px; font-size: 13px; background: #fff; width: 100%; box-sizing: border-box; transition: 0.2s; color: var(--text-main); }
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); outline: none; }
+.form-textarea { resize: vertical; min-height: 80px; }
+.bg-readonly { background-color: var(--bg-canvas, #f1f5f9) !important; color: var(--text-sub) !important; pointer-events: none; }
+.text-primary-bold { color: var(--primary, #3b82f6) !important; font-weight: 800; }
 
-.profile-info {
-  flex: 1;
-  padding-top: 16px;
-}
+.input-with-unit { display: flex; align-items: center; border: 1px solid var(--border-focus); border-radius: 6px; background: #fff; overflow: hidden; }
+.input-with-unit:focus-within { border-color: var(--primary, #3b82f6); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+.input-with-unit .form-input { border: none; box-shadow: none; flex: 1; border-radius: 0; }
+.input-with-unit .form-input:focus { box-shadow: none; }
+.input-with-unit .unit { padding: 0 12px; font-size: 13px; color: var(--text-sub); border-left: 1px solid var(--border-focus); display:flex; align-items:center; }
 
-.profile-main {
-  display: flex; align-items: center; gap: 16px; margin-bottom: 12px;
-}
-.category-badge { padding: 4px 10px; background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; color: var(--text-sub); font-weight: 600; white-space: nowrap; }
-.profile-name { font-size: 22px; font-weight: 700; color: var(--text-main); margin: 0; word-break: break-all; }
-.profile-details { display: flex; flex-wrap: wrap; gap: 16px; color: var(--text-sub); font-size: 13px; font-weight: 500; }
-.detail-item { display: flex; align-items: center; white-space: nowrap; }
-.detail-item i { margin-right: 4px; color: var(--text-muted); font-size: 16px; }
+.helper-text-sm { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
-/* Profile Stats */
-.profile-stats { display: flex; gap: 24px; padding-top: 16px; flex-shrink: 0; }
-.stat-item { display: flex; gap: 12px; align-items: center; }
-.stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
-.stat-icon.blue { background: var(--primary-soft); color: var(--primary); }
-.stat-icon.green { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.stat-icon.orange { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.stat-icon.gray { background: var(--bg-canvas); color: var(--text-muted); }
-.stat-text { display: flex; flex-direction: column; gap: 2px; }
-.stat-text .label { font-size: 12px; color: var(--text-sub); font-weight: 500; white-space: nowrap; }
-.stat-text .value { font-size: 16px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
+.price-group-container { background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); }
+.price-inputs-wrapper { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 4px;}
+.price-box { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 6px;}
+.math-sign { display: flex; align-items: center; justify-content: center; height: 40px; font-size: 20px; color: #94a3b8; font-weight: bold; }
+.sub-label-wrap { display: flex; justify-content: space-between; align-items: center; }
+.sub-label { font-size: 12px; font-weight: 600; color: var(--text-sub); }
+.checkbox-label { font-size: 12px; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-main); font-weight: 600;}
+.checkbox-label input { cursor: pointer; accent-color: var(--primary); }
 
-/* =========================================
-   Tabs & Content
-========================================= */
-.integrated-tabs { display: flex; padding: 0 32px; border-bottom: 1px solid var(--border-color); background: transparent; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
-.integrated-tabs::-webkit-scrollbar { display: none; } /* 모바일에서 탭 스크롤바 숨김 */
-.tab-button { padding: 16px 24px; background: transparent; border: none; color: var(--text-sub); font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; position: relative; margin-bottom: -1px; flex-shrink: 0; }
-.tab-button.active { color: var(--primary); background: var(--bg-surface); border: 1px solid var(--border-color); border-bottom-color: var(--bg-surface); border-radius: 8px 8px 0 0; }
-.integrated-content { padding: 32px; background: var(--bg-surface); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 12px 12px; box-shadow: var(--shadow-sm); }
-.tab-panel { animation: fadeIn 0.3s; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; } }
+.image-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; width: 100%; }
+.image-preview-box, .image-empty-box { width: 100%; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden; position: relative; }
+.image-empty-box { border: 2px dashed var(--border-focus); background: var(--bg-canvas); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: var(--text-sub); }
+.image-empty-box:hover { background: rgba(59, 130, 246, 0.05); border-color: var(--primary); color: var(--primary); }
+.image-empty-box i { font-size: 32px; margin-bottom: 8px; opacity: 0.8; }
+.image-empty-box p { font-size: 13px; font-weight: 600; margin: 0 0 4px 0; }
+.image-empty-box span { font-size: 11px; opacity: 0.7; }
+.image-preview-box img { width: 100%; height: 100%; object-fit: cover; border: 1px solid var(--border-color); }
+.image-badge { position: absolute; top: 6px; left: 6px; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; background: rgba(100, 116, 139, 0.9); color: #fff; z-index: 2; }
+.image-badge.new { background: rgba(59, 130, 246, 0.9); }
+.image-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+.image-preview-box:hover .image-overlay { opacity: 1; }
+.btn-img-action { padding: 8px 12px; background: rgba(255, 255, 255, 0.95); border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.btn-img-action:hover { background: white; }
+.btn-danger { color: var(--danger); }
 
-/* =========================================
-   Tab 1: 현장 배치 현황 (Table)
-========================================= */
-.action-bar-right { display: flex; justify-content: flex-end; }
-.mb-3 { margin-bottom: 16px; }
-.btn-primary-outline { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; background: white; border: 1px dashed var(--primary); border-radius: 8px; color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-.btn-primary-outline:hover { background: var(--primary-soft); border-style: solid; }
-
-.table-scroll-container { border: 1px solid var(--border-color); border-radius: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.data-table { width: 100%; border-collapse: collapse; min-width: 800px; }
-.data-table th { padding: 12px 16px; background: var(--bg-hover); border-bottom: 1px solid var(--border-color); font-size: 12px; font-weight: 600; color: var(--text-sub); text-align: left; white-space: nowrap; }
-.data-table td { padding: 14px 16px; border-bottom: 1px solid var(--border-color); font-size: 13px; vertical-align: middle; }
-.data-table tbody tr:last-child td { border-bottom: none; }
-.data-table tbody tr:hover { background: var(--bg-canvas); }
-
-.row-fault td { background: rgba(239, 68, 68, 0.02); }
-.dist-status { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.dist-success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.dist-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
-.dist-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
-
-.action-btns { display: flex; gap: 6px; justify-content: center; }
-.btn-sm { display: inline-flex; align-items: center; justify-content: center; height: 28px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
-.btn-edit-status { width: 28px; border: 1px solid var(--border-color); background: white; color: var(--text-sub); }
-.btn-edit-status:hover { color: var(--primary); border-color: var(--primary); }
-.btn-return { padding: 0 10px; border: 1px solid rgba(239, 68, 68, 0.3); background: white; color: var(--danger); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.btn-return:hover { background: rgba(239, 68, 68, 0.05); }
-
-/* =========================================
-   Tab 2: 자산 상세 정보 (Form)
-========================================= */
-.info-section { display: flex; flex-direction: column; gap: 20px; }
-.section-header { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; border-bottom: 1px dashed var(--border-color); }
-.section-header i { font-size: 20px; color: var(--primary); }
-.section-header h3 { font-size: 16px; font-weight: 700; color: var(--text-main); margin: 0; }
-
-.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
-.info-item { display: flex; flex-direction: column; gap: 8px; }
-.info-item.full-width { grid-column: 1 / -1; }
-.info-item label { font-size: 12px; font-weight: 600; color: var(--text-sub); }
-.info-value { font-size: 14px; color: var(--text-main); font-weight: 500; min-height: 40px; display: flex; align-items: center; word-break: break-all; }
-.note-box { background: var(--bg-canvas); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); white-space: pre-line; align-items: flex-start; word-break: keep-all; }
-
-.info-input, .info-select, .info-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; color: var(--text-main); background: var(--bg-canvas); transition: all 0.2s; box-sizing: border-box; }
-.info-input:focus, .info-select:focus, .info-textarea:focus { outline: none; border-color: var(--primary); background: var(--bg-surface); box-shadow: 0 0 0 3px var(--primary-soft); }
-
-/* =========================================
-   Tab 3: 히스토리 타임라인
-========================================= */
-.memo-timeline { display: flex; flex-direction: column; padding-left: 24px; position: relative; }
-.memo-timeline::before { content: ''; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; background: var(--border-focus); }
-.timeline-item { position: relative; padding-bottom: 24px; }
-.timeline-marker { position: absolute; left: -21px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); border: 2px solid var(--bg-surface); box-shadow: 0 0 0 2px var(--primary); }
-.timeline-content { background: var(--bg-canvas); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px 16px; }
-.timeline-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.timeline-date { font-size: 12px; font-weight: 600; color: var(--text-sub); }
-.timeline-type-badge { padding: 2px 8px; border-radius: 4px; background: var(--border-focus); color: var(--text-sub); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.timeline-text { font-size: 13px; color: var(--text-main); margin: 0; word-break: keep-all; }
-
-/* =========================================
-   Utils & Modal
-========================================= */
-.empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
-.empty-state i { font-size: 48px; margin-bottom: 12px; opacity: 0.5; display: block; }
-.empty-state p { font-size: 15px; font-weight: 600; color: var(--text-main); margin: 0 0 4px 0; }
-.empty-state span { font-size: 13px; }
-
-.overdue-chip { display: inline-flex; margin-left: 4px; padding: 2px 6px; background: var(--danger); color: white; border-radius: 4px; font-size: 10px; font-weight: 700; white-space: nowrap; }
-
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
-.modal-box { background: var(--bg-surface); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.2); width: 100%; max-width: 450px; display: flex; flex-direction: column; overflow: hidden; max-height: 90vh; }
-.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--border-color); }
-.modal-header h3 { font-size: 16px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
-.modal-close { width: 32px; height: 32px; border-radius: 8px; background: var(--bg-canvas); border: 1px solid var(--border-color); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;}
-.modal-body { padding: 24px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
-.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 10px; }
-.modal-form-item { display: flex; flex-direction: column; gap: 6px; }
-.modal-form-item label { font-size: 12px; font-weight: 600; color: var(--text-sub); }
-
-.fw-bold { font-weight: 700; }
-.text-center { text-align: center; }
-.text-primary { color: var(--primary); }
-.text-danger, .text-red { color: var(--danger); }
-.text-warning { color: var(--warning); }
-.text-muted, .text-gray { color: var(--text-muted); }
-.small-text { font-size: 12px; }
-
-/* =========================================
-   Responsive Breakpoints
-========================================= */
-
-/* 태블릿 세로 및 작은 노트북 */
-@media (max-width: 1024px) {
-  .profile-content { flex-direction: column; gap: 24px; }
-  .profile-photo-wrapper { margin-top: -50px; }
-  .profile-info { align-items: center; }
-  .profile-main { justify-content: center; }
-  .profile-details { justify-content: center; }
-  .profile-stats { justify-content: center; width: 100%; border-top: 1px solid var(--border-color); padding-top: 24px; }
-}
-
-/* 모바일 일반 */
-@media (max-width: 768px) {
-  /*.equipment-detail-page { padding: 12px; gap: 16px; }   */
-  .header-actions { width: 100%; justify-content: flex-end; }
-  .header-actions button { flex: 1; }
-
-  .profile-stats { flex-direction: column; gap: 16px; align-items: flex-start; }
-  .stat-item { width: 100%; justify-content: flex-start; }
-
-  .integrated-tabs { padding: 0 16px; overflow-x: auto; }
-  .tab-button { padding: 12px 16px; white-space: nowrap; }
-
-  .integrated-content { padding: 20px 16px; border-left: none; border-right: none; border-radius: 0; margin: 0 -16px; }
-
-  .info-grid { grid-template-columns: 1fr; gap: 16px; }
-
-  .action-bar-right { justify-content: stretch; }
-  .btn-primary-outline { width: 100%; }
-}
-
-/* 초소형 모바일 */
-@media (max-width: 480px) {
-  .page-title { font-size: 20px; }
-  .profile-name { font-size: 18px; }
-  .modal-box { border-radius: 12px 12px 0 0; align-self: flex-end; max-height: 95vh; }
-  .modal-overlay { padding: 0; align-items: flex-end; }
-  .modal-footer { flex-direction: column-reverse; }
-  .modal-footer button { width: 100%; height: 44px; }
-}
+.category-dropdown-container { position: relative; }
+.dropdown-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 99; cursor: default; }
+.custom-select-btn { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 1px solid var(--border-focus); border-radius: 6px; background: #fff; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.2s; height: 41px; box-sizing: border-box; }
+.custom-select-btn:hover { border-color: var(--primary); }
+.category-dropdown-container:focus-within .custom-select-btn { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.custom-dropdown-menu { position: absolute; top: calc(100% + 4px); left: 0; width: 100%; background: #fff; border: 1px solid var(--border-focus); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 6px 0; margin: 0; list-style: none; z-index: 100; max-height: 360px; overflow-y: auto; }
+.menu-label { display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 13px; color: var(--text-main); cursor: pointer; transition: 0.15s; }
+.menu-label:hover { background: var(--bg-hover); color: var(--primary); font-weight: 700; }
+.menu-text { flex: 1; }
+.tree-chevron { font-size: 18px; color: var(--text-sub); width: 20px; text-align: center; flex-shrink: 0; }
+.tree-chevron-leaf { font-size: 14px; opacity: 0.5; }
+.custom-submenu { width: 100%; background: var(--bg-canvas); padding: 4px 0; margin: 0; list-style: none; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+.submenu-label { display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 32px; font-size: 12px; color: var(--text-sub); cursor: pointer; transition: 0.15s; }
+.submenu-label:hover { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.custom-subsubmenu { width: 100%; background: #fff; padding: 2px 0; margin: 0; list-style: none; border-top: 1px dashed var(--border-color); border-bottom: 1px dashed var(--border-color); }
+.subsubmenu-item { display: flex; align-items: center; gap: 6px; padding: 7px 16px 7px 52px; font-size: 12px; color: var(--text-sub); cursor: pointer; transition: 0.15s; }
+.subsubmenu-item:hover { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 </style>

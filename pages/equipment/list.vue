@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onActivated } from 'vue';
 import { useRouter } from 'nuxt/app';
 const router = useRouter()
 import Pagination from '@/components/common/Pagination.vue'
@@ -146,6 +146,54 @@ const isDiscarded = (eq) => {
 const currentPage     = ref(1);
 const pageSize        = ref(50); // 한 페이지당 행 수
 const pageSizeOptions = [50, 100, 200, 500];
+
+// ── 선택 삭제 상태 ──────────────────────────────
+const selectedIds = ref(new Set());
+const isSelected = (idx) => selectedIds.value.has(idx);
+const toggleSelect = (idx) => {
+  const s = new Set(selectedIds.value);
+  s.has(idx) ? s.delete(idx) : s.add(idx);
+  selectedIds.value = s;
+};
+const allSelected = computed(() =>
+    filteredList.value.length > 0 &&
+    filteredList.value.every(eq => selectedIds.value.has(eq.idx))
+);
+const toggleSelectAll = () => {
+  if (allSelected.value) {
+    selectedIds.value = new Set();
+  } else {
+    selectedIds.value = new Set(filteredList.value.map(eq => eq.idx));
+  }
+};
+
+const handleBulkDelete = async () => {
+  const ids = Array.from(selectedIds.value);
+  if (ids.length === 0) {
+    alert('삭제할 장비를 선택해주세요.');
+    return;
+  }
+  const msg = `선택한 장비 ${ids.length}건을 삭제하시겠습니까?\n\n` +
+      '배치/수리/폐기 이력도 모두 함께 삭제되며, 되돌릴 수 없습니다.';
+  const confirmed = typeof window.customConfirm === 'function'
+      ? await window.customConfirm(msg, 'warning')
+      : window.confirm(msg);
+  if (!confirmed) return;
+
+  try {
+    const res = await axios.delete('/api/v1/equipment', { data: { idxList: ids } });
+    if (res.data?.result) {
+      alert(`${res.data.data?.affected ?? ids.length}건이 삭제되었습니다.`);
+      selectedIds.value = new Set();
+      await getEquipmentList();
+    } else {
+      alert(res.data?.msg || '삭제에 실패했습니다.');
+    }
+  } catch (e) {
+    console.error('장비 삭제 에러:', e);
+    alert('삭제 중 오류가 발생했습니다.');
+  }
+};
 
 // ========================================================
 // 통계 데이터 계산 (stats-card 용)
@@ -311,6 +359,11 @@ onMounted(() => {
   fetchEquipCategories();
   fetchSiteList();
 });
+
+// keep-alive 환경에서 재진입 시 최신 목록 재조회
+onActivated(() => {
+  getEquipmentList();
+});
 </script>
 
 <template>
@@ -323,6 +376,9 @@ onMounted(() => {
         <p class="page-subtitle">전체 장비 및 자산 목록을 조회하고 상세 이력을 추적합니다.</p>
       </div>
       <div class="header-actions">
+        <button v-if="selectedIds.size > 0" class="btn-bulk-delete" @click="handleBulkDelete">
+          <i class="mdi mdi-trash-can-outline"></i> 선택 삭제 ({{ selectedIds.size }})
+        </button>
         <button class="btn-add" @click="router.push('/equipment/register')">
           <i class="mdi mdi-plus"></i> 신규 장비 등록
         </button>
@@ -402,6 +458,9 @@ onMounted(() => {
         <div class="table-title">
           <i class="mdi mdi-format-list-bulleted"></i>
           <span>장비 목록 ({{ filteredList.length }}건)</span>
+          <span v-if="selectedIds.size > 0" class="selected-count">
+            · 선택 {{ selectedIds.size }}건
+          </span>
         </div>
         <div class="page-size-select">
           <label>페이지당</label>
@@ -415,6 +474,9 @@ onMounted(() => {
         <table class="data-table table-hover">
           <thead>
           <tr>
+            <th style="width: 40px;">
+              <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" class="row-checkbox" />
+            </th>
             <th>분류</th>
             <th>품명/장비명</th>
             <th>모델/규격</th>
@@ -426,7 +488,10 @@ onMounted(() => {
           </thead>
           <tbody>
           <tr v-for="eq in filteredList" :key="eq.idx" @click="openEquipmentDetail(eq)"
-              class="cursor-pointer" :class="{ 'row-discarded': isDiscarded(eq) }">
+              class="cursor-pointer" :class="{ 'row-discarded': isDiscarded(eq), 'row-selected': isSelected(eq.idx) }">
+            <td @click.stop>
+              <input type="checkbox" :checked="isSelected(eq.idx)" @change="toggleSelect(eq.idx)" class="row-checkbox" />
+            </td>
             <td>
               <div style="display: flex; align-items: center; gap: 6px;">
                 <span class="type-badge type-equip" :title="typeLabel(eq.type)">
@@ -459,8 +524,10 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="filteredList.length === 0" class="empty-state">
-            <i class="mdi mdi-magnify-close"></i>
-            <p>검색 조건에 맞는 장비가 없습니다.</p>
+            <td colspan="8">
+              <i class="mdi mdi-magnify-close"></i>
+              <p>검색 조건에 맞는 장비가 없습니다.</p>
+            </td>
           </tr>
           </tbody>
         </table>
@@ -537,4 +604,20 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-sub);
 }
+
+/* ── 선택 삭제 ── */
+.selected-count { font-size: 12px; color: var(--primary); font-weight: 600; margin-left: 6px; }
+.btn-bulk-delete {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 12px; border-radius: 6px;
+  border: 1px solid var(--danger, #ef4444);
+  background: #fff; color: var(--danger, #ef4444);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-bulk-delete:hover { background: var(--danger, #ef4444); color: #fff; }
+.btn-bulk-delete i { font-size: 14px; }
+.row-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary, #4f46e5); }
+.row-selected td { background: rgba(79, 70, 229, 0.06); }
+.row-selected:hover td { background: rgba(79, 70, 229, 0.1); }
 </style>

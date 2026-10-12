@@ -1,5 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue';
+import { useRouter } from 'nuxt/app';
+
+const router = useRouter();
 
 const props = defineProps({
   show: { type: Boolean, required: true },
@@ -131,6 +134,12 @@ const STATUS_LABEL = { normal: '정상', check: '수리/점검중', fault: '고�
 
 const closeDetailModal = () => {
   emit('close');
+};
+
+const goToEdit = () => {
+  if (!props.equipment?.idx) return;
+  emit('close');
+  router.push(`/equipment/${props.equipment.idx}`);
 };
 
 const formatCurrency = (val) => {
@@ -430,7 +439,12 @@ watch(() => props.show, (newVal) => {
           {{ equipment.name }} 상세 정보
           <span v-if="equipment.status === 'discarded'" class="status-badge status-discarded" style="margin-left: 8px;">폐기됨</span>
         </h3>
-        <button class="btn-close" @click="closeDetailModal" style="background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer;"><i class="mdi mdi-close"></i></button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="btn-edit-equipment" @click="goToEdit" title="장비 기본 정보 수정">
+            <i class="mdi mdi-pencil-outline"></i> 수정
+          </button>
+          <button class="btn-close" @click="closeDetailModal" style="background: none; border: none; font-size: 20px; color: #6b7280; cursor: pointer;"><i class="mdi mdi-close"></i></button>
+        </div>
       </div>
 
       <div class="modal-tabs" style="display: flex; background: var(--bg-canvas); border-bottom: 1px solid var(--border-color);">
@@ -840,6 +854,20 @@ watch(() => props.show, (newVal) => {
 </template>
 
 <style scoped>
+/* ── 기본 정보 수정 버튼 ── */
+.btn-edit-equipment {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 12px; border-radius: 6px;
+  border: 1px solid var(--primary, #4f46e5);
+  background: #fff; color: var(--primary, #4f46e5);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-edit-equipment:hover {
+  background: var(--primary, #4f46e5); color: #fff;
+}
+.btn-edit-equipment i { font-size: 14px; }
+
 /* ── 뱃지 & 유틸 ── */
 .type-badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 .type-car { background: #e0f2fe; color: #0284c7; }
