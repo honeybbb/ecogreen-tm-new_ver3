@@ -5,8 +5,10 @@ import axios from 'axios'
 
 import SettlementPrintModal from '@/components/SettlementPrintModal.vue'
 import EstimatePrintModal   from '~/components/estimatePrintModal.vue'
+import MailHistoryModal     from '~/components/MailHistoryModal.vue'
 import Pagination           from '~/components/common/Pagination.vue'
 import {useTableResize} from "~/composables/useTableResize.js";
+import { useListTable } from '~/composables/useListTable';
 
 const router = useRouter()
 const { typeOptions, siteOptions, fetchTypeOptions, fetchSiteOptions } = useApi()
@@ -40,13 +42,13 @@ const selectedSite = ref('전체')
 const selectedType = ref('전체')
 const filterStatus = ref('all')
 
-// 정렬
-const sortKey   = ref('id')
-const sortOrder = ref('desc')
-
-// 페이지네이션
-const currentPage = ref(1)
-const pageSize    = ref(50)
+const {
+  sortKey, sortOrder, currentPage, pageSize, pageSizeOptions,
+  toggleSort, pagedItems: pagedSettlements, handlePageChange,
+} = useListTable(() => filteredSettlements.value, {
+  initialSortKey: 'id',
+  initialSortOrder: 'desc',
+})
 
 // 선택
 const selectAll = computed({
@@ -74,6 +76,30 @@ const isUnpaidModalOpen = ref(false)
 const unpaidTarget      = ref(null)
 const bigo              = ref('')
 const isUnpaidSaving    = ref(false)
+
+// 메일 이력 모달
+const isMailHistoryOpen = ref(false)
+const mailHistoryTarget = ref(null)
+
+const openMailHistory = (item) => {
+  mailHistoryTarget.value = item
+  isMailHistoryOpen.value = true
+}
+const closeMailHistory = () => {
+  isMailHistoryOpen.value = false
+  mailHistoryTarget.value = null
+}
+
+// 메일 상태 → 아이콘/색상 매핑 (null = 미발송)
+const MAIL_ICON_MAP = {
+  SENT:     { cls: 'mail-ic-sent',     icon: 'mdi-email-check-outline',    tip: '발송 완료' },
+  PENDING:  { cls: 'mail-ic-pending',  icon: 'mdi-email-clock-outline',    tip: '발송 대기' },
+  SENDING:  { cls: 'mail-ic-pending',  icon: 'mdi-email-arrow-right-outline', tip: '전송 중' },
+  FAILED:   { cls: 'mail-ic-failed',   icon: 'mdi-email-alert-outline',    tip: '발송 실패' },
+  CANCELED: { cls: 'mail-ic-canceled', icon: 'mdi-email-off-outline',      tip: '취소됨' },
+}
+const mailIconInfo = (status) =>
+  MAIL_ICON_MAP[status] || { cls: 'mail-ic-none', icon: 'mdi-email-outline', tip: '발송 이력 없음' }
 
 // ────────────────────────────────────────────────────────────
 // 유틸
@@ -207,7 +233,7 @@ async function revertStatus(item) {
 
 async function copySelected() {
   if (!selectedItems.value.length) return;
-  if (!confirm(`선택한 ${selectedItems.value.length}건을 복사하시겠습니까?\n(복사된 정산서는 '작성중' 상태로 추가됩니다.)`)) return
+  if (!await window.customConfirm(`선택한 ${selectedItems.value.length}건을 복사하시겠습니까?\n(복사된 정산서는 '작성중' 상태로 추가됩니다.)`)) return
 
   isLoading.value = true
   try {
@@ -236,7 +262,7 @@ async function copySelected() {
     await fetchList()
   } catch (error) {
     console.error('복사 중 오류 발생:', error)
-    alert('복사 중 오류가 발생했습니다.')
+    window.customAlert('복사 중 오류가 발생했습니다.')
   } finally {
     isLoading.value = false
   }
@@ -244,14 +270,14 @@ async function copySelected() {
 
 async function deleteSelected() {
   if (!selectedItems.value.length) return
-  if (!confirm(`선택한 ${selectedItems.value.length}건을 삭제하시겠습니까?\n(복구 불가)`)) return
+  if (!await window.customConfirm(`선택한 ${selectedItems.value.length}건을 삭제하시겠습니까?\n(복구 불가)`, 'warning')) return
   try {
     isLoading.value = true
     await Promise.all(selectedItems.value.map(i => axios.delete(`/api/v1/settle/site/${i.id}`)))
-    alert('삭제가 완료되었습니다.')
+    window.customAlert('삭제가 완료되었습니다.')
     await fetchList()
   } catch {
-    alert('삭제 중 오류가 발생했습니다.')
+    window.customAlert('삭제 중 오류가 발생했습니다.')
   } finally {
     isLoading.value = false
   }
@@ -290,11 +316,6 @@ function resetFilters() {
   currentPage.value  = 1
 }
 
-function toggleSort(key) {
-  sortOrder.value   = sortKey.value === key && sortOrder.value === 'asc' ? 'desc' : 'asc'
-  sortKey.value     = key
-  currentPage.value = 1
-}
 /*
 const baseFilteredSettlements = computed(() => {
   const { start, end } = selectedPeriod
@@ -349,11 +370,6 @@ const filteredSettlements = computed(() => {
   })
 
   return list
-})
-
-const pagedSettlements = computed(() => {
-  const s = (currentPage.value - 1) * pageSize.value
-  return filteredSettlements.value.slice(s, s + pageSize.value)
 })
 
 //통계
@@ -516,6 +532,16 @@ onActivated(async () => {
             <option v-for="opt in typeOptions" :key="opt.itemCd" :value="opt.itemCd">{{ opt.itemNm }}</option>
           </select>
         </div>
+        <div class="filter-group">
+          <label class="filter-label"><!--i class="mdi mdi-filter-variant"></i--> 상태</label>
+          <select v-model="filterStatus" class="filter-select">
+            <option value="all">전체</option>
+            <option value="pending">작성중</option>
+            <option value="billed">청구완료</option>
+            <option value="deposit">입금완료</option>
+            <option value="unpaid">미수처리</option>
+          </select>
+        </div>
         <div class="search-group">
           <!--div class="search-box">
             <i class="mdi mdi-magnify"></i>
@@ -674,10 +700,18 @@ onActivated(async () => {
             <td class="text-right amount-text">{{ fmt(item.total_amount) }}</td>
 
             <td class="text-center">
+              <div class="status-cell">
                 <span :class="['status-badge', statusInfo(item.status).cls]">
                   <i :class="['mdi', statusInfo(item.status).icon]"></i>
                   {{ statusInfo(item.status).text }}
                 </span>
+                <button type="button"
+                        :class="['mail-ic-btn', mailIconInfo(item.mailStatus).cls]"
+                        :title="mailIconInfo(item.mailStatus).tip"
+                        @click="openMailHistory(item)">
+                  <i :class="['mdi', mailIconInfo(item.mailStatus).icon]"></i>
+                </button>
+              </div>
             </td>
 
             <td class="text-center">
@@ -820,6 +854,14 @@ onActivated(async () => {
         :is-open="isPrintModalOpen"
         :items="printTargetItems"
         @close="isPrintModalOpen = false"
+    />
+
+    <MailHistoryModal
+        :is-open="isMailHistoryOpen"
+        ref-type="SETTLE"
+        :ref-idx="mailHistoryTarget?.id ?? null"
+        :title="mailHistoryTarget ? `메일 발송 이력 — ${mailHistoryTarget.siteName} ${mailHistoryTarget.target_month}` : '메일 발송 이력'"
+        @close="closeMailHistory"
     />
   </div>
 </template>
@@ -991,6 +1033,27 @@ onActivated(async () => {
 .status-billed { background: rgba(59, 130, 246, 0.1); color: var(--primary, #3b82f6); }
 .status-active { background: rgba(16, 185, 129, 0.1); color: var(--success, #10b981); }
 .status-unpaid { background: rgba(239, 68, 68, 0.1); color: var(--danger, #ef4444); }
+
+/* ──────────────────────────────────────────────
+   메일 발송 상태 아이콘 (상태 배지 옆)
+────────────────────────────────────────────── */
+.status-cell { display: inline-flex; align-items: center; gap: 6px; }
+.mail-ic-btn {
+  width: 24px; height: 24px; border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.mail-ic-btn i { font-size: 16px; }
+.mail-ic-btn:hover { border-color: var(--border-color); background: var(--bg-hover); }
+
+.mail-ic-none    { color: var(--text-muted); }
+.mail-ic-sent    { color: var(--success); }
+.mail-ic-pending { color: var(--primary); }
+.mail-ic-failed  { color: var(--danger); }
+.mail-ic-canceled{ color: var(--text-sub); }
 
 .unpaid-note {
   display:inline-flex; align-items:center; gap:4px;

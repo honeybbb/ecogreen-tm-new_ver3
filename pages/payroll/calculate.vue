@@ -2,12 +2,16 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import axios from 'axios';
 import { useAuthStore } from "~/stores/auth.js";
-import XLSX from 'xlsx-js-style'
 import Pagination from "~/components/common/Pagination.vue";
+import ExportProgressModal from "~/components/common/ExportProgressModal.vue";
 import { useTableResize } from '~/composables/useTableResize.js';
-import {calculateAge} from "~/utils/formatter.js";
-import {formatCurrency} from "../../utils/formatter.js";
-import {useRoute, useRouter} from "#vue-router";
+import { useListTable } from '~/composables/useListTable.js';
+import { usePayrollColumns } from '~/composables/usePayrollColumns.js';
+import { usePayrollExcel } from '~/composables/usePayrollExcel.js';
+import { usePayslipPDF } from '~/composables/usePayslipPDF.js';
+import { calculateAge } from "~/utils/formatter.js";
+import { formatCurrency } from "../../utils/formatter.js";
+import { useRoute, useRouter } from "#vue-router";
 
 const {
   siteOptions,
@@ -21,115 +25,6 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const cIdx = authStore.user?.cIdx;
-
-// View Settings States
-const staticCols = ref([
-  { id: 'siteName', name: '현장명', show: true, width: 110, sticky: true },
-  { id: 'role', name: '직책', show: true, width: 70, sticky: true },
-  { id: 'id', name: '사번', show: true, width: 80, sticky: true },
-  { id: 'staff', name: '성명', show: true, width: 80, sticky: true },
-  { id: 'birthDt', name: '생년월일', show: true, width: 100, sticky: true },
-  { id: 'age', name: '나이(만)', show: true, width: 70, sticky: true },
-  { id: 'inDate', name: '입사일', show: true, width: 110, sticky: true },
-  { id: 'workDays', name: '근무/기준', show: true, width: 110, sticky: true },
-  { id: 'gross', name: '지급합계', show: true, width: 90, sticky: true },
-  { id: 'ded', name: '공제합계', show: true, width: 90, sticky: true },
-  { id: 'net', name: '실지급액', show: true, width: 90, sticky: true }
-]);
-const hiddenDynamicCols = ref({});
-
-const visiblePayItems = computed(() => {
-  return payItems.value.filter(i => !hiddenDynamicCols.value[i.itemCd]);
-});
-
-const visibleDeductionItems = computed(() => {
-  return deductionItems.value.filter(i => !hiddenDynamicCols.value[i.itemCd]);
-});
-
-const getStickyStyle = (colId, extraStyle = {}) => {
-  const baseOrder = [
-    { id: 'check', width: 40, show: true },
-    ...staticCols.value
-  ];
-
-  let left = 0;
-  for (const col of baseOrder) {
-    if (col.id === colId) {
-      if (!col.show) return { display: 'none' };
-      return {
-        left: `${left}px`,
-        minWidth: `${col.width}px`,
-        maxWidth: `${col.width}px`,
-        width: `${col.width}px`,
-        ...extraStyle
-      };
-    }
-    if (col.show) left += col.width;
-  }
-  return {};
-};
-
-const getSummaryGroupStyle = () => {
-  const baseOrder = [
-    { id: 'check', width: 40, show: true },
-    ...staticCols.value.slice(0, 8)
-  ];
-  let left = 0;
-  for (const col of baseOrder) {
-    if (col.show) left += col.width;
-  }
-  const grossShow = staticCols.value.find(c => c.id === 'gross').show;
-  const dedShow = staticCols.value.find(c => c.id === 'ded').show;
-  const netShow = staticCols.value.find(c => c.id === 'net').show;
-  if (!grossShow && !dedShow && !netShow) return { display: 'none' };
-  return { left: `${left}px` };
-};
-
-const getSummaryGroupColspan = () => {
-  let count = 0;
-  if (staticCols.value.find(c => c.id === 'gross').show) count++;
-  if (staticCols.value.find(c => c.id === 'ded').show) count++;
-  if (staticCols.value.find(c => c.id === 'net').show) count++;
-  return count;
-}
-
-const getFooterColspan = () => {
-  let span = 1;
-  for (let i = 0; i < 8; i++) {
-    if (staticCols.value[i].show) span++;
-  }
-  return span;
-};
-
-const getFooterTotalWidth = () => {
-  let width = 80;
-  for (let i = 0; i < 8; i++) {
-    if (staticCols.value[i].show) width += staticCols.value[i].width;
-  }
-  return width;
-};
-
-const loadColumnSettings = () => {
-  if (typeof window === 'undefined') return;
-  const userId = authStore.user?.id || authStore.user?.userId || authStore.user?.cIdx || authStore.user?.adminId || 'default';
-  const saved = localStorage.getItem(`payroll_cols_${userId}`);
-  if (saved) {
-    try {
-      const settings = JSON.parse(saved);
-      if (settings.staticCols) {
-        settings.staticCols.forEach(sc => {
-          const col = staticCols.value.find(c => c.id === sc.id);
-          if (col) col.show = sc.show;
-        });
-      }
-      if (settings.hiddenDynamicCols) {
-        hiddenDynamicCols.value = settings.hiddenDynamicCols;
-      }
-    } catch (e) {
-      console.error('Failed to load column settings', e);
-    }
-  }
-};
 
 const selectedYearMonth = ref(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
 const searchTerm = ref('');
@@ -152,6 +47,7 @@ const dataMode = ref('');
 const billingManager = ref([]);
 
 const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
+const isTaxRateLoaded = ref(false);
 const ageLimits    = ref({ pension: 0, employment: 0 });
 const paymentDayOptions = computed(() => {
   const days = [];
@@ -161,10 +57,33 @@ const paymentDayOptions = computed(() => {
   return days;
 });
 
-// ── 페이지네이션 상태 ──────────────────────────────
-const currentPage = ref(1);
-const pageSize    = ref(50);
-const pageSizeOptions = [50, 100, 200, 500];
+// 2. 동적 컬럼
+const payItems       = computed(() => items.value.filter(i => i.groupNm === '지급항목'));
+const deductionItems = computed(() => items.value.filter(i => i.groupNm === '공제항목'));
+
+// 컬럼 가시성 / sticky 위치
+const {
+  staticCols,
+  hiddenDynamicCols,
+  visiblePayItems,
+  visibleDeductionItems,
+  getStickyStyle,
+  getSummaryGroupStyle,
+  getSummaryGroupColspan,
+  getFooterColspan,
+  getFooterTotalWidth,
+  loadColumnSettings,
+} = usePayrollColumns({
+  payItemsRef: payItems,
+  deductionItemsRef: deductionItems,
+  getUserId: () => authStore.user?.id || authStore.user?.userId || authStore.user?.cIdx || authStore.user?.adminId,
+});
+
+// 정렬 / 페이지네이션 (filteredPayrollList는 아래에서 선언, 지연 getter)
+const {
+  sortKey, sortOrder, currentPage, pageSize, pageSizeOptions,
+  toggleSort, pagedItems: pagedPayrollList, handlePageChange,
+} = useListTable(() => filteredPayrollList.value);
 
 watch([
   selectedSite,
@@ -174,10 +93,6 @@ watch([
   selectedPayHistory], () => {
   currentPage.value = 1;
 });
-
-// 2. 동적 컬럼
-const payItems       = computed(() => items.value.filter(i => i.groupNm === '지급항목'));
-const deductionItems = computed(() => items.value.filter(i => i.groupNm === '공제항목'));
 
 // 3. 필터링 및 정렬
 const filteredPayrollList = computed(() => {
@@ -235,15 +150,6 @@ const filteredPayrollList = computed(() => {
 
 // ── 컬럼 리사이즈 ─────────────────────────────────
 const { startResize } = useTableResize();
-
-const handlePageChange = () => {
-  document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-};
-
-const pagedPayrollList = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredPayrollList.value.slice(start, start + pageSize.value);
-});
 
 const markAsDraft = (row) => {
   row.status = 2;
@@ -402,6 +308,7 @@ const fetchCalculatedPay = async () => {
   if (selectedRows.length === 0) { alert('급여를 계산할 직원을 체크해주세요.'); return; }
   if (!selectedYearMonth.value)  { alert('급여 연월을 선택해주세요.'); return; }
   if (selectedPaymentDay.value == '') { alert('지급일을 선택해주세요.'); return; }
+  if (!isTaxRateLoaded.value) { alert('세율 정보가 로드되지 않아 급여 계산이 불가합니다.'); return; }
   if (items.value.length === 0) await getWageCode();
   isLoading.value = true;
 
@@ -604,6 +511,7 @@ const savePayroll = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
   if (selectedRows.length === 0) { alert('저장할 직원을 체크해주세요.'); return; }
   if (!selectedPaymentDay.value) { alert('적용할 실제 급여 지급일을 선택해주세요.'); return; }
+  if (!isTaxRateLoaded.value) { alert('세율 정보가 로드되지 않아 저장이 불가합니다.'); return; }
 
   if (!await window.customConfirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
   try {
@@ -626,320 +534,61 @@ const savePayroll = async () => {
   } catch (e) { alert('저장 실패'); }
 };
 
-/* ══════════════════════════════════════════════════════════════════════════
-   급여 지급대장 엑셀 출력 설정 (공통)
-══════════════════════════════════════════════════════════════════════════ */
-const REGISTER = {
-  company: '주식회사이지종합관리',
-  contact: 'Tel.031-906-2002 Fax.031-906-2211',
-  notice: `${new Date().getFullYear()}년 직장인건강검진 받으시기 바랍니다.`,
-  blocksPerPage: 6,
-  pageHeightPt: 594,
-}
+// ── Excel / PDF 출력 (추출된 composable) ──────────────────────────
+const {
+  exportPayrollExcel: _exportPayrollExcelFn,
+  exportPayrollExcelBySite: _exportPayrollExcelBySiteFn,
+  isExportModalOpen,
+  isExportCancelled,
+  exportTotal,
+  exportProgress,
+  currentExportSiteName,
+  cancelSiteExport,
+  REG_PAY_SLOTS,
+  REG_DED_SLOTS,
+} = usePayrollExcel({
+  payItemsRef: payItems,
+  deductionItemsRef: deductionItems,
+  calculateRowSummary,
+});
 
-const REG_PAY_SLOTS = [
-  { r: 0, c: 6, nm: '기본급' }, { r: 0, c: 7, nm: '직책수당' }, { r: 0, c: 10, nm: '연차수당' },
-  { r: 0, c: 11, nm: '야간수당' }, { r: 0, c: 12, nm: '기타수당', etc: true },
-  { r: 1, c: 6, nm: '식대' }, { r: 1, c: 7, nm: '대근비' }, { r: 1, c: 10, nm: '휴가비' },
-  { r: 1, c: 11, nm: '근로자의날수당' }, { r: 1, c: 12, nm: '복지수당' },
-]
-const REG_DED_SLOTS = [
-  { r: 0, c: 13, nm: '건강보험' }, { r: 0, c: 14, nm: '장기요양보험' }, { r: 0, c: 16, nm: '국민연금' },
-  { r: 1, c: 13, nm: '고용보험' }, { r: 1, c: 14, nm: '기타공제', etc: true }, { r: 1, c: 16, nm: '환급소득세' },
-  { r: 2, c: 13, nm: '환급주민세' }, { r: 2, c: 14, nm: '기타보험료' },
-  { r: 2, c: 16, nm: '피복비공제료', label: '피복비 공제료' },
-  { r: 4, c: 13, nm: '소득세' }, { r: 4, c: 14, nm: '지방소득세' },
-]
+const {
+  depRows,
+  spaceOut,
+  isPayslipModalOpen,
+  payslipTotal,
+  payslipProgress,
+  currentPayslipSiteName,
+  payslipRender,
+  isPayslipCancelled,
+  cancelPayslipExport,
+  exportPayslipPDF: _exportPayslipPDFFn,
+} = usePayslipPDF({
+  payItemsRef: payItems,
+  deductionItemsRef: deductionItems,
+  calculateRowSummary,
+  REG_PAY_SLOTS,
+  REG_DED_SLOTS,
+});
 
-const REG_VB = {
-  1: ['medium', 'thin'], 2: ['thin', 'thin'], 3: ['thin', 'thin'], 4: ['thin', 'thin'], 5: ['thin', 'double'],
-  6: ['double', 'thin'], 7: ['thin', 'thin'], 8: [null, null], 9: [null, 'thin'],
-  10: ['thin', 'thin'], 11: ['thin', 'thin'], 12: ['thin', 'double'],
-  13: ['double', 'thin'], 14: ['thin', 'thin'], 15: [null, 'thin'], 16: ['thin', 'double'],
-  17: ['double', 'thin'], 18: [null, null], 19: [null, 'thin'], 20: ['thin', null], 21: [null, 'medium'],
-}
-const REG_COL_W = [9.25, 9.625, 3.375, 3.375, 3.375, 3.375, 12.25, 6.75, 3.25, 2.625, 12.375, 12.25,
-  12.625, 12.625, 1, 11.25, 12.625, 6.625, 4.875, 1.75, 2.25, 6.25, 0.25, 6.25]
-const REG_NCOL = 24
-const REG_RH = { pad: 51, title: 22.5, pay: 6, comp: 9, gap1: 7.5, gap2: 2.25, grp: 12.75, note: 13.5, tel: 13.5, brk: 10.5 }
-const REG_BLOCK_H = [12, 12, 13.5, 12.75, 12.75]
-
-const F = (sz, bold) => ({ name: '나눔고딕', sz, bold: !!bold })
-const F9 = F(9), F9B = F(9, true)
-const FILL_H = { patternType: 'solid', fgColor: { rgb: 'E6E6FA' } }
-const AC = { horizontal: 'center', vertical: 'center' }
-const AR = { horizontal: 'right', vertical: 'center' }
-const AL = { horizontal: 'left', vertical: 'top' }
-const AD = { horizontal: 'distributed', vertical: 'center' }
-
-// 공통 엑셀 데이터 생성 함수
-const generateExcelSheetData = (siteGroupsArray, year, month, payDateLabel) => {
-  const norm = (s) => String(s || '').replace(/[\s()]/g, '')
-  const cdOf = (list, nm) => (list.find(i => norm(i.itemNm) === norm(nm)) || {}).itemCd || null
-  const paySlots = REG_PAY_SLOTS.map(s => ({ ...s, cd: cdOf(payItems.value, s.nm) }))
-  const dedSlots = REG_DED_SLOTS.map(s => ({ ...s, cd: cdOf(deductionItems.value, s.nm) }))
-  const mappedPay = new Set(paySlots.map(s => s.cd).filter(Boolean))
-  const mappedDed = new Set(dedSlots.map(s => s.cd).filter(Boolean))
-  const etcPayKey = (() => { const s = paySlots.find(x => x.etc); return s ? `${s.r}_${s.c}` : null })()
-  const etcDedKey = (() => { const s = dedSlots.find(x => x.etc); return s ? `${s.r}_${s.c}` : null })()
-
-  const toGrid = (payMap, dedMap) => {
-    const g = {}
-    paySlots.forEach(s => { g[`${s.r}_${s.c}`] = Number(payMap?.[s.cd] || 0) })
-    dedSlots.forEach(s => { g[`${s.r}_${s.c}`] = Number(dedMap?.[s.cd] || 0) })
-    let restP = 0, restD = 0
-    payItems.value.forEach(i => { if (!mappedPay.has(i.itemCd)) restP += Number(payMap?.[i.itemCd] || 0) })
-    deductionItems.value.forEach(i => { if (!mappedDed.has(i.itemCd)) restD += Number(dedMap?.[i.itemCd] || 0) })
-    if (etcPayKey) g[etcPayKey] = Number(g[etcPayKey] || 0) + restP
-    if (etcDedKey) g[etcDedKey] = Number(g[etcDedKey] || 0) + restD
-    return g
-  }
-
-  const BPP = REGISTER.blocksPerPage
-  const pages = []
-
-  siteGroupsArray.forEach((g, gi) => {
-    const blocks = g.emps.map(e => ({ kind: 'emp', emp: e }))
-    blocks.push({ kind: 'sum', label: g.isTotal ? '합계' : '부서계', emps: g.emps, siteName: g.siteName })
-    // 단일 현장 출력이 아니고 전체 출력일 때 맨 마지막에 총합계 추가
-    if (!g.isTotal && siteGroupsArray.length > 1 && gi === siteGroupsArray.length - 1) {
-      const allEmps = siteGroupsArray.flatMap(sg => sg.emps);
-      blocks.push({ kind: 'sum', label: '합계', emps: allEmps, siteName: '' })
-    }
-    for (let i = 0; i < blocks.length; i += BPP) pages.push(blocks.slice(i, i + BPP))
-  })
-
-  const wsData = []; const merges = []; const rowH = [];
-  const pushH = (h) => rowH.push({ hpt: h })
-  let R = 0
-
-  const line = (top, bottom, fill) => {
-    const row = new Array(REG_NCOL).fill(null)
-    for (let c = 1; c <= 21; c++) {
-      const [l, r] = REG_VB[c]
-      row[c] = { v: '', t: 's', s: { font: F9, fill: fill ? FILL_H : { patternType: 'none' }, alignment: AC, border: { top: top ? { style: top } : undefined, bottom: bottom ? { style: bottom } : undefined, left: l ? { style: l } : undefined, right: r ? { style: r } : undefined } } }
-    }
-    return row
-  }
-  const blank = () => new Array(REG_NCOL).fill(null).map(() => ({ v: '', t: 's', s: { font: F9 } }))
-  const seam = (row, a, b) => { for (let c = a; c <= b; c++) { if (!row[c]) continue; if (c > a) row[c].s.border.left = undefined; if (c < b) row[c].s.border.right = undefined; } }
-  const hmerge = (row, r, a, b) => { seam(row, a, b); merges.push({ s: { r, c: a }, e: { r, c: b } }) }
-  const vmerge = (r1, c1, r2, c2) => merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } })
-
-  const put = (row, c, v, opt = {}) => {
-    if (!row[c]) return
-    const isNum = typeof v === 'number'
-    row[c].v = v === null || v === undefined ? '' : v
-    row[c].t = isNum ? 'n' : 's'
-    if (isNum) row[c].z = opt.z || '#,##0_ '
-    if (opt.font) row[c].s.font = opt.font
-    row[c].s.alignment = opt.align || (isNum ? AR : AC)
-  }
-  const money = (row, c, v) => { if (Number(v || 0) !== 0) put(row, c, Number(v || 0)) }
-
-  const pushHeader = () => {
-    const g = line('medium', 'thin', true)
-    put(g, 6, '지\u00a0\u00a0급\u00a0\u00a0내\u00a0\u00a0역', { font: F9B })
-    put(g, 13, '공\u00a0\u00a0\u00a0제\u00a0\u00a0\u00a0내\u00a0\u00a0\u00a0역', { font: F9B })
-    put(g, 17, '합계'); put(g, 20, '영수인')
-    hmerge(g, R, 2, 5); hmerge(g, R, 6, 12); hmerge(g, R, 13, 16); seam(g, 17, 19); seam(g, 20, 21); vmerge(R, 17, R + 2, 19); vmerge(R, 20, R + 5, 21)
-    wsData.push(g); R++
-    const H = [0, 1, 2, 3, 4].map(() => line('thin', 'thin', true))
-    const L = ['사 원 번 호', '직위', '성명', '근로일수', '근로시간수']
-    L.forEach((t, i) => put(H[i], 1, t, { font: i === 4 ? F(8.6) : F9, align: i === 0 ? AC : AD }))
-    put(H[0], 2, '입 사 일 자'); hmerge(H[0], R, 2, 5)
-    put(H[1], 2, '경'); put(H[1], 3, '부'); put(H[1], 4, '7')
-    put(H[2], 2, '배'); put(H[2], 3, '20\u00a0'); put(H[2], 4, '60\u00a0'); put(H[2], 5, '장')
-    put(H[3], 2, '연장', { align: AD }); hmerge(H[3], R + 3, 2, 3); put(H[3], 4, '야간', { align: AD }); hmerge(H[3], R + 3, 4, 5)
-    put(H[4], 2, '휴일', { align: AD }); hmerge(H[4], R + 4, 2, 3); hmerge(H[4], R + 4, 4, 5)
-    ;[...paySlots, ...dedSlots].forEach(s => put(H[s.r], s.c, s.label || s.nm, { font: F9B, align: AD }))
-    ;['지급합계', '공제합계', '차인지급액'].forEach((t, i) => put(H[i + 2], 17, t, { align: AD }))
-    H.forEach((row, i) => { hmerge(row, R + i, 7, 9); hmerge(row, R + i, 14, 15) })
-    ;[2, 3, 4].forEach(i => hmerge(H[i], R + i, 17, 19))
-    H.forEach(row => { wsData.push(row); R++ })
-  }
-
-  const pushBlock = (blk) => {
-    const rows = [line('medium', 'thin'), line('thin', 'thin'), line('thin', 'thin'), line('thin', 'thin'), line('thin', 'medium')]
-    const R0 = R; let grid, sum;
-    if (blk.kind === 'emp') {
-      const e = blk.emp; grid = toGrid(e.payItems || {}, e.deductionItems || {})
-      sum = calculateRowSummary(e)
-      put(rows[0], 1, e.id || ''); put(rows[0], 2, e.inDate || '')
-      put(rows[1], 1, e.role || ''); put(rows[1], 2, '0'); put(rows[1], 3, '0'); put(rows[1], 4, '0')
-      put(rows[2], 1, e.staff || ''); put(rows[2], 3, '0'); put(rows[2], 4, '0'); put(rows[2], 5, '0')
-      put(rows[3], 1, String(Number(e.workedDays || 0))); put(rows[3], 2, '0.00'); put(rows[3], 4, '0.00')
-      put(rows[4], 1, 209, { z: '#,##0.00_ ', align: AC }); put(rows[4], 2, '0.00')
-    } else {
-      const pt = {}, dt = {}
-      blk.emps.forEach(e => { Object.entries(e.payItems || {}).forEach(([k, v]) => { pt[k] = Number(pt[k] || 0) + Number(v || 0) }); Object.entries(e.deductionItems || {}).forEach(([k, v]) => { dt[k] = Number(dt[k] || 0) + Number(v || 0) }) })
-      grid = toGrid(pt, dt)
-      sum = blk.emps.reduce((a, e) => { const s = calculateRowSummary(e); return { gross: a.gross + s.gross, ded: a.ded + s.ded, net: a.net + s.net } }, { gross: 0, ded: 0, net: 0 })
-      put(rows[0], 1, blk.label, { font: F9B })
-      if (blk.siteName) put(rows[0], 2, blk.siteName)
-      put(rows[4], 2, `${blk.emps.length}명`, { font: F9B })
-    }
-    ;[...paySlots, ...dedSlots].forEach(s => money(rows[s.r], s.c, grid[`${s.r}_${s.c}`]))
-    put(rows[2], 17, Number(sum.gross || 0)); put(rows[3], 17, Number(sum.ded || 0)); put(rows[4], 17, Number(sum.net || 0))
-
-    rows.forEach((row, i) => {
-      const rr = R0 + i
-      if (i === 0 || (blk.kind === 'sum' && (i === 3 || i === 4))) hmerge(row, rr, 2, 5)
-      if (blk.kind === 'emp' && (i === 3 || i === 4)) { hmerge(row, rr, 2, 3); hmerge(row, rr, 4, 5) }
-      hmerge(row, rr, 7, 9); hmerge(row, rr, 14, 15); hmerge(row, rr, 17, 19); seam(row, 20, 21)
-      if (i > 0) { row[20].s.border.top = undefined; row[21].s.border.top = undefined }
-      if (i < 4) { row[20].s.border.bottom = undefined; row[21].s.border.bottom = undefined }
-      wsData.push(row); R++
-    })
-    vmerge(R0, 20, R0 + 4, 21)
-  }
-
-  pages.forEach((blocks, pi) => {
-    wsData.push(blank()); R++; pushH(REG_RH.pad)
-    const t = blank(); t[9] = { v: `${year}년 ${month}월 급여 지급대장`, t: 's', s: { font: F(16), alignment: AC } }
-    wsData.push(t); merges.push({ s: { r: R, c: 9 }, e: { r: R, c: 14 } }); R++; pushH(REG_RH.title)
-    const p = blank(); p[9] = { v: payDateLabel, t: 's', s: { font: F(10), alignment: AC } }
-    wsData.push(p); merges.push({ s: { r: R, c: 9 }, e: { r: R + 1, c: 14 } }); R++; pushH(REG_RH.pay)
-    const cp = blank(); cp[1] = { v: REGISTER.company, t: 's', s: { font: F(10), alignment: AL } }
-    wsData.push(cp); merges.push({ s: { r: R, c: 1 }, e: { r: R + 1, c: 7 } }); R++; pushH(REG_RH.comp)
-    wsData.push(blank()); R++; pushH(REG_RH.gap1); wsData.push(blank()); R++; pushH(REG_RH.gap2)
-
-    pushHeader(); pushH(REG_RH.grp); REG_BLOCK_H.forEach(pushH)
-    blocks.forEach(b => { pushBlock(b); REG_BLOCK_H.forEach(pushH) })
-
-    const fixed = REG_RH.pad + REG_RH.title + REG_RH.pay + REG_RH.comp + REG_RH.gap1 + REG_RH.gap2 + REG_RH.grp + REG_BLOCK_H.reduce((a, b) => a + b, 0) + REG_RH.note + REG_RH.tel + REG_RH.brk
-    const filler = Math.max(3, REGISTER.pageHeightPt - fixed - blocks.length * 63)
-    wsData.push(blank()); R++; pushH(filler)
-
-    const nt = blank(); nt[1] = { v: REGISTER.notice, t: 's', s: { font: F(8), alignment: AL } }
-    wsData.push(nt); merges.push({ s: { r: R, c: 1 }, e: { r: R, c: 18 } }); R++; pushH(REG_RH.note)
-
-    const ft = blank(); ft[1] = { v: REGISTER.contact, t: 's', s: { font: F(8), alignment: AL } }
-    ft[19] = { v: `${pi + 1}/${pages.length}`, t: 's', s: { font: F(10), alignment: { horizontal: 'left', vertical: 'center' } } }
-    wsData.push(ft); merges.push({ s: { r: R, c: 1 }, e: { r: R, c: 18 } }); merges.push({ s: { r: R, c: 19 }, e: { r: R, c: 21 } }); R++; pushH(REG_RH.tel)
-
-    const brk = blank(); brk[23] = { v: ' ', t: 's', s: { font: F9 } }
-    wsData.push(brk); R++; pushH(REG_RH.brk)
-  })
-
-  return { wsData, merges, rowH };
-};
-
-// 1. 기존의 통합 대장 출력
 const exportPayrollExcel = () => {
-  const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value
-  if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return }
-
-  const [year, month] = selectedYearMonth.value.split('-')
-  const payDateLabel = (() => {
-    if (selectedPaymentDay.value) { const [y, m, d] = String(selectedPaymentDay.value).split('-'); return `지급일자 : ${y}년${m}월${d}일` }
-    const dt = new Date(Number(year), Number(month), 10); return `지급일자 : ${dt.getFullYear()}년${String(dt.getMonth() + 1).padStart(2, '0')}월10일`
-  })()
-
-  const siteMap = new Map()
-  target.forEach(e => {
-    const key = e.sIdx ?? e.siteName ?? '-';
-    if (!siteMap.has(key)) siteMap.set(key, { siteName: e.siteName || '소속없음', emps: [], isTotal: false })
-    siteMap.get(key).emps.push(e)
-  })
-  const sites = [...siteMap.values()]
-
-  const { wsData, merges, rowH } = generateExcelSheetData(sites, year, month, payDateLabel)
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData)
-  ws['!merges'] = merges
-  ws['!cols'] = REG_COL_W.map(w => ({ wch: w }))
-  ws['!rows'] = rowH
-  ws['!margins'] = { left: 0, right: 0, top: 0, bottom: 0, header: 0, footer: 0 }
-
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, `pays_${year}m${month}`)
-  XLSX.writeFile(wb, `지급대장_${year}년${month}월.xlsx`)
-}
-
-// ── 모달 상태 관리 (단지별 출력용) ─────────────────────────
-const isExportModalOpen = ref(false);
-const isExportCancelled = ref(false);
-const exportTotal = ref(0);
-const exportProgress = ref(0);
-const currentExportSiteName = ref('');
-
-const cancelSiteExport = () => {
-  isExportCancelled.value = true;
-};
-
-// 2. 단지별 개별 대장 비동기 출력
-const exportPayrollExcelBySite = async () => {
-  const target = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value;
-  if (target.length === 0) { alert('출력할 데이터가 없습니다.'); return; }
-
   const [year, month] = selectedYearMonth.value.split('-');
-  const payDateLabel = (() => {
-    if (selectedPaymentDay.value) { const [y, m, d] = String(selectedPaymentDay.value).split('-'); return `지급일자 : ${y}년${m}월${d}일` }
-    const dt = new Date(Number(year), Number(month), 10); return `지급일자 : ${dt.getFullYear()}년${String(dt.getMonth() + 1).padStart(2, '0')}월10일`
-  })();
-
-  const siteMap = new Map();
-  target.forEach(e => {
-    const key = e.sIdx ?? e.siteName ?? '-';
-    if (!siteMap.has(key)) siteMap.set(key, { siteName: e.siteName || '소속없음', emps: [], isTotal: true }); // 개별파일은 자기자신이 곧 합계
-    siteMap.get(key).emps.push(e);
-  });
-  const sites = [...siteMap.values()];
-
-  // 모달 초기화
-  isExportCancelled.value = false;
-  exportTotal.value = sites.length;
-  exportProgress.value = 0;
-  isExportModalOpen.value = true;
-
-  // 브라우저 팝업 차단 안내
-  alert("다운로드가 시작됩니다.\n※ 여러 개의 파일이 다운로드 되므로 브라우저 상단의 '다중 파일 다운로드 허용'을 꼭 선택해주세요.");
-
-  // 비동기 딜레이 함수 (UI 렌더링 및 중단 버튼 입력을 위해 필수)
-  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-  for (let i = 0; i < sites.length; i++) {
-    if (isExportCancelled.value) break;
-
-    const siteData = sites[i];
-    currentExportSiteName.value = siteData.siteName;
-
-    // UI가 업데이트 될 시간을 주고 파일 동시 다운로드 과부하 방지 (500ms 간격)
-    await delay(500);
-
-    if (isExportCancelled.value) break;
-
-    try {
-      const { wsData, merges, rowH } = generateExcelSheetData([siteData], year, month, payDateLabel);
-
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-      ws['!merges'] = merges;
-      ws['!cols'] = REG_COL_W.map(w => ({ wch: w }));
-      ws['!rows'] = rowH;
-      ws['!margins'] = { left: 0, right: 0, top: 0, bottom: 0, header: 0, footer: 0 };
-
-      const wb = XLSX.utils.book_new();
-      const safeSiteName = siteData.siteName.replace(/[\\/?*\[\]]/g, '_'); // 파일명 제한 문자 필터링
-
-      XLSX.utils.book_append_sheet(wb, ws, `지급대장`);
-      XLSX.writeFile(wb, `지급대장_${year}년${month}월_${safeSiteName}.xlsx`);
-
-      exportProgress.value = i + 1;
-    } catch (err) {
-      console.error(`${siteData.siteName} 엑셀 생성 중 오류:`, err);
-    }
-  }
-
-  if (!isExportCancelled.value) {
-    currentExportSiteName.value = '모든 파일 출력 완료!';
-    // 완료 후 1.5초 뒤 모달 자동 닫기
-    setTimeout(() => {
-      isExportModalOpen.value = false;
-    }, 1500);
-  }
+  const rows = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value;
+  return _exportPayrollExcelFn({ rows, year, month, selectedPaymentDay: selectedPaymentDay.value });
 };
 
+const exportPayrollExcelBySite = () => {
+  const [year, month] = selectedYearMonth.value.split('-');
+  const rows = filteredPayrollList.value.length > 0 ? filteredPayrollList.value : payrollList.value;
+  return _exportPayrollExcelBySiteFn({ rows, year, month, selectedPaymentDay: selectedPaymentDay.value });
+};
+
+const exportPayslipPDF = () => {
+  const [year, month] = selectedYearMonth.value.split('-');
+  const selectedRows = payrollList.value.filter(p => p.selected);
+  const companyNm = authStore.user?.companyNm || '';
+  return _exportPayslipPDFFn({ selectedRows, year, month, companyNm });
+};
 
 const getWageCode = async () => {
   try {
@@ -983,21 +632,17 @@ const getTaxRate = async () => {
     const res = await axios.get(`/api/v1/config/tax/rate/${year}`);
     const list = res.data.data || [];
     const tax = list.find(t => Number(t.applied_year) === year) || list[0] || {};
+    // 세율이 비어 있으면 로드 실패로 취급 (0으로 계산되는 사고 방지)
+    if (!tax.pension_rate || !tax.health_rate || !tax.long_term_care_rate || !tax.employment_rate) {
+      throw new Error('세율 응답 형식 오류 또는 누락');
+    }
     targetCodes.value = { pension: tax.pension_rate, health: tax.health_rate, longTerm: tax.long_term_care_rate, employment: tax.employment_rate };
-  } catch(e) {}
-};
-
-const sortKey   = ref('');
-const sortOrder = ref('asc');
-
-const toggleSort = (key) => {
-  if (sortKey.value === key) {
-    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
-  } else {
-    sortKey.value   = key;
-    sortOrder.value = 'asc';
+    isTaxRateLoaded.value = true;
+  } catch (e) {
+    console.error('세율 로드 실패:', e);
+    isTaxRateLoaded.value = false;
+    alert('세율 정보를 불러오지 못했습니다.\n페이지를 새로고침하거나 관리자에게 문의하세요.\n세율이 로드될 때까지 급여 계산/저장이 비활성화됩니다.');
   }
-  currentPage.value = 1;
 };
 
 const resetFilters = () => {
@@ -1110,32 +755,112 @@ onMounted(async () => {
           <i class="mdi mdi-office-building"></i>
           <span>단지별 지급대장</span>
         </button>
+
+        <button @click="exportPayslipPDF" class="btn-export-payslip">
+          <i class="mdi mdi-file-pdf-box"></i>
+          <span>급여 명세서 PDF</span>
+        </button>
       </div>
     </div>
 
-    <!-- ===== 단지별 출력 프로그래스 모달 ===== -->
-    <div v-if="isExportModalOpen" class="export-modal-overlay">
-      <div class="export-modal-box">
-        <h3 class="modal-title"><i class="mdi mdi-microsoft-excel"></i> 단지별 엑셀 출력 중...</h3>
+    <ExportProgressModal
+        :open="isExportModalOpen"
+        title="단지별 엑셀 출력 중..."
+        icon-class="mdi-microsoft-excel"
+        :current-name="currentExportSiteName"
+        :progress="exportProgress"
+        :total="exportTotal"
+        :cancelled="isExportCancelled"
+        @cancel="cancelSiteExport"
+        @close="isExportModalOpen = false"
+    />
 
-        <div class="modal-status-text">
-          <span v-if="!isExportCancelled">{{ currentExportSiteName }} ({{ exportProgress }} / {{ exportTotal }})</span>
-          <span v-else class="text-red font-bold">출력이 사용자에 의해 중단되었습니다.</span>
-        </div>
+    <ExportProgressModal
+        :open="isPayslipModalOpen"
+        title="급여 명세서 PDF 출력 중..."
+        icon-class="mdi-file-pdf-box"
+        :current-name="currentPayslipSiteName"
+        :progress="payslipProgress"
+        :total="payslipTotal"
+        :cancelled="isPayslipCancelled"
+        @cancel="cancelPayslipExport"
+        @close="isPayslipModalOpen = false"
+    />
 
-        <div class="progress-container">
-          <div class="progress-bar-fill" :style="{ width: `${(exportProgress / exportTotal) * 100}%` }" :class="{ 'bg-red': isExportCancelled }"></div>
+    <!-- 숨겨진 급여명세서 렌더링 영역 (html2canvas 캡처용) -->
+    <div v-if="payslipRender.emps.length" id="payslip-render-root" class="payslip-render-root">
+      <template v-for="(emp, idx) in payslipRender.emps" :key="idx">
+        <div v-if="idx === 1" class="ps-cut-line">
+          <span class="ps-scissor">&#9986;</span>
+          <span class="ps-cut-text">절&nbsp;&nbsp;취&nbsp;&nbsp;선</span>
+          <span class="ps-scissor">&#9986;</span>
         </div>
+        <div class="payslip-card">
+          <!-- 상단: 회사명 | 급여명세서 -->
+          <div class="ps-top">
+            <div class="ps-top-company">{{ payslipRender.companyNm }}</div>
+            <div class="ps-top-title">{{ payslipRender.year }}년 {{ String(payslipRender.month).padStart(2,'0') }}월 급여 명세서</div>
+          </div>
 
-        <div class="modal-actions mt-4">
-          <button v-if="exportProgress < exportTotal && !isExportCancelled" @click="cancelSiteExport" class="btn-cancel">
-            <i class="mdi mdi-stop-circle-outline"></i> 중단하기
-          </button>
-          <button v-else @click="isExportModalOpen = false" class="btn-confirm">
-            닫기
-          </button>
+          <!-- 본문 -->
+          <div class="ps-body">
+            <!-- 좌측 사이드바 -->
+            <div class="ps-sidebar">
+              <div class="ps-sidebar-title">급여지급명세서</div>
+              <div class="ps-info-list">
+                <div class="ps-info-line">부&nbsp;&nbsp;서&nbsp;:&nbsp;<b>{{ emp.siteName }}</b></div>
+                <div class="ps-info-line">사&nbsp;&nbsp;번&nbsp;:&nbsp;<b>{{ emp.id }}</b></div>
+                <div class="ps-info-line">직&nbsp;&nbsp;위&nbsp;:&nbsp;<b>{{ emp.role }}</b></div>
+                <div class="ps-info-line">성&nbsp;&nbsp;명&nbsp;:&nbsp;<b>{{ emp.staff }}</b></div>
+              </div>
+              <div class="ps-thanks">귀하의 노고에 감사합니다.</div>
+            </div>
+
+            <!-- 소득공제대상 (15행: 8 라벨 + 7 공백) -->
+            <div class="ps-col ps-dep">
+              <div class="ps-col-head">소득공제대상</div>
+              <div v-for="(dep, di) in depRows" :key="'dp'+di" class="ps-grid-row">
+                <div class="ps-cell lbl">{{ dep }}</div>
+                <div class="ps-cell val"></div>
+              </div>
+              <div v-for="n in 7" :key="'de'+n" class="ps-grid-row">
+                <div class="ps-cell lbl"></div><div class="ps-cell val"></div>
+              </div>
+            </div>
+
+            <!-- 지급내역 (15행: 10 지급 + 4 공백 + 지급합계) -->
+            <div class="ps-col ps-pay">
+              <div class="ps-col-head">지급내역</div>
+              <div v-for="(p, pi) in emp.pays" :key="'p'+pi" class="ps-grid-row">
+                <div class="ps-cell lbl">{{ spaceOut(p.nm) }}</div>
+                <div class="ps-cell num">{{ p.amt ? formatCurrency(p.amt) : '0' }}</div>
+              </div>
+              <div v-for="n in 4" :key="'pe'+n" class="ps-grid-row">
+                <div class="ps-cell lbl"></div><div class="ps-cell num"></div>
+              </div>
+              <div class="ps-grid-row ps-sum-top">
+                <div class="ps-cell lbl">지 급 합 계</div>
+                <div class="ps-cell num">{{ formatCurrency(emp.grossTotal) }}</div>
+              </div>
+            </div>
+
+            <!-- 공제내역 (15행: 9 공제 + 1공백 + 소득세 + 지방소득세 + 1공백 + 공제합계 + 차인지급액) -->
+            <div class="ps-col ps-ded">
+              <div class="ps-col-head">공제내역</div>
+              <div v-for="(d, di) in emp.deds" :key="'d'+di" class="ps-grid-row">
+                <div class="ps-cell lbl">{{ spaceOut(d.nm) }}</div>
+                <div class="ps-cell num">{{ d.amt ? formatCurrency(d.amt) : '0' }}</div>
+              </div>
+              <div class="ps-grid-row"><div class="ps-cell lbl"></div><div class="ps-cell num"></div></div>
+              <div class="ps-grid-row"><div class="ps-cell lbl">소 득 세</div><div class="ps-cell num">{{ emp.incomeTax ? formatCurrency(emp.incomeTax) : '0' }}</div></div>
+              <div class="ps-grid-row"><div class="ps-cell lbl">지 방 소 득 세</div><div class="ps-cell num">{{ emp.localTax ? formatCurrency(emp.localTax) : '0' }}</div></div>
+              <div class="ps-grid-row"><div class="ps-cell lbl"></div><div class="ps-cell num"></div></div>
+              <div class="ps-grid-row ps-sum-top"><div class="ps-cell lbl">공 제 합 계</div><div class="ps-cell num">{{ formatCurrency(emp.dedTotal) }}</div></div>
+              <div class="ps-grid-row"><div class="ps-cell lbl">차 인 지 급 액</div><div class="ps-cell num">{{ formatCurrency(emp.netPay) }}</div></div>
+            </div>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
     <!-- ==================================== -->
 
@@ -1488,29 +1213,6 @@ onMounted(async () => {
 .legend-color.calculate-draft { background-color: var(--warning); }
 .legend-color.calculate-active { background-color: var(--success); }
 
-/* 모달창 스타일 (진행 상황 바) */
-.export-modal-overlay {
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-  background: rgba(0,0,0,0.6); z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
-}
-.export-modal-box {
-  background: #fff; width: 400px; padding: 24px;
-  border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-  text-align: center;
-}
-.modal-title { font-size: 18px; font-weight: 700; color: #1f2937; margin-bottom: 16px; display:flex; align-items:center; justify-content: center; gap:8px;}
-.modal-title i { color: #217346; font-size: 24px; }
-.modal-status-text { font-size: 14px; color: #4b5563; margin-bottom: 12px; height: 20px;}
-.progress-container { width: 100%; height: 12px; background-color: #e5e7eb; border-radius: 6px; overflow: hidden; }
-.progress-bar-fill { height: 100%; background-color: #217346; transition: width 0.3s ease; }
-.progress-bar-fill.bg-red { background-color: #ef4444 !important; }
-.btn-cancel { padding: 8px 16px; border: none; background-color: #fee2e2; color: #b91c1c; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
-.btn-cancel:hover { background-color: #fca5a5; }
-.btn-confirm { padding: 8px 24px; border: none; background-color: #e5e7eb; color: #374151; border-radius: 6px; cursor: pointer; font-weight: 600; }
-.btn-confirm:hover { background-color: #d1d5db; }
-.mt-4 { margin-top: 20px; }
-
 /* 테이블 스크롤 & 레이아웃 코어 */
 .table-scroll-container { overflow-x: auto; max-width: 100%; max-height: calc(100vh - 350px); position: relative; background-color: #ffffff; }
 .table-scroll-container::-webkit-scrollbar { height: 8px; width: 8px; }
@@ -1602,4 +1304,150 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 .theme-deduct-cell { background-color: transparent; }
 .col-site { min-width: 80px; max-width: 160px; width: 120px; }
 .cell-ellipsis { max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== 급여 명세서 PDF 버튼 ===== */
+.btn-export-payslip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid #b91c1c;
+  background: #dc2626; color: #fff; font-weight: 600; cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.btn-export-payslip:hover { background: #b91c1c; box-shadow: 0 2px 6px rgba(185, 28, 28, 0.3); }
+
+/* ===== 급여 명세서 html2canvas 렌더링 영역 (A4 세로 비율: 820×1160) ===== */
+.payslip-render-root,
+.payslip-render-root * { box-sizing: border-box; }   /* 전체 border-box 강제 */
+
+.payslip-render-root {
+  position: fixed; left: -10000px; top: 0;
+  width: 820px; height: 1160px;
+  background: #fff; padding: 0;
+  font-family: '맑은 고딕', 'Malgun Gothic', '나눔고딕', 'Nanum Gothic', sans-serif;
+  color: #000;
+  display: flex; flex-direction: column;
+  z-index: -1;
+}
+.payslip-card {
+  flex: 0 0 555px;
+  border: 1px solid #000;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+/* 절취선 */
+.ps-cut-line {
+  flex: 0 0 50px;
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; font-size: 11px; color: #555;
+  letter-spacing: 3px;
+  padding: 0 16px;
+}
+.ps-cut-line::before, .ps-cut-line::after {
+  content: ''; flex: 1;
+  border-top: 1.5px dashed #666;
+}
+.ps-scissor { font-size: 16px; color: #555; }
+.ps-cut-text { font-weight: 700; }
+
+/* 상단: 회사명 | 급여 명세서 */
+.ps-top { display: flex; border-bottom: 1px solid #000; flex: 0 0 56px; }
+.ps-top-company {
+  flex: 0 0 200px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 500;
+  border-right: 1px solid #000;
+  color: #333;
+}
+.ps-top-title {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700; letter-spacing: 1px;
+}
+
+/* 본문 영역 */
+.ps-body { flex: 1; display: flex; min-height: 0; }
+
+/* 사이드바 */
+.ps-sidebar {
+  flex: 0 0 200px;
+  border-right: 1px solid #000;
+  display: flex; flex-direction: column;
+  padding: 16px 12px 0 12px;
+}
+.ps-sidebar-title {
+  border: 1px solid #000; border-radius: 4px;
+  padding: 10px 4px;
+  text-align: center;
+  font-weight: 700; font-size: 15px;
+  background: #cfd8f2;
+  margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+.ps-info-list {
+  flex: 1;
+  display: flex; flex-direction: column; justify-content: space-around;
+  padding: 24px 0 12px 10px;
+}
+.ps-info-line { font-size: 12px; letter-spacing: 0.5px; }
+.ps-info-line b { font-weight: 700; margin-left: 2px; }
+.ps-thanks {
+  font-size: 11px;
+  padding: 6px 0;
+  border-top: 1px solid #000;
+  text-align: left;
+}
+
+/* 데이터 3열: 모두 동일한 15행 구조 → 완벽 정렬 */
+.ps-col {
+  display: flex; flex-direction: column;
+  border-right: 1px solid #000;
+  min-width: 0;
+}
+.ps-col:last-child { border-right: none; }
+
+.ps-dep { flex: 0 0 140px; }
+.ps-pay { flex: 1; }
+.ps-ded { flex: 1; }
+
+.ps-col-head {
+  flex: 0 0 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 11.5px;
+  background: #e8ecf5;
+  border-bottom: 1px solid #000;
+  letter-spacing: 0.5px;
+}
+
+.ps-grid-row {
+  flex: 1 1 0;              /* basis 0 → 모든 행 균등분배 */
+  display: flex;
+  border-bottom: 1px solid #000;
+  min-height: 0;
+}
+.ps-grid-row:last-child { border-bottom: none; }
+
+/* 셀 */
+.ps-cell {
+  display: flex; align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  overflow: hidden;
+}
+.ps-cell.lbl {
+  flex: 1 1 0;
+  letter-spacing: 0.3px;
+  border-right: 1px solid #000;
+  justify-content: center;
+}
+.ps-cell.val { flex: 0 0 45%; }
+.ps-cell.num {
+  flex: 0 0 55%;
+  justify-content: flex-end;
+}
+/* 중요: pay/ded 라벨도 flex:1 유지 → num 55% 고정, 나머지 lbl 45% 자동 */
+/* .ps-pay/.ps-ded .ps-cell.lbl 재정의 하지 않음 (overflow 방지) */
+
+/* 지급합계/공제합계: 테두리 유지(모든 열 공통)하고 폰트만 bold → 열 간 높이 일정 */
+.ps-grid-row.ps-sum-top .ps-cell.lbl,
+.ps-grid-row.ps-sum-top .ps-cell.num { font-weight: 700; }
 </style>

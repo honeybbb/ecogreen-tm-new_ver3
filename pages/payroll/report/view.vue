@@ -35,6 +35,7 @@ const dataMode = ref(''); // 'saved' | 'draft'
 const billingManager = ref([]);
 
 const targetCodes  = ref({ pension: '', health: '', longTerm: '', employment: '' });
+const isTaxRateLoaded = ref(false);
 const ageLimits    = ref({ pension: 0, employment: 0 });
 const paymentDayOptions = computed(() => {
   const days = [];
@@ -348,6 +349,7 @@ const fetchCalculatedPay = async () => {
   if (selectedRows.length === 0) { alert('급여를 계산할 직원을 체크해주세요.'); return; }
   if (!selectedYearMonth.value)  { alert('급여 연월을 선택해주세요.'); return; }
   if (selectedPaymentDay.value == '') { alert('지급일을 선택해주세요.'); return; }
+  if (!isTaxRateLoaded.value) { alert('세율 정보가 로드되지 않아 급여 계산이 불가합니다.'); return; }
   if (items.value.length === 0) await getWageCode();
   isLoading.value = true;
   try {
@@ -488,6 +490,7 @@ const calculateInsurances = async (row) => {
 const savePayroll = async () => {
   const selectedRows = payrollList.value.filter(p => p.selected);
   if (selectedRows.length === 0) { alert('저장할 직원을 체크해주세요.'); return; }
+  if (!isTaxRateLoaded.value) { alert('세율 정보가 로드되지 않아 저장이 불가합니다.'); return; }
   if (!await window.customConfirm(`체크된 ${selectedRows.length}명의 정산 결과를 저장하시겠습니까?`)) return;
   try {
     const [saveYear, saveMonth] = selectedYearMonth.value.split('-');
@@ -1358,8 +1361,17 @@ const getTaxRate = async () => {
     const res = await axios.get(`/api/v1/config/tax/rate/${year}`);
     const list = res.data.data || [];
     const tax = list.find(t => Number(t.applied_year) === year) || list[0] || {};
+    // 세율이 비어 있으면 로드 실패로 취급 (0으로 계산되는 사고 방지)
+    if (!tax.pension_rate || !tax.health_rate || !tax.long_term_care_rate || !tax.employment_rate) {
+      throw new Error('세율 응답 형식 오류 또는 누락');
+    }
     targetCodes.value = { pension: tax.pension_rate, health: tax.health_rate, longTerm: tax.long_term_care_rate, employment: tax.employment_rate };
-  } catch(e) {}
+    isTaxRateLoaded.value = true;
+  } catch (e) {
+    console.error('세율 로드 실패:', e);
+    isTaxRateLoaded.value = false;
+    alert('세율 정보를 불러오지 못했습니다.\n페이지를 새로고침하거나 관리자에게 문의하세요.\n세율이 로드될 때까지 급여 계산/저장이 비활성화됩니다.');
+  }
 };
 
 const sortKey   = ref('');

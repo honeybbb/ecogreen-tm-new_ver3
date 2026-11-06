@@ -59,6 +59,10 @@ export const useTabStore = defineStore('tab', {
                 this.saveTabs(); // 탭 닫을 때 저장
             }
         },
+        closeAll() {
+            this.tabs = this.tabs.filter(t => t.path === '/');
+            this.saveTabs();
+        },
         reorderTab(from, to) {
             // Home 탭(index 0)은 항상 첫 위치 고정
             if (from <= 0 || to <= 0) return;
