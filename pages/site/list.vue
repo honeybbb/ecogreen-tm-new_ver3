@@ -8,6 +8,7 @@ import DataTable from "~/components/common/DataTable.vue";
 import TableColumnSettingModal from "~/components/TableColumnSettingModal.vue";
 import { useTableColumns } from "~/composables/useTableColumns";
 import { useCellMemo } from '@/composables/useCellMemo';
+import { useListTable } from '@/composables/useListTable';
 import CellMemoPanel from '@/components/CellMemoPanel.vue';
 import FilterSearchGroup from '@/components/common/FilterSearchGroup.vue'
 
@@ -93,7 +94,9 @@ const getDeepCleanDetails = (site) => {
       try {
         const parsedData = typeof c.jsonData === 'string' ? JSON.parse(c.jsonData) : c.jsonData;
         config = parsedData.cleaningConfig;
-      } catch(e) {}
+      } catch (e) {
+        console.warn('[site/list] cleaningConfig(jsonData) 파싱 실패 contractIdx=', c.idx, e);
+      }
     }
 
     if (config) {
@@ -106,7 +109,9 @@ const getDeepCleanDetails = (site) => {
             }
           });
         }
-      } catch(e) {}
+      } catch (e) {
+        console.warn('[site/list] cleaningConfig 파싱 실패 contractIdx=', c.idx, e);
+      }
     }
   });
 
@@ -146,21 +151,17 @@ const downloadExcel = () => {
   XLSX.writeFile(workbook, `현장목록_${today}.xlsx`);
 };
 
-const sortKey = ref('idx');
-const sortOrder = ref('desc');
 const sites = ref([]);
 const isLoading = ref(false);
-
-const currentPage = ref(1);
-const pageSize    = ref(50);
-const pageSizeOptions = [50, 100, 200, 500];
 const selectedSiteIds = ref([]);
 
-const toggleSort = (key) => {
-  if (sortKey.value === key) sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
-  else { sortKey.value = key; sortOrder.value = 'asc'; }
-  currentPage.value = 1;
-};
+const {
+  sortKey, sortOrder, currentPage, pageSize, pageSizeOptions,
+  toggleSort, pagedItems: pagedSiteList, handlePageChange,
+} = useListTable(() => filteredSites.value, {
+  initialSortKey: 'idx',
+  initialSortOrder: 'desc',
+});
 
 const resetFilters = () => {
   searchTerm.value = ''; selectedStatus.value = '전체'; selectedStype.value = '전체'; selectedType.value = '전체';
@@ -262,12 +263,6 @@ const statsInfo = computed(() => {
   return { total, active, preparing, ended };
 });
 
-const pagedSiteList = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredSites.value.slice(start, start + pageSize.value);
-});
-
-const handlePageChange = () => { document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 const onFilterChange = () => { currentPage.value = 1; };
 
 const isManagerModalOpen = ref(false);
@@ -367,34 +362,54 @@ onActivated(async () => { await getSites(); });
       </div>
 
       <TableColumnSettingModal v-model:isOpen="isSettingModalOpen" :currentColumns="columns" :defaultColumns="siteDefaultColumns" @save="saveColumns" />
+    </div>
 
-      <div v-if="isManagerModalOpen" class="modal-overlay" @mousedown.self="closeManagerModal">
-        <div class="modal-container">
-          <div class="modal-header">
-            <h3>담당자 일괄 변경</h3>
-            <button @click="closeManagerModal" class="btn-close"><i class="mdi mdi-close"></i></button>
-          </div>
-          <div class="modal-body">
-            <p class="modal-desc">선택한 <strong>{{ selectedSiteIds.length }}개</strong> 현장의 담당자를 변경합니다.</p>
-            <div class="form-group mt-3">
-              <label>변경할 담당자 종류</label>
-              <select v-model="selectedManagerType" class="form-select" style="width: 100%; padding: 10px 12px;">
-                <option v-for="opt in managerTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
+    <Teleport to="body">
+      <transition name="fade">
+        <div v-if="isManagerModalOpen" class="mgr-modal-overlay" @mousedown.self="closeManagerModal">
+          <div class="mgr-modal-box">
+            <div class="mgr-modal-header">
+              <h2 class="mgr-modal-title">
+                <i class="mdi mdi-account-switch-outline"></i>
+                담당자 일괄 변경
+              </h2>
+              <button class="mgr-modal-close" @click="closeManagerModal" aria-label="닫기">
+                <i class="mdi mdi-close"></i>
+              </button>
             </div>
-            <div class="form-group mt-3">
-              <label>새로운 담당자 이름</label>
-              <input type="text" v-model="newManagerName" class="form-input" placeholder="담당자 이름 직접 입력" list="managers-list"/>
-              <datalist id="managers-list"><option v-for="b in billingManager" :key="b.value" :value="b.value"></option></datalist>
+
+            <div class="mgr-modal-body">
+              <p class="mgr-modal-desc">
+                선택한 <strong>{{ selectedSiteIds.length }}개</strong> 현장의 담당자를 변경합니다.
+              </p>
+              <div class="mgr-form">
+                <div class="mgr-form-group">
+                  <label class="mgr-required">변경할 담당자 종류</label>
+                  <select v-model="selectedManagerType" class="mgr-input">
+                    <option v-for="opt in managerTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </div>
+                <div class="mgr-form-group">
+                  <label class="mgr-required">새로운 담당자 이름</label>
+                  <input type="text" v-model="newManagerName" class="mgr-input" placeholder="담당자 이름 직접 입력" list="managers-list"/>
+                  <datalist id="managers-list">
+                    <option v-for="b in billingManager" :key="b.value" :value="b.value"></option>
+                  </datalist>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="modal-footer" style="justify-content: flex-end; gap: 8px;">
-            <button @click="closeManagerModal" class="btn-cancel">취소</button>
-            <button @click="updateManager" class="btn-submit">변경 저장</button>
+
+            <div class="mgr-modal-footer">
+              <button type="button" class="btn-cancel" @click="closeManagerModal">취소</button>
+              <button type="button" class="btn-submit" @click="updateManager">
+                <i class="mdi mdi-check"></i>
+                변경 저장
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </transition>
+    </Teleport>
 
     <div class="stats-grid">
       <div class="stat-card" style="--card-color: var(--primary); --card-bg: var(--primary-soft);">
@@ -682,17 +697,105 @@ onActivated(async () => { await getSites(); });
 .btn-setting { color: var(--text-main); border: 1px solid var(--border-color); }
 .btn-setting:hover { background: var(--bg-hover); border-color: var(--border-focus); }
 
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
-.modal-container { background: var(--bg-surface); width: 400px; max-width: 90%; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column; }
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
-.modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-main); }
-.btn-close { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; }
-.modal-body { padding: 20px; }
-.modal-desc { font-size: 13px; color: var(--text-sub); margin-bottom: 16px; line-height:1.4;}
-.form-group { display: flex; flex-direction: column; gap: 8px; }
-.form-group label { font-size: 13px; font-weight: 600; color: var(--text-main); }
-.form-input, .form-select { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 14px; outline: none; background: var(--bg-canvas); color: var(--text-main); }
-.form-input:focus, .form-select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+/* ── 담당자 일괄 변경 모달 (전역 CSS 충돌 방지용 mgr- 프리픽스) ── */
+.mgr-modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;
+}
+.mgr-modal-box {
+  background: var(--bg-surface); width: 100%; max-width: 440px; border-radius: 16px;
+  box-shadow: var(--shadow-md); display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+.mgr-modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 24px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface);
+}
+.mgr-modal-title {
+  font-size: 17px; font-weight: 700; color: var(--text-main); margin: 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.mgr-modal-title i { color: var(--primary); font-size: 20px; }
+.mgr-modal-close {
+  width: 32px; height: 32px; border-radius: 8px; background: transparent; border: none;
+  color: var(--text-sub); cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: 0.2s;
+}
+.mgr-modal-close i { font-size: 20px; }
+.mgr-modal-close:hover { background: var(--bg-hover); color: var(--text-main); }
+
+.mgr-modal-body { padding: 22px 24px; background: var(--bg-surface); }
+.mgr-modal-desc {
+  font-size: 13px; color: var(--text-sub); margin: 0 0 18px; line-height: 1.5;
+}
+.mgr-modal-desc strong { color: var(--primary); font-weight: 700; }
+
+.mgr-form { display: flex; flex-direction: column; gap: 14px; }
+.mgr-form-group { display: flex; flex-direction: column; gap: 6px; }
+.mgr-form-group label {
+  font-size: 13px; font-weight: 600; color: var(--text-sub);
+}
+.mgr-form-group label.mgr-required::after {
+  content: '*'; color: var(--danger); margin-left: 4px;
+}
+.mgr-input {
+  width: 100%; box-sizing: border-box; padding: 10px 14px;
+  border: 1px solid var(--border-color); border-radius: 8px;
+  font-size: 13px; color: var(--text-main); background: var(--bg-surface);
+  font-family: inherit; outline: none; transition: all 0.2s;
+}
+.mgr-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+
+.mgr-modal-footer {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 14px 24px; border-top: 1px solid var(--border-color); background: var(--bg-canvas);
+}
+.mgr-modal-footer .btn-cancel,
+.mgr-modal-footer .btn-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  min-width: 92px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mgr-modal-footer .btn-cancel i,
+.mgr-modal-footer .btn-submit i { font-size: 16px; }
+
+.mgr-modal-footer .btn-cancel {
+  background-color: var(--bg-surface);
+  border-color: var(--border-color);
+  color: var(--text-sub);
+}
+.mgr-modal-footer .btn-cancel:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-main);
+  border-color: var(--border-focus);
+}
+
+.mgr-modal-footer .btn-submit {
+  background-color: var(--primary);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
+}
+.mgr-modal-footer .btn-submit:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s, transform 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; transform: translateY(-10px); }
 
 @media (max-width: 1024px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 16px;}

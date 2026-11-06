@@ -118,6 +118,49 @@ const contractYear = computed(() => {
 const wageInputs = ref({});
 const periodsData = ref([]); // 입/퇴사일, 일용직,대근 근무시작/종료일, 휴직시작/종료일 등
 
+// =============================================
+// 중복 등록 방지: 같은 이름 직원 미리 확인
+// =============================================
+const allMembers = ref([]);
+const nameFocused = ref(false);
+
+const fetchAllMembers = async () => {
+  try {
+    const res = await axios.get(`/api/v1/member/list`);
+    allMembers.value = res.data.data || [];
+  } catch (e) {
+    console.error('직원 목록 로드 실패:', e);
+    allMembers.value = [];
+  }
+  autoFillMemberId(true);
+};
+
+// 자동 사번 — 기존 직원 목록의 숫자형 사번 중 최대값+1, 최소 20001 (프론트 전용, 수정 가능)
+// force=true 면 기존 값이 있어도 재계산 (fetchAllMembers 완료 후 최신 목록 반영용)
+const autoFillMemberId = (force = false) => {
+  if (!force && employee.value.id) return; // 사용자가 이미 수정했으면 건드리지 않음
+  const nums = allMembers.value
+      .map(m => String(m.id || ''))
+      .filter(id => /^[0-9]+$/.test(id))
+      .map(Number);
+  const maxId = nums.length ? Math.max(...nums) : 0;
+  employee.value.id = String(Math.max(20001, maxId + 1));
+};
+
+const statusLabel = (s) => {
+  const map = { '0': '재직', '1': '퇴사', '2': '일용직', '3': '대근', '4': '휴직' };
+  return map[String(s)] || '-';
+};
+
+const nameSuggestions = computed(() => {
+  const typed = (employee.value.name || '').trim();
+  if (!typed) return [];
+  const needle = typed.toLowerCase();
+  return allMembers.value
+      .filter(m => m.name && m.name.toLowerCase().startsWith(needle))
+      .slice(0, 20);
+});
+
 // 기간 추가 함수
 const addPeriod = () => {
   periodsData.value.push({ startDate: '', endDate: '', outReason: '' });
@@ -201,6 +244,7 @@ const resetForm = () => {
   wageInputs.value = {};
   contractDataTemp.value = null;
   isContractSaved.value = false;
+  autoFillMemberId();
 };
 
 const handleContractSave = (savedData) => {
@@ -416,6 +460,7 @@ onMounted(() => {
   fetchBankOption();
   fetchWageCode();
   getPositionCode();
+  fetchAllMembers();
 
   // 스크롤 위치 감지
   const container = document.querySelector('.content-area');
@@ -443,6 +488,7 @@ onBeforeUnmount(() => {
 
 onActivated(() => {
   resetForm();
+  fetchAllMembers();
 });
 </script>
 
@@ -520,7 +566,33 @@ onActivated(() => {
 
                 <div class="form-group">
                   <label class="form-label required">이름</label>
-                  <input type="text" v-model="employee.name" required class="form-input" placeholder="홍길동" />
+                  <input
+                      type="text"
+                      v-model="employee.name"
+                      required
+                      class="form-input"
+                      placeholder="홍길동"
+                      autocomplete="off"
+                      @focus="nameFocused = true"
+                      @blur="nameFocused = false"
+                  />
+                  <div v-if="nameFocused && nameSuggestions.length > 0" class="name-suggest-panel">
+                    <div class="name-suggest-header">
+                      <i class="mdi mdi-alert-circle-outline"></i>
+                      <span>같은/유사 이름 <strong>{{ nameSuggestions.length }}명</strong> — 중복 등록 주의!</span>
+                    </div>
+                    <div class="name-suggest-list">
+                      <div v-for="m in nameSuggestions" :key="m.idx" class="name-suggest-item">
+                        <span class="suggest-name">{{ m.name }}</span>
+                        <span class="suggest-meta">
+                          <span v-if="m.position">{{ m.position }}</span>
+                          <span v-if="m.siteName" class="dot-sep">·</span>
+                          <span v-if="m.siteName">{{ m.siteName }}</span>
+                        </span>
+                        <span :class="['suggest-status', `status-${m.status}`]">{{ statusLabel(m.status) }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="form-group">
@@ -1093,4 +1165,70 @@ body, #__nuxt, #__layout, .v-application { overflow: visible !important; }
   .page-subtitle { display: none; }
   .ssn-group { flex-direction: row; display: grid; }
 }
+
+/* =============================================
+   같은 이름 중복 등록 방지 패널
+============================================= */
+.name-suggest-panel {
+  margin-top: 8px;
+  border: 1px solid var(--warning, #f59e0b);
+  background: #fffbeb;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08);
+  animation: slideDown 0.18s ease-out;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.name-suggest-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  font-size: 12px;
+  color: #92400e;
+  font-weight: 600;
+}
+.name-suggest-header i { font-size: 16px; color: var(--warning, #f59e0b); }
+.name-suggest-header strong { color: var(--danger, #ef4444); font-weight: 800; }
+
+.name-suggest-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  background: #fff;
+}
+.name-suggest-item {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.name-suggest-item:hover { background: var(--bg-hover, #f8fafc); }
+.name-suggest-item + .name-suggest-item { border-top: 1px solid var(--border-color, #e2e8f0); }
+
+.suggest-name { font-weight: 700; color: var(--text-main, #1e293b); }
+.suggest-meta { color: var(--text-sub, #475569); font-size: 12px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.suggest-meta .dot-sep { color: var(--text-muted, #94a3b8); }
+
+.suggest-status {
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.suggest-status.status-0 { background: rgba(16,185,129,0.12); color: #10b981; }  /* 재직 */
+.suggest-status.status-1 { background: rgba(148,163,184,0.18); color: #64748b; } /* 퇴사 */
+.suggest-status.status-2 { background: rgba(245,158,11,0.12); color: #f59e0b; }  /* 일용직 */
+.suggest-status.status-3 { background: rgba(139,92,246,0.12); color: #8b5cf6; }  /* 대근 */
+.suggest-status.status-4 { background: rgba(59,130,246,0.12); color: #3b82f6; }  /* 휴직 */
 </style>

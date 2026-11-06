@@ -374,24 +374,31 @@ a {
 }
 .btn-excel:hover, .btn-save:hover, .btn-save-all:hover { background-color: var(--success-hover); transform: translateY(-1px); }
 .btn-excel i, .btn-save i, .btn-save-all i { font-size: 16px; }
-/*
-.btn-cancel { background: var(--bg-surface); border: 1px solid var(--border-color) !important; color: var(--text-sub); }
-.btn-cancel:hover { background: var(--bg-hover); color: var(--text-main);}
- */
-.btn-cancel { background-color: var(--text-sub); color: var(--text-inverse); }
-.btn-cancel:hover { background-color: var(--text-main); }
+/* ── 공통 액션 버튼 베이스 (취소/수정/삭제/저장) ── */
+.btn-cancel, .btn-edit, .btn-delete, .btn-submit {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 40px; padding: 0 20px;
+    border: 1px solid transparent; border-radius: 8px;
+    font-size: 13px; font-weight: 600; font-family: inherit; letter-spacing: -0.02em;
+    line-height: 1; white-space: nowrap; cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-cancel i, .btn-edit i, .btn-delete i, .btn-submit i { font-size: 16px; }
+
+.btn-cancel { background-color: var(--bg-surface); border-color: var(--border-color); color: var(--text-sub); }
+.btn-cancel:hover { background-color: var(--bg-hover); color: var(--text-main); border-color: var(--border-focus); }
 
 .btn-edit { background-color: var(--primary); color: var(--text-inverse); }
-.btn-edit:hover:not(:disabled) { background-color: var(--primary-hover); }
+.btn-edit:hover:not(:disabled) { background-color: var(--primary-hover); transform: translateY(-1px); }
 
 .btn-delete { background-color: var(--danger); color: var(--text-inverse); }
-.btn-delete:hover:not(:disabled) { filter: brightness(0.9); }
+.btn-delete:hover:not(:disabled) { filter: brightness(0.9); transform: translateY(-1px); }
 
-.btn-submit { background-color: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-sm);}
-.btn-submit:hover { background-color: var(--primary-hover); transform: translateY(-1px);}
+.btn-submit { background-color: var(--primary); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
+.btn-submit:hover:not(:disabled) { background-color: var(--primary-hover); transform: translateY(-1px); }
 .btn-submit.green { background-color: var(--success); }
-.btn-submit.green:hover { background-color: var(--success-hover); }
-.btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none;}
+.btn-submit.green:hover:not(:disabled) { background-color: var(--success-hover); }
+.btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .btn-back {
     width: 42px; height: 42px;

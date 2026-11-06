@@ -6,6 +6,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import SiteSelect from "~/components/SiteSelect.vue";
 import DataTable from "~/components/common/DataTable.vue";
 import { useCellMemo } from '@/composables/useCellMemo';
+import { useListTable } from '@/composables/useListTable';
 import ExcelDownloadModal from "@/components/Exceldownloadmodal.vue";
 import CellMemoPanel from '@/components/CellMemoPanel.vue';
 import FilterSearchGroup from '~/components/common/FilterSearchGroup.vue';
@@ -29,9 +30,6 @@ const filterNoEmployment = ref(false);
 const filterDisability   = ref(false);
 const filterForeigner    = ref(false);
 const filterActive       = ref(false);
-
-const sortKey   = ref('');
-const sortOrder = ref('asc');
 
 const members   = ref([]);
 const memoColLabelMap = {
@@ -61,7 +59,7 @@ const memberColumns = [
   { key: 'accountNumber', label: '계좌번호', visible: true, sortable: false, width: '10%' },
   { key: 'phone', label: '연락처', visible: true, sortable: false, width: '8%' },
   { key: 'status', label: '상태', visible: true, sortable: true, width: '5%', align: 'center' },
-  { key: 'mngYn', label: '관리권한', visible: true, sortable: true, width: '6%', align: 'center' },
+  { key: 'mngYn', label: '관리권한', visible: true, sortable: true, width: '3%', align: 'center' },
   { key: 'actions', label: '관리', visible: true, sortable: false, width: '5%', align: 'center' }
 ];
 
@@ -86,11 +84,12 @@ const revealedRRNs = ref({});
 const rrnLoading   = ref(false);
 const showExcelModal = ref(false);
 
-const currentPage     = ref(1);
-const pageSize        = ref(50);
-const pageSizeOptions = [50, 100, 200, 500];
-
 const ageLimits = ref({ pension: 0, employment: 0 });
+
+const {
+  sortKey, sortOrder, currentPage, pageSize, pageSizeOptions,
+  toggleSort, pagedItems: pagedMembers, handlePageChange,
+} = useListTable(() => filteredMembers.value);
 
 const paymentDayOptions = computed(() => {
   const days = new Set(
@@ -202,12 +201,6 @@ const displayRRN = (member) => {
   return member.rrn;
 };
 
-const toggleSort = (key) => {
-  if (sortKey.value === key) sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
-  else { sortKey.value = key; sortOrder.value = 'asc'; }
-  currentPage.value = 1;
-};
-
 const resetFilters = () => {
   searchTerm.value = ''; selectedSite.value = '전체'; selectedType.value = '전체';
   selectedStatus.value = '전체'; selectedGender.value = '전체'; selectedPaymentDay.value = '전체';
@@ -313,10 +306,10 @@ const filteredMembers = computed(() => {
       if (dateA !== dateB) return dateB.localeCompare(dateA);
     }
 
-    const cdA = String(a.itemCd || ''); const cdB = String(b.itemCd || '');
-    if (cdA !== cdB) return cdA.localeCompare(cdB);
+    if (Number(a.idx) !== Number(b.idx)) return Number(a.idx) - Number(b.idx);
 
-    return Number(a.idx) - Number(b.idx);
+    const cdA = String(a.itemCd || ''); const cdB = String(b.itemCd || '');
+    return cdA.localeCompare(cdB);
   });
   return result;
 });
@@ -330,12 +323,6 @@ const statsInfo = computed(() => ({
   foreigner:  filteredMembers.value.filter(m => m.foreigner  === 'Y' || m.foreigner  === true).length,
 }));
 
-const pagedMembers = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredMembers.value.slice(start, start + pageSize.value);
-});
-
-const handlePageChange = () => { document.querySelector('.table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 const onFilterChange = () => { currentPage.value = 1; };
 
 const getDisabilityStyle = (grade) => {
@@ -716,11 +703,11 @@ onActivated(async () => { await fetchMembers(); });
               type="button"
               :class="['mng-toggle', item.mngYn === 'Y' ? 'mng-toggle--on' : 'mng-toggle--off']"
               :disabled="item._mngSaving"
-              :title="item.mngYn === 'Y' ? '클릭하면 관리 권한 해제' : '클릭하면 관리 권한 부여'"
+              :title="item.mngYn === 'Y' ? '관리자 — 클릭 시 해제' : '일반 — 클릭 시 관리 권한 부여'"
+              :aria-label="item.mngYn === 'Y' ? '관리자' : '일반'"
               @click.stop="toggleMemberMngYn(item)"
           >
             <span class="mng-toggle__knob"></span>
-            <span class="mng-toggle__label">{{ item.mngYn === 'Y' ? '관리자' : '일반' }}</span>
           </button>
         </template>
 
@@ -850,18 +837,22 @@ onActivated(async () => { await fetchMembers(); });
 
 /* 관리 권한 원클릭 토글 */
 .mng-toggle {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 10px 3px 5px; border-radius: 999px; border: none;
-  font-size: 11px; font-weight: 700; cursor: pointer;
-  transition: background .15s, color .15s;
+  position: relative;
+  display: inline-flex; align-items: center;
+  width: 32px; height: 18px;
+  padding: 2px; border-radius: 999px; border: none;
+  cursor: pointer;
+  transition: background .18s ease;
 }
 .mng-toggle__knob {
-  width: 12px; height: 12px; border-radius: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
   background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  transition: transform .18s ease;
 }
-.mng-toggle__label { line-height: 1; }
-.mng-toggle--on  { background: #2563eb; color: #fff; padding: 3px 5px 3px 10px; flex-direction: row-reverse; }
-.mng-toggle--off { background: #e5e7eb; color: #64748b; }
+.mng-toggle--on  { background: #2563eb; }
+.mng-toggle--on .mng-toggle__knob { transform: translateX(14px); }
+.mng-toggle--off { background: #cbd5e1; }
+.mng-toggle--off .mng-toggle__knob { transform: translateX(0); }
 .mng-toggle:hover:not(:disabled) { filter: brightness(1.05); }
 .mng-toggle:disabled { opacity: .5; cursor: not-allowed; }
 </style>

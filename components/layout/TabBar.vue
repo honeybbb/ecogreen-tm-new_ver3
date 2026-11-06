@@ -23,6 +23,13 @@ const closeTab = (path) => {
   tabStore.removeTab(path);
 };
 
+const closeAllTabs = () => {
+  tabStore.closeAll();
+  if (route.path !== '/') router.push('/');
+};
+
+const hasClosableTabs = computed(() => tabStore.tabs.some(t => t.path !== '/'));
+
 const toggleFavorite = (tab) => {
   if (!isAdmin.value || tab.path === '/') return;
   favStore.toggleFavorite({ path: tab.path, title: tab.title });
@@ -111,49 +118,61 @@ const resetDrag = () => {
       </div>
     </div>
 
-    <div class="eg-tab-bar">
-      <div
-          v-for="(tab, index) in tabStore.tabs"
-          :key="tab.path"
-          :class="[
-            'eg-tab-item',
-            { 'active': route.path === tab.path },
-            { 'dragging': dragIndex === index },
-            { 'drag-over': dragOverIndex === index && dragIndex !== index },
-          ]"
-          :draggable="tab.path !== '/' ? 'true' : 'false'"
-          @click="router.push(tab.path)"
-          @dragstart="onDragStart(index, $event)"
-          @dragenter="onDragEnter(index, $event)"
-          @dragover="onDragOver(index, $event)"
-          @drop="onDrop(index, $event)"
-          @dragend="onDragEnd"
-      >
-        <button
-            v-if="isAdmin && tab.path !== '/'"
-            class="eg-tab-fav"
-            draggable="false"
-            :title="favStore.isFavorite(tab.path) ? '즐겨찾기 해제' : '즐겨찾기에 추가'"
-            @click.stop="toggleFavorite(tab)"
-            @mousedown.stop
-            @dragstart.prevent
+    <div class="eg-tab-row">
+      <div class="eg-tab-bar">
+        <div
+            v-for="(tab, index) in tabStore.tabs"
+            :key="tab.path"
+            :class="[
+              'eg-tab-item',
+              { 'active': route.path === tab.path },
+              { 'dragging': dragIndex === index },
+              { 'drag-over': dragOverIndex === index && dragIndex !== index },
+            ]"
+            :draggable="tab.path !== '/' ? 'true' : 'false'"
+            @click="router.push(tab.path)"
+            @dragstart="onDragStart(index, $event)"
+            @dragenter="onDragEnter(index, $event)"
+            @dragover="onDragOver(index, $event)"
+            @drop="onDrop(index, $event)"
+            @dragend="onDragEnd"
         >
-          <i :class="['mdi', favStore.isFavorite(tab.path) ? 'mdi-star' : 'mdi-star-outline']"></i>
-        </button>
+          <button
+              v-if="isAdmin && tab.path !== '/'"
+              class="eg-tab-fav"
+              draggable="false"
+              :title="favStore.isFavorite(tab.path) ? '즐겨찾기 해제' : '즐겨찾기에 추가'"
+              @click.stop="toggleFavorite(tab)"
+              @mousedown.stop
+              @dragstart.prevent
+          >
+            <i :class="['mdi', favStore.isFavorite(tab.path) ? 'mdi-star' : 'mdi-star-outline']"></i>
+          </button>
 
-        <span class="eg-tab-title">{{ tab.title }}</span>
+          <span class="eg-tab-title">{{ tab.title }}</span>
 
-        <button
-            v-if="tab.path !== '/'"
-            class="eg-tab-close"
-            draggable="false"
-            @click.stop="closeTab(tab.path)"
-            @mousedown.stop
-            @dragstart.prevent
-        >
-          <i class="mdi mdi-close"></i>
-        </button>
+          <button
+              v-if="tab.path !== '/'"
+              class="eg-tab-close"
+              draggable="false"
+              @click.stop="closeTab(tab.path)"
+              @mousedown.stop
+              @dragstart.prevent
+          >
+            <i class="mdi mdi-close"></i>
+          </button>
+        </div>
       </div>
+
+      <button
+          v-if="hasClosableTabs"
+          class="eg-tab-close-all"
+          title="모든 탭 닫기"
+          @click="closeAllTabs"
+      >
+        <i class="mdi mdi-close-box-multiple-outline"></i>
+        <span>전체 닫기</span>
+      </button>
     </div>
   </div>
 </template>
@@ -248,11 +267,20 @@ const resetDrag = () => {
 .eg-fav-remove i { font-size: 12px; }
 
 /* ================== 탭 바 ================== */
+.eg-tab-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 16px 0 16px;
+  min-width: 0;
+}
+
 .eg-tab-bar {
   display: flex;
-  padding: 8px 16px 0 16px;
   gap: 4px;
   overflow-x: auto;
+  flex: 1;
+  min-width: 0;
 }
 .eg-tab-bar::-webkit-scrollbar { display: none; }
 
@@ -335,4 +363,43 @@ const resetDrag = () => {
   color: var(--danger);
 }
 .eg-tab-close i { font-size: 14px; }
+
+.eg-tab-close-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: center;
+  padding: 5px 12px 5px 10px;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  transition: all 0.15s ease;
+}
+.eg-tab-close-all::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 14px;
+  background-color: var(--border-color);
+}
+.eg-tab-close-all:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.eg-tab-close-all:active {
+  transform: translateY(1px);
+}
+.eg-tab-close-all i { font-size: 14px; }
 </style>

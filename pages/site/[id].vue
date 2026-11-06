@@ -869,6 +869,29 @@ const addContractGroup = (category) => {
   activeContractIndex.value = 0; // 방금 추가한 맨 위 카드 열기
 };
 
+// 계약 복사 — staffList·산출내역·청소과업·근무조건 전부 복제, scIdx·계약기간·첨부파일만 비움
+const copyContractGroup = (index) => {
+  const src = contractGroups.value[index];
+  if (!src) return;
+
+  const cloned = JSON.parse(JSON.stringify(src));
+  cloned.scIdx = null;
+  cloned.firstContractDt = '';
+  cloned.contractStart = '';
+  cloned.contractEnd = '';
+  cloned.files = [];
+  cloned.newFiles = [];
+  cloned.isDragging = false;
+  cloned.showCostBreakdown = false;
+  cloned.tempCleaningCode = '';
+  cloned.tempCleaningCount = 1;
+  cloned.tempCleaningDuration = 1;
+
+  contractGroups.value.unshift(cloned);
+  selectedContractYear.value = new Date().getFullYear().toString();
+  activeContractIndex.value = 0;
+};
+
 const removeContractGroup = async (index, group) => {
   if (confirm('해당 계약 정보를 삭제하시겠습니까?')) {
     contractGroups.value.splice(index, 1);
@@ -2196,6 +2219,9 @@ onMounted(async () => {
                 </div>
 
                 <div class="action-buttons">
+                  <button class="icon-btn-copy" @click.stop="copyContractGroup(idx)" title="계약 복사">
+                    <i class="mdi mdi-content-copy"></i>
+                  </button>
                   <button class="icon-btn-delete" @click.stop="removeContractGroup(idx, group)" title="계약 삭제">
                     <i class="mdi mdi-trash-can-outline"></i>
                   </button>
@@ -5305,6 +5331,24 @@ input:checked + .slider:before { transform: translateX(18px); }
 .icon-btn-delete:hover {
   background: rgba(239, 68, 68, 0.1);
   color: var(--danger);
+}
+.icon-btn-copy {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.icon-btn-copy:hover {
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .expand-icon-wrap {

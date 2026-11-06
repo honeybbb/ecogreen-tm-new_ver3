@@ -270,33 +270,86 @@ const resetFilters = () => {
   fetchSummaryData();
 }
 
+const addManualRow = () => {
+  rawData.value.push({
+    _tmpKey: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    isNew: true,
+    idx: null,
+    sIdx: null,
+    siteName: '',
+    payment_day: '',
+    docType: 'MANUAL',
+    type: '',
+    billingAmt: 0,
+    estBilledAmount: 0,
+    netPay: 0,
+    estNetPay: 0,
+    payrollCnt: 0,
+    grandTotal: 0,
+    invoiceDt: '',
+    invoiceAmount: '',
+    bankName: '',
+    depositDt: '',
+    depositAmount: 0,
+    bigo: '',
+    payrollData: []
+  });
+};
+
+const removeManualRow = (row) => {
+  rawData.value = rawData.value.filter(r => r !== row);
+};
+
 const saveStatisticsData = async () => {
-  console.log(filteredRawData);
-  const payload = filteredRawData.value.map((row) => ({
-    ssIdx: row.idx, //정산서 인덱스
+  const existingRows = filteredRawData.value.filter(r => !r.isNew);
+  const newRows = filteredRawData.value.filter(r => r.isNew);
+
+  if (existingRows.length === 0 && newRows.length === 0) {
+    window.customAlert('저장할 데이터가 없습니다.','error');
+    return;
+  }
+
+  const missingSite = newRows.find(r => !r.sIdx);
+  if (missingSite) {
+    window.customAlert('추가한 행의 현장을 선택해 주세요.','error');
+    return;
+  }
+
+  const [year, month] = yearMonth.value.split('-');
+
+  const putPayload = existingRows.map((row) => ({
+    ssIdx: row.idx,
     invoiceDt: row.invoiceDt || null,
     invoiceAmount: row.invoiceAmount || null,
     bankName: row.bankName || null,
     bigo: row.bigo || ''
   }));
 
-  if (payload.length === 0) {
-    window.customAlert('저장할 데이터가 없습니다.','error');
-    return;
-  }
+  const postPayload = newRows.map((row) => ({
+    sIdx: row.sIdx,
+    year,
+    month,
+    type: row.type || null,
+    grandTotal: Number(String(row.billingAmt).replace(/[^0-9.-]/g, '')) || 0,
+    invoiceDt: row.invoiceDt || null,
+    invoiceAmount: row.invoiceAmount || null,
+    bankName: row.bankName || null,
+    depositDt: row.depositDt || null,
+    depositAmount: Number(String(row.depositAmount).replace(/[^0-9.-]/g, '')) || 0,
+    bigo: row.bigo || ''
+  }));
 
   try {
     isLoading.value = true;
 
-    const response = await axios.put('/api/v1/settle/payroll/summary', {
-      data: payload
-    });
+    const tasks = [];
+    if (putPayload.length) tasks.push(axios.put('/api/v1/settle/payroll/summary', { data: putPayload }));
+    if (postPayload.length) tasks.push(axios.post('/api/v1/settle/payroll/summary', { data: postPayload }));
 
-    if (response.status === 200) {
-      window.customAlert('데이터가 성공적으로 저장되었습니다.');
-      // 3. 저장 성공 시 최신 데이터로 다시 갱신
-      await fetchSummaryData();
-    }
+    await Promise.all(tasks);
+
+    window.customAlert('데이터가 성공적으로 저장되었습니다.');
+    await fetchSummaryData();
   } catch (error) {
     console.error('통계 데이터 저장 실패:', error);
     window.customAlert('데이터 저장 중 오류가 발생했습니다.','error');
@@ -354,6 +407,9 @@ onMounted(async () => {
       <div class="header-actions">
         <button @click="downloadExcel" class="btn-excel" :disabled="isLoading || filteredRawData.length === 0">
           <i class="mdi mdi-microsoft-excel"></i> 엑셀 다운로드
+        </button>
+        <button @click="addManualRow" class="btn-row-add" :disabled="isLoading">
+          <i class="mdi mdi-plus"></i> 행 추가
         </button>
         <button @click="saveStatisticsData" class="btn-add" :disabled="isLoading || filteredRawData.length === 0">
           데이터 저장
@@ -514,63 +570,105 @@ onMounted(async () => {
           <template v-for="(group, gIndex) in processedGroups" :key="'group-' + gIndex">
             <!-- 개별 행 -->
             <tr v-for="(row, rIndex) in group.rows" :key="'row-' + gIndex + '-' + rIndex" class="data-row"
-                :class="{'row-mismatch': hasError(row.billingAmt, row.estBilledAmount) || hasError(row.netPay, row.estNetPay)}">
-              <td class="text-center">{{ rIndex + 1 }}</td>
-              <td class="text-center">{{ row.payment_day }}</td>
-              <td class="text-left cell-pad font-bold">{{ row.siteName }}</td>
+                :class="{
+                  'row-mismatch': !row.isNew && (hasError(row.billingAmt, row.estBilledAmount) || hasError(row.netPay, row.estNetPay)),
+                  'row-new': row.isNew
+                }">
               <td class="text-center">
-                {{ row.docType == 'SERVICE' ? '용역비' : row.docType == 'RETIRE' ? '퇴직금' : row.docType == 'ANNUAL' ? '연차' :'' }}
+                <template v-if="row.isNew">
+                  <button class="btn-row-remove" title="행 삭제" @click="removeManualRow(row)">
+                    <i class="mdi mdi-close"></i>
+                  </button>
+                </template>
+                <template v-else>{{ rIndex + 1 }}</template>
+              </td>
+              <td class="text-center">{{ row.payment_day }}</td>
+              <td class="text-left cell-pad font-bold">
+                <template v-if="row.isNew">
+                  <SiteSelect v-model="row.sIdx" :allow-empty="false" width="100%" placeholder="현장 선택" />
+                </template>
+                <template v-else>{{ row.siteName }}</template>
+              </td>
+              <td class="text-center">
+                <template v-if="row.isNew">
+                  <select v-model="row.type" class="cell-select">
+                    <option value="">-</option>
+                    <option v-for="t in typeOptions" :key="t.itemCd" :value="t.itemCd">{{ t.itemNm }}</option>
+                  </select>
+                </template>
+                <template v-else>
+                  {{ row.docType == 'SERVICE' ? '용역비' : row.docType == 'RETIRE' ? '퇴직금' : row.docType == 'ANNUAL' ? '연차' : row.docType == 'MANUAL' ? '수동' : '' }}
+                </template>
               </td>
               <template v-if="showPersonnelCols">
-                <td class="text-center">{{ row.contractCnt || '' }}</td>
-                <td class="text-center">{{ row.currentCnt || '' }}</td>
-                <td class="text-center">{{ row.female || '' }}</td>
-                <td class="text-center">{{ row.male || '' }}</td>
-
-                <!-- ✅ 클릭 시 팝업 열리는 입/퇴사자 셀 -->
-                <td class="text-center cursor-pointer hover-bg text-blue" @click.stop="openJoinLeaveModal(row)">
-                  <u>{{ row.join || '' }}</u>
+                <td class="text-center">{{ row.isNew ? '' : (row.contractCnt || '') }}</td>
+                <td class="text-center">{{ row.isNew ? '' : (row.currentCnt || '') }}</td>
+                <td class="text-center">{{ row.isNew ? '' : (row.female || '') }}</td>
+                <td class="text-center">{{ row.isNew ? '' : (row.male || '') }}</td>
+                <td class="text-center cursor-pointer hover-bg text-blue"
+                    @click.stop="!row.isNew && openJoinLeaveModal(row)">
+                  <u>{{ row.isNew ? '' : (row.join || '') }}</u>
                 </td>
-                <td class="text-center cursor-pointer hover-bg text-red" @click.stop="openJoinLeaveModal(row)">
-                  <u>{{ row.resign || '' }}</u>
+                <td class="text-center cursor-pointer hover-bg text-red"
+                    @click.stop="!row.isNew && openJoinLeaveModal(row)">
+                  <u>{{ row.isNew ? '' : (row.resign || '') }}</u>
                 </td>
-
-                <td class="text-center text-red">{{ row.gap || '' }}</td>
+                <td class="text-center text-red">{{ row.isNew ? '' : (row.gap || '') }}</td>
               </template>
 
-              <!-- ✅ 청구액 (기준 / 실청구 비교) -->
+              <!-- 청구액 -->
               <td class="text-right cell-pad">
-                <span class="est-text">{{ formatCurrency(row.estBilledAmount) }}</span> /
-                <span :class="['real-text', { 'error-text': hasError(row.billingAmt, row.estBilledAmount) }]">
-                  {{ formatCurrency(row.billingAmt) }}
-                  <i v-if="hasError(row.billingAmt, row.estBilledAmount)" class="mdi mdi-alert-circle-outline"></i>
-                </span>
+                <template v-if="row.isNew">
+                  <input type="text" v-model="row.billingAmt" class="cell-input text-right" placeholder="0">
+                </template>
+                <template v-else>
+                  <span class="est-text">{{ formatCurrency(row.estBilledAmount) }}</span> /
+                  <span :class="['real-text', { 'error-text': hasError(row.billingAmt, row.estBilledAmount) }]">
+                    {{ formatCurrency(row.billingAmt) }}
+                    <i v-if="hasError(row.billingAmt, row.estBilledAmount)" class="mdi mdi-alert-circle-outline"></i>
+                  </span>
+                </template>
               </td>
 
-              <td class="text-center">{{ row.payrollCnt || '' }}</td>
+              <td class="text-center">{{ row.isNew ? '' : (row.payrollCnt || '') }}</td>
               <td class="text-center">
                 <input type="date" v-model="row.invoiceDt" class="cell-input">
-              </td><!-- 계산서 작성일 -->
+              </td>
               <td class="text-center">
                 <input type="text" v-model="row.invoiceAmount" class="cell-input cell-input-sm">
-              </td><!-- 매수 -->
+              </td>
 
-              <!-- ✅ 지급액 (기준 / 실지급 비교) -->
+              <!-- 급여총액 -->
               <td class="text-right cell-pad">
-                <!--span class="est-text">{{ formatCurrency(row.estNetPay) }}</span> / -->
-                <span :class="['real-text', { 'error-text': hasError(row.netPay, row.estNetPay) }]">
-                  {{ formatCurrency(row.netPay) }}
-                  <i v-if="hasError(row.netPay, row.estNetPay)" class="mdi mdi-alert-circle-outline"></i>
-                </span>
+                <template v-if="row.isNew">
+                  <span class="text-muted">-</span>
+                </template>
+                <template v-else>
+                  <span :class="['real-text', { 'error-text': hasError(row.netPay, row.estNetPay) }]">
+                    {{ formatCurrency(row.netPay) }}
+                    <i v-if="hasError(row.netPay, row.estNetPay)" class="mdi mdi-alert-circle-outline"></i>
+                  </span>
+                </template>
               </td>
               <td class="text-center">
                 <select v-model="row.bankName" class="cell-select">
+                  <option value="">-</option>
                   <option v-for="bank in bankOptions" :key="bank.itemNm" :value="bank.itemNm">{{ bank.itemNm }}</option>
                 </select>
               </td>
 
-              <td class="text-center">{{ row.depositDt }}</td>
-              <td class="text-right cell-pad">{{ formatCurrency(row.depositAmount) }}</td>
+              <td class="text-center">
+                <template v-if="row.isNew">
+                  <input type="date" v-model="row.depositDt" class="cell-input">
+                </template>
+                <template v-else>{{ row.depositDt }}</template>
+              </td>
+              <td class="text-right cell-pad">
+                <template v-if="row.isNew">
+                  <input type="text" v-model="row.depositAmount" class="cell-input text-right" placeholder="0">
+                </template>
+                <template v-else>{{ formatCurrency(row.depositAmount) }}</template>
+              </td>
               <td class="text-right cell-pad">
                 <input type="text" v-model="row.bigo" class="cell-input">
               </td>
@@ -719,6 +817,17 @@ onMounted(async () => {
 /* (기존 버튼, 로딩, 엑셀 테이블 스타일 유지) */
 .btn-print { display: flex; align-items: center; gap: 6px; padding: 0 18px; height: 42px; background-color: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn-print:hover { background-color: var(--bg-hover); border-color: var(--border-focus); color: var(--text-main); }
+
+.btn-row-add { display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; height: 42px; background-color: var(--primary-soft); border: 1px solid var(--primary); border-radius: 8px; color: var(--primary); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-row-add:hover:not(:disabled) { background-color: var(--primary); color: var(--text-inverse); }
+.btn-row-add:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-row-remove { background: transparent; border: 1px solid var(--border-color); border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+.btn-row-remove:hover { background-color: rgba(239, 68, 68, 0.1); border-color: var(--danger); color: var(--danger); }
+.btn-row-remove i { font-size: 13px; }
+
+.row-new td { background-color: rgba(59, 130, 246, 0.04); }
+.row-new:hover td { background-color: rgba(59, 130, 246, 0.08); }
 .spinner { width: 32px; height: 32px; border: 3px solid var(--border-color); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-state { display: flex; flex-direction: column; align-items: center; padding: 60px 0; color: var(--text-sub); gap: 16px; }

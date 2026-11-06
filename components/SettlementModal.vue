@@ -1180,6 +1180,49 @@ const payrollLedgerColumns = computed(() => {
   };
 });
 
+// 급여대장 컬럼 폭 — details-table 과 동일 패턴. 컬럼 수가 많아지면 테이블이 wrapper 를 넘어 가로 스크롤.
+// 순서: NO, 이름, 직책, 생년월일, 입사일, 퇴사일, 근무일수 → payCols → 지급합계 → deductCols → 공제합계 → 실수령액
+const ledgerColWidths = computed(() => {
+  const w = [40, 80, 70, 96, 96, 96, 60];
+  payrollLedgerColumns.value.payCols.forEach(() => w.push(110));
+  w.push(115);                                                   // 지급합계
+  payrollLedgerColumns.value.deductCols.forEach(() => w.push(100));
+  w.push(115);                                                   // 공제합계
+  w.push(115);                                                   // 실수령액
+  return w;
+});
+const ledgerTableMinWidth = computed(() => ledgerColWidths.value.reduce((a, b) => a + b, 0));
+
+// workDays 변경 시 지급/공제 항목을 기준금(_baseline) 대비 일할 계산
+// 기준금: loadPayrollData 때 스냅샷. 없으면 현재값을 스냅샷으로 사용(최초 1회 지연 캡처).
+// 적립금 코드(연차/퇴직/근로자의날/산재)는 prorate 제외 — 별도 로직으로 관리됨.
+const PRORATE_EXCLUDE = ['04001003', '04001004', '04001002007', '04002001008'];
+const getScheduledDaysForMonth = () => {
+  const td = formData.value.target_month || formData.value.billingDt || '';
+  const [y, m] = td.split('-').map(Number);
+  if (!y || !m) return 30;
+  return new Date(y, m, 0).getDate();
+};
+const onWorkDaysInput = (row) => {
+  if (!row._basePayItems) row._basePayItems = JSON.parse(JSON.stringify(row.payItems || {}));
+  if (!row._baseDeductionItems) row._baseDeductionItems = JSON.parse(JSON.stringify(row.deductionItems || {}));
+  const scheduled = Number(row._scheduledDays) || getScheduledDaysForMonth();
+  if (!row._scheduledDays) row._scheduledDays = scheduled;
+  const worked = Math.max(0, Number(row.workDays) || 0);
+  const prorate = (amt) => {
+    if (worked === 0) return 0;
+    if (worked >= scheduled) return amt;
+    return Math.floor(amt / scheduled) * worked;
+  };
+  Object.entries(row._basePayItems).forEach(([cd, amt]) => {
+    row.payItems[cd] = PRORATE_EXCLUDE.includes(cd) ? Number(amt) || 0 : prorate(Number(amt) || 0);
+  });
+  Object.entries(row._baseDeductionItems).forEach(([cd, amt]) => {
+    row.deductionItems[cd] = PRORATE_EXCLUDE.includes(cd) ? Number(amt) || 0 : prorate(Number(amt) || 0);
+  });
+  calculateRow(row);
+};
+
 const getLedgerGrossPay = (row) =>
     Object.entries(row.payItems || {}).reduce((sum, [cd, amt]) =>
         LEDGER_EXCLUDE_PAY.includes(cd) ? sum : sum + (Number(amt) || 0), 0);
@@ -1275,8 +1318,10 @@ const normalizePayrollRow = (row, idx) => {
   row.reserves.severance = row.reserves.severance || 0;
   row.reserves.empInsEmployer = row.reserves.empInsEmployer || 0;
 
-  let savedSanjae = Number(row.reserves.sanjae) || 0;
-  if (savedSanjae === 0) {
+  // reserves.sanjae 필드가 아예 없는 레거시 데이터만 fallback 복원. 명시적으로 저장된 0 은 그대로 유지.
+  const hasSavedSanjae = row.reserves.sanjae !== undefined && row.reserves.sanjae !== null;
+  let savedSanjae = hasSavedSanjae ? (Number(row.reserves.sanjae) || 0) : 0;
+  if (!hasSavedSanjae) {
     if (Number(row.originalSanjae) > 0) savedSanjae = Number(row.originalSanjae);
     else if (row.deductionItems && Number(row.deductionItems['04002001008']) > 0) savedSanjae = Number(row.deductionItems['04002001008']);
     else if (row.originalDeductions && Number(row.originalDeductions['04002001008']) > 0) savedSanjae = Number(row.originalDeductions['04002001008']);
@@ -1428,7 +1473,33 @@ const initForm = async () => {
     await fetchContractData();
   }
 
+  // 저장된 workDays보다 new_tb_work 기준 최신 결근 반영값을 우선 (결근일 추가 시 자동 반영)
+  await syncWorkDaysFromAttendance();
+
   nextTick(() => { isInitializing.value = false; });
+};
+
+// payrollData.workDays 를 /api/v1/settle/payroll 의 workedDays(= eligibleDays - absentDays)로 overlay
+const syncWorkDaysFromAttendance = async () => {
+  const targetDate = formData.value.target_month || formData.value.billingDt || '';
+  const [y, mo] = targetDate.split('-');
+  const sIdx = formData.value.sIdx;
+  if (!y || !mo || !sIdx || !formData.value.payrollData?.length) return;
+
+  try {
+    const resp = await axios.get('/api/v1/settle/payroll', {
+      params: { year: Number(y), month: Number(mo), sIdx }
+    });
+    const workedByIdx = new Map((resp.data?.data || []).map(it => [it.idx, Number(it.workedDays) || 0]));
+    // 저장된 값이 있으면(수동 입력 포함) 그대로 유지, 비어있을 때만 결근 반영 계산값으로 채움
+    formData.value.payrollData.forEach(row => {
+      const saved = Number(row.workDays);
+      if (saved > 0) return;
+      if (workedByIdx.has(row.idx)) row.workDays = workedByIdx.get(row.idx);
+    });
+  } catch (e) {
+    console.warn('근무일수 동기화 실패:', e);
+  }
 };
 
 // 부모가 같은 내용을 새 객체로 다시 넘겨도(localStorage 재파싱 등) 재초기화하지 않도록
@@ -1554,6 +1625,10 @@ const loadPayrollData = async () => {
         isMidMonthJoiner,
         gapDays: Number(item.gapDays) || 0,
         groupNo: 0,
+        workDays: Number(item.workedDays) || 0, // new_tb_work 결근일 반영 (eligibleDays - absentDays)
+        _basePayItems: JSON.parse(JSON.stringify(filteredPayItems)),       // workDays 일할 계산 기준금
+        _baseDeductionItems: JSON.parse(JSON.stringify(parsedDeductions)), // workDays 일할 계산 기준금
+        _scheduledDays: Number(item.scheduledDays) || 0,                   // 월 전체 일수(=LAST_DAY)
       };
 
       applyContractReserves(rowObj);
@@ -1575,13 +1650,13 @@ const loadPayrollData = async () => {
       return rowObj;
     });
 
-    // 정렬: 직책코드 → 중간입사여부 → 사번
+    // 정렬: 사번 → 중간입사여부 → 직책코드
     formData.value.payrollData.sort((a, b) => {
+      if (Number(a.idx) !== Number(b.idx)) return Number(a.idx) - Number(b.idx);
+      if (a.isMidMonthJoiner !== b.isMidMonthJoiner) return a.isMidMonthJoiner ? 1 : -1;
       const cdA = String(a.itemCd || '');
       const cdB = String(b.itemCd || '');
-      if (cdA !== cdB) return cdA.localeCompare(cdB, 'ko', { numeric: true });
-      if (a.isMidMonthJoiner !== b.isMidMonthJoiner) return a.isMidMonthJoiner ? 1 : -1;
-      return Number(a.idx) - Number(b.idx);
+      return cdA.localeCompare(cdB, 'ko', { numeric: true });
     });
 
     // 정렬된 순서대로 그룹 번호 부여
@@ -1763,6 +1838,15 @@ const onDragEnd = () => {
 // ──────────────────────────────────────────────
 const isExportingPdf = ref(false);
 const settleImages = ref(null); // 로고/직인 이미지 캐시 (최초 1회 로드)
+
+// 메일 발송 상태 (원클릭 발송: 모달 없이 바로 전송)
+const isSendingMail = ref(false);
+const mailForm = reactive({
+  toEmail: '',
+  toName: '',
+  subject: '',
+  bodyHtml: '',
+});
 
 // SunEditor HTML → 일반 텍스트
 //   <p>, <div>, <li>, <br> 을 줄바꿈으로 바꾸고 태그/엔티티를 정리합니다.
@@ -2062,6 +2146,102 @@ const exportToPdf = async () => {
   }
 };
 
+// 템플릿 플레이스홀더 치환: {siteName}, {period}
+const renderMailTemplate = (tpl, vars) => {
+  if (!tpl) return '';
+  return String(tpl)
+      .replace(/\{siteName\}/g, vars.siteName ?? '')
+      .replace(/\{period\}/g, vars.period ?? '');
+};
+
+const DEFAULT_SETTLE_SUBJECT  = '[{siteName}] {period} 정산서 송부';
+const DEFAULT_SETTLE_BODY_HTML = '<p>안녕하세요.</p><p>{siteName} {period} 정산서를 송부드립니다. 첨부 파일 확인 부탁드립니다.</p><p>감사합니다.</p>';
+
+// 원클릭 발송 : PDF 바로 전송
+const sendMailDirect = async () => {
+  if (isSendingMail.value) return;
+  const site = siteOptions.value.find(s => s.idx === formData.value.sIdx);
+  const period = formData.value.target_month || formData.value.billingDt || '';
+  const siteName = site?.siteName || site?.name || formData.value.siteName || '현장';
+  const toEmail = site?.email?.trim();
+
+  if (!toEmail) {
+    alert(`${siteName} 현장에 등록된 수신용 이메일이 없습니다.\n현장 정보에서 이메일을 먼저 등록해주세요.`);
+    return;
+  }
+
+  if (!confirm(`${toEmail} 로 ${siteName} ${period} 정산서 PDF 를 발송합니다.\n계속할까요?`)) return;
+
+  // DB 템플릿 (new_tb_mail_config.settleSubject / settleBodyHtml) 우선, 없으면 기본값
+  let subjectTpl = DEFAULT_SETTLE_SUBJECT;
+  let bodyTpl = DEFAULT_SETTLE_BODY_HTML;
+  try {
+    const res = await axios.get('/api/v1/mail/config');
+    const cfg = res.data?.data;
+    if (cfg?.settleSubject)  subjectTpl = cfg.settleSubject;
+    if (cfg?.settleBodyHtml) bodyTpl    = cfg.settleBodyHtml;
+  } catch (e) {
+    console.warn('mail config 로드 실패, 기본 템플릿 사용', e);
+  }
+
+  const vars = { siteName, period };
+  mailForm.toEmail = toEmail;
+  mailForm.toName = site?.managerName || '';
+  mailForm.subject = renderMailTemplate(subjectTpl, vars);
+  mailForm.bodyHtml = renderMailTemplate(bodyTpl, vars);
+
+  await sendSettleMail();
+};
+
+const sendSettleMail = async () => {
+  if (!mailForm.toEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailForm.toEmail)) {
+    alert('수신자 이메일을 확인해주세요.'); return;
+  }
+  if (!mailForm.subject.trim()) { alert('제목을 입력해주세요.'); return; }
+
+  isSendingMail.value = true;
+  try {
+    const buffer = await buildSettleWorkbookBuffer();
+
+    const xlsxForm = new FormData();
+    xlsxForm.append('file', new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }), 'settle.xlsx');
+    const pdfRes = await axios.post('/api/v1/excel-to-pdf', xlsxForm, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+      timeout: 30000,
+    });
+    const fileBlob = new Blob([pdfRes.data], { type: 'application/pdf' });
+    const fileName = getExportFileName('pdf');
+
+    const form = new FormData();
+    form.append('toEmail', mailForm.toEmail);
+    if (mailForm.toName) form.append('toName', mailForm.toName);
+    form.append('subject', mailForm.subject);
+    form.append('bodyHtml', mailForm.bodyHtml || '');
+    form.append('refType', 'SETTLE');
+    if (props.settlementId) form.append('refIdx', String(props.settlementId));
+    form.append('attachFiles', fileBlob, fileName);
+
+    const res = await axios.post('/api/v1/mail/send', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+
+    if (res.data?.result) {
+      alert('메일이 발송 대기열에 등록되었습니다. 잠시 후 수신자에게 전달됩니다.');
+    } else {
+      alert(`발송 실패: ${res.data?.msg || '알 수 없는 오류'}`);
+    }
+  } catch (e) {
+    console.error('메일 발송 오류:', e);
+    alert(e.response?.data?.msg || '메일 발송 중 오류가 발생했습니다.');
+  } finally {
+    isSendingMail.value = false;
+  }
+};
+
 // ──────────────────────────────────────────────
 // 9. 데이터 저장
 // ──────────────────────────────────────────────
@@ -2161,6 +2341,10 @@ onMounted(async () => {
           <button class="btn-pdf" @click="exportToPdf" :disabled="isExportingPdf">
             <i class="mdi mdi-file-pdf-box"></i>
             <span class="btn-text">{{ isExportingPdf ? '변환 중...' : 'PDF 저장' }}</span>
+          </button>
+          <button class="btn-mail" @click="sendMailDirect" :disabled="isSendingMail">
+            <i class="mdi mdi-email-send-outline"></i>
+            <span class="btn-text">{{ isSendingMail ? '전송 중...' : '메일 전송' }}</span>
           </button>
           <button class="btn-save" @click="handleSave"><i class="mdi mdi-content-save"></i><span class="btn-text">저장하기</span></button>
           <button class="btn-close" @click="closeModal"><i class="mdi mdi-close"></i></button>
@@ -2814,29 +2998,32 @@ onMounted(async () => {
           </div>
 
           <div v-else class="excel-table-wrapper">
-            <table class="excel-table">
+            <table class="excel-table" :style="{ minWidth: ledgerTableMinWidth + 'px' }">
+              <colgroup>
+                <col v-for="(w, ci) in ledgerColWidths" :key="'lcol-'+ci" :style="{ width: w + 'px' }">
+              </colgroup>
               <thead>
               <tr>
-                <th rowspan="2" style="width:36px;">NO</th>
-                <th rowspan="2" style="width:70px;">이름</th>
-                <th rowspan="2" style="width:60px;">직책</th>
-                <th rowspan="2" style="width:76px;">생년월일</th>
-                <th rowspan="2" style="width:76px;">입사일</th>
-                <th rowspan="2" style="width:76px;">퇴사일</th>
-                <th rowspan="2" style="width:36px;">근무일수</th>
+                <th rowspan="2">NO</th>
+                <th rowspan="2">이름</th>
+                <th rowspan="2">직책</th>
+                <th rowspan="2">생년월일</th>
+                <th rowspan="2">입사일</th>
+                <th rowspan="2">퇴사일</th>
+                <th rowspan="2">근무일수</th>
 
                 <th v-for="col in payrollLedgerColumns.payCols" :key="'lph-'+col.code"
-                    rowspan="2" class="bg-yellow-light" style="min-width:120px;">
+                    rowspan="2" class="bg-yellow-light">
                   {{ col.name }}
                 </th>
-                <th rowspan="2" class="bg-blue-light" style="min-width:120px;">지급합계</th>
+                <th rowspan="2" class="bg-blue-light">지급합계</th>
 
                 <th v-for="col in payrollLedgerColumns.deductCols" :key="'ldh-'+col.code"
-                    rowspan="2" class="bg-red-light" style="min-width:120px;">
+                    rowspan="2" class="bg-red-light">
                   {{ col.name }}
                 </th>
-                <th rowspan="2" class="bg-red-light" style="min-width:120px;">공제합계</th>
-                <th rowspan="2" style="min-width:120px; background: rgba(16,185,129,.1); color: #065f46;">실수령액</th>
+                <th rowspan="2" class="bg-red-light">공제합계</th>
+                <th rowspan="2" style="background: rgba(16,185,129,.1); color: #065f46;">실수령액</th>
               </tr>
               <tr></tr>
               </thead>
@@ -2895,37 +3082,37 @@ onMounted(async () => {
                   <input type="text" v-model="row.outDate" class="cell-input text-center" />
                 </td>
                 <td>
-                  <input type="text" v-model="row.workersDay" class="cell-input text-center"/>
+                  <input type="text" v-model="row.workDays" @input="onWorkDaysInput(row)" class="cell-input text-center"/>
                 </td>
 
                 <td v-for="col in payrollLedgerColumns.payCols" :key="'lpd-'+col.code" class="text-right">
                   <input
                       type="text"
                       :value="formatCurrency(row.payItems?.[col.code] || 0)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, (row.payItems ||= {}), col.code, row, 'none')"
+                      @blur="handleFormulaBlur($event, (row.payItems ||= {}), col.code, row, 'none')"
+                      @keyup.enter="$event.target.blur()"
                       class="cell-input text-right"
                   />
                 </td>
                 <td class="text-right font-bold text-blue">
-                  <input
-                      type="text"
-                      :value="formatCurrency(getLedgerGrossPay(row))"
-                      class="cell-input text-right"
-                  />
+                  {{ formatCurrency(getLedgerGrossPay(row)) }}
                 </td>
 
                 <td v-for="col in payrollLedgerColumns.deductCols" :key="'ldd-'+col.code" class="text-right">
                   <input
                       type="text"
                       :value="formatCurrency(row.deductionItems?.[col.code] || 0)"
+                      @focus="$event.target.select()"
+                      @input="handleCurrencyInput($event, (row.deductionItems ||= {}), col.code, row, 'none')"
+                      @blur="handleFormulaBlur($event, (row.deductionItems ||= {}), col.code, row, 'none')"
+                      @keyup.enter="$event.target.blur()"
                       class="cell-input text-right"
                   />
                 </td>
                 <td class="text-right font-bold text-red">
-                  <input
-                      type="text"
-                      :value="formatCurrency(getLedgerTotalDeduct(row))"
-                      class="cell-input text-right"
-                  />
+                  {{ formatCurrency(getLedgerTotalDeduct(row)) }}
                 </td>
                 <td class="text-right font-bold" style="color: #065f46;">
                   {{ formatCurrency(getLedgerNetPay(row)) }}
@@ -2961,6 +3148,7 @@ onMounted(async () => {
 
       </div>
     </div>
+
   </div>
 </template>
 
@@ -3324,4 +3512,25 @@ input:checked + .slider:before { transform: translateX(14px); }
   color: #b45309;
   border-color: rgba(245, 158, 11, .4);
 }
+
+/* ─── 메일 전송 버튼 ─── */
+.btn-mail {
+  height: 42px;
+  background: rgba(37, 99, 235, .1);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, .3);
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.btn-mail:hover:not(:disabled) { background: #2563eb; color: #fff; }
+.btn-mail:disabled { opacity: .6; cursor: not-allowed; }
+
 </style>
